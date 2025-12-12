@@ -72,7 +72,7 @@ export default function CustomersPage() {
             />
           </div>
 
-          <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+          <div className="flex gap-2">
             {[
               { value: 'all', label: 'All' },
               { value: 'name', label: 'Name' },
@@ -82,10 +82,10 @@ export default function CustomersPage() {
               <button
                 key={filter.value}
                 onClick={() => setSearchType(filter.value as typeof searchType)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   searchType === filter.value
                     ? 'bg-amber-500 text-white'
-                    : 'bg-white/20 text-white hover:bg-white/30'
+                    : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
                 }`}
               >
                 {filter.label}

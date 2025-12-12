@@ -4,6 +4,8 @@ import { useAuthStore } from '../../stores/authStore'
 import CustomersPage from '../../features/customers/CustomersPage'
 import VehiclesPage from '../../features/vehicles/VehiclesPage'
 import RepairOrdersPage from '../../features/repair-orders/RepairOrdersPage'
+import InventoryPage from '../../features/inventory/InventoryPage'
+import DashboardHome from '../../features/dashboard/DashboardHome'
 
 export default function DashboardLayout() {
   const { user, logout } = useAuthStore()
@@ -17,12 +19,22 @@ export default function DashboardLayout() {
   }
 
   const navLinks = [
+    { to: '/dashboard', label: 'Dashboard', exact: true },
     { to: '/dashboard/customers', label: 'Customers' },
     { to: '/dashboard/vehicles', label: 'Vehicles' },
     { to: '/dashboard/repair-orders', label: 'Repair Orders' },
+    { to: '/dashboard/inventory', label: 'Inventory' },
   ]
 
-  const isActive = (path: string) => location.pathname === path
+  const isActive = (path: string, exact?: boolean) => 
+    exact ? location.pathname === path : location.pathname === path
+
+  const isOnSubPage = location.pathname !== '/dashboard'
+  
+  const getCurrentPageLabel = () => {
+    const current = navLinks.find(link => location.pathname === link.to)
+    return current?.label || ''
+  }
 
   return (
     <div className="min-h-screen">
@@ -43,7 +55,7 @@ export default function DashboardLayout() {
                   key={link.to}
                   to={link.to}
                   className={`text-sm font-medium transition-colors ${
-                    isActive(link.to)
+                    isActive(link.to, link.exact)
                       ? 'text-amber-600 border-b-2 border-amber-500'
                       : 'text-gray-600 hover:text-amber-600'
                   }`}
@@ -91,7 +103,7 @@ export default function DashboardLayout() {
                   to={link.to}
                   onClick={() => setMobileMenuOpen(false)}
                   className={`block px-3 py-2 rounded-lg text-base font-medium transition-colors ${
-                    isActive(link.to)
+                    isActive(link.to, link.exact)
                       ? 'bg-amber-100 text-amber-700'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
@@ -114,16 +126,28 @@ export default function DashboardLayout() {
       </nav>
 
       <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto">
+        {/* Breadcrumb - only show on sub-pages */}
+        {isOnSubPage && (
+          <div className="mb-4 flex items-center gap-2 text-sm">
+            <Link 
+              to="/dashboard" 
+              className="text-gray-400 hover:text-amber-500 transition-colors flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Dashboard
+            </Link>
+            <span className="text-gray-600">/</span>
+            <span className="text-white font-medium">{getCurrentPageLabel()}</span>
+          </div>
+        )}
         <Routes>
           <Route path="customers" element={<CustomersPage />} />
           <Route path="vehicles" element={<VehiclesPage />} />
           <Route path="repair-orders" element={<RepairOrdersPage />} />
-          <Route path="" element={
-            <div className="text-center py-12">
-              <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome to Dashboard</h1>
-              <p className="text-gray-300">Select a section from the menu to get started</p>
-            </div>
-          } />
+          <Route path="inventory" element={<InventoryPage />} />
+          <Route path="" element={<DashboardHome />} />
         </Routes>
       </main>
     </div>

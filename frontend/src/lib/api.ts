@@ -2,7 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api/v1',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -26,7 +26,11 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
+    const isAuthEndpoint = error.config?.url?.includes('/auth/')
+    
+    // Only redirect on 401 if NOT on auth endpoints (login/register)
+    // Auth endpoints should show the error message instead
+    if (error.response?.status === 401 && !isAuthEndpoint) {
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }

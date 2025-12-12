@@ -73,4 +73,19 @@ export interface RepairOrder {
   updated_at: string
 }
 
-
+export interface InventoryItem {
+  id: string
+  tenant_id: string
+  sku: string
+  name: string
+  description: string | null
+  category: string | null
+  stock_quantity: number
+  reorder_level: number
+  cost: string
+  selling_price: string
+  supplier_name: string | null
+  supplier_contact: string | null
+  created_at: string
+  updated_at: string
+}
