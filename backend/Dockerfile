@@ -19,7 +19,9 @@ COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
 RUN npm ci
 COPY frontend/ .
-RUN npm run build
+RUN npm run build && \
+    ls -la dist/ && \
+    echo "Frontend build completed successfully"
 
 # Copy backend code
 WORKDIR /app
