@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "serve -s dist -l ${PORT:-3000}"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -25,7 +26,8 @@
     "clsx": "^2.0.0",
     "tailwind-merge": "^2.1.0",
     "@stripe/react-stripe-js": "^2.4.0",
-    "@stripe/stripe-js": "^2.2.0"
+    "@stripe/stripe-js": "^2.2.0",
+    "serve": "^14.2.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
