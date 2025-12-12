@@ -46,7 +46,7 @@ export default function ServicesPage() {
       </div>
 
       {/* Category Filter */}
-      {categories && categories.length > 0 && (
+      {categories && Array.isArray(categories) && categories.length > 0 && (
         <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
           <div className="flex gap-2 min-w-max sm:min-w-0 sm:flex-wrap">
             <button
@@ -79,7 +79,7 @@ export default function ServicesPage() {
 
       {/* Services Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {services?.map((service) => (
+        {services && Array.isArray(services) && services.map((service) => (
           <div
             key={service.id}
             className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-amber-500/50 transition-all"
@@ -124,7 +124,7 @@ export default function ServicesPage() {
         ))}
       </div>
 
-      {services?.length === 0 && (
+      {services && Array.isArray(services) && services.length === 0 && (
         <div className="text-center py-12">
           <div className="text-4xl mb-3">📋</div>
           <p className="text-gray-400">No services available at the moment</p>
@@ -133,3 +133,4 @@ export default function ServicesPage() {
     </div>
   )
 }
+
