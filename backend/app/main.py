@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
-import os
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.session import engine
@@ -47,12 +46,8 @@ async def db_health_check():
         raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
 
 # Serve frontend static files
-# Path: /app/app/main.py -> /app -> /app/frontend/dist
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-print(f"Checking frontend dist at: {frontend_dist}")
-print(f"Frontend dist exists: {frontend_dist.exists()}")
 if frontend_dist.exists():
-    print(f"Serving frontend from: {frontend_dist}")
     # Serve static assets (JS, CSS, etc.)
     app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
     
@@ -93,18 +88,15 @@ if frontend_dist.exists():
             return FileResponse(str(index_path))
         raise HTTPException(status_code=404, detail="Frontend not built")
 else:
-    print(f"WARNING: Frontend dist not found at {frontend_dist}")
-    print(f"Current working directory: {os.getcwd()}")
-    print(f"Listing /app contents: {list(Path('/app').iterdir())}")
     # Fallback if frontend not built
     @app.get("/")
     async def root():
-        return {"status": "ok", "message": "Truck Pit Stop API - Frontend not found"}
+        return {"status": "ok", "message": "Truck Pit Stop API"}
     
     @app.get("/{full_path:path}")
     async def fallback_spa(full_path: str):
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not found")
-        return {"status": "error", "message": "Frontend not built", "path": str(frontend_dist)}
+        raise HTTPException(status_code=404, detail="Frontend not built")
 
 
