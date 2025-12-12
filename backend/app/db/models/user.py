@@ -18,7 +18,8 @@ class User(BaseModel):
     
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
-    full_name = Column(String(255), nullable=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
     phone = Column(String(20), nullable=True)
     role = Column(
         SQLEnum(UserRole, values_callable=lambda e: [m.value for m in e]),

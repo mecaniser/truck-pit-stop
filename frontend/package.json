@@ -23,7 +23,9 @@
     "jspdf": "^2.5.1",
     "date-fns": "^2.30.0",
     "clsx": "^2.0.0",
-    "tailwind-merge": "^2.1.0"
+    "tailwind-merge": "^2.1.0",
+    "@stripe/react-stripe-js": "^2.4.0",
+    "@stripe/stripe-js": "^2.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

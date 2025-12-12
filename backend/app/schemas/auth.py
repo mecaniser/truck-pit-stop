@@ -22,7 +22,8 @@ class UserLogin(BaseModel):
 class UserRegister(BaseModel):
     email: EmailStr
     password: str
-    full_name: Optional[str] = None
+    first_name: str
+    last_name: str
     phone: Optional[str] = None
     tenant_slug: Optional[str] = None  # For customer registration
 
@@ -30,7 +31,8 @@ class UserRegister(BaseModel):
 class UserResponse(BaseModel):
     id: UUID
     email: str
-    full_name: Optional[str]
+    first_name: str
+    last_name: str
     phone: Optional[str]
     role: UserRole
     is_active: bool
@@ -42,5 +44,9 @@ class UserResponse(BaseModel):
     @field_serializer('id', 'tenant_id', 'customer_id')
     def serialize_uuid(self, v: Optional[UUID]) -> Optional[str]:
         return str(v) if v else None
+    
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
 
 

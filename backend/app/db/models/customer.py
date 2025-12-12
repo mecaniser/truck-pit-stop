@@ -24,6 +24,9 @@ class Customer(BaseModel):
     
     notes = Column(Text, nullable=True)
     
+    # Stripe
+    stripe_customer_id = Column(String(255), nullable=True, unique=True)
+    
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     repair_orders = relationship("RepairOrder", back_populates="customer")
 

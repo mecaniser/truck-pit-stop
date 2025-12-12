@@ -71,8 +71,18 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-6 sm:space-y-8 p-6 sm:p-8 bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 backdrop-blur rounded-xl shadow-2xl">
         <div>
-          <h2 className="text-center text-3xl font-extrabold text-gray-900">
-            Truck Pit Stop
+          <h2 className="relative text-center text-3xl font-extrabold text-gray-900">
+            <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none">
+              <rect x="50" y="0" width="12.5" height="4" fill="#1e293b"/>
+              <rect x="62.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
+              <rect x="75" y="0" width="12.5" height="4" fill="#1e293b"/>
+              <rect x="87.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
+              <rect x="0" y="20" width="12.5" height="4" fill="#f59e0b"/>
+              <rect x="12.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+              <rect x="25" y="20" width="12.5" height="4" fill="#f59e0b"/>
+              <rect x="37.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+            </svg>
+            <span className="relative">Truck Pit Stop</span>
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Sign in to your account

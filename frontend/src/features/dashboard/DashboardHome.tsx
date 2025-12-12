@@ -148,7 +148,7 @@ export default function DashboardHome() {
           <p className="text-gray-400 mt-1">
             {isMechanic
               ? `You have ${stats?.my_in_progress || 0} jobs in progress`
-              : `Welcome back, ${user?.full_name || user?.email}`}
+              : `Welcome back, ${user?.first_name || user?.email}`}
           </p>
         </div>
       </div>

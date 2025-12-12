@@ -30,6 +30,11 @@ class VehicleUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class VehicleCustomerUpdate(BaseModel):
+    """Limited update schema for customers - only license plate"""
+    license_plate: Optional[str] = None
+
+
 class VehicleResponse(VehicleBase):
     id: UUID
     tenant_id: UUID

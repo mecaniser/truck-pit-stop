@@ -50,7 +50,8 @@ async def register(
     user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
-        full_name=user_data.full_name,
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
         phone=user_data.phone,
         role=UserRole.CUSTOMER,
         tenant_id=tenant_id,

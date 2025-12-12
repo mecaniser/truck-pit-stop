@@ -13,7 +13,8 @@ export type RepairOrderStatus =
 export interface User {
   id: string
   email: string
-  full_name: string | null
+  first_name: string
+  last_name: string
   phone: string | null
   role: UserRole
   is_active: boolean
@@ -88,4 +89,56 @@ export interface InventoryItem {
   supplier_contact: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ServiceCategory {
+  id: string
+  name: string
+  description: string | null
+  icon: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+export interface Service {
+  id: string
+  category_id: string | null
+  name: string
+  description: string | null
+  duration_minutes: number
+  base_price: string
+  icon: string | null
+  sort_order: number
+  is_active: boolean
+  requires_vehicle: boolean
+  category?: ServiceCategory
+}
+
+export type AppointmentStatus = 
+  | 'pending'
+  | 'confirmed'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show'
+
+export interface Appointment {
+  id: string
+  confirmation_number: string
+  customer_id: string
+  vehicle_id: string | null
+  service_id: string
+  service_name: string
+  scheduled_at: string
+  duration_minutes: number
+  status: AppointmentStatus
+  price: string
+  customer_notes: string | null
+  paid_at: string | null
+  created_at: string
+}
+
+export interface TimeSlot {
+  time: string
+  available: boolean
 }

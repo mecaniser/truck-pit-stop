@@ -9,6 +9,8 @@ from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
 from app.db.models.notification import Notification
+from app.db.models.service import ServiceCategory, Service
+from app.db.models.appointment import Appointment, AppointmentStatus
 
 __all__ = [
     "Tenant",
@@ -23,6 +25,10 @@ __all__ = [
     "Invoice",
     "Payment",
     "Notification",
+    "ServiceCategory",
+    "Service",
+    "Appointment",
+    "AppointmentStatus",
 ]
 
 

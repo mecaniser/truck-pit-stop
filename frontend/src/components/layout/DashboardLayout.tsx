@@ -43,8 +43,18 @@ export default function DashboardLayout() {
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center">
-              <Link to="/dashboard" className="text-lg sm:text-xl font-bold text-slate-800">
-                Truck Pit Stop
+              <Link to="/dashboard" className="relative text-lg sm:text-xl font-bold text-slate-800">
+                <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none">
+                  <rect x="50" y="0" width="12.5" height="4" fill="#1e293b"/>
+                  <rect x="62.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="75" y="0" width="12.5" height="4" fill="#1e293b"/>
+                  <rect x="87.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="0" y="20" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="12.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+                  <rect x="25" y="20" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="37.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+                </svg>
+                <span className="relative">Truck Pit Stop</span>
               </Link>
             </div>
 

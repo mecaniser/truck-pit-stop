@@ -21,10 +21,14 @@ const registerSchema = z.object({
   confirmPassword: z
     .string()
     .min(1, 'Please confirm your password'),
-  full_name: z
+  first_name: z
     .string()
-    .min(1, 'Full name is required')
-    .min(2, 'Name must be at least 2 characters'),
+    .min(1, 'First name is required')
+    .min(2, 'First name must be at least 2 characters'),
+  last_name: z
+    .string()
+    .min(1, 'Last name is required')
+    .min(2, 'Last name must be at least 2 characters'),
   phone: z
     .string()
     .optional()
@@ -127,26 +131,48 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* Full Name */}
-          <div>
-            <label htmlFor="full_name" className="block text-sm font-medium text-gray-700 mb-1">
-              Full Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              {...register('full_name')}
-              type="text"
-              id="full_name"
-              className={getInputClasses('full_name')}
-              placeholder="John Doe"
-            />
-            {errors.full_name && (
-              <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                {errors.full_name.message}
-              </p>
-            )}
+          {/* First Name / Last Name */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="first_name" className="block text-sm font-medium text-gray-700 mb-1">
+                First Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                {...register('first_name')}
+                type="text"
+                id="first_name"
+                className={getInputClasses('first_name')}
+                placeholder="John"
+              />
+              {errors.first_name && (
+                <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {errors.first_name.message}
+                </p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="last_name" className="block text-sm font-medium text-gray-700 mb-1">
+                Last Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                {...register('last_name')}
+                type="text"
+                id="last_name"
+                className={getInputClasses('last_name')}
+                placeholder="Doe"
+              />
+              {errors.last_name && (
+                <p className="mt-1.5 text-sm text-red-600 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {errors.last_name.message}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Email */}

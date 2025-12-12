@@ -7,7 +7,7 @@ from app.core.dependencies import get_db, get_current_active_user
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
-from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleResponse
+from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleCustomerUpdate, VehicleResponse
 
 router = APIRouter()
 
@@ -132,8 +132,11 @@ async def update_vehicle(
     vehicle_id: UUID,
     vehicle_data: VehicleUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_role(
+        UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN, UserRole.MECHANIC, UserRole.RECEPTIONIST
+    )),
 ):
+    """Staff-only full update endpoint"""
     result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
     vehicle = result.scalar_one_or_none()
     
@@ -143,7 +146,41 @@ async def update_vehicle(
             detail="Vehicle not found",
         )
     
-    # Check access
+    if current_user.tenant_id != vehicle.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+    
+    # Update fields
+    update_data = vehicle_data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(vehicle, field, value)
+    
+    await db.commit()
+    await db.refresh(vehicle)
+    
+    return VehicleResponse.model_validate(vehicle)
+
+
+@router.patch("/{vehicle_id}", response_model=VehicleResponse)
+async def customer_update_vehicle(
+    vehicle_id: UUID,
+    vehicle_data: VehicleCustomerUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Customer update endpoint - limited fields only (license plate, color, mileage, notes)"""
+    result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
+    vehicle = result.scalar_one_or_none()
+    
+    if not vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found",
+        )
+    
+    # Customers can only update their own vehicles
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or current_user.customer_id != vehicle.customer_id:
             raise HTTPException(
@@ -156,7 +193,7 @@ async def update_vehicle(
             detail="Access denied",
         )
     
-    # Update fields
+    # Update only allowed fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(vehicle, field, value)

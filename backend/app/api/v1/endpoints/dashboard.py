@@ -275,7 +275,8 @@ async def get_dashboard_stats(
         result = await db.execute(
             select(
                 User.id,
-                User.full_name,
+                User.first_name,
+                User.last_name,
                 User.email,
                 func.count(RepairOrder.id).label("assigned_count"),
                 func.count(
@@ -290,7 +291,7 @@ async def get_dashboard_stats(
                     User.is_active == True,
                 )
             )
-            .group_by(User.id, User.full_name, User.email)
+            .group_by(User.id, User.first_name, User.last_name, User.email)
         )
         mechanic_rows = result.all()
         
@@ -298,7 +299,7 @@ async def get_dashboard_stats(
             mechanic_workload.append(
                 MechanicWorkload(
                     mechanic_id=str(row.id),
-                    mechanic_name=row.full_name or row.email,
+                    mechanic_name=f"{row.first_name} {row.last_name}",
                     assigned_count=row.assigned_count or 0,
                     in_progress_count=row.in_progress_count or 0,
                 )

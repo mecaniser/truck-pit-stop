@@ -13,6 +13,7 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.inventory import Inventory
+from app.db.models.service import ServiceCategory, Service
 from app.core.security import get_password_hash
 
 
@@ -45,7 +46,8 @@ async def seed():
             id=uuid4(),
             email="admin@truckpitstop.com",
             hashed_password=get_password_hash("admin123"),
-            full_name="Admin User",
+            first_name="Admin",
+            last_name="User",
             phone="(414) 555-0001",
             role=UserRole.GARAGE_ADMIN,
             tenant_id=tenant.id,
@@ -59,7 +61,8 @@ async def seed():
             id=uuid4(),
             email="mike@truckpitstop.com",
             hashed_password=get_password_hash("mechanic123"),
-            full_name="Mike Johnson",
+            first_name="Mike",
+            last_name="Johnson",
             phone="(414) 555-0002",
             role=UserRole.MECHANIC,
             tenant_id=tenant.id,
@@ -103,7 +106,8 @@ async def seed():
             id=uuid4(),
             email="john.trucker@email.com",
             hashed_password=get_password_hash("customer123"),
-            full_name="John Trucker",
+            first_name="John",
+            last_name="Trucker",
             phone="(414) 555-1001",
             role=UserRole.CUSTOMER,
             tenant_id=tenant.id,
@@ -117,7 +121,8 @@ async def seed():
             id=uuid4(),
             email="sarah.hauler@email.com",
             hashed_password=get_password_hash("customer123"),
-            full_name="Sarah Hauler",
+            first_name="Sarah",
+            last_name="Hauler",
             phone="(414) 555-1002",
             role=UserRole.CUSTOMER,
             tenant_id=tenant.id,
@@ -501,9 +506,316 @@ async def seed():
         for item in inventory_items:
             db.add(item)
 
+        # Create Service Categories
+        cat_pm = ServiceCategory(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            name="PM Services",
+            description="Preventive maintenance to keep your fleet running",
+            icon="🔧",
+            sort_order=1,
+        )
+        db.add(cat_pm)
+
+        cat_brakes = ServiceCategory(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            name="Brakes",
+            description="Brake services and repairs",
+            icon="🛑",
+            sort_order=2,
+        )
+        db.add(cat_brakes)
+
+        cat_inspections = ServiceCategory(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            name="Inspections",
+            description="Safety and compliance inspections",
+            icon="📋",
+            sort_order=3,
+        )
+        db.add(cat_inspections)
+
+        cat_tires = ServiceCategory(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            name="Tires",
+            description="Tire services and replacements",
+            icon="🛞",
+            sort_order=4,
+        )
+        db.add(cat_tires)
+
+        cat_other = ServiceCategory(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            name="Other Services",
+            description="Additional truck services",
+            icon="🛠️",
+            sort_order=5,
+        )
+        db.add(cat_other)
+        await db.flush()
+
+        # Create Services
+        services = [
+            # PM Services
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_pm.id,
+                name="PM Service - Level A",
+                description="Basic preventive maintenance: oil change, filter replacement, fluid check, and 23-point inspection.",
+                duration_minutes=60,
+                base_price=Decimal("249.00"),
+                icon="🛢️",
+                sort_order=1,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_pm.id,
+                name="PM Service - Level B",
+                description="Comprehensive PM: oil change, all filters, fluid top-off, greasing, and 50-point inspection.",
+                duration_minutes=120,
+                base_price=Decimal("449.00"),
+                icon="⚙️",
+                sort_order=2,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_pm.id,
+                name="PM Service - Level C",
+                description="Full service PM: includes Level B plus transmission service, coolant check, and brake adjustment.",
+                duration_minutes=180,
+                base_price=Decimal("699.00"),
+                icon="🔩",
+                sort_order=3,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_pm.id,
+                name="Oil Change Only",
+                description="Quick oil and filter change with synthetic diesel oil.",
+                duration_minutes=45,
+                base_price=Decimal("189.00"),
+                icon="🛢️",
+                sort_order=4,
+            ),
+            # Brakes
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_brakes.id,
+                name="Brake Inspection",
+                description="Complete brake system inspection with detailed condition report.",
+                duration_minutes=30,
+                base_price=Decimal("59.00"),
+                icon="🔍",
+                sort_order=1,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_brakes.id,
+                name="Brake Pad Replacement - Per Axle",
+                description="Replace brake pads on one axle. Includes inspection and adjustment.",
+                duration_minutes=90,
+                base_price=Decimal("349.00"),
+                icon="🛑",
+                sort_order=2,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_brakes.id,
+                name="Full Brake Job - All Axles",
+                description="Complete brake service: pads, drums/rotors inspection, adjustment on all axles.",
+                duration_minutes=240,
+                base_price=Decimal("1299.00"),
+                icon="🔴",
+                sort_order=3,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_brakes.id,
+                name="Brake Adjustment",
+                description="Adjust and set brake slack adjusters for optimal performance.",
+                duration_minutes=45,
+                base_price=Decimal("89.00"),
+                icon="🔧",
+                sort_order=4,
+            ),
+            # Inspections
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_inspections.id,
+                name="DOT Annual Inspection",
+                description="Complete DOT annual inspection and certification. Required for compliance.",
+                duration_minutes=90,
+                base_price=Decimal("149.00"),
+                icon="✅",
+                sort_order=1,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_inspections.id,
+                name="Monthly Safety Inspection",
+                description="Comprehensive monthly inspection covering all major systems and safety equipment.",
+                duration_minutes=60,
+                base_price=Decimal("99.00"),
+                icon="📅",
+                sort_order=2,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_inspections.id,
+                name="Weekly Safety Check",
+                description="Quick weekly safety inspection: lights, tires, brakes, fluids, and walk-around.",
+                duration_minutes=30,
+                base_price=Decimal("49.00"),
+                icon="📋",
+                sort_order=3,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_inspections.id,
+                name="Pre-Trip Inspection",
+                description="Detailed pre-trip inspection before long hauls. Peace of mind on the road.",
+                duration_minutes=45,
+                base_price=Decimal("79.00"),
+                icon="🚛",
+                sort_order=4,
+            ),
+            # Tires
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_tires.id,
+                name="Tire Change - Single",
+                description="Mount and balance one new tire. Disposal of old tire included.",
+                duration_minutes=30,
+                base_price=Decimal("45.00"),
+                icon="🛞",
+                sort_order=1,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_tires.id,
+                name="Tire Change - Per Axle",
+                description="Mount and balance tires on one axle (2 or 4 tires). Disposal included.",
+                duration_minutes=60,
+                base_price=Decimal("120.00"),
+                icon="🔄",
+                sort_order=2,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_tires.id,
+                name="Tire Rotation",
+                description="Rotate tires for even wear and extended life.",
+                duration_minutes=45,
+                base_price=Decimal("79.00"),
+                icon="🔃",
+                sort_order=3,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_tires.id,
+                name="Tire Repair - Patch/Plug",
+                description="Professional tire repair. Assessment to determine if repair is safe.",
+                duration_minutes=30,
+                base_price=Decimal("35.00"),
+                icon="🔧",
+                sort_order=4,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_tires.id,
+                name="Wheel Alignment",
+                description="Full wheel alignment check and adjustment for all axles.",
+                duration_minutes=90,
+                base_price=Decimal("249.00"),
+                icon="📐",
+                sort_order=5,
+            ),
+            # Other Services
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_other.id,
+                name="Diagnostic Scan",
+                description="Computer diagnostic for check engine lights, fault codes, and system analysis.",
+                duration_minutes=30,
+                base_price=Decimal("99.00"),
+                icon="💻",
+                sort_order=1,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_other.id,
+                name="A/C Service",
+                description="A/C system inspection, leak check, and refrigerant recharge.",
+                duration_minutes=60,
+                base_price=Decimal("179.00"),
+                icon="❄️",
+                sort_order=2,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_other.id,
+                name="Battery Test & Replacement",
+                description="Load test batteries and replace if needed. Includes terminal cleaning.",
+                duration_minutes=30,
+                base_price=Decimal("49.00"),
+                icon="🔋",
+                sort_order=3,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_other.id,
+                name="DEF System Service",
+                description="DEF system inspection, fluid top-off, and filter replacement.",
+                duration_minutes=45,
+                base_price=Decimal("129.00"),
+                icon="💧",
+                sort_order=4,
+            ),
+            Service(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                category_id=cat_other.id,
+                name="DPF Cleaning",
+                description="Diesel Particulate Filter cleaning and regeneration service.",
+                duration_minutes=120,
+                base_price=Decimal("399.00"),
+                icon="🌫️",
+                sort_order=5,
+            ),
+        ]
+        
+        for svc in services:
+            db.add(svc)
+
         await db.commit()
         print("✅ Database seeded successfully!")
         print(f"\n📦 {len(inventory_items)} inventory items created")
+        print(f"🔧 {len(services)} services created in 5 categories")
         print("\nTest accounts created:")
         print("  Admin: admin@truckpitstop.com / admin123")
         print("  Mechanic: mike@truckpitstop.com / mechanic123")

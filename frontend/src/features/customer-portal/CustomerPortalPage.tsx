@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder } from '../../types'
 import { format } from 'date-fns'
+import ServicesPage from '../services/ServicesPage'
+import BookingPage from '../booking/BookingPage'
+import AppointmentsPage from '../appointments/AppointmentsPage'
+import ProfileSettingsPage from './ProfileSettingsPage'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -346,20 +350,16 @@ function CustomerRepairs() {
 }
 
 export default function CustomerPortalPage() {
-  const { user, logout } = useAuthStore()
-  const navigate = useNavigate()
+  const { user } = useAuthStore()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
-
   const navLinks = [
     { to: '/portal', label: 'Dashboard', exact: true },
-    { to: '/portal/vehicles', label: 'My Vehicles' },
-    { to: '/portal/repairs', label: 'Repair History' },
+    { to: '/portal/services', label: 'Services' },
+    { to: '/portal/appointments', label: 'Appointments' },
+    { to: '/portal/vehicles', label: 'Vehicles' },
+    { to: '/portal/repairs', label: 'History' },
   ]
 
   const isActive = (path: string, exact?: boolean) => 
@@ -368,6 +368,8 @@ export default function CustomerPortalPage() {
   const isOnSubPage = location.pathname !== '/portal'
   
   const getCurrentPageLabel = () => {
+    if (location.pathname.startsWith('/portal/book/')) return 'Book Appointment'
+    if (location.pathname === '/portal/settings') return 'Profile Settings'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
   }
@@ -379,8 +381,18 @@ export default function CustomerPortalPage() {
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center">
-              <Link to="/portal" className="text-lg sm:text-xl font-bold text-slate-800">
-                Truck Pit Stop
+              <Link to="/portal" className="relative text-lg sm:text-xl font-bold text-slate-800">
+                <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none">
+                  <rect x="50" y="0" width="12.5" height="4" fill="#1e293b"/>
+                  <rect x="62.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="75" y="0" width="12.5" height="4" fill="#1e293b"/>
+                  <rect x="87.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="0" y="20" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="12.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+                  <rect x="25" y="20" width="12.5" height="4" fill="#f59e0b"/>
+                  <rect x="37.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+                </svg>
+                <span className="relative">Truck Pit Stop</span>
               </Link>
             </div>
 
@@ -399,13 +411,19 @@ export default function CustomerPortalPage() {
                   {link.label}
                 </Link>
               ))}
-              <span className="text-sm text-gray-500 truncate max-w-32">{user?.email}</span>
-              <button
-                onClick={handleLogout}
-                className="text-sm text-gray-500 hover:text-red-600 transition-colors"
+              <Link
+                to="/portal/settings"
+                className={`p-2 rounded-full transition-colors ${
+                  location.pathname === '/portal/settings'
+                    ? 'bg-amber-100 text-amber-600'
+                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                }`}
+                title="Profile Settings"
               >
-                Logout
-              </button>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </Link>
             </div>
 
             {/* Mobile menu button */}
@@ -448,13 +466,20 @@ export default function CustomerPortalPage() {
                 </Link>
               ))}
               <div className="border-t border-gray-200 pt-3 mt-3">
-                <p className="px-3 text-sm text-gray-500 truncate">{user?.email}</p>
-                <button
-                  onClick={handleLogout}
-                  className="mt-2 w-full text-left px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition-colors"
+                <Link
+                  to="/portal/settings"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-base font-medium transition-colors ${
+                    location.pathname === '/portal/settings'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
                 >
-                  Logout
-                </button>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  Profile Settings
+                </Link>
               </div>
             </div>
           </div>
@@ -480,8 +505,12 @@ export default function CustomerPortalPage() {
         )}
         <Routes>
           <Route path="" element={<CustomerDashboard />} />
+          <Route path="services" element={<ServicesPage />} />
+          <Route path="book/:serviceId" element={<BookingPage />} />
+          <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="vehicles" element={<CustomerVehicles />} />
           <Route path="repairs" element={<CustomerRepairs />} />
+          <Route path="settings" element={<ProfileSettingsPage />} />
         </Routes>
       </main>
     </div>
