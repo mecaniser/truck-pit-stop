@@ -1,5 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pathlib import Path
+import os
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.db.session import engine
@@ -20,6 +24,37 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+
+# Serve frontend static files
+frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    # Serve static assets (JS, CSS, etc.)
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+    
+    # Serve other static files (favicon, etc.)
+    static_files = ["favicon.ico", "vite.svg", "robots.txt"]
+    for file in static_files:
+        file_path = frontend_dist / file
+        if file_path.exists():
+            @app.get(f"/{file}")
+            async def serve_static_file(filename: str = file):
+                return FileResponse(str(file_path))
+    
+    # Serve index.html for all non-API routes (SPA routing)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Don't serve index.html for API routes
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Don't serve index.html for static assets
+        if full_path.startswith("assets/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        index_path = frontend_dist / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+        raise HTTPException(status_code=404, detail="Frontend not built")
 
 
 @app.get("/")
