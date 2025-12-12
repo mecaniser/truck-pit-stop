@@ -3,13 +3,10 @@ import { useAuthStore } from './stores/authStore'
 import LoginPage from './features/auth/LoginPage'
 import RegisterPage from './features/auth/RegisterPage'
 import DashboardLayout from './components/layout/DashboardLayout'
-import CustomersPage from './features/customers/CustomersPage'
-import VehiclesPage from './features/vehicles/VehiclesPage'
-import RepairOrdersPage from './features/repair-orders/RepairOrdersPage'
 import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated } = useAuthStore()
+  const { isAuthenticated } = useAuthStore()
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />

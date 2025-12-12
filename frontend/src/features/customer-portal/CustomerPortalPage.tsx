@@ -350,7 +350,6 @@ function CustomerRepairs() {
 }
 
 export default function CustomerPortalPage() {
-  const { user } = useAuthStore()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
