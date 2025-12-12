@@ -420,14 +420,41 @@ export default function CustomerPortalPage() {
               ))}
               <Link
                 to="/portal/settings"
-                className={`p-2 rounded-full transition-colors ${
+                className={`relative p-2.5 rounded-full transition-colors ${
                   location.pathname === '/portal/settings'
                     ? 'bg-amber-100 text-amber-600'
                     : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                 }`}
                 title="Profile Settings"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
+                  <style>{`
+                    @keyframes ps1 { 0%, 100% { stroke: #1e293b } 50% { stroke: #f59e0b } }
+                    @keyframes ps2 { 0%, 100% { stroke: #f59e0b } 50% { stroke: #1e293b } }
+                    .ps1 { animation: ps1 2.5s ease-in-out infinite }
+                    .ps2 { animation: ps2 2.5s ease-in-out infinite }
+                  `}</style>
+                  {[...Array(8)].map((_, i) => {
+                    const startAngle = i * 45 - 90
+                    const endAngle = startAngle + 45
+                    const r = 17
+                    const x1 = 20 + r * Math.cos(startAngle * Math.PI / 180)
+                    const y1 = 20 + r * Math.sin(startAngle * Math.PI / 180)
+                    const x2 = 20 + r * Math.cos(endAngle * Math.PI / 180)
+                    const y2 = 20 + r * Math.sin(endAngle * Math.PI / 180)
+                    return (
+                      <path
+                        key={i}
+                        d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
+                        fill="none"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        className={i % 2 === 0 ? 'ps1' : 'ps2'}
+                      />
+                    )
+                  })}
+                </svg>
+                <svg className="w-5 h-5 relative" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </Link>

@@ -1,22 +1,17 @@
 import { useState } from 'react'
-import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import CustomersPage from '../../features/customers/CustomersPage'
 import VehiclesPage from '../../features/vehicles/VehiclesPage'
 import RepairOrdersPage from '../../features/repair-orders/RepairOrdersPage'
 import InventoryPage from '../../features/inventory/InventoryPage'
 import DashboardHome from '../../features/dashboard/DashboardHome'
+import AdminProfilePage from '../../features/dashboard/AdminProfilePage'
 
 export default function DashboardLayout() {
-  const { user, logout } = useAuthStore()
-  const navigate = useNavigate()
+  const { user } = useAuthStore()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
-  }
 
   const navLinks = [
     { to: '/dashboard', label: 'Dashboard', exact: true },
@@ -32,6 +27,7 @@ export default function DashboardLayout() {
   const isOnSubPage = location.pathname !== '/dashboard'
   
   const getCurrentPageLabel = () => {
+    if (location.pathname === '/dashboard/settings') return 'Profile Settings'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
   }
@@ -81,13 +77,46 @@ export default function DashboardLayout() {
                   {link.label}
                 </Link>
               ))}
-              <span className="text-sm text-gray-500 truncate max-w-32">{user?.email}</span>
-              <button
-                onClick={handleLogout}
-                className="text-sm text-gray-500 hover:text-red-600 transition-colors"
+              <Link
+                to="/dashboard/settings"
+                className={`relative p-2.5 rounded-full transition-colors ${
+                  location.pathname === '/dashboard/settings'
+                    ? 'bg-amber-100 text-amber-600'
+                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                }`}
+                title={`${user?.first_name} ${user?.last_name}`}
               >
-                Logout
-              </button>
+                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
+                  <style>{`
+                    @keyframes ps1 { 0%, 100% { stroke: #1e293b } 50% { stroke: #f59e0b } }
+                    @keyframes ps2 { 0%, 100% { stroke: #f59e0b } 50% { stroke: #1e293b } }
+                    .ps1 { animation: ps1 2.5s ease-in-out infinite }
+                    .ps2 { animation: ps2 2.5s ease-in-out infinite }
+                  `}</style>
+                  {[...Array(8)].map((_, i) => {
+                    const startAngle = i * 45 - 90
+                    const endAngle = startAngle + 45
+                    const r = 17
+                    const x1 = 20 + r * Math.cos(startAngle * Math.PI / 180)
+                    const y1 = 20 + r * Math.sin(startAngle * Math.PI / 180)
+                    const x2 = 20 + r * Math.cos(endAngle * Math.PI / 180)
+                    const y2 = 20 + r * Math.sin(endAngle * Math.PI / 180)
+                    return (
+                      <path
+                        key={i}
+                        d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
+                        fill="none"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        className={i % 2 === 0 ? 'ps1' : 'ps2'}
+                      />
+                    )
+                  })}
+                </svg>
+                <svg className="w-5 h-5 relative" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </Link>
             </div>
 
             {/* Mobile menu button */}
@@ -130,13 +159,20 @@ export default function DashboardLayout() {
                 </Link>
               ))}
               <div className="border-t border-gray-200 pt-3 mt-3">
-                <p className="px-3 text-sm text-gray-500 truncate">{user?.email}</p>
-                <button
-                  onClick={handleLogout}
-                  className="mt-2 w-full text-left px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition-colors"
+                <Link
+                  to="/dashboard/settings"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-base font-medium transition-colors ${
+                    location.pathname === '/dashboard/settings'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
                 >
-                  Logout
-                </button>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Profile Settings
+                </Link>
               </div>
             </div>
           </div>
@@ -165,6 +201,7 @@ export default function DashboardLayout() {
           <Route path="vehicles" element={<VehiclesPage />} />
           <Route path="repair-orders" element={<RepairOrdersPage />} />
           <Route path="inventory" element={<InventoryPage />} />
+          <Route path="settings" element={<AdminProfilePage />} />
           <Route path="" element={<DashboardHome />} />
         </Routes>
       </main>

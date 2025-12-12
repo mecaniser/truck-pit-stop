@@ -16,6 +16,7 @@ from app.db.models.tenant import Tenant
 from app.schemas.auth import UserLogin, UserRegister, UserResponse, Token
 from app.schemas.customer import CustomerCreate
 from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
 
@@ -144,5 +145,28 @@ async def refresh_token(
 async def get_current_user_info(
     current_user: User = Depends(get_current_active_user),
 ):
+    return UserResponse.model_validate(current_user)
+
+
+class UserProfileUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_current_user(
+    update_data: UserProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update current user's profile (name, phone)"""
+    data = update_data.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(current_user, field, value)
+    
+    await db.commit()
+    await db.refresh(current_user)
+    
     return UserResponse.model_validate(current_user)
 
