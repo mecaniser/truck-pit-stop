@@ -37,3 +37,4 @@ def confirm_payment_intent(payment_intent_id: str) -> stripe.PaymentIntent:
     """Confirm a payment intent"""
     return stripe.PaymentIntent.confirm(payment_intent_id)
 
+

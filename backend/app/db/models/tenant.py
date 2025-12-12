@@ -12,3 +12,4 @@ class Tenant(BaseModel):
     email = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
+

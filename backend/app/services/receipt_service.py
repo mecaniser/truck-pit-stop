@@ -54,3 +54,4 @@ def generate_receipt_pdf(payment: Payment, invoice: Invoice, repair_order: Repai
     buffer.seek(0)
     return buffer
 
+

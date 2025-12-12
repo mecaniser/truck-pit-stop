@@ -24,7 +24,12 @@ class Invoice(BaseModel):
     repair_order = relationship("RepairOrder", back_populates="invoice")
     
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
-    status = Column(SQLEnum(InvoiceStatus), nullable=False, default=InvoiceStatus.DRAFT, index=True)
+    status = Column(
+        SQLEnum(InvoiceStatus, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=InvoiceStatus.DRAFT,
+        index=True
+    )
     
     subtotal = Column(Numeric(10, 2), nullable=False)
     tax_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
@@ -36,4 +41,5 @@ class Invoice(BaseModel):
     notes = Column(Text, nullable=True)
     
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan")
+
 

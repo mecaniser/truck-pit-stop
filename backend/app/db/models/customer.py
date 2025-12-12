@@ -27,3 +27,4 @@ class Customer(BaseModel):
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     repair_orders = relationship("RepairOrder", back_populates="customer")
 
+

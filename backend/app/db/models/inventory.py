@@ -43,3 +43,4 @@ class PartsUsage(BaseModel):
     unit_price = Column(Numeric(10, 2), nullable=False)
     total_price = Column(Numeric(10, 2), nullable=False)
 
+

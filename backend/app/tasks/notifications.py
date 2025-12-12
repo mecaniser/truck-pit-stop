@@ -28,3 +28,4 @@ async def send_notification_sms(
     async with AsyncSessionLocal() as db:
         await send_sms(db, tenant_id, to, body, template_name)
 
+

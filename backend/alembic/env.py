@@ -28,7 +28,15 @@ target_metadata = Base.metadata
 
 
 def get_url():
-    return settings.DATABASE_URL.replace("+asyncpg", "")
+    # Convert async URL to sync URL for Alembic
+    url = settings.DATABASE_URL
+    # Replace asyncpg with psycopg2 for Alembic (sync operations)
+    if "+asyncpg" in url:
+        url = url.replace("+asyncpg", "")
+        # Alembic will use psycopg2 by default for postgresql:// URLs
+    elif "+aiosqlite" in url:
+        url = url.replace("+aiosqlite", "")
+    return url
 
 
 def run_migrations_offline() -> None:
@@ -68,17 +76,24 @@ async def run_async_migrations() -> None:
 
     """
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = get_url()
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
-
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
-
-    await connectable.dispose()
+    db_url = get_url()
+    
+    # Handle SQLite specially - Alembic works better with sync engine for SQLite
+    if "sqlite" in db_url:
+        from sqlalchemy import create_engine
+        connectable = create_engine(db_url, poolclass=pool.NullPool)
+        with connectable.connect() as connection:
+            do_run_migrations(connection)
+        connectable.dispose()
+        return
+    
+    # For PostgreSQL, use sync engine with psycopg2 for Alembic
+    # Alembic migrations are sync operations, so we use sync driver
+    from sqlalchemy import create_engine
+    connectable = create_engine(db_url, poolclass=pool.NullPool)
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
+    connectable.dispose()
 
 
 def run_migrations_online() -> None:

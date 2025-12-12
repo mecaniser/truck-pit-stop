@@ -169,3 +169,4 @@ async def update_customer(
     
     return CustomerResponse.model_validate(customer)
 
+

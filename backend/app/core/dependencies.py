@@ -53,3 +53,4 @@ async def get_current_active_user(
 ) -> User:
     return current_user
 
+

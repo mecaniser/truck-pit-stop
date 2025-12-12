@@ -30,7 +30,12 @@ class RepairOrder(BaseModel):
     vehicle = relationship("Vehicle", back_populates="repair_orders")
     
     order_number = Column(String(50), unique=True, nullable=False, index=True)
-    status = Column(SQLEnum(RepairOrderStatus), nullable=False, default=RepairOrderStatus.DRAFT, index=True)
+    status = Column(
+        SQLEnum(RepairOrderStatus, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=RepairOrderStatus.DRAFT,
+        index=True
+    )
     
     description = Column(Text, nullable=True)
     customer_notes = Column(Text, nullable=True)
@@ -43,12 +48,11 @@ class RepairOrder(BaseModel):
     total_labor_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     
-    quote_id = Column(UUID(as_uuid=True), ForeignKey("quotes.id"), nullable=True)
+    # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)
-    
-    invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True)
     invoice = relationship("Invoice", back_populates="repair_order", uselist=False)
     
     parts_usage = relationship("PartsUsage", back_populates="repair_order", cascade="all, delete-orphan")
     labor_items = relationship("Labor", back_populates="repair_order", cascade="all, delete-orphan")
+
 

@@ -40,3 +40,4 @@ class VehicleResponse(VehicleBase):
     class Config:
         from_attributes = True
 
+

@@ -20,7 +20,11 @@ class User(BaseModel):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     phone = Column(String(20), nullable=True)
-    role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.CUSTOMER)
+    role = Column(
+        SQLEnum(UserRole, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=UserRole.CUSTOMER
+    )
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
     
@@ -29,4 +33,5 @@ class User(BaseModel):
     
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, unique=True)
     customer = relationship("Customer", backref="user", uselist=False)
+
 

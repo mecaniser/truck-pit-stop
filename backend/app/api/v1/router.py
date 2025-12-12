@@ -8,3 +8,4 @@ api_router.include_router(customers.router, prefix="/customers", tags=["customer
 api_router.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"])
 api_router.include_router(repair_orders.router, prefix="/repair-orders", tags=["repair-orders"])
 
+

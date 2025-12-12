@@ -24,3 +24,4 @@ class Vehicle(BaseModel):
     
     repair_orders = relationship("RepairOrder", back_populates="vehicle")
 
+

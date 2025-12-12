@@ -1,4 +1,5 @@
-import { Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../lib/api'
@@ -36,13 +37,13 @@ function CustomerDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Welcome, {customer?.first_name || user?.email}</h1>
-        <p className="text-gray-600">Manage your vehicles and view repair history</p>
+        <h1 className="text-2xl font-bold text-white">Welcome, {customer?.first_name || user?.email}</h1>
+        <p className="text-gray-200">Manage your vehicles and view repair history</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-lg font-semibold mb-4">My Vehicles</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+        <div className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-6 rounded-xl shadow-lg">
+          <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-slate-800">My Vehicles</h2>
           {vehicles && vehicles.length > 0 ? (
             <ul className="space-y-2">
               {vehicles.map((vehicle) => (
@@ -65,8 +66,8 @@ function CustomerDashboard() {
           </Link>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-lg font-semibold mb-4">Recent Repairs</h2>
+        <div className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-6 rounded-xl shadow-lg">
+          <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-slate-800">Recent Repairs</h2>
           {repairOrders && repairOrders.length > 0 ? (
             <ul className="space-y-2">
               {repairOrders.slice(0, 5).map((order) => (
@@ -112,8 +113,8 @@ function CustomerVehicles() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">My Vehicles</h1>
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+      <h1 className="text-xl sm:text-2xl font-bold mb-3 sm:mb-4 text-slate-800">My Vehicles</h1>
+      <div className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 shadow-lg overflow-hidden rounded-xl">
         <ul className="divide-y divide-gray-200">
           {vehicles?.map((vehicle) => (
             <li key={vehicle.id}>
@@ -166,8 +167,8 @@ function CustomerRepairs() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Repair History</h1>
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+      <h1 className="text-xl sm:text-2xl font-bold mb-3 sm:mb-4 text-slate-800">Repair History</h1>
+      <div className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 shadow-lg overflow-hidden rounded-xl">
         <ul className="divide-y divide-gray-200">
           {orders?.map((order) => (
             <li key={order.id}>
@@ -200,56 +201,113 @@ function CustomerRepairs() {
 export default function CustomerPortalPage() {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
 
+  const navLinks = [
+    { to: '/portal', label: 'Dashboard', exact: true },
+    { to: '/portal/vehicles', label: 'My Vehicles' },
+    { to: '/portal/repairs', label: 'Repair History' },
+  ]
+
+  const isActive = (path: string, exact?: boolean) => 
+    exact ? location.pathname === path : location.pathname.startsWith(path)
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex">
-              <div className="flex-shrink-0 flex items-center">
-                <h1 className="text-xl font-bold text-gray-900">Truck Pit Stop</h1>
-              </div>
-              <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-                <Link
-                  to="/portal"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  to="/portal/vehicles"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  My Vehicles
-                </Link>
-                <Link
-                  to="/portal/repairs"
-                  className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                  Repair History
-                </Link>
-              </div>
-            </div>
+    <div className="min-h-screen">
+      <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex justify-between h-14 sm:h-16">
+            {/* Logo */}
             <div className="flex items-center">
-              <span className="text-sm text-gray-700 mr-4">{user?.email}</span>
+              <Link to="/portal" className="text-lg sm:text-xl font-bold text-slate-800">
+                Truck Pit Stop
+              </Link>
+            </div>
+
+            {/* Desktop nav */}
+            <div className="hidden md:flex md:items-center md:space-x-6">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className={`text-sm font-medium transition-colors ${
+                    isActive(link.to, link.exact)
+                      ? 'text-amber-600 border-b-2 border-amber-500'
+                      : 'text-gray-600 hover:text-amber-600'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+              <span className="text-sm text-gray-500 truncate max-w-32">{user?.email}</span>
               <button
                 onClick={handleLogout}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-gray-500 hover:text-red-600 transition-colors"
               >
                 Logout
               </button>
             </div>
+
+            {/* Mobile menu button */}
+            <div className="flex items-center md:hidden">
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none"
+                aria-label="Toggle menu"
+              >
+                {mobileMenuOpen ? (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white/95 backdrop-blur border-t border-gray-200">
+            <div className="px-4 py-3 space-y-2">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-3 py-2 rounded-lg text-base font-medium transition-colors ${
+                    isActive(link.to, link.exact)
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+              <div className="border-t border-gray-200 pt-3 mt-3">
+                <p className="px-3 text-sm text-gray-500 truncate">{user?.email}</p>
+                <button
+                  onClick={handleLogout}
+                  className="mt-2 w-full text-left px-3 py-2 rounded-lg text-base font-medium text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto">
         <Routes>
           <Route path="" element={<CustomerDashboard />} />
           <Route path="vehicles" element={<CustomerVehicles />} />
@@ -259,4 +317,5 @@ export default function CustomerPortalPage() {
     </div>
   )
 }
+
 

@@ -23,8 +23,17 @@ class Notification(BaseModel):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="notifications")
     
-    type = Column(SQLEnum(NotificationType), nullable=False, index=True)
-    status = Column(SQLEnum(NotificationStatus), nullable=False, default=NotificationStatus.PENDING, index=True)
+    type = Column(
+        SQLEnum(NotificationType, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        index=True
+    )
+    status = Column(
+        SQLEnum(NotificationStatus, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=NotificationStatus.PENDING,
+        index=True
+    )
     
     recipient_email = Column(String(255), nullable=True, index=True)
     recipient_phone = Column(String(20), nullable=True, index=True)

@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_serializer
 from typing import Optional
+from uuid import UUID
 from app.db.models.user import UserRole
 
 
@@ -27,15 +28,19 @@ class UserRegister(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str
+    id: UUID
     email: str
     full_name: Optional[str]
     phone: Optional[str]
     role: UserRole
     is_active: bool
-    tenant_id: Optional[str]
-    customer_id: Optional[str]
+    tenant_id: Optional[UUID] = None
+    customer_id: Optional[UUID] = None
     
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
+    
+    @field_serializer('id', 'tenant_id', 'customer_id')
+    def serialize_uuid(self, v: Optional[UUID]) -> Optional[str]:
+        return str(v) if v else None
+
 

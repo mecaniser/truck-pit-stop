@@ -63,12 +63,16 @@ truck-pit-stop/
 
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL (or use Railway)
-- Redis (or use Railway)
+- Docker and Docker Compose (for local PostgreSQL/Redis)
+- Or use Railway's managed services
 
 ### Backend Setup
 
 ```bash
+# Start PostgreSQL and Redis with Docker
+docker-compose up -d
+
+# Backend setup
 cd backend
 
 # Create virtual environment
@@ -78,11 +82,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Copy environment file
-cp .env.example .env
-# Edit .env with your configuration
-
-# Run migrations (after setting up database)
+# .env file is already configured for Docker setup
+# Run migrations
 alembic upgrade head
 
 # Start development server

@@ -32,12 +32,21 @@ class Payment(BaseModel):
     
     payment_number = Column(String(50), unique=True, nullable=False, index=True)
     amount = Column(Numeric(10, 2), nullable=False)
-    method = Column(SQLEnum(PaymentMethod), nullable=False)
-    status = Column(SQLEnum(PaymentStatus), nullable=False, default=PaymentStatus.PENDING, index=True)
+    method = Column(
+        SQLEnum(PaymentMethod, values_callable=lambda e: [m.value for m in e]),
+        nullable=False
+    )
+    status = Column(
+        SQLEnum(PaymentStatus, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=PaymentStatus.PENDING,
+        index=True
+    )
     
     stripe_payment_intent_id = Column(String(255), nullable=True, unique=True, index=True)
     stripe_charge_id = Column(String(255), nullable=True)
     
     notes = Column(Text, nullable=True)
     receipt_url = Column(String(500), nullable=True)
+
 
