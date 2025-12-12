@@ -20,6 +20,11 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api/v1")
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Truck Pit Stop API"}
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
