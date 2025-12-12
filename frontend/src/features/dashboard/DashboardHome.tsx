@@ -106,7 +106,7 @@ export default function DashboardHome() {
   }
 
   const getStatusCount = (status: string) => {
-    return stats?.orders_by_status.find((s) => s.status === status)?.count || 0
+    return stats?.orders_by_status?.find((s) => s.status === status)?.count || 0
   }
 
   const formatDate = (dateStr: string) => {
@@ -274,10 +274,10 @@ export default function DashboardHome() {
             </Link>
           </div>
           <div className="space-y-3">
-            {stats?.recent_orders.length === 0 ? (
+            {!stats?.recent_orders || stats.recent_orders.length === 0 ? (
               <p className="text-gray-400 text-center py-8">No repair orders yet</p>
             ) : (
-              stats?.recent_orders.slice(0, 8).map((order) => (
+              stats.recent_orders.slice(0, 8).map((order) => (
                 <Link
                   key={order.id}
                   to={`/dashboard/repair-orders/${order.id}`}
@@ -329,14 +329,14 @@ export default function DashboardHome() {
                 Inventory
               </Link>
             </div>
-            {stats?.low_stock_items.length === 0 ? (
+            {!stats?.low_stock_items || stats.low_stock_items.length === 0 ? (
               <div className="text-center py-8">
                 <div className="text-3xl mb-2">✅</div>
                 <p className="text-gray-400">All stock levels OK</p>
               </div>
             ) : (
               <div className="space-y-2">
-                {stats?.low_stock_items.map((item) => (
+                {stats.low_stock_items.map((item) => (
                   <div
                     key={item.id}
                     className="bg-red-500/10 border border-red-500/20 rounded-lg p-3"
@@ -368,24 +368,24 @@ export default function DashboardHome() {
             <div className="grid grid-cols-3 gap-2 sm:gap-4">
               <RevenueCard
                 title="Today"
-                amount={stats?.revenue.today || '0.00'}
+                amount={stats?.revenue?.today || '0.00'}
                 icon="📅"
               />
               <RevenueCard
                 title="This Week"
-                amount={stats?.revenue.this_week || '0.00'}
+                amount={stats?.revenue?.this_week || '0.00'}
                 icon="📆"
               />
               <RevenueCard
                 title="This Month"
-                amount={stats?.revenue.this_month || '0.00'}
+                amount={stats?.revenue?.this_month || '0.00'}
                 icon="🗓️"
               />
             </div>
             <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between">
               <span className="text-gray-400 text-sm">Total Paid Orders</span>
               <span className="text-white font-semibold">
-                {stats?.revenue.total_paid_orders || 0}
+                {stats?.revenue?.total_paid_orders || 0}
               </span>
             </div>
           </div>
@@ -393,14 +393,14 @@ export default function DashboardHome() {
           {/* Mechanic Workload */}
           <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
             <h2 className="text-lg font-semibold text-white mb-4">Mechanic Workload</h2>
-            {stats?.mechanic_workload.length === 0 ? (
+            {!stats?.mechanic_workload || stats.mechanic_workload.length === 0 ? (
               <div className="text-center py-8">
                 <div className="text-3xl mb-2">👥</div>
                 <p className="text-gray-400">No mechanics assigned yet</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {stats?.mechanic_workload.map((mechanic) => (
+                {stats.mechanic_workload.map((mechanic) => (
                   <div
                     key={mechanic.mechanic_id}
                     className="bg-white/5 rounded-lg p-3 border border-white/10"
@@ -576,3 +576,4 @@ function RevenueCard({
     </div>
   )
 }
+
