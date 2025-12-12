@@ -71,18 +71,26 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-6 sm:space-y-8 p-6 sm:p-8 bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 backdrop-blur rounded-xl shadow-2xl">
         <div>
-          <h2 className="relative text-center text-3xl font-extrabold text-gray-900">
-            <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 24" preserveAspectRatio="none" fill="none">
-              <rect x="50" y="0" width="12.5" height="4" fill="#1e293b"/>
-              <rect x="62.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
-              <rect x="75" y="0" width="12.5" height="4" fill="#1e293b"/>
-              <rect x="87.5" y="0" width="12.5" height="4" fill="#f59e0b"/>
-              <rect x="0" y="20" width="12.5" height="4" fill="#f59e0b"/>
-              <rect x="12.5" y="20" width="12.5" height="4" fill="#1e293b"/>
-              <rect x="25" y="20" width="12.5" height="4" fill="#f59e0b"/>
-              <rect x="37.5" y="20" width="12.5" height="4" fill="#1e293b"/>
+          <h2 className="relative text-center text-3xl font-extrabold text-gray-900 py-2">
+            <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 32" preserveAspectRatio="none" fill="none">
+              <style>{`
+                @keyframes checker { 0%, 100% { fill: #1e293b } 50% { fill: #f59e0b } }
+                @keyframes checkerAlt { 0%, 100% { fill: #f59e0b } 50% { fill: #1e293b } }
+                .t1 { animation: checker 2.5s ease-in-out infinite }
+                .t2 { animation: checkerAlt 2.5s ease-in-out infinite }
+                .b1 { animation: checker 2.5s ease-in-out infinite; animation-delay: -0.8s }
+                .b2 { animation: checkerAlt 2.5s ease-in-out infinite; animation-delay: -0.8s }
+              `}</style>
+              <rect x="50" y="0" width="12.5" height="4" className="t1"/>
+              <rect x="62.5" y="0" width="12.5" height="4" className="t2"/>
+              <rect x="75" y="0" width="12.5" height="4" className="t1"/>
+              <rect x="87.5" y="0" width="12.5" height="4" className="t2"/>
+              <rect x="0" y="28" width="12.5" height="4" className="b2"/>
+              <rect x="12.5" y="28" width="12.5" height="4" className="b1"/>
+              <rect x="25" y="28" width="12.5" height="4" className="b2"/>
+              <rect x="37.5" y="28" width="12.5" height="4" className="b1"/>
             </svg>
-            <span className="relative">Truck Pit Stop</span>
+            <span className="relative px-2">Truck Pit Stop</span>
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Sign in to your account
