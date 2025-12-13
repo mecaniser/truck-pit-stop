@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import api from '../lib/api'
 
 interface User {
   id: string
@@ -25,7 +26,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       refreshToken: null,
@@ -37,13 +38,22 @@ export const useAuthStore = create<AuthState>()(
           user,
           isAuthenticated: true,
         }),
-      logout: () =>
+      logout: async () => {
+        // Call backend to blacklist token and clear cookies
+        try {
+          if (get().isAuthenticated) {
+            await api.post('/auth/logout')
+          }
+        } catch {
+          // Ignore errors - we're logging out anyway
+        }
         set({
           user: null,
           token: null,
           refreshToken: null,
           isAuthenticated: false,
-        }),
+        })
+      },
       setUser: (user) => set({ user }),
     }),
     {

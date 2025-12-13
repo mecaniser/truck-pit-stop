@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
+    # Cookie settings
+    COOKIE_SECURE: bool = False  # Set True in production (requires HTTPS)
+    COOKIE_DOMAIN: str = ""  # Leave empty for localhost
+    COOKIE_SAMESITE: str = "lax"  # "strict", "lax", or "none"
+    
     # Stripe
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""

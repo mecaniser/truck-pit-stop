@@ -36,6 +36,8 @@ function CollapsiblePasswordChange() {
   const [isOpen, setIsOpen] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const { logout } = useAuthStore()
+  const navigate = useNavigate()
 
   const {
     register,
@@ -55,8 +57,12 @@ function CollapsiblePasswordChange() {
     },
     onSuccess: () => {
       reset()
-      setSuccessMessage('Password changed successfully!')
-      setTimeout(() => setSuccessMessage(null), 3000)
+      setSuccessMessage('Password changed! Redirecting to login...')
+      // All tokens are invalidated on password change - redirect to login
+      setTimeout(() => {
+        logout()
+        navigate('/login')
+      }, 2000)
     },
     onError: (err: any) => {
       setErrorMessage(err.response?.data?.detail || 'Failed to change password')

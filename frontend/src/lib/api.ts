@@ -6,12 +6,14 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Send cookies with every request
 })
 
-// Request interceptor to add auth token
+// Request interceptor to add auth token (fallback for non-cookie scenarios)
 api.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token
+    // Only add Authorization header if we have a token and cookies might not be set yet
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
