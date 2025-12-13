@@ -3,12 +3,150 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
 import { Customer } from '../../types'
 import PaymentMethodsCard from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
+
+function CollapsiblePasswordChange() {
+  const [isOpen, setIsOpen] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<PasswordFormData>({
+    resolver: zodResolver(passwordSchema),
+  })
+
+  const mutation = useMutation({
+    mutationFn: async (data: PasswordFormData) => {
+      await api.post('/auth/change-password', {
+        current_password: data.current_password,
+        new_password: data.new_password,
+      })
+    },
+    onSuccess: () => {
+      reset()
+      setSuccessMessage('Password changed successfully!')
+      setTimeout(() => setSuccessMessage(null), 3000)
+    },
+    onError: (err: any) => {
+      setErrorMessage(err.response?.data?.detail || 'Failed to change password')
+      setTimeout(() => setErrorMessage(null), 5000)
+    },
+  })
+
+  const inputClasses = (hasError: boolean) => {
+    const base = "w-full px-3 py-2.5 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
+    return hasError
+      ? `${base} border-red-500 focus:ring-red-500`
+      : `${base} border-white/20 focus:ring-amber-500`
+  }
+
+  return (
+    <div className="border-t border-white/10 pt-5 mt-5">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between text-left group"
+      >
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">
+            Change Password
+          </span>
+        </div>
+        <svg 
+          className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} 
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="mt-4 space-y-4">
+          {successMessage && (
+            <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-3 py-2 rounded-lg text-sm">
+              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              {successMessage}
+            </div>
+          )}
+
+          {errorMessage && (
+            <div className="flex items-center gap-2 bg-red-500/20 border border-red-500/30 text-red-400 px-3 py-2 rounded-lg text-sm">
+              <svg className="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+              {errorMessage}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1">Current Password</label>
+              <input
+                {...register('current_password')}
+                type="password"
+                className={inputClasses(!!errors.current_password)}
+                placeholder="••••••••"
+              />
+              {errors.current_password && (
+                <p className="mt-1 text-xs text-red-400">{errors.current_password.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1">New Password</label>
+              <input
+                {...register('new_password')}
+                type="password"
+                className={inputClasses(!!errors.new_password)}
+                placeholder="••••••••"
+              />
+              {errors.new_password && (
+                <p className="mt-1 text-xs text-red-400">{errors.new_password.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1">Confirm New Password</label>
+              <input
+                {...register('confirm_password')}
+                type="password"
+                className={inputClasses(!!errors.confirm_password)}
+                placeholder="••••••••"
+              />
+              {errors.confirm_password && (
+                <p className="mt-1 text-xs text-red-400">{errors.confirm_password.message}</p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={mutation.isPending}
+              className="w-full px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {mutation.isPending ? 'Changing...' : 'Change Password'}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const profileSchema = z.object({
   first_name: z.string().min(1, 'First name is required').min(2, 'Min 2 characters'),
@@ -19,7 +157,22 @@ const profileSchema = z.object({
   }),
 })
 
+const passwordSchema = z.object({
+  current_password: z.string().min(1, 'Current password is required'),
+  new_password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[A-Z]/, 'Must contain uppercase letter')
+    .regex(/[a-z]/, 'Must contain lowercase letter')
+    .regex(/[0-9]/, 'Must contain a number'),
+  confirm_password: z.string().min(1, 'Please confirm password'),
+}).refine((data) => data.new_password === data.confirm_password, {
+  message: "Passwords don't match",
+  path: ["confirm_password"],
+})
+
 type ProfileFormData = z.infer<typeof profileSchema>
+type PasswordFormData = z.infer<typeof passwordSchema>
 
 export default function ProfileSettingsPage() {
   const { user, logout } = useAuthStore()
@@ -214,8 +367,11 @@ export default function ProfileSettingsPage() {
                 'Save Changes'
               )}
             </button>
-          </div>
+            </div>
         </form>
+
+        {/* Collapsible Password Change */}
+        <CollapsiblePasswordChange />
         </div>
 
         {/* Right column: Payment Methods + Vehicles stacked */}
