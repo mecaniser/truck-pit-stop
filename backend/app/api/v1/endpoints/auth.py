@@ -18,13 +18,27 @@ from app.core.redis import (
     increment_token_version,
     blacklist_token,
     is_token_blacklisted,
+    store_password_reset_token,
+    get_email_from_reset_token,
+    delete_password_reset_token,
 )
 from app.core.config import settings
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
-from app.schemas.auth import UserLogin, UserRegister, UserResponse, Token
+from app.schemas.auth import (
+    UserLogin,
+    UserRegister,
+    UserResponse,
+    Token,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
+)
 from pydantic import BaseModel
 from typing import Optional
+import secrets
+from app.services.email_service import send_password_reset_email
 
 router = APIRouter()
 
@@ -341,4 +355,80 @@ async def change_password(
     return PasswordChangeResponse(
         message="Password changed successfully. Please log in again.",
         tokens_invalidated=True,
+    )
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+@limiter.limit("3/hour")  # Rate limit: 3 requests per hour per IP
+async def forgot_password(
+    request: Request,
+    forgot_request: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Send password reset email if user exists."""
+    # Always return success to prevent email enumeration
+    # Even if user doesn't exist, we return the same message
+    
+    result = await db.execute(select(User).where(User.email == forgot_request.email))
+    user = result.scalar_one_or_none()
+    
+    if user and user.is_active:
+        # Generate secure random token
+        reset_token = secrets.token_urlsafe(32)
+        
+        # Store token in Redis (expires in 1 hour)
+        await store_password_reset_token(forgot_request.email, reset_token, expires_in=3600)
+        
+        # Send email
+        try:
+            await send_password_reset_email(forgot_request.email, reset_token)
+        except Exception:
+            # Log error but don't reveal to user
+            pass
+    
+    # Always return same message for security
+    return ForgotPasswordResponse(
+        message="If an account exists with that email, you will receive a password reset link shortly."
+    )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse)
+@limiter.limit("5/hour")  # Rate limit: 5 requests per hour per IP
+async def reset_password(
+    request: Request,
+    reset_request: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset password using token from email."""
+    # Get email from token
+    email = await get_email_from_reset_token(reset_request.token)
+    
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+    
+    # Find user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+    
+    # Update password
+    user.hashed_password = get_password_hash(reset_request.new_password)
+    await db.commit()
+    
+    # Delete the used token
+    await delete_password_reset_token(reset_request.token)
+    
+    # Invalidate all existing tokens for this user
+    await increment_token_version(str(user.id))
+    
+    return ResetPasswordResponse(
+        message="Password reset successfully. You can now log in with your new password."
     )
