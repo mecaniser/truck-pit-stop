@@ -44,7 +44,7 @@ async def seed():
         # Create Admin User
         admin_user = User(
             id=uuid4(),
-            email="admin@truckpitstop.com",
+            email="truxpitstop@gmail.com",
             hashed_password=get_password_hash("BUse@1534"),
             first_name="Admin",
             last_name="User",
