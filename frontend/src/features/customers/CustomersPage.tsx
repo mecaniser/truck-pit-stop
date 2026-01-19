@@ -153,6 +153,14 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm)
   const [formError, setFormError] = useState<string | null>(null)
+  
+  // Detail panel state
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [isEditingInPanel, setIsEditingInPanel] = useState(false)
+  
+  // Delete confirmation state
+  const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -183,23 +191,49 @@ export default function CustomersPage() {
       const response = await api.put(`/customers/${id}`, data)
       return response.data
     },
-    onSuccess: () => {
+    onSuccess: (updatedCustomer: Customer) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
-      closeModal()
+      if (isEditingInPanel) {
+        setSelectedCustomer(updatedCustomer)
+        setIsEditingInPanel(false)
+        resetForm()
+      } else {
+        closeModal()
+      }
     },
     onError: (error: any) => {
       setFormError(error.response?.data?.detail || 'Failed to update customer')
     },
   })
 
-  const openCreateModal = () => {
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/customers/${id}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      setDeleteConfirmCustomer(null)
+      setIsDetailOpen(false)
+      setSelectedCustomer(null)
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.detail || 'Failed to delete customer')
+    },
+  })
+
+  const resetForm = () => {
     setEditingCustomer(null)
     setFormData(emptyForm)
     setFormError(null)
+  }
+
+  const openCreateModal = () => {
+    resetForm()
+    setIsEditingInPanel(false)
     setIsModalOpen(true)
   }
 
-  const openEditModal = (customer: Customer) => {
+  const populateFormFromCustomer = (customer: Customer) => {
     setEditingCustomer(customer)
     setFormData({
       first_name: customer.first_name,
@@ -215,14 +249,46 @@ export default function CustomersPage() {
       notes: customer.notes || '',
     })
     setFormError(null)
-    setIsModalOpen(true)
   }
 
   const closeModal = () => {
     setIsModalOpen(false)
-    setEditingCustomer(null)
-    setFormData(emptyForm)
-    setFormError(null)
+    resetForm()
+  }
+
+  const openDetailPanel = (customer: Customer) => {
+    setSelectedCustomer(customer)
+    setIsDetailOpen(true)
+    setIsEditingInPanel(false)
+  }
+
+  const closeDetailPanel = () => {
+    setIsDetailOpen(false)
+    setSelectedCustomer(null)
+    setIsEditingInPanel(false)
+    resetForm()
+  }
+
+  const handleEditFromDetail = () => {
+    if (selectedCustomer) {
+      populateFormFromCustomer(selectedCustomer)
+      setIsEditingInPanel(true)
+    }
+  }
+
+  const handleDeleteClick = (customer: Customer) => {
+    setDeleteConfirmCustomer(customer)
+  }
+
+  const cancelPanelEditing = () => {
+    setIsEditingInPanel(false)
+    resetForm()
+  }
+
+  const confirmDelete = () => {
+    if (deleteConfirmCustomer) {
+      deleteMutation.mutate(deleteConfirmCustomer.id)
+    }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -322,6 +388,264 @@ export default function CustomersPage() {
     }
   }
 
+  const renderCustomerForm = (onCancel: () => void) => (
+    <form onSubmit={handleSubmit} className="p-6 space-y-6">
+      {formError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {formError}
+        </div>
+      )}
+
+      {/* Name Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            First Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            name="first_name"
+            value={formData.first_name}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="John"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Last Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            name="last_name"
+            value={formData.last_name}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="Doe"
+            required
+          />
+        </div>
+      </div>
+
+      {/* Contact Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Email <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            name="email"
+            value={formData.email}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="john@example.com"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Phone
+          </label>
+          <input
+            type="tel"
+            name="phone"
+            value={formData.phone}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="(555) 123-4567"
+          />
+        </div>
+      </div>
+
+      {/* Address Section */}
+      <div className="border-t border-gray-200 pt-6">
+        <h3 className="text-sm font-semibold text-gray-900 mb-4">Billing Address</h3>
+        
+        <div className="space-y-4">
+          {/* Country first - affects other fields */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Country
+            </label>
+            <select
+              name="billing_country"
+              value={formData.billing_country}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            >
+              <option value="USA">🇺🇸 United States</option>
+              <option value="Canada">🇨🇦 Canada</option>
+              <option value="Mexico">🇲🇽 Mexico</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Address Line 1
+            </label>
+            {MAPBOX_TOKEN ? (
+              <AddressAutofill
+                accessToken={MAPBOX_TOKEN}
+                options={{
+                  country: formData.billing_country === 'USA' ? 'US' : formData.billing_country === 'Canada' ? 'CA' : 'MX',
+                  language: 'en',
+                }}
+                onRetrieve={(res) => {
+                  const feature = res.features[0]
+                  if (feature?.properties) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const props = feature.properties as any
+                    setFormData((prev) => ({
+                      ...prev,
+                      billing_address_line1: props.address_line1 || props.full_address?.split(',')[0] || prev.billing_address_line1,
+                      billing_city: props.place || props.locality || props.place_name || prev.billing_city,
+                      billing_state: props.region_code || props.region || prev.billing_state,
+                      billing_zip: props.postcode || prev.billing_zip,
+                    }))
+                  }
+                }}
+              >
+                <input
+                  type="text"
+                  name="billing_address_line1"
+                  defaultValue={formData.billing_address_line1}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, billing_address_line1: e.target.value }))}
+                  autoComplete="street-address"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  placeholder="Start typing address..."
+                />
+              </AddressAutofill>
+            ) : (
+              <input
+                type="text"
+                name="billing_address_line1"
+                value={formData.billing_address_line1}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                placeholder="123 Main Street"
+              />
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Address Line 2
+            </label>
+            <input
+              type="text"
+              name="billing_address_line2"
+              value={formData.billing_address_line2}
+              onChange={handleInputChange}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              placeholder="Suite 100, Building A"
+            />
+          </div>
+
+          {/* ZIP first for US - enables auto-fill */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {getPostalLabel()}
+                {formData.billing_country === 'USA' && (
+                  <span className="text-xs text-gray-400 ml-1">(auto-fills)</span>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  name="billing_zip"
+                  value={formData.billing_zip}
+                  onChange={handleZipChange}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  placeholder={formData.billing_country === 'USA' ? '53202' : formData.billing_country === 'Canada' ? 'A1A 1A1' : '01000'}
+                  maxLength={formData.billing_country === 'Canada' ? 7 : 5}
+                />
+                {isLookingUpZip && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg className="animate-spin w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                City
+              </label>
+              <input
+                type="text"
+                name="billing_city"
+                value={formData.billing_city}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                placeholder="Milwaukee"
+              />
+            </div>
+            <div className="col-span-2 sm:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {getRegionLabel()}
+              </label>
+              <select
+                name="billing_state"
+                value={formData.billing_state}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              >
+                {getRegions().map((region) => (
+                  <option key={region.code} value={region.code}>
+                    {region.code ? `${region.code} - ${region.name}` : region.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Notes
+        </label>
+        <textarea
+          name="notes"
+          value={formData.notes}
+          onChange={handleInputChange}
+          rows={3}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+          placeholder="Any additional notes about this customer..."
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={createMutation.isPending || updateMutation.isPending}
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+        >
+          {(createMutation.isPending || updateMutation.isPending) && (
+            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          )}
+          {editingCustomer ? 'Save Changes' : 'Add Customer'}
+        </button>
+      </div>
+    </form>
+  )
+
   const filteredCustomers = useMemo(() => {
     if (!customers || !searchQuery.trim()) return customers
 
@@ -415,7 +739,7 @@ export default function CustomersPage() {
         {filteredCustomers?.map((customer) => (
           <div 
             key={customer.id}
-            onClick={() => openEditModal(customer)}
+            onClick={() => openDetailPanel(customer)}
             className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
           >
             <div>
@@ -459,11 +783,11 @@ export default function CustomersPage() {
               <button 
                 onClick={(e) => {
                   e.stopPropagation()
-                  openEditModal(customer)
+                  openDetailPanel(customer)
                 }}
                 className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors"
               >
-                Edit Profile →
+                View Details →
               </button>
             </div>
           </div>
@@ -524,261 +848,241 @@ export default function CustomersPage() {
               </div>
 
               {/* Form */}
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                {formError && (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                    {formError}
-                  </div>
-                )}
+              {renderCustomerForm(closeModal)}
+            </div>
+          </div>
+        </div>
+      )}
 
-                {/* Name Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      First Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="first_name"
-                      value={formData.first_name}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                      placeholder="John"
-                      required
-                    />
+      {/* Customer Detail Slide-out Panel */}
+      {isDetailOpen && selectedCustomer && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+            onClick={closeDetailPanel}
+          />
+          
+          {/* Panel */}
+          <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl flex flex-col animate-slide-in-right">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-8 text-white">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">
+                    <span className="text-2xl font-bold">
+                      {selectedCustomer.first_name.charAt(0)}{selectedCustomer.last_name.charAt(0)}
+                    </span>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Last Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="last_name"
-                      value={formData.last_name}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                      placeholder="Doe"
-                      required
-                    />
+                    <h2 className="text-2xl font-bold">
+                      {selectedCustomer.first_name} {selectedCustomer.last_name}
+                    </h2>
+                    <p className="text-amber-100 text-sm mt-1">Customer since {new Date(selectedCustomer.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
+                <button
+                  onClick={closeDetailPanel}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
 
-                {/* Contact Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                      placeholder="john@example.com"
-                      required
-                    />
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto">
+              {isEditingInPanel ? (
+                <div className="p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide">Editing</p>
+                      <h3 className="text-xl font-bold text-gray-900">Customer Details</h3>
+                    </div>
+                    <button
+                      onClick={cancelPanelEditing}
+                      className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                      placeholder="(555) 123-4567"
-                    />
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                    {renderCustomerForm(cancelPanelEditing)}
                   </div>
                 </div>
-
-                {/* Address Section */}
-                <div className="border-t border-gray-200 pt-6">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-4">Billing Address</h3>
-                  
-                  <div className="space-y-4">
-                    {/* Country first - affects other fields */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Country
-                      </label>
-                      <select
-                        name="billing_country"
-                        value={formData.billing_country}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                      >
-                        <option value="USA">🇺🇸 United States</option>
-                        <option value="Canada">🇨🇦 Canada</option>
-                        <option value="Mexico">🇲🇽 Mexico</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Address Line 1
-                      </label>
-                      {MAPBOX_TOKEN ? (
-                        <AddressAutofill
-                          accessToken={MAPBOX_TOKEN}
-                          options={{
-                            country: formData.billing_country === 'USA' ? 'US' : formData.billing_country === 'Canada' ? 'CA' : 'MX',
-                            language: 'en',
-                          }}
-                          onRetrieve={(res) => {
-                            const feature = res.features[0]
-                            if (feature?.properties) {
-                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                              const props = feature.properties as any
-                              setFormData((prev) => ({
-                                ...prev,
-                                billing_address_line1: props.address_line1 || props.full_address?.split(',')[0] || prev.billing_address_line1,
-                                billing_city: props.place || props.locality || props.place_name || prev.billing_city,
-                                billing_state: props.region_code || props.region || prev.billing_state,
-                                billing_zip: props.postcode || prev.billing_zip,
-                              }))
-                            }
-                          }}
-                        >
-                          <input
-                            type="text"
-                            name="billing_address_line1"
-                            defaultValue={formData.billing_address_line1}
-                            onChange={(e) => setFormData((prev) => ({ ...prev, billing_address_line1: e.target.value }))}
-                            autoComplete="street-address"
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                            placeholder="Start typing address..."
-                          />
-                        </AddressAutofill>
-                      ) : (
-                        <input
-                          type="text"
-                          name="billing_address_line1"
-                          value={formData.billing_address_line1}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          placeholder="123 Main Street"
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Address Line 2
-                      </label>
-                      <input
-                        type="text"
-                        name="billing_address_line2"
-                        value={formData.billing_address_line2}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                        placeholder="Suite 100, Building A"
-                      />
-                    </div>
-
-                    {/* ZIP first for US - enables auto-fill */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          {getPostalLabel()}
-                          {formData.billing_country === 'USA' && (
-                            <span className="text-xs text-gray-400 ml-1">(auto-fills)</span>
-                          )}
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            name="billing_zip"
-                            value={formData.billing_zip}
-                            onChange={handleZipChange}
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                            placeholder={formData.billing_country === 'USA' ? '53202' : formData.billing_country === 'Canada' ? 'A1A 1A1' : '01000'}
-                            maxLength={formData.billing_country === 'Canada' ? 7 : 5}
-                          />
-                          {isLookingUpZip && (
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                              <svg className="animate-spin w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                              </svg>
-                            </div>
-                          )}
+              ) : (
+                <div className="p-6 space-y-6">
+                  {/* Contact Information */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact Information</h3>
+                    <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                          <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Email</p>
+                          <a href={`mailto:${selectedCustomer.email}`} className="text-gray-900 hover:text-amber-600 font-medium">
+                            {selectedCustomer.email}
+                          </a>
                         </div>
                       </div>
-                      <div className="col-span-2 sm:col-span-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          City
-                        </label>
-                        <input
-                          type="text"
-                          name="billing_city"
-                          value={formData.billing_city}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          placeholder="Milwaukee"
-                        />
+                      {selectedCustomer.phone && (
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Phone</p>
+                            <a href={`tel:${selectedCustomer.phone}`} className="text-gray-900 hover:text-amber-600 font-medium">
+                              {selectedCustomer.phone}
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Billing Address */}
+                  {(selectedCustomer.billing_address_line1 || selectedCustomer.billing_city) && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Billing Address</h3>
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </div>
+                          <div className="text-gray-900">
+                            {selectedCustomer.billing_address_line1 && <p>{selectedCustomer.billing_address_line1}</p>}
+                            {selectedCustomer.billing_address_line2 && <p>{selectedCustomer.billing_address_line2}</p>}
+                            <p>
+                              {[selectedCustomer.billing_city, selectedCustomer.billing_state, selectedCustomer.billing_zip]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </p>
+                            {selectedCustomer.billing_country && <p>{selectedCustomer.billing_country}</p>}
+                          </div>
+                        </div>
                       </div>
-                      <div className="col-span-2 sm:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          {getRegionLabel()}
-                        </label>
-                        <select
-                          name="billing_state"
-                          value={formData.billing_state}
-                          onChange={handleInputChange}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                        >
-                          {getRegions().map((region) => (
-                            <option key={region.code} value={region.code}>
-                              {region.code ? `${region.code} - ${region.name}` : region.name}
-                            </option>
-                          ))}
-                        </select>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {selectedCustomer.notes && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Notes</h3>
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-gray-700 whitespace-pre-wrap">{selectedCustomer.notes}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quick Stats - Placeholder for future */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Activity</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-gray-900">0</p>
+                        <p className="text-xs text-gray-500">Vehicles</p>
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center">
+                        <p className="text-2xl font-bold text-gray-900">0</p>
+                        <p className="text-xs text-gray-500">Repair Orders</p>
                       </div>
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
 
-                {/* Notes */}
+            {/* Footer Actions */}
+            {!isEditingInPanel && (
+              <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => handleDeleteClick(selectedCustomer)}
+                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Delete
+                  </button>
+                  <button
+                    onClick={handleEditFromDetail}
+                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit Customer
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmCustomer && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            {/* Backdrop */}
+            <div 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setDeleteConfirmCustomer(null)}
+            />
+            
+            {/* Modal */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleInputChange}
-                    rows={3}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
-                    placeholder="Any additional notes about this customer..."
-                  />
+                  <h3 className="text-lg font-bold text-gray-900">Delete Customer</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
                 </div>
+              </div>
+              
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete <span className="font-semibold">{deleteConfirmCustomer.first_name} {deleteConfirmCustomer.last_name}</span>? 
+                All associated data will be permanently removed.
+              </p>
 
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={createMutation.isPending || updateMutation.isPending}
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    {(createMutation.isPending || updateMutation.isPending) && (
-                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                    )}
-                    {editingCustomer ? 'Save Changes' : 'Add Customer'}
-                  </button>
-                </div>
-              </form>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setDeleteConfirmCustomer(null)}
+                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleteMutation.isPending}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {deleteMutation.isPending && (
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  )}
+                  Delete Customer
+                </button>
+              </div>
             </div>
           </div>
         </div>
