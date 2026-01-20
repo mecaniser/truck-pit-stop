@@ -11,6 +11,7 @@
     "start": "serve -s dist -l ${PORT:-3000}"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.9",
     "@hookform/resolvers": "^3.3.2",
     "@mapbox/search-js-react": "^1.5.1",
     "@stripe/react-stripe-js": "^2.4.0",
