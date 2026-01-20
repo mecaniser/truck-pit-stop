@@ -4,9 +4,9 @@ import api from '../../lib/api'
 import { Customer, RepairOrder, Vehicle } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus } from 'lucide-react'
-
-const CURRENT_YEAR = new Date().getFullYear()
-const YEAR_OPTIONS = Array.from({ length: CURRENT_YEAR - 1899 + 1 }, (_, i) => CURRENT_YEAR - i)
+import YearPicker from '../../components/YearPicker'
+import VehicleMakePicker from '../../components/VehicleMakePicker'
+import CustomerSelect from '../../components/CustomerSelect'
 
 interface NewCustomerForm {
   first_name: string
@@ -440,30 +440,21 @@ export default function RepairOrdersPage() {
                       <div className="flex items-end gap-3">
                         <div className="flex-1">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
-                          <select
+                          <CustomerSelect
+                            customers={customers || []}
                             value={selectedCustomerId}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              if (value === 'add_new') {
+                            onChange={(val) => {
+                              if (val === 'add_new') {
                                 setSelectedCustomerId('add_new')
                                 setSelectedVehicleId('')
                                 setShowNewVehicleForm(true)
                                 return
                               }
-                              setSelectedCustomerId(value)
+                              setSelectedCustomerId(val)
                               setSelectedVehicleId('')
                               setShowNewVehicleForm(false)
                             }}
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          >
-                            <option value="">Choose a customer</option>
-                            {customers?.map((customer) => (
-                              <option key={customer.id} value={customer.id}>
-                                {customer.first_name} {customer.last_name} ({customer.email})
-                              </option>
-                            ))}
-                            <option value="add_new">+ Add new customer</option>
-                          </select>
+                          />
                         </div>
                         <button
                           type="button"
@@ -522,16 +513,10 @@ export default function RepairOrdersPage() {
 
                       {(showNewVehicleForm || selectedCustomerId === 'add_new') && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
-                            <input
-                              name="make"
-                              value={newVehicle.make}
-                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, make: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                              placeholder="Peterbilt"
-                            />
-                          </div>
+                          <VehicleMakePicker
+                            value={newVehicle.make}
+                            onChange={(make) => setNewVehicle((prev) => ({ ...prev, make }))}
+                          />
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
                             <input
@@ -542,22 +527,10 @@ export default function RepairOrdersPage() {
                               placeholder="579, Cascadia..."
                             />
                           </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                            <select
-                              name="year"
-                              value={newVehicle.year}
-                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, year: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                            >
-                              <option value="">Select year</option>
-                              {YEAR_OPTIONS.slice(0, 30).map((year) => (
-                                <option key={year} value={year.toString()}>
-                                  {year}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                          <YearPicker
+                            value={newVehicle.year}
+                            onChange={(year) => setNewVehicle((prev) => ({ ...prev, year }))}
+                          />
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
                             <input
@@ -574,7 +547,7 @@ export default function RepairOrdersPage() {
                               name="license_plate"
                               value={newVehicle.license_plate}
                               onChange={(e) => setNewVehicle((prev) => ({ ...prev, license_plate: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus-border-amber-500 transition-colors"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                               placeholder="TRK-1234"
                             />
                           </div>
@@ -585,7 +558,7 @@ export default function RepairOrdersPage() {
                               name="mileage"
                               value={newVehicle.mileage}
                               onChange={(e) => setNewVehicle((prev) => ({ ...prev, mileage: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus-border-amber-500 transition-colors"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                               placeholder="450000"
                             />
                           </div>
@@ -636,16 +609,10 @@ export default function RepairOrdersPage() {
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
-                        <input
-                          name="make"
-                          value={newVehicle.make}
-                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, make: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          placeholder="Peterbilt"
-                        />
-                      </div>
+                      <VehicleMakePicker
+                        value={newVehicle.make}
+                        onChange={(make) => setNewVehicle((prev) => ({ ...prev, make }))}
+                      />
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
                         <input
@@ -656,22 +623,10 @@ export default function RepairOrdersPage() {
                           placeholder="579, Cascadia..."
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
-                        <select
-                          name="year"
-                          value={newVehicle.year}
-                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, year: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                        >
-                          <option value="">Select year</option>
-                          {YEAR_OPTIONS.slice(0, 30).map((year) => (
-                            <option key={year} value={year.toString()}>
-                              {year}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <YearPicker
+                        value={newVehicle.year}
+                        onChange={(year) => setNewVehicle((prev) => ({ ...prev, year }))}
+                      />
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
                         <input
