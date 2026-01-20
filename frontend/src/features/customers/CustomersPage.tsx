@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AddressAutofill } from '@mapbox/search-js-react'
 import api from '../../lib/api'
-import { Customer } from '../../types'
+import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
@@ -171,6 +171,33 @@ export default function CustomersPage() {
       return response.data
     },
   })
+  
+  const { data: customerVehicles, isLoading: isLoadingVehicles } = useQuery<Vehicle[]>({
+    queryKey: ['customerVehicles', selectedCustomer?.id],
+    queryFn: async () => {
+      if (!selectedCustomer?.id) return []
+      const response = await api.get('/vehicles', { params: { customer_id: selectedCustomer.id } })
+      return response.data
+    },
+    enabled: !!selectedCustomer?.id && isDetailOpen,
+  })
+
+  const { data: customerRepairOrders, isLoading: isLoadingOrders } = useQuery<RepairOrder[]>({
+    queryKey: ['customerRepairOrders', selectedCustomer?.id],
+    queryFn: async () => {
+      if (!selectedCustomer?.id) return []
+      const response = await api.get('/repair_orders', { params: { customer_id: selectedCustomer.id } })
+      return response.data
+    },
+    enabled: !!selectedCustomer?.id && isDetailOpen,
+  })
+
+  const OPEN_ORDER_STATUSES: RepairOrderStatus[] = [
+    'draft',
+    'quoted',
+    'approved',
+    'in_progress',
+  ]
 
   const createMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
@@ -387,6 +414,15 @@ export default function CustomersPage() {
         return 'ZIP'
     }
   }
+
+  const vehicleCount = customerVehicles?.length || 0
+
+  const repairOrderStats = useMemo(() => {
+    const total = customerRepairOrders?.length || 0
+    const open = customerRepairOrders?.filter((ro) => OPEN_ORDER_STATUSES.includes(ro.status)).length || 0
+    const completed = customerRepairOrders?.filter((ro) => ro.status === 'completed' || ro.status === 'paid' || ro.status === 'invoiced').length || 0
+    return { total, open, completed }
+  }, [customerRepairOrders])
 
   const renderCustomerForm = (onCancel: () => void) => (
     <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -986,17 +1022,59 @@ export default function CustomersPage() {
                     </div>
                   )}
 
-                  {/* Quick Stats - Placeholder for future */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Vehicles</h3>
+                      {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
+                    </div>
+                    {customerVehicles && customerVehicles.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {customerVehicles.map((vehicle) => (
+                          <div key={vehicle.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-sm font-semibold text-gray-900">
+                                {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
+                              </p>
+                              {vehicle.license_plate && (
+                                <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded-full px-2 py-1">
+                                  {vehicle.license_plate}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-600 space-y-1">
+                              <p>VIN: {vehicle.vin || '—'}</p>
+                              <p>Mileage: {typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : '—'}</p>
+                              <p>Color: {vehicle.color || '—'}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-500 border border-gray-100">
+                        No vehicles on file for this customer.
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Activity</h3>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-gray-50 rounded-xl p-4 text-center">
-                        <p className="text-2xl font-bold text-gray-900">0</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {isLoadingVehicles ? '—' : vehicleCount}
+                        </p>
                         <p className="text-xs text-gray-500">Vehicles</p>
                       </div>
-                      <div className="bg-gray-50 rounded-xl p-4 text-center">
-                        <p className="text-2xl font-bold text-gray-900">0</p>
+                      <div className="bg-gray-50 rounded-xl p-4 text-center space-y-1">
+                        <p className="text-2xl font-bold text-gray-900">
+                          {isLoadingOrders ? '—' : repairOrderStats.total}
+                        </p>
                         <p className="text-xs text-gray-500">Repair Orders</p>
+                        {!isLoadingOrders && (
+                          <p className="text-[11px] text-gray-500">
+                            {repairOrderStats.open} open · {repairOrderStats.completed} completed
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
