@@ -1,18 +1,129 @@
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { RepairOrder } from '../../types'
+import { Customer, RepairOrder, Vehicle } from '../../types'
 import { format } from 'date-fns'
+import { ArrowRight, Plus } from 'lucide-react'
+
+const CURRENT_YEAR = new Date().getFullYear()
+const YEAR_OPTIONS = Array.from({ length: CURRENT_YEAR - 1899 + 1 }, (_, i) => CURRENT_YEAR - i)
+
+interface NewCustomerForm {
+  first_name: string
+  last_name: string
+  email: string
+  phone: string
+}
+
+interface NewVehicleForm {
+  make: string
+  model: string
+  year: string
+  vin: string
+  license_plate: string
+  mileage: string
+}
 
 export default function RepairOrdersPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
+  const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
+  const [description, setDescription] = useState('')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [newCustomer, setNewCustomer] = useState<NewCustomerForm>({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+  })
+  const [newVehicle, setNewVehicle] = useState<NewVehicleForm>({
+    make: '',
+    model: '',
+    year: '',
+    vin: '',
+    license_plate: '',
+    mileage: '',
+  })
+
+  const queryClient = useQueryClient()
 
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
     queryFn: async () => {
       const response = await api.get('/repair-orders')
       return response.data
+    },
+  })
+
+  const { data: customers } = useQuery<Customer[]>({
+    queryKey: ['customers'],
+    queryFn: async () => {
+      const response = await api.get('/customers')
+      return response.data
+    },
+  })
+
+  const { data: vehicles } = useQuery<Vehicle[]>({
+    queryKey: ['vehicles'],
+    queryFn: async () => {
+      const response = await api.get('/vehicles')
+      return response.data
+    },
+  })
+
+  const filteredVehicles = useMemo(() => {
+    if (!vehicles) return []
+    if (selectedCustomerId) {
+      return vehicles.filter((v) => v.customer_id === selectedCustomerId)
+    }
+    return []
+  }, [vehicles, selectedCustomerId])
+
+  const createCustomerMutation = useMutation({
+    mutationFn: async (payload: NewCustomerForm) => {
+      const response = await api.post('/customers', payload)
+      return response.data as Customer
+    },
+  })
+
+  const createVehicleMutation = useMutation({
+    mutationFn: async ({ customer_id, data }: { customer_id: string; data: NewVehicleForm }) => {
+      const payload = {
+        customer_id,
+        make: data.make.trim(),
+        model: data.model.trim(),
+        year: data.year ? Number(data.year) : null,
+        vin: data.vin.trim() || null,
+        license_plate: data.license_plate.trim() || null,
+        color: null,
+        mileage: data.mileage ? Number(data.mileage) : null,
+        notes: null,
+      }
+      const response = await api.post('/vehicles', payload)
+      return response.data as Vehicle
+    },
+  })
+
+  const createRepairOrderMutation = useMutation({
+    mutationFn: async ({ customer_id, vehicle_id, description: roDescription }: { customer_id: string; vehicle_id: string; description: string }) => {
+      const response = await api.post('/repair-orders', {
+        customer_id,
+        vehicle_id,
+        description: roDescription || null,
+      })
+      return response.data as RepairOrder
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      closeModal()
+    },
+    onError: (error: any) => {
+      setFormError(error.response?.data?.detail || 'Failed to create repair order')
     },
   })
 
@@ -65,11 +176,104 @@ export default function RepairOrdersPage() {
     { value: 'paid', label: 'Paid' },
   ]
 
+  const resetModal = () => {
+    setSelectedCustomerId('')
+    setSelectedVehicleId('')
+    setShowNewVehicleForm(false)
+    setDescription('')
+    setFormError(null)
+    setNewCustomer({ first_name: '', last_name: '', email: '', phone: '' })
+    setNewVehicle({ make: '', model: '', year: '', vin: '', license_plate: '', mileage: '' })
+  }
+
+  const openModal = () => {
+    resetModal()
+    setIsModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setIsModalOpen(false)
+    resetModal()
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFormError(null)
+
+    try {
+      let finalCustomerId = selectedCustomerId
+      let finalVehicleId = selectedVehicleId
+      const isNewCustomer = selectedCustomerId === 'add_new'
+
+      // New customer flow
+      if (isNewCustomer) {
+        if (!newCustomer.first_name.trim() || !newCustomer.last_name.trim() || !newCustomer.email.trim()) {
+          setFormError('New customer requires first name, last name, and email.')
+          return
+        }
+        const createdCustomer = await createCustomerMutation.mutateAsync({
+          first_name: newCustomer.first_name.trim(),
+          last_name: newCustomer.last_name.trim(),
+          email: newCustomer.email.trim(),
+          phone: newCustomer.phone.trim(),
+        })
+        finalCustomerId = createdCustomer.id
+      } else if (!finalCustomerId) {
+        setFormError('Select a customer or create a new one.')
+        return
+      }
+
+      // Vehicle selection can override customer
+      const shouldCreateVehicle = isNewCustomer || showNewVehicleForm || !selectedVehicleId
+
+      if (shouldCreateVehicle) {
+        if (!finalCustomerId) {
+          setFormError('A customer is required to add a vehicle.')
+          return
+        }
+        if (!newVehicle.make.trim() || !newVehicle.model.trim()) {
+          setFormError('New vehicle requires make and model.')
+          return
+        }
+        const createdVehicle = await createVehicleMutation.mutateAsync({
+          customer_id: finalCustomerId,
+          data: newVehicle,
+        })
+        finalVehicleId = createdVehicle.id
+        finalCustomerId = createdVehicle.customer_id
+      } else {
+        const vehicle = vehicles?.find((v) => v.id === selectedVehicleId)
+        if (!vehicle) {
+          setFormError('Selected vehicle not found.')
+          return
+        }
+        finalVehicleId = vehicle.id
+        finalCustomerId = vehicle.customer_id
+      }
+
+      if (!finalCustomerId || !finalVehicleId) {
+        setFormError('Customer and vehicle are required.')
+        return
+      }
+
+      await createRepairOrderMutation.mutateAsync({
+        customer_id: finalCustomerId,
+        vehicle_id: finalVehicleId,
+        description,
+      })
+    } catch (err: any) {
+      setFormError(err.response?.data?.detail || 'Failed to create repair order')
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
         <h1 className="text-xl sm:text-2xl font-bold text-white">Repair Orders</h1>
-        <button className="mt-3 sm:mt-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors">
+        <button 
+          onClick={openModal}
+          className="mt-3 sm:mt-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
+        >
           + New Repair Order
         </button>
       </div>
@@ -160,8 +364,9 @@ export default function RepairOrdersPage() {
               </div>
 
               <div className="pt-3 border-t border-amber-200/50">
-                <button className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors">
-                  View Details →
+                <button className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1">
+                  View Details
+                  <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -169,6 +374,7 @@ export default function RepairOrdersPage() {
         })}
 
         <div 
+          onClick={openModal}
           className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
         >
           <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
@@ -189,6 +395,355 @@ export default function RepairOrdersPage() {
       {(!orders || orders.length === 0) && !searchQuery && statusFilter === 'all' && (
         <div className="text-center py-12 text-white/70">
           No repair orders found. Create your first repair order to get started.
+        </div>
+      )}
+
+      {/* New Repair Order Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={closeModal}
+            />
+            
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-gray-900">New Repair Order</h2>
+                  <button
+                    onClick={closeModal}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                {formError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    {formError}
+                  </div>
+                )}
+
+                {/* Customer + Vehicle */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Customer & Vehicle</h3>
+                  </div>
+
+                  {selectedCustomerId !== 'add_new' ? (
+                    <div className="space-y-4">
+                      <div className="flex items-end gap-3">
+                        <div className="flex-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
+                          <select
+                            value={selectedCustomerId}
+                            onChange={(e) => {
+                              const value = e.target.value
+                              if (value === 'add_new') {
+                                setSelectedCustomerId('add_new')
+                                setSelectedVehicleId('')
+                                setShowNewVehicleForm(true)
+                                return
+                              }
+                              setSelectedCustomerId(value)
+                              setSelectedVehicleId('')
+                              setShowNewVehicleForm(false)
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          >
+                            <option value="">Choose a customer</option>
+                            {customers?.map((customer) => (
+                              <option key={customer.id} value={customer.id}>
+                                {customer.first_name} {customer.last_name} ({customer.email})
+                              </option>
+                            ))}
+                            <option value="add_new">+ Add new customer</option>
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCustomerId('add_new')
+                            setSelectedVehicleId('')
+                            setShowNewVehicleForm(true)
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add customer
+                        </button>
+                      </div>
+
+                      {selectedCustomerId && selectedCustomerId !== 'add_new' && (
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-800 mb-2">Vehicles for this customer</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {filteredVehicles.map((vehicle) => {
+                              const selected = selectedVehicleId === vehicle.id
+                              return (
+                                <button
+                                  key={vehicle.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedVehicleId(vehicle.id)
+                                    setShowNewVehicleForm(false)
+                                  }}
+                                  className={`w-full text-left p-4 rounded-lg border transition-all ${
+                                    selected
+                                      ? 'border-amber-500 ring-2 ring-amber-200 bg-white'
+                                      : 'border-gray-200 bg-white/60 hover:border-amber-300'
+                                  }`}
+                                >
+                                  <div className="text-xs text-slate-500 mb-1">{vehicle.year || 'Year'}</div>
+                                  <div className="text-sm font-semibold text-slate-900">{vehicle.make} {vehicle.model}</div>
+                                  <div className="text-xs text-slate-600 mt-1">{vehicle.license_plate || 'No plate'}</div>
+                                </button>
+                              )
+                            })}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedVehicleId('')
+                                setShowNewVehicleForm(true)
+                              }}
+                              className="w-full p-4 rounded-lg border-2 border-dashed border-gray-300 text-center text-sm text-amber-600 hover:border-amber-400 hover:bg-amber-50 transition-colors"
+                            >
+                              + Add new vehicle
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {(showNewVehicleForm || selectedCustomerId === 'add_new') && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
+                            <input
+                              name="make"
+                              value={newVehicle.make}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, make: e.target.value }))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                              placeholder="Peterbilt"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                            <input
+                              name="model"
+                              value={newVehicle.model}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, model: e.target.value }))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                              placeholder="579, Cascadia..."
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                            <select
+                              name="year"
+                              value={newVehicle.year}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, year: e.target.value }))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                            >
+                              <option value="">Select year</option>
+                              {YEAR_OPTIONS.slice(0, 30).map((year) => (
+                                <option key={year} value={year.toString()}>
+                                  {year}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+                            <input
+                              name="vin"
+                              value={newVehicle.vin}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, vin: e.target.value }))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                              placeholder="1XPBDP9X8JD123456"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Plate</label>
+                            <input
+                              name="license_plate"
+                              value={newVehicle.license_plate}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, license_plate: e.target.value }))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus-border-amber-500 transition-colors"
+                              placeholder="TRK-1234"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Mileage</label>
+                            <input
+                              type="number"
+                              name="mileage"
+                              value={newVehicle.mileage}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, mileage: e.target.value }))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus-border-amber-500 transition-colors"
+                              placeholder="450000"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                        <input
+                          name="first_name"
+                          value={newCustomer.first_name}
+                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, first_name: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="Acme"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name / Company</label>
+                        <input
+                          name="last_name"
+                          value={newCustomer.last_name}
+                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, last_name: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="Logistics"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          name="email"
+                          value={newCustomer.email}
+                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, email: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="fleet@acme.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                        <input
+                          name="phone"
+                          value={newCustomer.phone}
+                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, phone: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="(555) 123-4567"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Make</label>
+                        <input
+                          name="make"
+                          value={newVehicle.make}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, make: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="Peterbilt"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                        <input
+                          name="model"
+                          value={newVehicle.model}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, model: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="579, Cascadia..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                        <select
+                          name="year"
+                          value={newVehicle.year}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, year: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                        >
+                          <option value="">Select year</option>
+                          {YEAR_OPTIONS.slice(0, 30).map((year) => (
+                            <option key={year} value={year.toString()}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+                        <input
+                          name="vin"
+                          value={newVehicle.vin}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, vin: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="1XPBDP9X8JD123456"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Plate</label>
+                        <input
+                          name="license_plate"
+                          value={newVehicle.license_plate}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, license_plate: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="TRK-1234"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Mileage</label>
+                        <input
+                          type="number"
+                          name="mileage"
+                          value={newVehicle.mileage}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, mileage: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="450000"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Order details */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description / Work requested</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+                    placeholder="Briefly describe the repair work or concern..."
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createRepairOrderMutation.isPending || createCustomerMutation.isPending || createVehicleMutation.isPending}
+                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {(createRepairOrderMutation.isPending || createCustomerMutation.isPending || createVehicleMutation.isPending) && (
+                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    )}
+                    Create Repair Order
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
     </div>
