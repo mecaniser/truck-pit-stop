@@ -27,6 +27,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const resetSuccess = searchParams.get('reset') === 'success'
+  const defaultEmail = import.meta.env.DEV ? 'truxpitstop@gmail.com' : ''
+  const defaultPassword = import.meta.env.DEV ? 'BUse@1534' : ''
 
   const {
     register,
@@ -35,6 +37,10 @@ export default function LoginPage() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     mode: 'onBlur',
+    defaultValues: {
+      email: defaultEmail,
+      password: defaultPassword,
+    },
   })
 
   const onSubmit = async (data: LoginFormData) => {
