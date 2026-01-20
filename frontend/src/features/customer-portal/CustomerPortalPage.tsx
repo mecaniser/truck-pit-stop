@@ -9,7 +9,6 @@ import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
-import { CheckCircle, ClipboardList, Truck, Wrench } from 'lucide-react'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -74,7 +73,7 @@ function CustomerDashboard() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center text-2xl">
-              <Truck className="w-7 h-7 text-cyan-200" />
+              🚛
             </div>
             <div>
               <div className="text-2xl font-bold text-white">{vehicles?.length || 0}</div>
@@ -101,28 +100,28 @@ function CustomerDashboard() {
       {/* Desktop: Full KPI cards */}
       <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 border-cyan-500/30 rounded-xl p-5 border">
-          <Truck className="w-8 h-8 text-cyan-200" />
+          <div className="text-2xl">🚛</div>
           <div className="mt-3">
             <div className="text-4xl font-bold text-white">{vehicles?.length || 0}</div>
             <div className="text-sm text-gray-400 mt-1">My Vehicles</div>
           </div>
         </div>
         <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/10 border-amber-500/30 rounded-xl p-5 border">
-          <Wrench className="w-8 h-8 text-amber-200" />
+          <div className="text-2xl">🔧</div>
           <div className="mt-3">
             <div className="text-4xl font-bold text-white">{activeRepairs}</div>
             <div className="text-sm text-gray-400 mt-1">Active Repairs</div>
           </div>
         </div>
         <div className="bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500/30 rounded-xl p-5 border">
-          <CheckCircle className="w-8 h-8 text-green-200" />
+          <div className="text-2xl">✅</div>
           <div className="mt-3">
             <div className="text-4xl font-bold text-white">{completedRepairs}</div>
             <div className="text-sm text-gray-400 mt-1">Completed</div>
           </div>
         </div>
         <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500/30 rounded-xl p-5 border">
-          <ClipboardList className="w-8 h-8 text-purple-200" />
+          <div className="text-2xl">📋</div>
           <div className="mt-3">
             <div className="text-4xl font-bold text-white">{repairOrders?.length || 0}</div>
             <div className="text-sm text-gray-400 mt-1">Total Orders</div>
@@ -149,7 +148,7 @@ function CustomerDashboard() {
                 >
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-base sm:text-lg shrink-0">
-                      <Truck className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-200" />
+                      🚛
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-white text-sm sm:text-base truncate">
@@ -166,9 +165,7 @@ function CustomerDashboard() {
             </div>
           ) : (
             <div className="text-center py-8">
-              <div className="flex justify-center mb-2">
-                <Truck className="w-8 h-8 text-cyan-300" />
-              </div>
+              <div className="text-3xl mb-2">🚛</div>
               <p className="text-gray-400">No vehicles registered</p>
             </div>
           )}
@@ -215,9 +212,7 @@ function CustomerDashboard() {
             </div>
           ) : (
             <div className="text-center py-8">
-              <div className="flex justify-center mb-2">
-                <ClipboardList className="w-8 h-8 text-purple-300" />
-              </div>
+              <div className="text-3xl mb-2">📋</div>
               <p className="text-gray-400">No repair history</p>
             </div>
           )}
@@ -258,7 +253,7 @@ function CustomerVehicles() {
               <div key={vehicle.id} className="p-3 sm:p-6 hover:bg-white/5 active:bg-white/10 transition-colors">
                 <div className="flex items-start gap-3 sm:gap-4">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-cyan-500/20 flex items-center justify-center text-xl sm:text-2xl shrink-0">
-                    <Truck className="w-6 h-6 sm:w-7 sm:h-7 text-cyan-200" />
+                    🚛
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-white text-base sm:text-lg">
@@ -280,9 +275,7 @@ function CustomerVehicles() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <div className="flex justify-center mb-3">
-              <Truck className="w-10 h-10 text-cyan-300" />
-            </div>
+            <div className="text-4xl mb-3">🚛</div>
             <p className="text-gray-400">No vehicles registered yet</p>
           </div>
         )}
@@ -347,9 +340,7 @@ function CustomerRepairs() {
           </div>
         ) : (
           <div className="text-center py-12">
-            <div className="flex justify-center mb-3">
-              <ClipboardList className="w-10 h-10 text-purple-300" />
-            </div>
+            <div className="text-4xl mb-3">📋</div>
             <p className="text-gray-400">No repair history yet</p>
           </div>
         )}
@@ -559,3 +550,5 @@ export default function CustomerPortalPage() {
     </div>
   )
 }
+
+

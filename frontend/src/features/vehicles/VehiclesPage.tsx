@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle } from '../../types'
-import { ArrowRight, Plus } from 'lucide-react'
 
 interface VehicleFormData {
   customer_id: string
@@ -649,10 +648,9 @@ export default function VehiclesPage() {
                   e.stopPropagation()
                   openDetailPanel(vehicle)
                 }}
-                className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors"
               >
-                View Details
-                <ArrowRight className="w-4 h-4" />
+                View Details →
               </button>
             </div>
           </div>
@@ -664,7 +662,9 @@ export default function VehiclesPage() {
           className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
         >
           <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
-            <Plus className="w-6 h-6 text-white" />
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
           </div>
           <span className="text-white font-medium">Add Vehicle</span>
         </div>

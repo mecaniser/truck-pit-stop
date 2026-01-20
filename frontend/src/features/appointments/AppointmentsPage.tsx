@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import api from '../../lib/api'
 import { Appointment, AppointmentStatus } from '../../types'
-import { ArrowRight, Calendar, Clock3, Plus } from 'lucide-react'
 
 const STATUS_COLORS: Record<AppointmentStatus, { bg: string; text: string }> = {
   pending: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
@@ -67,10 +66,9 @@ export default function AppointmentsPage() {
         </div>
         <Link
           to="/portal/services"
-          className="inline-flex items-center justify-center px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors gap-2"
+          className="inline-flex items-center justify-center px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
         >
-          <Plus className="w-4 h-4" />
-          Book New
+          + Book New
         </Link>
       </div>
 
@@ -95,16 +93,13 @@ export default function AppointmentsPage() {
       <div className="space-y-3">
         {filteredAppointments?.length === 0 ? (
           <div className="text-center py-12 bg-white/5 rounded-xl border border-white/10">
-            <div className="flex justify-center mb-3">
-              <Calendar className="w-10 h-10 text-gray-400" />
-            </div>
+            <div className="text-4xl mb-3">📅</div>
             <p className="text-gray-400">No {filter} appointments</p>
             <Link
               to="/portal/services"
-              className="inline-flex items-center gap-1 mt-4 text-amber-500 hover:text-amber-400"
+              className="inline-block mt-4 text-amber-500 hover:text-amber-400"
             >
-              Book a service
-              <ArrowRight className="w-4 h-4" />
+              Book a service →
             </Link>
           </div>
         ) : (
@@ -131,11 +126,15 @@ export default function AppointmentsPage() {
 
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-400">
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4" />
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
                         {format(new Date(apt.scheduled_at), 'EEEE, MMM d, yyyy')}
                       </span>
                       <span className="flex items-center gap-1">
-                        <Clock3 className="w-4 h-4" />
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
                         {format(new Date(apt.scheduled_at), 'h:mm a')}
                       </span>
                       <span>~{apt.duration_minutes} min</span>

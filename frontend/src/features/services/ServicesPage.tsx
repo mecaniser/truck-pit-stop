@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
 import { Service, ServiceCategory } from '../../types'
-import { ClipboardList, Clock3, Truck, Wrench } from 'lucide-react'
 
 export default function ServicesPage() {
   const navigate = useNavigate()
@@ -86,13 +85,7 @@ export default function ServicesPage() {
             className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-amber-500/50 transition-all"
           >
             <div className="flex items-start justify-between mb-3">
-              <div className="text-3xl text-amber-200">
-                {service.icon ? (
-                  <span>{service.icon}</span>
-                ) : (
-                  <Wrench className="w-8 h-8" />
-                )}
-              </div>
+              <div className="text-3xl">{service.icon || '🔧'}</div>
               <div className="text-right">
                 <div className="text-2xl font-bold text-amber-400">
                   ${parseFloat(service.base_price).toFixed(0)}
@@ -109,13 +102,14 @@ export default function ServicesPage() {
 
             <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
               <span className="flex items-center gap-1">
-                <Clock3 className="w-4 h-4" />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
                 ~{service.duration_minutes} min
               </span>
               {service.requires_vehicle && (
                 <span className="flex items-center gap-1">
-                  <Truck className="w-4 h-4" />
-                  Vehicle required
+                  <span>🚛</span> Vehicle required
                 </span>
               )}
             </div>
@@ -132,12 +126,11 @@ export default function ServicesPage() {
 
       {services && Array.isArray(services) && services.length === 0 && (
         <div className="text-center py-12">
-          <div className="flex justify-center mb-3">
-            <ClipboardList className="w-10 h-10 text-gray-400" />
-          </div>
+          <div className="text-4xl mb-3">📋</div>
           <p className="text-gray-400">No services available at the moment</p>
         </div>
       )}
     </div>
   )
 }
+
