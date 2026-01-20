@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, RepairOrder, Vehicle } from '../../types'
+import { Customer, RepairOrder, Service, Vehicle } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus } from 'lucide-react'
 import YearPicker from '../../components/YearPicker'
@@ -32,6 +32,8 @@ export default function RepairOrdersPage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
+  const [serviceSearch, setServiceSearch] = useState('')
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   const [formError, setFormError] = useState<string | null>(null)
   const [newCustomer, setNewCustomer] = useState<NewCustomerForm>({
     first_name: '',
@@ -70,6 +72,14 @@ export default function RepairOrdersPage() {
     queryKey: ['vehicles'],
     queryFn: async () => {
       const response = await api.get('/vehicles')
+      return response.data
+    },
+  })
+
+  const { data: services } = useQuery<Service[]>({
+    queryKey: ['services'],
+    queryFn: async () => {
+      const response = await api.get('/services')
       return response.data
     },
   })
@@ -181,6 +191,8 @@ export default function RepairOrdersPage() {
     setSelectedVehicleId('')
     setShowNewVehicleForm(false)
     setDescription('')
+    setServiceSearch('')
+    setSelectedServiceIds([])
     setFormError(null)
     setNewCustomer({ first_name: '', last_name: '', email: '', phone: '' })
     setNewVehicle({ make: '', model: '', year: '', vin: '', license_plate: '', mileage: '' })
@@ -256,10 +268,17 @@ export default function RepairOrdersPage() {
         return
       }
 
+      const selectedServiceText = services
+        ?.filter((svc) => selectedServiceIds.includes(svc.id))
+        .map((svc) => svc.name)
+        .join(' • ')
+
+      const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
+
       await createRepairOrderMutation.mutateAsync({
         customer_id: finalCustomerId,
         vehicle_id: finalVehicleId,
-        description,
+        description: combinedDescription,
       })
     } catch (err: any) {
       setFormError(err.response?.data?.detail || 'Failed to create repair order')
@@ -663,6 +682,96 @@ export default function RepairOrdersPage() {
                 </div>
 
                 {/* Order details */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Services (optional)</h3>
+                      <p className="text-xs text-gray-500">Quick pick common jobs or search services</p>
+                    </div>
+                    {selectedServiceIds.length > 0 && (
+                      <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full">
+                        {selectedServiceIds.length} selected
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={serviceSearch}
+                        onChange={(e) => setServiceSearch(e.target.value)}
+                        placeholder="Search services (e.g., oil change, brake, diagnostics)"
+                        className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors text-gray-900 placeholder-gray-400"
+                      />
+                      <svg 
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {(services || [])
+                        .filter((svc) => !serviceSearch || svc.name.toLowerCase().includes(serviceSearch.toLowerCase()))
+                        .slice(0, 8)
+                        .map((svc) => {
+                          const active = selectedServiceIds.includes(svc.id)
+                              return (
+                                <button
+                                  key={svc.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedServiceIds((prev) =>
+                                      prev.includes(svc.id) ? prev.filter((id) => id !== svc.id) : [...prev, svc.id]
+                                    )
+                                  }
+                                  className={`px-3 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                    active
+                                      ? 'border-amber-500 bg-amber-50 text-amber-700'
+                                      : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
+                                  }`}
+                                >
+                                  {svc.name}
+                                </button>
+                              )
+                        })}
+
+                      {services && services.length === 0 && (
+                        <span className="text-sm text-gray-500">No services available yet</span>
+                      )}
+                    </div>
+
+                    {selectedServiceIds.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {services
+                          ?.filter((svc) => selectedServiceIds.includes(svc.id))
+                          .map((svc) => (
+                            <span
+                              key={svc.id}
+                              className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full"
+                            >
+                              {svc.name}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
+                                }
+                                className="text-amber-700 hover:text-amber-900"
+                                aria-label={`Remove ${svc.name}`}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description / Work requested</label>
                   <textarea
