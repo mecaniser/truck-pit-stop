@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-import CustomersPage from '../../features/customers/CustomersPage'
-import VehiclesPage from '../../features/vehicles/VehiclesPage'
-import RepairOrdersPage from '../../features/repair-orders/RepairOrdersPage'
-import InventoryPage from '../../features/inventory/InventoryPage'
-import DashboardHome from '../../features/dashboard/DashboardHome'
-import AdminProfilePage from '../../features/dashboard/AdminProfilePage'
-import ServicesManagementPage from '../../features/dashboard/ServicesManagementPage'
+import CustomersPage from '@/features/customers/CustomersPage'
+import VehiclesPage from '@/features/vehicles/VehiclesPage'
+import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
+import InventoryPage from '@/features/inventory/InventoryPage'
+import DashboardHome from '@/features/dashboard/DashboardHome'
+import AdminProfilePage from '@/features/dashboard/AdminProfilePage'
+import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
