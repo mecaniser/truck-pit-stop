@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
 import { Vehicle } from '../../types'
+import { Truck } from 'lucide-react'
 
 const editVehicleSchema = z.object({
   license_plate: z.string().optional(),
@@ -228,7 +229,7 @@ export default function VehiclesCard() {
                 className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-lg shrink-0">🚛</span>
+                  <Truck className="w-5 h-5 text-cyan-200 shrink-0" />
                   <div className="min-w-0">
                     <p className="text-white font-medium text-sm truncate">
                       {vehicle.year} {vehicle.make} {vehicle.model}
