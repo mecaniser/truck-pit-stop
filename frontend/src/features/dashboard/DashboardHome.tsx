@@ -1,4 +1,19 @@
-import { useEffect, useState } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
+import {
+  Bolt,
+  Boxes,
+  CheckCircle,
+  ClipboardCheck,
+  Calendar,
+  CalendarDays,
+  CalendarRange,
+  Plus,
+  Receipt,
+  Truck,
+  Users,
+  UserPlus,
+  Wrench,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -160,13 +175,13 @@ export default function DashboardHome() {
             <KPICard
               title="My Assigned Jobs"
               value={stats?.my_assigned_orders || 0}
-              icon="🔧"
+              icon={<Wrench className="w-6 h-6 text-amber-200" />}
               color="amber"
             />
             <KPICard
               title="In Progress"
               value={stats?.my_in_progress || 0}
-              icon="⚡"
+              icon={<Bolt className="w-6 h-6 text-blue-200" />}
               color="blue"
             />
           </>
@@ -175,28 +190,28 @@ export default function DashboardHome() {
             <KPICard
               title="Active Repairs"
               value={stats?.active_orders || 0}
-              icon="🔧"
+              icon={<Wrench className="w-6 h-6 text-amber-200" />}
               color="amber"
               linkTo="/dashboard/repair-orders?status=in_progress"
             />
             <KPICard
               title="Awaiting Approval"
               value={stats?.awaiting_approval || 0}
-              icon="📋"
+              icon={<ClipboardCheck className="w-6 h-6 text-blue-200" />}
               color="blue"
               linkTo="/dashboard/repair-orders?status=quoted"
             />
             <KPICard
               title="Ready to Invoice"
               value={stats?.pending_invoices || 0}
-              icon="💰"
+              icon={<Receipt className="w-6 h-6 text-green-200" />}
               color="green"
               linkTo="/dashboard/repair-orders?status=completed"
             />
             <KPICard
               title="Low Stock Items"
               value={stats?.low_stock_count || 0}
-              icon="📦"
+              icon={<Boxes className="w-6 h-6 text-red-200" />}
               color={stats?.low_stock_count ? 'red' : 'gray'}
               linkTo="/dashboard/inventory"
             />
@@ -211,25 +226,25 @@ export default function DashboardHome() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <QuickActionButton
               to="/dashboard/repair-orders"
-              icon="➕"
+              icon={<Plus className="w-6 h-6 text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]" />}
               label="New Repair Order"
               color="amber"
             />
             <QuickActionButton
               to="/dashboard/customers"
-              icon="👤"
+              icon={<UserPlus className="w-6 h-6" />}
               label="Add Customer"
               color="blue"
             />
             <QuickActionButton
               to="/dashboard/vehicles"
-              icon="🚛"
+              icon={<Truck className="w-6 h-6" />}
               label="Add Vehicle"
               color="cyan"
             />
             <QuickActionButton
               to="/dashboard/inventory"
-              icon="📦"
+              icon={<Boxes className="w-6 h-6" />}
               label="Manage Inventory"
               color="purple"
             />
@@ -331,7 +346,9 @@ export default function DashboardHome() {
             </div>
             {!stats?.low_stock_items || stats.low_stock_items.length === 0 ? (
               <div className="text-center py-8">
-                <div className="text-3xl mb-2">✅</div>
+                <div className="flex justify-center mb-2">
+                  <CheckCircle className="w-8 h-8 text-emerald-400" />
+                </div>
                 <p className="text-gray-400">All stock levels OK</p>
               </div>
             ) : (
@@ -369,17 +386,17 @@ export default function DashboardHome() {
               <RevenueCard
                 title="Today"
                 amount={stats?.revenue?.today || '0.00'}
-                icon="📅"
+                icon={<Calendar className="w-5 h-5" />}
               />
               <RevenueCard
                 title="This Week"
                 amount={stats?.revenue?.this_week || '0.00'}
-                icon="📆"
+                icon={<CalendarRange className="w-5 h-5" />}
               />
               <RevenueCard
                 title="This Month"
                 amount={stats?.revenue?.this_month || '0.00'}
-                icon="🗓️"
+                icon={<CalendarDays className="w-5 h-5" />}
               />
             </div>
             <div className="mt-4 pt-4 border-t border-white/10 flex items-center justify-between">
@@ -395,7 +412,9 @@ export default function DashboardHome() {
             <h2 className="text-lg font-semibold text-white mb-4">Mechanic Workload</h2>
             {!stats?.mechanic_workload || stats.mechanic_workload.length === 0 ? (
               <div className="text-center py-8">
-                <div className="text-3xl mb-2">👥</div>
+                <div className="flex justify-center mb-2">
+                  <Users className="w-8 h-8 text-gray-400" />
+                </div>
                 <p className="text-gray-400">No mechanics assigned yet</p>
               </div>
             ) : (
@@ -468,7 +487,7 @@ function KPICard({
 }: {
   title: string
   value: number
-  icon: string
+  icon: ReactNode
   color: 'amber' | 'blue' | 'green' | 'red' | 'gray'
   linkTo?: string
 }) {
@@ -485,7 +504,7 @@ function KPICard({
       className={`bg-gradient-to-br ${colorClasses[color]} rounded-xl p-4 sm:p-5 border transition-transform hover:scale-[1.02]`}
     >
       <div className="flex items-center justify-between">
-        <span className="text-2xl">{icon}</span>
+        <span className="text-2xl text-white">{icon}</span>
         {value > 0 && color === 'red' && (
           <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
         )}
@@ -513,11 +532,13 @@ function QuickActionButton({
   icon,
   label,
   color,
+  iconClassName,
 }: {
   to: string
-  icon: string
+  icon: ReactNode
   label: string
   color: 'amber' | 'blue' | 'cyan' | 'purple'
+  iconClassName?: string
 }) {
   const colorClasses = {
     amber: 'hover:bg-amber-500/20 hover:border-amber-500/50 active:bg-amber-500/30',
@@ -531,7 +552,9 @@ function QuickActionButton({
       to={to}
       className={`flex flex-col items-center justify-center p-3 sm:p-4 rounded-lg border border-white/10 bg-white/5 transition-all min-h-[80px] ${colorClasses[color]}`}
     >
-      <span className="text-xl sm:text-2xl mb-1 sm:mb-2">{icon}</span>
+      <span className={`text-xl sm:text-2xl mb-1 sm:mb-2 text-white ${iconClassName || ''}`}>
+        {typeof icon === 'string' ? icon : icon}
+      </span>
       <span className="text-xs sm:text-sm text-gray-300 text-center leading-tight">{label}</span>
     </Link>
   )
@@ -555,7 +578,7 @@ function RevenueCard({
 }: {
   title: string
   amount: string
-  icon: string
+  icon: ReactNode
 }) {
   const numAmount = parseFloat(amount)
   // Shorter format for mobile
@@ -576,4 +599,3 @@ function RevenueCard({
     </div>
   )
 }
-
