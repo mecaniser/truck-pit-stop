@@ -4,7 +4,6 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { format, addDays } from 'date-fns'
 import api from '../../lib/api'
 import { Service, Vehicle, TimeSlot } from '../../types'
-import { ArrowLeft, Check, CheckCircle, Truck } from 'lucide-react'
 
 type BookingStep = 'vehicle' | 'datetime' | 'confirm' | 'payment' | 'success'
 
@@ -117,7 +116,9 @@ export default function BookingPage() {
           onClick={() => navigate('/portal/services')}
           className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
         >
-          <ArrowLeft className="w-5 h-5 text-gray-400" />
+          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
         </button>
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Book {service.name}</h1>
@@ -150,7 +151,7 @@ export default function BookingPage() {
                     : 'bg-white/10 text-gray-500'
                 }`}
               >
-                {isCompleted ? <Check className="w-4 h-4" /> : stepIndex + 1}
+                {isCompleted ? '✓' : stepIndex + 1}
               </div>
             </div>
           )
@@ -177,7 +178,7 @@ export default function BookingPage() {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <Truck className="w-6 h-6 text-amber-200" />
+                      <span className="text-2xl">🚛</span>
                       <div>
                         <div className="font-medium text-white">
                           {vehicle.year} {vehicle.make} {vehicle.model}
@@ -387,9 +388,7 @@ export default function BookingPage() {
         {/* Success */}
         {step === 'success' && (
           <div className="text-center space-y-4 py-6">
-            <div className="flex justify-center mb-4">
-              <CheckCircle className="w-12 h-12 text-emerald-400" />
-            </div>
+            <div className="text-6xl mb-4">✅</div>
             <h2 className="text-2xl font-bold text-white">Booking Confirmed!</h2>
             <p className="text-gray-400">
               Your appointment has been scheduled successfully.

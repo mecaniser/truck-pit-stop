@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
-import { CheckCircle, Plus, Wrench } from 'lucide-react'
 
 interface Service {
   id: string
@@ -186,7 +185,9 @@ export default function ServicesManagementPage() {
             onClick={startAdd}
             className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
           >
-            <Plus className="w-5 h-5" />
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
             Add Service
           </button>
         )}
@@ -194,7 +195,9 @@ export default function ServicesManagementPage() {
 
       {successMessage && (
         <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
-          <CheckCircle className="w-5 h-5 flex-shrink-0" />
+          <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
           {successMessage}
         </div>
       )}
@@ -260,7 +263,7 @@ export default function ServicesManagementPage() {
                 <input
                   {...register('icon')}
                   className={inputClasses(false)}
-                  placeholder="Optional icon"
+                  placeholder="🔧"
                 />
               </div>
             </div>
@@ -336,9 +339,7 @@ export default function ServicesManagementPage() {
                   <tr key={service.id} className="hover:bg-white/5">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-xl text-amber-200">
-                          {service.icon ? <span>{service.icon}</span> : <Wrench className="w-5 h-5" />}
-                        </span>
+                        <span className="text-xl">{service.icon || '🔧'}</span>
                         <div>
                           <div className="text-sm font-medium text-white">{service.name}</div>
                           {service.description && (
