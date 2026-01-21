@@ -1,6 +1,6 @@
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from app.core.dependencies import get_db, get_current_active_user
@@ -206,3 +206,34 @@ async def update_repair_order(
     
     return RepairOrderResponse.model_validate(order)
 
+
+@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_repair_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    )),
+):
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repair order not found",
+        )
+
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    await db.delete(order)
+    await db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

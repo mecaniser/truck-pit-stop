@@ -3,10 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, RepairOrder, Service, Vehicle } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp } from 'lucide-react'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
+import { formatUSPhone } from '@/utils/phone'
+import BaseSelect from '../../components/BaseSelect'
 
 interface NewCustomerForm {
   first_name: string
@@ -35,6 +37,10 @@ export default function RepairOrdersPage() {
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   const [formError, setFormError] = useState<string | null>(null)
+  const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showDangerActions, setShowDangerActions] = useState(false)
   const [newCustomer, setNewCustomer] = useState<NewCustomerForm>({
     first_name: '',
     last_name: '',
@@ -84,6 +90,14 @@ export default function RepairOrdersPage() {
     },
   })
 
+  const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
+    queryKey: ['mechanics'],
+    queryFn: async () => {
+      const response = await api.get('/dashboard/stats')
+      return response.data?.mechanic_workload || []
+    },
+  })
+
   const filteredVehicles = useMemo(() => {
     if (!vehicles) return []
     if (selectedCustomerId) {
@@ -91,6 +105,37 @@ export default function RepairOrdersPage() {
     }
     return []
   }, [vehicles, selectedCustomerId])
+
+  const customerLookup = useMemo(() => {
+    const map = new Map<string, Customer>()
+    customers?.forEach((c) => map.set(c.id, c))
+    return map
+  }, [customers])
+
+  const vehicleLookup = useMemo(() => {
+    const map = new Map<string, Vehicle>()
+    vehicles?.forEach((v) => map.set(v.id, v))
+    return map
+  }, [vehicles])
+
+  const mechanicLookup = useMemo(() => {
+    const map = new Map<string, string>()
+    mechanics?.forEach((m) => map.set(m.mechanic_id, m.mechanic_name))
+    return map
+  }, [mechanics])
+
+  const parseServiceNotes = (notes?: string | null) => {
+    if (!notes) return null
+    try {
+      const parsed = JSON.parse(notes)
+      if (Array.isArray(parsed?.selected_services)) {
+        return parsed.selected_services as { id: string; name: string; base_price: string }[]
+      }
+    } catch (err) {
+      console.warn('Failed to parse service notes', err)
+    }
+    return null
+  }
 
   const createCustomerMutation = useMutation({
     mutationFn: async (payload: NewCustomerForm) => {
@@ -118,22 +163,66 @@ export default function RepairOrdersPage() {
   })
 
   const createRepairOrderMutation = useMutation({
-    mutationFn: async ({ customer_id, vehicle_id, description: roDescription }: { customer_id: string; vehicle_id: string; description: string }) => {
+    mutationFn: async ({
+      customer_id,
+      vehicle_id,
+      description: roDescription,
+      internal_notes,
+    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null }) => {
       const response = await api.post('/repair-orders', {
         customer_id,
         vehicle_id,
         description: roDescription || null,
+        internal_notes: internal_notes || null,
       })
       return response.data as RepairOrder
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['customers'] })
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
-      closeModal()
-    },
     onError: (error: any) => {
       setFormError(error.response?.data?.detail || 'Failed to create repair order')
+    },
+  })
+
+  const cancelRepairOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const response = await api.put(`/repair-orders/${orderId}`, { status: 'cancelled' })
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      setSelectedOrder(updated)
+    },
+    onError: (error: any) => {
+      setFormError(error.response?.data?.detail || 'Failed to cancel repair order')
+    },
+  })
+
+  const deleteRepairOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      await api.delete(`/repair-orders/${orderId}`)
+      return orderId
+    },
+    onSuccess: (orderId) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      if (selectedOrder?.id === orderId) {
+        closeDetail()
+      }
+    },
+    onError: (error: any) => {
+      setFormError(error.response?.data?.detail || 'Failed to delete repair order')
+    },
+  })
+
+  const assignMechanicMutation = useMutation({
+    mutationFn: async ({ orderId, mechanicId }: { orderId: string; mechanicId: string }) => {
+      const response = await api.put(`/repair-orders/${orderId}`, { assigned_mechanic_id: mechanicId || null })
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      setSelectedOrder(updated)
+    },
+    onError: (error: any) => {
+      setFormError(error.response?.data?.detail || 'Failed to assign mechanic')
     },
   })
 
@@ -208,9 +297,20 @@ export default function RepairOrdersPage() {
     resetModal()
   }
 
+  const openDetail = (order: RepairOrder) => {
+    setSelectedOrder(order)
+    setIsDetailOpen(true)
+  }
+
+  const closeDetail = () => {
+    setSelectedOrder(null)
+    setIsDetailOpen(false)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
+    setIsSubmitting(true)
 
     try {
       let finalCustomerId = selectedCustomerId
@@ -273,15 +373,43 @@ export default function RepairOrdersPage() {
         .map((svc) => svc.name)
         .join(' • ')
 
+      const selectedServicePayload = services
+        ?.filter((svc) => selectedServiceIds.includes(svc.id))
+        .map((svc) => ({
+          id: svc.id,
+          name: svc.name,
+          base_price: svc.base_price,
+        })) || []
+
+      const internalNotes = selectedServicePayload.length
+        ? JSON.stringify({ selected_services: selectedServicePayload })
+        : null
+
+      const quotedStatusPayload = { status: 'quoted' }
+
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
 
-      await createRepairOrderMutation.mutateAsync({
+      const createdOrder = await createRepairOrderMutation.mutateAsync({
         customer_id: finalCustomerId,
         vehicle_id: finalVehicleId,
         description: combinedDescription,
+        internal_notes: internalNotes,
       })
+
+      try {
+        await api.put(`/repair-orders/${createdOrder.id}`, quotedStatusPayload)
+      } catch (err: any) {
+        console.error('Failed to set quoted status', err)
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      closeModal()
     } catch (err: any) {
       setFormError(err.response?.data?.detail || 'Failed to create repair order')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -347,9 +475,18 @@ export default function RepairOrdersPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredOrders?.map((order) => {
           const statusStyle = getStatusStyle(order.status)
+          const parsedServices = parseServiceNotes(order.internal_notes)
+          const estimatedTotal = parsedServices?.reduce(
+            (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+            0
+          )
+          const backendTotal = parseFloat(order.total_cost) || 0
+          const showEstimate = backendTotal === 0 && estimatedTotal && estimatedTotal > 0
+          const showMechanic = ['quoted', 'in_progress', 'paid'].includes(order.status) && order.assigned_mechanic_id
           return (
             <div 
               key={order.id}
+              onClick={() => openDetail(order)}
               className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
             >
               <div>
@@ -373,17 +510,30 @@ export default function RepairOrdersPage() {
                     {format(new Date(order.created_at), 'MMM d, yyyy')}
                   </span>
                 </div>
-                
-                <div className="bg-white/50 rounded-lg p-3">
-                  <div className="text-xs text-slate-500 mb-1">Total Cost</div>
+
+                <div className="bg-white/50 rounded-lg p-3 space-y-2">
+                  <div className="text-xs text-slate-500 mb-1">{showEstimate ? 'Est. from services' : 'Total Cost'}</div>
                   <div className="text-xl font-bold text-slate-800">
-                    ${parseFloat(order.total_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    $
+                    {(showEstimate ? estimatedTotal : backendTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </div>
+                  {showMechanic && (
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <Wrench className="w-4 h-4 text-amber-600" />
+                      <span>{mechanicLookup.get(order.assigned_mechanic_id!) || 'Assigned mechanic'}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="pt-3 border-t border-amber-200/50">
-                <button className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openDetail(order)
+                  }}
+                  className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                >
                   View Details
                   <ArrowRight className="w-4 h-4" />
                 </button>
@@ -622,7 +772,7 @@ export default function RepairOrdersPage() {
                         <input
                           name="phone"
                           value={newCustomer.phone}
-                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, phone: e.target.value }))}
+                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, phone: formatUSPhone(e.target.value) }))}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
                           placeholder="(555) 123-4567"
                         />
@@ -793,10 +943,18 @@ export default function RepairOrdersPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={createRepairOrderMutation.isPending || createCustomerMutation.isPending || createVehicleMutation.isPending}
+                    disabled={
+                      isSubmitting ||
+                      createRepairOrderMutation.isPending ||
+                      createCustomerMutation.isPending ||
+                      createVehicleMutation.isPending
+                    }
                     className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                   >
-                    {(createRepairOrderMutation.isPending || createCustomerMutation.isPending || createVehicleMutation.isPending) && (
+                    {(isSubmitting ||
+                      createRepairOrderMutation.isPending ||
+                      createCustomerMutation.isPending ||
+                      createVehicleMutation.isPending) && (
                       <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -806,6 +964,283 @@ export default function RepairOrdersPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Repair Order Detail Panel */}
+      {isDetailOpen && selectedOrder && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={closeDetail} />
+          <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl flex flex-col animate-slide-in-right">
+            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-8 text-white">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs text-amber-100 uppercase tracking-wide">Repair Order</p>
+                  <h2 className="text-2xl font-bold">#{selectedOrder.order_number}</h2>
+                  <p className="text-amber-100 text-sm mt-1">
+                    Created {format(new Date(selectedOrder.created_at), 'MMM d, yyyy')}
+                  </p>
+                </div>
+                <button
+                  onClick={closeDetail}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                  aria-label="Close"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
+                <span className={`w-2 h-2 rounded-full ${getStatusStyle(selectedOrder.status).dot}`}></span>
+                {selectedOrder.status.replace('_', ' ')}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-6 space-y-6">
+                {(() => {
+                  const detailServices = parseServiceNotes(selectedOrder.internal_notes)
+                  const detailEstimate = detailServices?.reduce(
+                    (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                    0
+                  )
+                  return detailServices && detailServices.length > 0 ? (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Selected Services</h3>
+                      <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-800">
+                        {detailServices.map((svc) => (
+                          <div key={svc.id} className="flex items-center justify-between">
+                            <span>{svc.name}</span>
+                            <span className="font-semibold">${parseFloat(svc.base_price || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        ))}
+                        {detailEstimate ? (
+                          <div className="pt-2 mt-2 border-t border-gray-200 flex items-center justify-between font-semibold">
+                            <span>Estimated total</span>
+                            <span>${detailEstimate.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null
+                })()}
+
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Assigned mechanic</h3>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-800">
+                      <Wrench className="w-4 h-4 text-amber-600" />
+                      <span>
+                        {selectedOrder.assigned_mechanic_id
+                          ? mechanicLookup.get(selectedOrder.assigned_mechanic_id) || 'Assigned mechanic'
+                          : 'Unassigned'}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      <BaseSelect
+                        options={[
+                          { value: '', label: 'Unassigned', subLabel: 'Keep this job unassigned for now' },
+                          ...(mechanics || []).map((m) => {
+                            const inProgress = m.in_progress_count ?? 0
+                            const assigned = m.assigned_count ?? 0
+                            const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                            return {
+                              value: m.mechanic_id,
+                              label: m.mechanic_name,
+                              subLabel: `${inProgress}/${assigned || '—'} in progress · Load ${load.toFixed(0)}%`,
+                            }
+                          }),
+                        ]}
+                        value={selectedOrder.assigned_mechanic_id || ''}
+                        onChange={(val) =>
+                          selectedOrder.id &&
+                          assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: val })
+                        }
+                        placeholder="Select mechanic"
+                        allowAddNew={false}
+                      />
+                      {selectedOrder.assigned_mechanic_id && mechanics && (
+                        (() => {
+                          const mech = mechanics.find((m) => m.mechanic_id === selectedOrder.assigned_mechanic_id)
+                          if (!mech) return null
+                          const inProgress = mech.in_progress_count ?? 0
+                          const assigned = mech.assigned_count ?? 0
+                          const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                          return (
+                            <div className="bg-white/60 border border-amber-200 rounded-lg p-3">
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm font-semibold text-gray-800">{mech.mechanic_name}</p>
+                                <span className="text-xs text-gray-600">{inProgress}/{assigned || '—'} in progress</span>
+                              </div>
+                              <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden">
+                                <div className="h-full bg-amber-500 transition-all" style={{ width: `${load}%` }} />
+                              </div>
+                              <p className="mt-1 text-xs text-gray-600">Load: {load.toFixed(0)}%</p>
+                            </div>
+                          )
+                        })()
+                      )}
+                      <div className="text-xs text-gray-500">
+                        Assigning is available for quoted or in-progress work. Paid orders stay read-only.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Customer</h3>
+                  <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+                      {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
+                      {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-gray-900 font-semibold">
+                        {customerLookup.get(selectedOrder.customer_id)
+                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                          : 'Unknown customer'}
+                      </p>
+                      <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Vehicle</h3>
+                  <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
+                    {vehicleLookup.get(selectedOrder.vehicle_id) ? (
+                      <>
+                        <p className="font-semibold text-gray-900">
+                          {vehicleLookup.get(selectedOrder.vehicle_id)?.year || 'Year'}{' '}
+                          {vehicleLookup.get(selectedOrder.vehicle_id)?.make}{' '}
+                          {vehicleLookup.get(selectedOrder.vehicle_id)?.model}
+                        </p>
+                        <p className="text-gray-600 mt-1">
+                          VIN: {vehicleLookup.get(selectedOrder.vehicle_id)?.vin || '—'}
+                        </p>
+                        <p className="text-gray-600">
+                          Plate: {vehicleLookup.get(selectedOrder.vehicle_id)?.license_plate || '—'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-gray-500">Vehicle not found</p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Work Requested</h3>
+                  <div className="bg-gray-50 rounded-xl p-4">
+                    <p className="text-gray-800 whitespace-pre-wrap">
+                      {selectedOrder.description || 'No description provided'}
+                    </p>
+                  </div>
+                </div>
+
+                {(() => {
+                  const backendParts = parseFloat(selectedOrder.total_parts_cost) || 0
+                  const backendLabor = parseFloat(selectedOrder.total_labor_cost) || 0
+                  const backendTotal = parseFloat(selectedOrder.total_cost) || 0
+                  const detailServices = parseServiceNotes(selectedOrder.internal_notes)
+                  const detailEstimate = detailServices?.reduce(
+                    (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                    0
+                  )
+                  const showEstimate = backendTotal === 0 && detailEstimate && detailEstimate > 0
+
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                        {showEstimate ? 'Estimated totals' : 'Totals'}
+                      </h3>
+                      <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
+                        <div>
+                          <p className="text-gray-500">{showEstimate ? 'Services' : 'Parts'}</p>
+                          <p className="font-semibold">
+                            $
+                            {(showEstimate ? detailEstimate || 0 : backendParts).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-gray-500">Labor</p>
+                          <p className="font-semibold">
+                            $
+                            {(showEstimate ? 0 : backendLabor).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-gray-500">Total</p>
+                          <p className="text-lg font-bold text-gray-900">
+                            $
+                            {(showEstimate ? detailEstimate || 0 : backendTotal).toLocaleString('en-US', {
+                              minimumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 px-6 py-6 bg-red-50">
+              <div className="space-y-4">
+                <button
+                  type="button"
+                  onClick={() => setShowDangerActions((prev) => !prev)}
+                  className="w-full flex items-center justify-between text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-red-100 text-red-700">
+                      <TriangleAlert className="w-5 h-5" />
+                    </div>
+                    <div className="text-sm font-semibold text-red-700 uppercase tracking-wide">
+                      Danger Zone
+                    </div>
+                  </div>
+                  <div className="p-2 text-red-700">
+                    {showDangerActions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </button>
+                {showDangerActions && (
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <div className="w-full text-sm text-red-600">
+                      Cancel stops work without deleting history. Delete will permanently remove this order.
+                    </div>
+                    <button
+                      type="button"
+                      disabled={cancelRepairOrderMutation.isPending || deleteRepairOrderMutation.isPending || selectedOrder.status === 'cancelled'}
+                      onClick={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <OctagonX className="w-4 h-4" />
+                      {cancelRepairOrderMutation.isPending ? 'Cancelling...' : 'Cancel order'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteRepairOrderMutation.isPending}
+                      onClick={() => {
+                        if (selectedOrder.id && window.confirm('Delete this repair order? This cannot be undone.')) {
+                          deleteRepairOrderMutation.mutate(selectedOrder.id)
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      {deleteRepairOrderMutation.isPending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
