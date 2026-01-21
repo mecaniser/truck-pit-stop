@@ -25,6 +25,10 @@ const mechanicSchema = z.object({
 })
 
 type MechanicFormData = z.infer<typeof mechanicSchema>
+type MechanicWithCounts = User & { assigned_count?: number; in_progress_count?: number }
+
+const formatStatus = (status?: RepairOrderStatus | string | null) =>
+  status ? status.replace(/_/g, ' ') : ''
 
 export default function MechanicsPage() {
   const queryClient = useQueryClient()
@@ -36,7 +40,7 @@ export default function MechanicsPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
 
-  const { data: mechanics, isLoading } = useQuery<User[]>({
+  const { data: mechanics, isLoading } = useQuery<MechanicWithCounts[]>({
     queryKey: ['mechanic-users'],
     queryFn: async () => {
       const response = await api.get('/mechanics')
@@ -226,7 +230,7 @@ export default function MechanicsPage() {
                                       <div className="flex items-center justify-between text-sm font-semibold text-white">
                                         <span>{item.order_number}</span>
                                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusTone}`}>
-                                          {item.status.replaceAll('_', ' ')}
+                                          {formatStatus(item.status)}
                                         </span>
                                       </div>
                                       <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
@@ -327,7 +331,7 @@ export default function MechanicsPage() {
                           <div className="flex items-center justify-between text-sm font-semibold text-white">
                             <span>{item.order_number}</span>
                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusTone}`}>
-                              {item.status.replaceAll('_', ' ')}
+                              {formatStatus(item.status)}
                             </span>
                           </div>
                           <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
@@ -523,7 +527,7 @@ export default function MechanicsPage() {
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-gray-800">Status</span>
                         <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
-                          {orderDetail.status.replaceAll('_', ' ')}
+                          {formatStatus(orderDetail.status)}
                         </span>
                       </div>
                       <div>
@@ -568,7 +572,7 @@ export default function MechanicsPage() {
                       <div className="flex items-center justify-between">
                         <span className="font-semibold text-gray-800">Status</span>
                         <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
-                          {selectedWorkItem?.status.replaceAll('_', ' ') || 'Unknown'}
+                          {formatStatus(selectedWorkItem?.status) || 'Unknown'}
                         </span>
                       </div>
                       <div>
