@@ -5,13 +5,13 @@ import MechanicsPage from '@/features/mechanics/MechanicsPage'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
 
 const tabClass =
-  'px-4 py-2 text-sm font-medium rounded-lg transition-colors border border-transparent'
+  'shrink-0 px-1.5 py-1.5 sm:px-2.5 sm:py-2 text-sm font-medium rounded-lg transition-colors border border-transparent'
 
 export default function MyGaragePage() {
   return (
     <div className="space-y-4">
       <div className="bg-white/5 border border-white/10 rounded-xl">
-        <div className="flex flex-wrap gap-2 px-4 py-3 border-b border-white/10">
+        <div className="flex gap-0.5 px-2 sm:px-4 py-2 border-b border-white/10 overflow-x-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
           <NavLink
             to="mechanics"
             className={({ isActive }) =>
