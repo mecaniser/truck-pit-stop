@@ -7,6 +7,7 @@ import api from '@/lib/api'
 import { User, MechanicWorkItem, RepairOrderStatus, RepairOrder } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
+import { LayoutGrid, Rows } from 'lucide-react'
 
 const mechanicSchema = z.object({
   first_name: z.string().min(1, 'First name is required'),
@@ -33,6 +34,7 @@ export default function MechanicsPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [selectedWorkItem, setSelectedWorkItem] = useState<MechanicWorkItem | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
 
   const { data: mechanics, isLoading } = useQuery<User[]>({
     queryKey: ['mechanic-users'],
@@ -115,9 +117,28 @@ export default function MechanicsPage() {
       ) : (
         <>
           <div className="bg-white/5 rounded-xl p-6 border border-white/10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="flex items-center gap-3">
               <h1 className="text-xl font-semibold text-white">Mechanics</h1>
-              <p className="text-sm text-gray-400">Track who can take jobs and onboard new mechanics quickly.</p>
+              <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+                    viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  <Rows className="w-4 h-4" /> List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cards')}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+                    viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4" /> Cards
+                </button>
+              </div>
             </div>
             <div className="px-3 py-1 rounded-full border border-amber-500/30 text-amber-300 text-xs font-semibold bg-amber-500/10">
               Admin view
@@ -133,7 +154,7 @@ export default function MechanicsPage() {
           <div className="text-gray-400 text-sm">Loading mechanics...</div>
         ) : mechanicRows.length === 0 ? (
           <div className="text-gray-400 text-sm">No mechanics yet. Add one below.</div>
-        ) : (
+        ) : viewMode === 'list' ? (
           <div className="overflow-hidden border border-white/10 rounded-lg">
             <table className="min-w-full divide-y divide-white/10">
               <thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-gray-400">
@@ -192,29 +213,29 @@ export default function MechanicsPage() {
                                       ? 'border-gray-400/40 bg-gray-500/10 text-gray-200'
                                       : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
                                   return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedWorkItem(item)
-                                    setSelectedOrderId(item.id)
-                                    setIsDetailOpen(true)
-                                  }}
-                                  className="border rounded-lg p-3 border-white/10 bg-white/5 text-left hover:border-amber-400/60 hover:bg-white/10 transition-colors"
-                                >
-                                  <div className="flex items-center justify-between text-sm font-semibold text-white">
-                                    <span>{item.order_number}</span>
-                                    <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusTone}`}>
-                                      {item.status.replaceAll('_', ' ')}
-                                    </span>
-                                  </div>
-                                  <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
-                                  <p className="text-xs text-gray-400">{item.vehicle_info}</p>
-                                  <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
-                                </button>
-                              )
-                            })}
-                          </div>
+                                    <button
+                                      key={item.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedWorkItem(item)
+                                        setSelectedOrderId(item.id)
+                                        setIsDetailOpen(true)
+                                      }}
+                                      className="border rounded-lg p-3 border-white/10 bg-white/5 text-left hover:border-amber-400/60 hover:bg-white/10 transition-colors"
+                                    >
+                                      <div className="flex items-center justify-between text-sm font-semibold text-white">
+                                        <span>{item.order_number}</span>
+                                        <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusTone}`}>
+                                          {item.status.replaceAll('_', ' ')}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
+                                      <p className="text-xs text-gray-400">{item.vehicle_info}</p>
+                                      <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
+                                    </button>
+                                  )
+                                })}
+                              </div>
                             )}
                           </div>
                         </td>
@@ -225,6 +246,101 @@ export default function MechanicsPage() {
               </tbody>
             </table>
           </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {mechanicRows.map((mechanic) => {
+                const inProgress = mechanic.assigned_count ? Math.min(mechanic.in_progress_count || 0, mechanic.assigned_count) : mechanic.in_progress_count || 0
+                const assigned = mechanic.assigned_count || 0
+                const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                return (
+                  <div key={mechanic.id} className="bg-white/10 border border-white/15 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs uppercase text-gray-400">{mechanic.email}</p>
+                        <h3 className="text-lg font-semibold text-white">{mechanic.first_name} {mechanic.last_name}</h3>
+                        <p className="text-xs text-gray-400">{mechanic.phone || 'No phone'}</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusBadge(mechanic.is_active)}`}>
+                        {mechanic.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-200">In progress: {inProgress}/{assigned || '—'}</div>
+                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-full bg-amber-500" style={{ width: `${load}%` }} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedMechanicId(mechanic.id)
+                          setIsDetailOpen(false)
+                        }}
+                        className="px-3 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-lg hover:bg-amber-500/20 transition"
+                      >
+                        View work
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))}
+                        className="px-3 py-2 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition"
+                      >
+                        {expandedMechanicId === mechanic.id ? 'Hide' : 'Select'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {expandedMechanicId && (
+              <div className="mt-4 border border-white/10 rounded-lg bg-white/5 p-4">
+                <h3 className="text-sm font-semibold text-white mb-2">
+                  Work for {mechanicRows.find((m) => m.id === expandedMechanicId)?.first_name}{' '}
+                  {mechanicRows.find((m) => m.id === expandedMechanicId)?.last_name}
+                </h3>
+                {workLoading ? (
+                  <p className="text-gray-400 text-sm">Loading work...</p>
+                ) : !workItems || workItems.length === 0 ? (
+                  <p className="text-gray-400 text-sm">No work found for this mechanic.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {workItems.map((item) => {
+                      const statusTone =
+                        item.status === 'in_progress'
+                          ? 'border-blue-400/40 bg-blue-500/10 text-blue-200'
+                          : item.status === 'completed' || item.status === 'paid'
+                          ? 'border-green-400/40 bg-green-500/10 text-green-200'
+                          : item.status === 'cancelled'
+                          ? 'border-gray-400/40 bg-gray-500/10 text-gray-200'
+                          : 'border-amber-400/40 bg-amber-500/10 text-amber-200'
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedWorkItem(item)
+                            setSelectedOrderId(item.id)
+                            setIsDetailOpen(true)
+                          }}
+                          className="border rounded-lg p-3 border-white/10 bg-white/5 text-left hover:border-amber-400/60 hover:bg-white/10 transition-colors"
+                        >
+                          <div className="flex items-center justify-between text-sm font-semibold text-white">
+                            <span>{item.order_number}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${statusTone}`}>
+                              {item.status.replaceAll('_', ' ')}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
+                          <p className="text-xs text-gray-400">{item.vehicle_info}</p>
+                          <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 

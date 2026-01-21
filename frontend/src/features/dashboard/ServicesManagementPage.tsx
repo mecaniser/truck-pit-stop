@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
-import { CheckCircle, Plus, Wrench } from 'lucide-react'
+import { CheckCircle, Plus, Wrench, LayoutGrid, Rows } from 'lucide-react'
 
 interface Service {
   id: string
@@ -46,6 +46,7 @@ export default function ServicesManagementPage() {
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
 
   const { data: services, isLoading } = useQuery<Service[]>({
     queryKey: ['admin-services'],
@@ -176,10 +177,22 @@ export default function ServicesManagementPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">Services</h1>
-          <p className="text-gray-400 mt-1">Manage your garage services and pricing</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 bg-white/10 border border-white/15 rounded-lg p-1">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
+          >
+            <Rows className="w-4 h-4" /> List
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('cards')}
+            className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
+          >
+            <LayoutGrid className="w-4 h-4" /> Cards
+          </button>
         </div>
         {!isAddingNew && !editingService && (
           <button
@@ -315,80 +328,132 @@ export default function ServicesManagementPage() {
         </div>
       )}
 
-      {/* Services Table */}
+      {/* Services Table / Cards */}
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-white/5 border-b border-white/10">
-              <tr>
-                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Service</th>
-                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Category</th>
-                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Price</th>
-                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3 hidden md:table-cell">Duration</th>
-                <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Status</th>
-                <th className="text-right text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {services?.map((service) => {
-                const category = categories?.find((c) => c.id === service.category_id)
-                return (
-                  <tr key={service.id} className="hover:bg-white/5">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xl text-amber-200">
-                          {service.icon ? <span>{service.icon}</span> : <Wrench className="w-5 h-5" />}
-                        </span>
-                        <div>
-                          <div className="text-sm font-medium text-white">{service.name}</div>
-                          {service.description && (
-                            <div className="text-xs text-gray-500 line-clamp-1">{service.description}</div>
-                          )}
+        {viewMode === 'list' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-white/5 border-b border-white/10">
+                <tr>
+                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Service</th>
+                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Category</th>
+                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Price</th>
+                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3 hidden md:table-cell">Duration</th>
+                  <th className="text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Status</th>
+                  <th className="text-right text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {services?.map((service) => {
+                  const category = categories?.find((c) => c.id === service.category_id)
+                  return (
+                    <tr key={service.id} className="hover:bg-white/5">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl text-amber-200">
+                            {service.icon ? <span>{service.icon}</span> : <Wrench className="w-5 h-5" />}
+                          </span>
+                          <div>
+                            <div className="text-sm font-medium text-white">{service.name}</div>
+                            {service.description && (
+                              <div className="text-xs text-gray-500 line-clamp-1">{service.description}</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className="text-sm text-gray-400">{category?.name || '—'}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-medium text-amber-400">
-                        ${parseFloat(service.base_price).toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <span className="text-sm text-gray-400">{service.duration_minutes} min</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
-                        service.is_active
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${service.is_active ? 'bg-green-400' : 'bg-gray-400'}`} />
-                        {service.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => startEdit(service)}
-                        className="text-amber-400 hover:text-amber-300 text-sm font-medium"
-                      >
-                        Edit
-                      </button>
+                      </td>
+                      <td className="px-4 py-3 hidden sm:table-cell">
+                        <span className="text-sm text-gray-400">{category?.name || '—'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-medium text-amber-400">
+                          ${parseFloat(service.base_price).toFixed(2)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span className="text-sm text-gray-400">{service.duration_minutes} min</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+                          service.is_active
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-gray-500/20 text-gray-400'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${service.is_active ? 'bg-green-400' : 'bg-gray-400'}`} />
+                          {service.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => startEdit(service)}
+                          className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+                {(!services || services.length === 0) && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                      No services found. Add your first service above.
                     </td>
                   </tr>
-                )
-              })}
-              {(!services || services.length === 0) && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
-                    No services found. Add your first service above.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+            {services?.map((service) => {
+              const category = categories?.find((c) => c.id === service.category_id)
+              return (
+                <div key={service.id} className="bg-white/10 border border-white/15 rounded-xl p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-xs uppercase text-gray-400">{category?.name || 'Uncategorized'}</div>
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <span className="text-xl">{service.icon || '🛠️'}</span>
+                        {service.name}
+                      </h3>
+                      <p className="text-xs text-gray-400 mt-1">{service.description || 'No description'}</p>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      service.is_active ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'
+                    }`}>
+                      {service.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm text-gray-200">
+                    <div>
+                      <p className="text-gray-400 text-xs">Duration</p>
+                      <p className="font-semibold">{service.duration_minutes} min</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-xs">Price</p>
+                      <p className="font-semibold">${service.base_price}</p>
+                    </div>
+                    <div className="col-span-2 flex items-center justify-between">
+                      <span className="text-xs text-gray-400">Requires vehicle</span>
+                      <span className="text-xs font-semibold text-gray-100">
+                        {service.requires_vehicle ? 'Yes' : 'No'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => startEdit(service)}
+                    className="w-full px-3 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-lg hover:bg-amber-500/20 transition"
+                  >
+                    Edit
+                  </button>
+                </div>
+              )
+            })}
+            {(!services || services.length === 0) && (
+              <div className="text-gray-400 text-sm col-span-full text-center">No services found. Add your first service above.</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

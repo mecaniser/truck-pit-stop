@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { InventoryItem } from '../../types'
-import { ArrowRight, Plus } from 'lucide-react'
+import { ArrowRight, Plus, LayoutGrid, Rows } from 'lucide-react'
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'all' | 'sku' | 'name' | 'category'>('all')
   const [showLowStock, setShowLowStock] = useState(false)
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards')
 
   const { data: inventory, isLoading } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
@@ -67,9 +68,28 @@ export default function InventoryPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Inventory</h1>
-        <button className="mt-3 sm:mt-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-3">
+        <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+          <button
+            type="button"
+            onClick={() => setViewMode('cards')}
+            className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+              viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+            }`}
+          >
+            <LayoutGrid className="w-4 h-4" /> Cards
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+              viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+            }`}
+          >
+            <Rows className="w-4 h-4" /> List
+          </button>
+        </div>
+        <button className="mt-1 sm:mt-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors">
           + Add Part
         </button>
       </div>
@@ -136,73 +156,116 @@ export default function InventoryPage() {
         )}
       </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredInventory?.map((item) => {
-          const stockStatus = getStockStatus(item)
-          return (
-            <div 
-              key={item.id}
-              className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-mono text-slate-500 bg-white/50 px-2 py-0.5 rounded">
-                    {item.sku}
-                  </span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.bg} ${stockStatus.text}`}>
-                    {stockStatus.label}
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-slate-800 leading-tight line-clamp-2">
-                  {item.name}
-                </h3>
-                {item.category && (
-                  <p className="text-xs text-slate-500 mt-1">{item.category}</p>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                <div className="bg-white/50 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-slate-500">In Stock</div>
-                      <div className="text-2xl font-bold text-slate-800">{item.stock_quantity}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-slate-500">Reorder at</div>
-                      <div className="text-lg font-semibold text-slate-600">{item.reorder_level}</div>
-                    </div>
+      {viewMode === 'cards' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredInventory?.map((item) => {
+            const stockStatus = getStockStatus(item)
+            return (
+              <div 
+                key={item.id}
+                className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-mono text-slate-500 bg-white/50 px-2 py-0.5 rounded">
+                      {item.sku}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.bg} ${stockStatus.text}`}>
+                      {stockStatus.label}
+                    </span>
                   </div>
+                  <h3 className="text-base font-bold text-slate-800 leading-tight line-clamp-2">
+                    {item.name}
+                  </h3>
+                  {item.category && (
+                    <p className="text-xs text-slate-500 mt-1">{item.category}</p>
+                  )}
                 </div>
                 
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Price</span>
-                  <span className="font-bold text-slate-800">
-                    ${parseFloat(item.selling_price).toFixed(2)}
-                  </span>
+                <div className="space-y-2">
+                  <div className="bg-white/50 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs text-slate-500">In Stock</div>
+                        <div className="text-2xl font-bold text-slate-800">{item.stock_quantity}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-slate-500">Reorder at</div>
+                        <div className="text-lg font-semibold text-slate-600">{item.reorder_level}</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500">Price</span>
+                    <span className="font-bold text-slate-800">
+                      ${parseFloat(item.selling_price).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-amber-200/50">
+                  <button className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1">
+                    Manage Stock
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
+            )
+          })}
 
-              <div className="pt-3 border-t border-amber-200/50">
-                <button className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1">
-                  Manage Stock
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
+          {/* Add Part Card */}
+          <div 
+            className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
+          >
+            <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
+              <Plus className="w-6 h-6 text-white" />
             </div>
-          )
-        })}
-
-        {/* Add Part Card */}
-        <div 
-          className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
-        >
-          <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
-            <Plus className="w-6 h-6 text-white" />
+            <span className="text-white font-medium">Add Part</span>
           </div>
-          <span className="text-white font-medium">Add Part</span>
         </div>
-      </div>
+      ) : (
+        <div className="overflow-x-auto bg-white/80 backdrop-blur rounded-xl shadow-sm border border-gray-100">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Category</th>
+                <th className="px-4 py-3">Stock</th>
+                <th className="px-4 py-3">Reorder</th>
+                <th className="px-4 py-3">Cost</th>
+                <th className="px-4 py-3">Price</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
+              {filteredInventory?.map((item) => {
+                const stockStatus = getStockStatus(item)
+                return (
+                  <tr key={item.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-semibold text-gray-900">{item.sku}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-gray-900">{item.name}</div>
+                      {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{item.category || 'Uncategorized'}</td>
+                    <td className="px-4 py-3">{item.stock_quantity}</td>
+                    <td className="px-4 py-3">{item.reorder_level}</td>
+                    <td className="px-4 py-3">${item.cost}</td>
+                    <td className="px-4 py-3">${item.selling_price}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${stockStatus.bg} ${stockStatus.text}`}>
+                        {stockStatus.label}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {filteredInventory?.length === 0 && (searchQuery || showLowStock) && (
         <div className="text-center py-12 text-white/70">
