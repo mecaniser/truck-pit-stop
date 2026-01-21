@@ -187,31 +187,15 @@ export default function ServicesManagementPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 bg-white/10 border border-white/15 rounded-lg p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
-            >
-              <Rows className="w-4 h-4" /> List
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
-            >
-              <LayoutGrid className="w-4 h-4" /> Cards
-            </button>
-          </div>
-          <div className="relative">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
+          <div className="relative flex-1 min-w-[200px] sm:min-w-[260px] md:max-w-lg order-none">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search services..."
-              className="pl-9 pr-3 py-2 rounded-lg bg-white/10 border border-white/15 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/10 border border-white/15 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
             <svg
               className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
@@ -223,13 +207,15 @@ export default function ServicesManagementPage() {
             </svg>
           </div>
         </div>
+
         {!isAddingNew && !editingService && (
           <button
             onClick={startAdd}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+            className="px-3 sm:px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shrink-0"
+            aria-label="Add Service"
           >
             <Plus className="w-5 h-5" />
-            Add Service
+            <span className="hidden sm:inline">Add Service</span>
           </button>
         )}
       </div>
@@ -359,6 +345,25 @@ export default function ServicesManagementPage() {
 
       {/* Services Table / Cards */}
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+        <div className="flex items-center justify-start gap-1 px-3 py-2 border-b border-white/10">
+          <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-md p-0.5">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
+            >
+              <Rows className="w-4 h-4" /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
+            >
+              <LayoutGrid className="w-4 h-4" /> Cards
+            </button>
+          </div>
+        </div>
+        <div className="overflow-y-auto max-h-[calc(100vh-240px)]">
         {viewMode === 'list' ? (
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -483,6 +488,7 @@ export default function ServicesManagementPage() {
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   )
