@@ -151,3 +151,15 @@ export interface TimeSlot {
   time: string
   available: boolean
 }
+
+export interface Supplier {
+  id: string
+  tenant_id: string
+  name: string
+  address: string | null
+  phone: string | null
+  contact_name: string | null
+  notes: string | null
+  created_at?: string
+  updated_at?: string
+}

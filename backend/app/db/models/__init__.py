@@ -4,6 +4,7 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import Inventory, PartsUsage
+from app.db.models.supplier import Supplier
 from app.db.models.labor import Labor
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
