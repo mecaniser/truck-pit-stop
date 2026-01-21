@@ -58,12 +58,30 @@ export default function InventoryPage() {
 
   const getStockStatus = (item: InventoryItem) => {
     if (item.stock_quantity === 0) {
-      return { label: 'Out of Stock', bg: 'bg-red-100', text: 'text-red-700' }
+      return {
+        label: 'Out of Stock',
+        bg: 'bg-red-100',
+        text: 'text-red-700',
+        surface: 'bg-red-50',
+        border: 'border border-red-100',
+      }
     }
     if (item.stock_quantity <= item.reorder_level) {
-      return { label: 'Low Stock', bg: 'bg-yellow-100', text: 'text-yellow-700' }
+      return {
+        label: 'Low Stock',
+        bg: 'bg-yellow-100',
+        text: 'text-yellow-700',
+        surface: 'bg-yellow-50',
+        border: 'border border-yellow-100',
+      }
     }
-    return { label: 'In Stock', bg: 'bg-green-100', text: 'text-green-700' }
+    return {
+      label: 'In Stock',
+      bg: 'bg-green-100',
+      text: 'text-green-700',
+      surface: 'bg-green-50',
+      border: 'border border-green-100',
+    }
   }
 
   return (
@@ -163,7 +181,7 @@ export default function InventoryPage() {
             return (
               <div 
                 key={item.id}
-                className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+                className={`aspect-square p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer ${stockStatus.surface} ${stockStatus.border}`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -225,46 +243,112 @@ export default function InventoryPage() {
           </div>
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white/80 backdrop-blur rounded-xl shadow-sm border border-gray-100">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Stock</th>
-                <th className="px-4 py-3">Reorder</th>
-                <th className="px-4 py-3">Cost</th>
-                <th className="px-4 py-3">Price</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
-              {filteredInventory?.map((item) => {
-                const stockStatus = getStockStatus(item)
-                return (
-                  <tr key={item.id} className="hover:bg-gray-50 transition">
-                    <td className="px-4 py-3 font-semibold text-gray-900">{item.sku}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-gray-900">{item.name}</div>
-                      {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">{item.category || 'Uncategorized'}</td>
-                    <td className="px-4 py-3">{item.stock_quantity}</td>
-                    <td className="px-4 py-3">{item.reorder_level}</td>
-                    <td className="px-4 py-3">${item.cost}</td>
-                    <td className="px-4 py-3">${item.selling_price}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${stockStatus.bg} ${stockStatus.text}`}>
-                        {stockStatus.label}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="space-y-2 lg:hidden">
+            {filteredInventory?.map((item) => {
+              const stockStatus = getStockStatus(item)
+              return (
+                <div
+                  key={item.id}
+                  className={`rounded-lg p-3 shadow-sm flex flex-col gap-2 ${stockStatus.surface} ${stockStatus.border}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5">
+                      <div className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2">
+                        {item.name}
+                      </div>
+                      <div className="text-[11px] font-mono text-gray-500">{item.sku}</div>
+                      {item.category && (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
+                          {item.category}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`px-2 py-1 rounded-full text-[11px] font-semibold ${stockStatus.bg} ${stockStatus.text}`}
+                    >
+                      {stockStatus.label}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-gray-600 flex-wrap gap-2">
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">Stock</span>
+                      <span className="font-semibold text-gray-900">{item.stock_quantity}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">Reorder</span>
+                      <span className="font-semibold text-gray-900">{item.reorder_level}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">Cost</span>
+                      <span className="font-semibold text-gray-900">${item.cost}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-gray-500">Price</span>
+                      <span className="font-semibold text-gray-900">${item.selling_price}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition">
+                      Manage
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="hidden lg:block overflow-x-auto bg-white/80 backdrop-blur rounded-xl shadow-sm border border-gray-100">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-4 py-3">SKU</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Stock</th>
+                  <th className="px-4 py-3">Reorder</th>
+                  <th className="px-4 py-3">Cost</th>
+                  <th className="px-4 py-3">Price</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
+                {filteredInventory?.map((item) => {
+                  const stockStatus = getStockStatus(item)
+                  return (
+                    <tr key={item.id} className={`transition ${stockStatus.surface}`}>
+                      <td className="px-4 py-3 font-semibold text-gray-900">{item.sku}</td>
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900">{item.name}</div>
+                        {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{item.category || 'Uncategorized'}</td>
+                      <td className="px-4 py-3">{item.stock_quantity}</td>
+                      <td className="px-4 py-3">{item.reorder_level}</td>
+                      <td className="px-4 py-3">${item.cost}</td>
+                      <td className="px-4 py-3">${item.selling_price}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${stockStatus.bg} ${stockStatus.text}`}>
+                          {stockStatus.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition">
+                          Manage
+                          <ArrowRight className="w-3 h-3" />
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {filteredInventory?.length === 0 && (searchQuery || showLowStock) && (
