@@ -1,14 +1,26 @@
-import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { InventoryItem } from '../../types'
-import { ArrowRight, Plus, LayoutGrid, Rows } from 'lucide-react'
+import { ArrowRight, Plus, LayoutGrid, Rows, X, Loader2 } from 'lucide-react'
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'all' | 'sku' | 'name' | 'category'>('all')
   const [showLowStock, setShowLowStock] = useState(false)
-  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards')
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>('list')
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [manageForm, setManageForm] = useState({
+    stock_quantity: '',
+    reorder_level: '',
+    cost: '',
+    selling_price: '',
+    supplier_name: '',
+    supplier_contact: '',
+  })
+  const [error, setError] = useState<string | null>(null)
+
+  const queryClient = useQueryClient()
 
   const { data: inventory, isLoading } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
@@ -52,9 +64,19 @@ export default function InventoryPage() {
     return filtered
   }, [inventory, searchQuery, searchType, showLowStock])
 
-  if (isLoading) {
-    return <div className="text-white">Loading...</div>
-  }
+  useEffect(() => {
+    if (selectedItem) {
+      setManageForm({
+        stock_quantity: String(selectedItem.stock_quantity ?? ''),
+        reorder_level: String(selectedItem.reorder_level ?? ''),
+        cost: selectedItem.cost ? String(selectedItem.cost) : '',
+        selling_price: selectedItem.selling_price ? String(selectedItem.selling_price) : '',
+        supplier_name: selectedItem.supplier_name || '',
+        supplier_contact: selectedItem.supplier_contact || '',
+      })
+      setError(null)
+    }
+  }, [selectedItem])
 
   const getStockStatus = (item: InventoryItem) => {
     if (item.stock_quantity === 0) {
@@ -82,6 +104,56 @@ export default function InventoryPage() {
       surface: 'bg-green-50',
       border: 'border border-green-100',
     }
+  }
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedItem) return
+      const payload: Record<string, any> = {}
+
+      const numericFields: Array<keyof typeof manageForm> = ['stock_quantity', 'reorder_level', 'cost', 'selling_price']
+      numericFields.forEach((field) => {
+        const value = manageForm[field]
+        if (value !== '') {
+          const num = Number(value)
+          if (Number.isFinite(num)) {
+            payload[field] = num
+          }
+        }
+      })
+
+      if (manageForm.supplier_name !== '') payload.supplier_name = manageForm.supplier_name
+      if (manageForm.supplier_contact !== '') payload.supplier_contact = manageForm.supplier_contact
+
+      return api.put(`/inventory/${selectedItem.id}`, payload)
+    },
+    onSuccess: () => {
+      setError(null)
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setSelectedItem(null)
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.detail || 'Failed to update inventory'
+      setError(Array.isArray(message) ? message.join(', ') : message)
+    },
+  })
+
+  const openManage = (item: InventoryItem) => {
+    setSelectedItem(item)
+  }
+
+  const handleManageChange = (field: keyof typeof manageForm, value: string) => {
+    setManageForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    updateMutation.mutate()
+  }
+
+  if (isLoading) {
+    return <div className="text-white">Loading...</div>
   }
 
   return (
@@ -223,7 +295,10 @@ export default function InventoryPage() {
                 </div>
 
                 <div className="pt-3 border-t border-amber-200/50">
-                  <button className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1">
+                  <button
+                    onClick={() => openManage(item)}
+                    className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                  >
                     Manage Stock
                     <ArrowRight className="w-4 h-4" />
                   </button>
@@ -291,7 +366,10 @@ export default function InventoryPage() {
                   </div>
 
                   <div className="flex justify-end">
-                    <button className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition">
+                    <button
+                      onClick={() => openManage(item)}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition"
+                    >
                       Manage
                       <ArrowRight className="w-3 h-3" />
                     </button>
@@ -337,7 +415,10 @@ export default function InventoryPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition">
+                        <button
+                          onClick={() => openManage(item)}
+                          className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition"
+                        >
                           Manage
                           <ArrowRight className="w-3 h-3" />
                         </button>
@@ -362,6 +443,127 @@ export default function InventoryPage() {
           No inventory found. Add your first part to get started.
         </div>
       )}
+
+      <div
+        className={`fixed inset-0 z-50 transition ${selectedItem ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        aria-hidden={!selectedItem}
+      >
+        <div
+          className={`absolute inset-0 bg-black/50 transition-opacity ${selectedItem ? 'opacity-100' : 'opacity-0'}`}
+          onClick={() => setSelectedItem(null)}
+        />
+        <aside
+          className={`absolute top-0 right-0 h-full w-full sm:w-[520px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
+            selectedItem ? 'translate-x-0' : 'translate-x-full'
+          }`}
+          role="dialog"
+          aria-label="Manage inventory"
+        >
+          <form className="h-full flex flex-col" onSubmit={handleSubmit}>
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase text-gray-500 font-semibold">Manage Inventory</p>
+                <p className="text-lg font-semibold text-slate-800">
+                  {selectedItem?.name || ''}
+                </p>
+                {selectedItem?.sku && <p className="text-sm text-gray-500">SKU: {selectedItem.sku}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedItem(null)}
+                className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Stock Quantity</span>
+                  <input
+                    type="number"
+                    value={manageForm.stock_quantity}
+                    onChange={(e) => handleManageChange('stock_quantity', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Reorder Level</span>
+                  <input
+                    type="number"
+                    value={manageForm.reorder_level}
+                    onChange={(e) => handleManageChange('reorder_level', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Cost</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={manageForm.cost}
+                    onChange={(e) => handleManageChange('cost', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Selling Price</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={manageForm.selling_price}
+                    onChange={(e) => handleManageChange('selling_price', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+              </div>
+
+              <label className="text-sm text-gray-700 space-y-1 block">
+                <span>Supplier Name</span>
+                <input
+                  type="text"
+                  value={manageForm.supplier_name}
+                  onChange={(e) => handleManageChange('supplier_name', e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="Optional"
+                />
+              </label>
+
+              <label className="text-sm text-gray-700 space-y-1 block">
+                <span>Supplier Contact</span>
+                <input
+                  type="text"
+                  value={manageForm.supplier_contact}
+                  onChange={(e) => handleManageChange('supplier_contact', e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="Optional"
+                />
+              </label>
+
+              {error && <div className="text-sm text-red-600">{error}</div>}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedItem(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!selectedItem || updateMutation.isLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-70"
+              >
+                {updateMutation.isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </aside>
+      </div>
     </div>
   )
 }
