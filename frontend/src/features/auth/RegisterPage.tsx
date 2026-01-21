@@ -5,6 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
+import { formatUSPhone } from '@/utils/phone'
+import { isValidUSPhone } from '@/utils/phone'
 
 const registerSchema = z.object({
   email: z
@@ -29,12 +31,9 @@ const registerSchema = z.object({
     .string()
     .min(1, 'Last name is required')
     .min(2, 'Last name must be at least 2 characters'),
-  phone: z
-    .string()
-    .optional()
-    .refine((val) => !val || /^[\d\s\-\(\)\+]{10,}$/.test(val), {
-      message: 'Please enter a valid phone number',
-    }),
+  phone: z.string().optional().refine((val) => isValidUSPhone(val), {
+    message: 'Please enter a valid phone number',
+  }),
   tenant_slug: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -52,6 +51,7 @@ export default function RegisterPage() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
     watch,
   } = useForm<RegisterFormData>({
@@ -267,7 +267,9 @@ export default function RegisterPage() {
               Phone <span className="text-gray-400">(optional)</span>
             </label>
             <input
-              {...register('phone')}
+              {...register('phone', {
+                onChange: (e) => setValue('phone', formatUSPhone(e.target.value)),
+              })}
               type="tel"
               id="phone"
               className={getInputClasses('phone')}

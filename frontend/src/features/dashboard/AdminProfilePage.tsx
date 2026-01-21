@@ -6,11 +6,12 @@ import { z } from 'zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
+import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 
 const profileSchema = z.object({
   first_name: z.string().min(1, 'First name is required').min(2, 'Min 2 characters'),
   last_name: z.string().min(1, 'Last name is required').min(2, 'Min 2 characters'),
-  phone: z.string().optional().refine((val) => !val || /^[\d\s\-\(\)\+]{10,}$/.test(val), {
+  phone: z.string().optional().refine((val) => isValidUSPhone(val), {
     message: 'Invalid phone number',
   }),
 })
@@ -181,6 +182,7 @@ export default function AdminProfilePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -191,6 +193,7 @@ export default function AdminProfilePage() {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -215,6 +218,7 @@ export default function AdminProfilePage() {
       setUser(data)
       queryClient.invalidateQueries({ queryKey: ['user'] })
       setSuccessMessage('Profile updated successfully!')
+      setIsEditingProfile(false)
       setTimeout(() => setSuccessMessage(null), 3000)
     },
   })
@@ -271,6 +275,35 @@ export default function AdminProfilePage() {
           </span>
         </div>
 
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <div className="text-sm text-gray-300 flex items-center gap-2">
+            <span className="font-semibold text-white">Profile:</span>
+            <span>{`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'N/A'}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsEditingProfile((prev) => !prev)}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-amber-500/40 text-amber-200 hover:bg-amber-500/10 transition-colors"
+          >
+            {isEditingProfile ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Close
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6.232-6.232a2 2 0 112.828 2.828L11.828 13.828A4 4 0 019 15H7v-2a4 4 0 011.172-2.828z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7l-1.5 1.5" />
+                </svg>
+                Edit
+              </>
+            )}
+          </button>
+        </div>
+
         {successMessage && (
           <div className="mb-6 flex items-center gap-3 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
             <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -289,71 +322,74 @@ export default function AdminProfilePage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          <div className="grid grid-cols-2 gap-4">
+        {isEditingProfile && (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                  First Name
+                </label>
+                <input
+                  {...register('first_name')}
+                  type="text"
+                  className={inputClasses('first_name')}
+                  placeholder="John"
+                />
+                {errors.first_name && (
+                  <p className="mt-1 text-sm text-red-400">{errors.first_name.message}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                  Last Name
+                </label>
+                <input
+                  {...register('last_name')}
+                  type="text"
+                  className={inputClasses('last_name')}
+                  placeholder="Doe"
+                />
+                {errors.last_name && (
+                  <p className="mt-1 text-sm text-red-400">{errors.last_name.message}</p>
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                First Name
+                Phone Number
               </label>
               <input
-                {...register('first_name')}
-                type="text"
-                className={inputClasses('first_name')}
-                placeholder="John"
+                {...register('phone')}
+                type="tel"
+                className={inputClasses('phone')}
+                placeholder="(555) 123-4567"
+                onChange={(e) => setValue('phone', formatUSPhone(e.target.value))}
               />
-              {errors.first_name && (
-                <p className="mt-1 text-sm text-red-400">{errors.first_name.message}</p>
+              {errors.phone && (
+                <p className="mt-1 text-sm text-red-400">{errors.phone.message}</p>
               )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                Last Name
-              </label>
-              <input
-                {...register('last_name')}
-                type="text"
-                className={inputClasses('last_name')}
-                placeholder="Doe"
-              />
-              {errors.last_name && (
-                <p className="mt-1 text-sm text-red-400">{errors.last_name.message}</p>
+
+            <button
+              type="submit"
+              disabled={!isDirty || updateMutation.isPending}
+              className="w-full sm:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {updateMutation.isPending ? (
+                <>
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
               )}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">
-              Phone Number
-            </label>
-            <input
-              {...register('phone')}
-              type="tel"
-              className={inputClasses('phone')}
-              placeholder="(555) 123-4567"
-            />
-            {errors.phone && (
-              <p className="mt-1 text-sm text-red-400">{errors.phone.message}</p>
-            )}
-          </div>
-
-          <button
-            type="submit"
-            disabled={!isDirty || updateMutation.isPending}
-            className="w-full sm:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            {updateMutation.isPending ? (
-              <>
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Saving...
-              </>
-            ) : (
-              'Save Changes'
-            )}
-          </button>
-        </form>
+            </button>
+          </form>
+        )}
 
         {/* Collapsible Password Change */}
         <CollapsiblePasswordChange />
@@ -372,6 +408,7 @@ export default function AdminProfilePage() {
           </button>
         </div>
       </div>
+
     </div>
   )
 }

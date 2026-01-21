@@ -9,6 +9,8 @@ import api from '../../lib/api'
 import { Customer } from '../../types'
 import PaymentMethodsCard from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
+import { formatUSPhone } from '@/utils/phone'
+import { isValidUSPhone } from '@/utils/phone'
 
 function CollapsiblePasswordChange() {
   const [isOpen, setIsOpen] = useState(false)
@@ -158,7 +160,7 @@ const profileSchema = z.object({
   first_name: z.string().min(1, 'First name is required').min(2, 'Min 2 characters'),
   last_name: z.string().min(1, 'Last name is required').min(2, 'Min 2 characters'),
   email: z.string().min(1, 'Email is required').email('Invalid email'),
-  phone: z.string().optional().refine((val) => !val || /^[\d\s\-\(\)\+]{10,}$/.test(val), {
+  phone: z.string().optional().refine((val) => isValidUSPhone(val), {
     message: 'Invalid phone number',
   }),
 })
@@ -205,6 +207,7 @@ export default function ProfileSettingsPage() {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -349,6 +352,7 @@ export default function ProfileSettingsPage() {
               type="tel"
               className={inputClasses('phone')}
               placeholder="(555) 123-4567"
+              onChange={(e) => setValue('phone', formatUSPhone(e.target.value))}
             />
             {errors.phone && (
               <p className="mt-1 text-sm text-red-400">{errors.phone.message}</p>
