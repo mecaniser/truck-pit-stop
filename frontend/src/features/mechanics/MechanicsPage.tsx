@@ -120,39 +120,38 @@ export default function MechanicsPage() {
         </div>
       ) : (
         <>
-          <div className="bg-white/5 rounded-xl p-6 border border-white/10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="text-xl font-semibold text-white">Mechanics</h1>
-              <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-                    viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-                  }`}
-                >
-                  <Rows className="w-4 h-4" /> List
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('cards')}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-                    viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-                  }`}
-                >
-                  <LayoutGrid className="w-4 h-4" /> Cards
-                </button>
-              </div>
-            </div>
+          <div className="bg-white/5 rounded-xl p-6 border border-white/10 flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-xl font-semibold text-white">Mechanics</h1>
             <div className="px-3 py-1 rounded-full border border-amber-500/30 text-amber-300 text-xs font-semibold bg-amber-500/10">
               Admin view
             </div>
           </div>
 
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Current Mechanics</h2>
-          <span className="text-xs text-gray-400">Active status reflects account availability.</span>
+        <div className="flex flex-wrap items-center gap-2 justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-white">Current Mechanics</h2>
+          </div>
+          <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+                viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+              }`}
+            >
+              <Rows className="w-4 h-4" /> List
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+                viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" /> Cards
+            </button>
+          </div>
         </div>
         {isLoading ? (
           <div className="text-gray-400 text-sm">Loading mechanics...</div>
