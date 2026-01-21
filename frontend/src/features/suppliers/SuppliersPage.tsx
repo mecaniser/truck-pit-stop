@@ -36,6 +36,7 @@ export default function SuppliersPage() {
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<Supplier | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
 
   const showMessage = (message: string) => {
     setStatusMessage(message)
@@ -128,6 +129,7 @@ export default function SuppliersPage() {
       if (editing && editing.id) {
         setEditing(null)
       }
+      setConfirmingDeleteId(null)
     },
     onError: (err: any) => {
       const detail = err?.response?.data?.detail || 'Failed to delete supplier'
@@ -146,10 +148,7 @@ export default function SuppliersPage() {
 
   const handleDelete = (supplier: Supplier) => {
     if (!isAdmin) return
-    const confirmed = window.confirm(`Delete ${supplier.name}? This cannot be undone.`)
-    if (confirmed) {
-      deleteMutation.mutate(supplier.id)
-    }
+    deleteMutation.mutate(supplier.id)
   }
 
   const filteredSuppliers = useMemo(() => {
@@ -298,24 +297,62 @@ export default function SuppliersPage() {
                           )}
                         </td>
                         {isAdmin && (
-                          <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => setEditing(supplier)}
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-200 hover:text-white"
-                            >
-                              <Pencil className="w-4 h-4" />
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(supplier)}
-                              className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
-                              disabled={deleteMutation.isLoading}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete
-                            </button>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <div className="relative inline-flex justify-end min-w-[190px] overflow-hidden">
+                              <div
+                                className={`flex items-center gap-2 transition-all duration-200 ease-in-out ${
+                                  confirmingDeleteId === supplier.id
+                                    ? '-translate-x-4 opacity-0 pointer-events-none'
+                                    : 'translate-x-0 opacity-100'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditing(supplier)
+                                    setConfirmingDeleteId(null)
+                                  }}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-amber-200 hover:text-white"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingDeleteId(supplier.id)}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
+                                  disabled={deleteMutation.isLoading}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Delete
+                                </button>
+                              </div>
+                              <div
+                                className={`absolute right-0 top-0 flex items-center gap-2 transition-all duration-200 ease-out ${
+                                  confirmingDeleteId === supplier.id
+                                    ? 'translate-x-0 opacity-100'
+                                    : 'translate-x-full opacity-0 pointer-events-none'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(supplier)}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
+                                  disabled={deleteMutation.isLoading}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                  Confirm
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmingDeleteId(null)}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white"
+                                  disabled={deleteMutation.isLoading}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -366,24 +403,60 @@ export default function SuppliersPage() {
                       </div>
                     </div>
                     {isAdmin && (
-                      <div className="mt-4 flex items-center justify-between text-xs">
-                        <button
-                          type="button"
-                          onClick={() => setEditing(supplier)}
-                          className="inline-flex items-center gap-1 font-semibold text-amber-200 hover:text-white"
+                      <div className="mt-4 flex items-center justify-between text-xs relative overflow-hidden min-h-[30px]">
+                        <div
+                          className={`flex items-center gap-2 transition-all duration-200 ease-in-out ${
+                            confirmingDeleteId === supplier.id
+                              ? '-translate-x-4 opacity-0 pointer-events-none'
+                              : 'translate-x-0 opacity-100'
+                          }`}
                         >
-                          <Pencil className="w-4 h-4" />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(supplier)}
-                          className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                          disabled={deleteMutation.isLoading}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditing(supplier)
+                              setConfirmingDeleteId(null)
+                            }}
+                            className="inline-flex items-center gap-1 font-semibold text-amber-200 hover:text-white"
+                          >
+                            <Pencil className="w-4 h-4" />
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingDeleteId(supplier.id)}
+                            className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
+                            disabled={deleteMutation.isLoading}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </button>
+                        </div>
+                        <div
+                          className={`absolute right-0 top-0 flex items-center gap-2 transition-all duration-200 ease-out ${
+                            confirmingDeleteId === supplier.id
+                              ? 'translate-x-0 opacity-100'
+                              : 'translate-x-full opacity-0 pointer-events-none'
+                          }`}
                         >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(supplier)}
+                            className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
+                            disabled={deleteMutation.isLoading}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingDeleteId(null)}
+                            className="inline-flex items-center gap-1 font-semibold text-gray-200 hover:text-white"
+                            disabled={deleteMutation.isLoading}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

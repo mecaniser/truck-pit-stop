@@ -1,4 +1,5 @@
 from typing import List, Optional
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -32,8 +33,8 @@ class SupplierUpdate(BaseModel):
 
 
 class SupplierResponse(SupplierBase):
-    id: str
-    tenant_id: str
+    id: UUID
+    tenant_id: UUID
 
     class Config:
         from_attributes = True
