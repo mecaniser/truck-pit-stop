@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { AddressAutofill } from '@mapbox/search-js-react'
 import { LayoutGrid, Rows, Phone, MapPin, FileText, Loader2, Plus, Pencil, Trash2, UserRound } from 'lucide-react'
 import api from '@/lib/api'
 import { Supplier } from '@/types'
@@ -23,6 +24,8 @@ const cleanString = (value?: string | null) => {
   const trimmed = (value || '').trim()
   return trimmed === '' ? undefined : trimmed
 }
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
 export default function SuppliersPage() {
   const queryClient = useQueryClient()
@@ -455,13 +458,39 @@ export default function SuppliersPage() {
 
             <label className="text-sm text-gray-200 space-y-1 block">
               <span>Address</span>
-              <textarea
-                {...register('address')}
-                rows={2}
-                disabled={!isAdmin || isSaving}
-                className={`${inputClass(!!errors.address)} resize-none`}
-                placeholder="Street, City, State"
-              />
+              {MAPBOX_TOKEN ? (
+                <AddressAutofill
+                  accessToken={MAPBOX_TOKEN}
+                  options={{ language: 'en', country: ['US', 'CA', 'MX'] }}
+                  onRetrieve={(res) => {
+                    const props = res?.features?.[0]?.properties as Record<string, string> | undefined
+                    const formatted =
+                      props?.place_formatted ||
+                      props?.full_address ||
+                      [props?.address_line1, props?.place, props?.region, props?.postcode].filter(Boolean).join(', ')
+                    if (formatted) {
+                      setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
+                    }
+                  }}
+                >
+                  <input
+                    type="text"
+                    {...register('address')}
+                    autoComplete="street-address"
+                    disabled={!isAdmin || isSaving}
+                    className={inputClass(!!errors.address)}
+                    placeholder="Start typing address..."
+                  />
+                </AddressAutofill>
+              ) : (
+                <input
+                  type="text"
+                  {...register('address')}
+                  disabled={!isAdmin || isSaving}
+                  className={inputClass(!!errors.address)}
+                  placeholder="Street, City, State"
+                />
+              )}
             </label>
 
             <label className="text-sm text-gray-200 space-y-1 block">
