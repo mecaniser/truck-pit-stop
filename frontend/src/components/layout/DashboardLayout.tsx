@@ -4,10 +4,9 @@ import { useAuthStore } from '../../stores/authStore'
 import CustomersPage from '@/features/customers/CustomersPage'
 import VehiclesPage from '@/features/vehicles/VehiclesPage'
 import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
-import InventoryPage from '@/features/inventory/InventoryPage'
+import MyGaragePage from '@/features/garage/MyGaragePage'
 import DashboardHome from '@/features/dashboard/DashboardHome'
 import AdminProfilePage from '@/features/dashboard/AdminProfilePage'
-import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
@@ -19,8 +18,7 @@ export default function DashboardLayout() {
     { to: '/dashboard/customers', label: 'Customers' },
     { to: '/dashboard/vehicles', label: 'Vehicles' },
     { to: '/dashboard/repair-orders', label: 'Repair Orders' },
-    { to: '/dashboard/services', label: 'Services' },
-    { to: '/dashboard/inventory', label: 'Inventory' },
+    { to: '/dashboard/garage', label: 'My Garage' },
   ]
 
   const isActive = (path: string, exact?: boolean) => 
@@ -202,8 +200,7 @@ export default function DashboardLayout() {
           <Route path="customers" element={<CustomersPage />} />
           <Route path="vehicles" element={<VehiclesPage />} />
           <Route path="repair-orders" element={<RepairOrdersPage />} />
-          <Route path="services" element={<ServicesManagementPage />} />
-          <Route path="inventory" element={<InventoryPage />} />
+          <Route path="garage/*" element={<MyGaragePage />} />
           <Route path="settings" element={<AdminProfilePage />} />
           <Route path="" element={<DashboardHome />} />
         </Routes>
