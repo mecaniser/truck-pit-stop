@@ -9,13 +9,6 @@ const tabClass =
 export default function MyGaragePage() {
   return (
     <div className="space-y-4">
-      <div className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-white">My Garage</h1>
-          <p className="text-sm text-gray-400">Manage services, inventory, and mechanics in one place.</p>
-        </div>
-      </div>
-
       <div className="bg-white/5 border border-white/10 rounded-xl">
         <div className="flex flex-wrap gap-2 px-4 py-3 border-b border-white/10">
         <NavLink
