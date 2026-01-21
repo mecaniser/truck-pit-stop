@@ -74,6 +74,15 @@ export interface RepairOrder {
   updated_at: string
 }
 
+export interface MechanicWorkItem {
+  id: string
+  order_number: string
+  status: RepairOrderStatus
+  customer_name: string
+  vehicle_info: string
+  updated_at: string
+}
+
 export interface InventoryItem {
   id: string
   tenant_id: string
