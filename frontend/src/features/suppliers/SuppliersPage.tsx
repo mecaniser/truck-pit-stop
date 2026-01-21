@@ -175,18 +175,13 @@ export default function SuppliersPage() {
     })
   }, [search, suppliers])
 
-  const inputClass = (hasError?: boolean) =>
-    `w-full px-3 py-2 rounded-lg bg-white/10 border text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-sm ${
-      hasError ? 'border-red-500 focus:ring-red-500' : 'border-white/20 focus:ring-amber-500'
-    }`
-
   const closeForm = () => {
     setFormOpen(false)
     setEditing(null)
     reset({ name: '', address: '', phone: '', contact_name: '', notes: '' })
   }
 
-  const isSaving = createMutation.isLoading || updateMutation.isLoading
+  const isSaving = createMutation.isPending || updateMutation.isPending
 
   return (
     <div className="space-y-5">
@@ -314,7 +309,7 @@ export default function SuppliersPage() {
                                 type="button"
                                 onClick={() => handleDelete(supplier)}
                                 className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                                disabled={deleteMutation.isLoading}
+                                disabled={deleteMutation.isPending}
                               >
                                 <Trash2 className="w-4 h-4" />
                                 Confirm
@@ -323,7 +318,7 @@ export default function SuppliersPage() {
                                 type="button"
                                 onClick={() => setConfirmingDeleteId(null)}
                                 className="inline-flex items-center gap-1 font-semibold text-gray-300 hover:text-white"
-                                disabled={deleteMutation.isLoading}
+                                disabled={deleteMutation.isPending}
                               >
                                 Cancel
                               </button>
@@ -345,7 +340,7 @@ export default function SuppliersPage() {
                                 type="button"
                                 onClick={() => setConfirmingDeleteId(supplier.id)}
                                 className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                                disabled={deleteMutation.isLoading}
+                                disabled={deleteMutation.isPending}
                               >
                                 <Trash2 className="w-4 h-4" />
                                 Delete
@@ -415,7 +410,7 @@ export default function SuppliersPage() {
                                       type="button"
                                       onClick={() => setConfirmingDeleteId(supplier.id)}
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
-                                      disabled={deleteMutation.isLoading}
+                                      disabled={deleteMutation.isPending}
                                     >
                                       <Trash2 className="w-4 h-4" />
                                       Delete
@@ -432,7 +427,7 @@ export default function SuppliersPage() {
                                       type="button"
                                       onClick={() => handleDelete(supplier)}
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-red-200 hover:text-red-100"
-                                      disabled={deleteMutation.isLoading}
+                                      disabled={deleteMutation.isPending}
                                     >
                                       <Trash2 className="w-4 h-4" />
                                       Confirm
@@ -441,7 +436,7 @@ export default function SuppliersPage() {
                                       type="button"
                                       onClick={() => setConfirmingDeleteId(null)}
                                       className="inline-flex items-center gap-1 text-xs font-semibold text-gray-300 hover:text-white"
-                                      disabled={deleteMutation.isLoading}
+                                      disabled={deleteMutation.isPending}
                                     >
                                       Cancel
                                     </button>
@@ -536,7 +531,7 @@ export default function SuppliersPage() {
                             type="button"
                             onClick={() => setConfirmingDeleteId(supplier.id)}
                             className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                            disabled={deleteMutation.isLoading}
+                            disabled={deleteMutation.isPending}
                           >
                             <Trash2 className="w-4 h-4" />
                             Delete
@@ -553,7 +548,7 @@ export default function SuppliersPage() {
                             type="button"
                             onClick={() => handleDelete(supplier)}
                             className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                            disabled={deleteMutation.isLoading}
+                            disabled={deleteMutation.isPending}
                           >
                             <Trash2 className="w-4 h-4" />
                             Confirm
@@ -562,7 +557,7 @@ export default function SuppliersPage() {
                             type="button"
                             onClick={() => setConfirmingDeleteId(null)}
                             className="inline-flex items-center gap-1 font-semibold text-gray-200 hover:text-white"
-                            disabled={deleteMutation.isLoading}
+                            disabled={deleteMutation.isPending}
                           >
                             Cancel
                           </button>
@@ -659,20 +654,24 @@ export default function SuppliersPage() {
                   <label className="text-sm text-gray-700 space-y-1 block">
                     <span>Address</span>
                     {MAPBOX_TOKEN ? (
-                      <AddressAutofill
-                        accessToken={MAPBOX_TOKEN}
-                        options={{ language: 'en', country: ['US', 'CA', 'MX'] }}
-                        onRetrieve={(res) => {
-                          const props = res?.features?.[0]?.properties as Record<string, string> | undefined
-                          const formatted =
-                            props?.place_formatted ||
-                            props?.full_address ||
-                            [props?.address_line1, props?.place, props?.region, props?.postcode].filter(Boolean).join(', ')
+                    <AddressAutofill
+                      accessToken={MAPBOX_TOKEN}
+                      options={{ language: 'en', country: 'US' }}
+                      onRetrieve={(res) => {
+                          const props = res?.features?.[0]?.properties as Record<string, unknown> | undefined
+                          const addressParts = [props?.place_formatted, props?.full_address, props?.address_line1, props?.place, props?.region, props?.postcode]
+                            .map((val) => {
+                              if (typeof val === 'string') return val
+                              if (Array.isArray(val)) return val.join(' ')
+                              return ''
+                            })
+                            .filter(Boolean)
+                          const formatted = addressParts[0] || addressParts.slice(2).join(', ')
                           if (formatted) {
                             setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
                           }
-                        }}
-                      >
+                      }}
+                    >
                         <input
                           type="text"
                           {...register('address')}
@@ -732,7 +731,7 @@ export default function SuppliersPage() {
                         disabled={!isAdmin || isSaving}
                         className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-60"
                       >
-                        {(isSaving || deleteMutation.isLoading) && <Loader2 className="w-4 h-4 animate-spin" />}
+                        {(isSaving || deleteMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
                         {editing ? 'Save changes' : 'Add supplier'}
                       </button>
                     </div>

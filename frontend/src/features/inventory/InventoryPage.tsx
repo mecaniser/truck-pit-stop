@@ -685,10 +685,10 @@ export default function InventoryPage() {
               </button>
               <button
                 type="submit"
-                disabled={!selectedItem || updateMutation.isLoading}
+                disabled={!selectedItem || updateMutation.isPending}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-70"
               >
-                {updateMutation.isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {updateMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save Changes
               </button>
             </div>
