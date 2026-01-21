@@ -1,8 +1,14 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { AddressAutofill } from '@mapbox/search-js-react'
 import api from '../../lib/api'
 import { InventoryItem } from '../../types'
 import { ArrowRight, Plus, LayoutGrid, Rows, X, Loader2 } from 'lucide-react'
+import BaseSelect from '../../components/BaseSelect'
+import { formatUSPhone } from '../../utils/phone'
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
+type SupplierOption = { name: string; address?: string }
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
@@ -10,6 +16,21 @@ export default function InventoryPage() {
   const [showLowStock, setShowLowStock] = useState(false)
   const [viewMode, setViewMode] = useState<'cards' | 'list'>('list')
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([
+    { name: 'Dealership' },
+    { name: 'NAPA' },
+    { name: 'AutoZone' },
+    { name: "O'Reilly Auto Parts" },
+    { name: 'Advance Auto Parts' },
+    { name: 'CarQuest' },
+    { name: 'Pep Boys' },
+    { name: 'RockAuto' },
+    { name: 'Local Yard' },
+  ])
+  const [addingSupplier, setAddingSupplier] = useState(false)
+  const [newSupplier, setNewSupplier] = useState('')
+  const [newSupplierAddress, setNewSupplierAddress] = useState('')
+  const [newSupplierPhone, setNewSupplierPhone] = useState('')
   const [manageForm, setManageForm] = useState({
     stock_quantity: '',
     reorder_level: '',
@@ -519,16 +540,126 @@ export default function InventoryPage() {
                 </label>
               </div>
 
-              <label className="text-sm text-gray-700 space-y-1 block">
-                <span>Supplier Name</span>
-                <input
-                  type="text"
-                  value={manageForm.supplier_name}
-                  onChange={(e) => handleManageChange('supplier_name', e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  placeholder="Optional"
-                />
-              </label>
+              <div className="space-y-2">
+                <label className="text-sm text-gray-700 space-y-1 block">
+                  <span>Supplier Name</span>
+                  <BaseSelect
+                    options={supplierOptions.map((opt) => ({
+                      value: opt.name,
+                      label: opt.name,
+                      subLabel: opt.address || 'Address not set',
+                    }))}
+                    value={manageForm.supplier_name}
+                    onChange={(val) => {
+                      if (val === 'add_new') return
+                      handleManageChange('supplier_name', val)
+                    }}
+                    placeholder="Select a supplier"
+                    allowAddNew
+                    addNewLabel="+ Add supplier"
+                    onAddNew={() => setAddingSupplier(true)}
+                  />
+                  <div className="text-[12px] text-amber-700 font-semibold mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setAddingSupplier(true)}
+                      className="hover:underline"
+                    >
+                      + Add supplier
+                    </button>
+                  </div>
+                </label>
+
+                {addingSupplier && (
+                  <div className="space-y-2 rounded-lg border border-gray-200 p-3 bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newSupplier}
+                        onChange={(e) => setNewSupplier(e.target.value)}
+                        className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Add supplier name"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmed = newSupplier.trim()
+                          if (!trimmed) return
+                          const exists = supplierOptions.some(
+                            (s) => s.name.toLowerCase() === trimmed.toLowerCase()
+                          )
+                          if (!exists) {
+                            setSupplierOptions((prev) => [
+                              ...prev,
+                              { name: trimmed, address: newSupplierAddress.trim() || undefined },
+                            ])
+                          }
+                          handleManageChange('supplier_name', trimmed)
+                          const contactParts = [newSupplierAddress.trim(), newSupplierPhone.trim()].filter(Boolean)
+                          if (contactParts.length) {
+                            handleManageChange('supplier_contact', contactParts.join(' | '))
+                          }
+                          setNewSupplier('')
+                          setNewSupplierAddress('')
+                          setNewSupplierPhone('')
+                          setAddingSupplier(false)
+                        }}
+                        className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewSupplier('')
+                          setNewSupplierAddress('')
+                          setNewSupplierPhone('')
+                          setAddingSupplier(false)
+                        }}
+                        className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-xs text-gray-600">Supplier address (saved into contact)</span>
+                      {MAPBOX_TOKEN ? (
+                        <AddressAutofill
+                          accessToken={MAPBOX_TOKEN}
+                          onRetrieve={(e: any) => {
+                            const address = e.features?.[0]?.properties?.place_formatted || ''
+                            setNewSupplierAddress(address)
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={newSupplierAddress}
+                            onChange={(e) => setNewSupplierAddress(e.target.value)}
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                            placeholder="Search address"
+                          />
+                        </AddressAutofill>
+                      ) : (
+                        <input
+                          type="text"
+                          value={newSupplierAddress}
+                          onChange={(e) => setNewSupplierAddress(e.target.value)}
+                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                          placeholder="Address"
+                        />
+                      )}
+                      <input
+                        type="text"
+                        value={newSupplierPhone}
+                        onChange={(e) => setNewSupplierPhone(formatUSPhone(e.target.value))}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Phone (optional)"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <label className="text-sm text-gray-700 space-y-1 block">
                 <span>Supplier Contact</span>
