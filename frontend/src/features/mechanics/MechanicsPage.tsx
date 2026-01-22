@@ -208,7 +208,7 @@ export default function MechanicsPage() {
 
   const onSubmit = (data: MechanicFormData) => {
     setFormError(null)
-    const normalizedAddress = data.address?.trim() || null
+    const normalizedAddress = data.address?.trim() || undefined
     if (editingMechanic) {
       const payload: Partial<MechanicFormData> = {
         first_name: data.first_name,
