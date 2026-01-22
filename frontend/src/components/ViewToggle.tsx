@@ -1,4 +1,3 @@
-import React from 'react'
 import { LayoutGrid, Rows } from 'lucide-react'
 
 type ViewMode = 'list' | 'cards'
