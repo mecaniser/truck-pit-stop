@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
-import { CheckCircle, Plus, Wrench, LayoutGrid, Rows } from 'lucide-react'
+import { CheckCircle, Wrench, LayoutGrid, Rows } from 'lucide-react'
+import SearchAddBar from '@/components/SearchAddBar'
 
 interface Service {
   id: string
@@ -47,6 +48,9 @@ export default function ServicesManagementPage() {
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  )
   const [searchQuery, setSearchQuery] = useState('')
 
   const formOpen = isAddingNew || !!editingService
@@ -166,12 +170,6 @@ export default function ServicesManagementPage() {
     }
   }
 
-  const inputClasses = (hasError: boolean) => {
-    const base = "w-full px-3 py-2 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
-    return hasError
-      ? `${base} border-red-500 focus:ring-red-500`
-      : `${base} border-white/20 focus:ring-amber-500`
-  }
   const drawerInputClasses = (hasError: boolean) => {
     const base = "w-full px-3 py-2 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
     return hasError
@@ -196,41 +194,30 @@ export default function ServicesManagementPage() {
     )
   })
 
+  const activeViewMode = isMobile ? 'cards' : viewMode
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setIsMobile(window.innerWidth < 640)
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
-          <div className="relative flex-1 min-w-[200px] sm:min-w-[260px] md:max-w-lg order-none">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search services..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/10 border border-white/15 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-            <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
-            </svg>
-          </div>
-        </div>
-
-        {!isAddingNew && !editingService && (
-          <button
-            onClick={startAdd}
-            className="px-3 sm:px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shrink-0"
-            aria-label="Add Service"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="hidden sm:inline">Add Service</span>
-          </button>
-        )}
-      </div>
+      <SearchAddBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search services..."
+        onAdd={startAdd}
+        addLabel="Add Service"
+        addLabelMobile="Add"
+        className="mb-4"
+        inputWidthClass="sm:min-w-[260px] md:max-w-lg"
+        showAddButton={!isAddingNew && !editingService}
+      />
 
       {successMessage && (
         <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
@@ -241,26 +228,26 @@ export default function ServicesManagementPage() {
 
       {/* Services Table / Cards */}
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        <div className="flex items-center justify-start gap-1 px-3 py-2 border-b border-white/10">
+        <div className="hidden sm:flex items-center justify-start gap-1 px-3 py-2 border-b border-white/10">
           <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-md p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${activeViewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'} ${isMobile ? 'pointer-events-none opacity-40' : ''}`}
             >
               <Rows className="w-4 h-4" /> List
             </button>
             <button
               type="button"
               onClick={() => setViewMode('cards')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'}`}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${activeViewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'} ${isMobile ? 'pointer-events-none opacity-40' : ''}`}
             >
               <LayoutGrid className="w-4 h-4" /> Cards
             </button>
           </div>
         </div>
         <div className="overflow-y-auto max-h-[calc(100vh-240px)]">
-        {viewMode === 'list' ? (
+        {activeViewMode === 'list' ? (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-white/5 border-b border-white/10">
