@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { LayoutGrid, Rows, Phone, MapPin, FileText, Loader2, Pencil, Trash2, UserRound } from 'lucide-react'
+import { Phone, MapPin, FileText, Loader2, Pencil, Trash2, UserRound } from 'lucide-react'
 import api from '@/lib/api'
 import { Supplier } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { formatUSPhone } from '@/utils/phone'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
+import ViewToggle from '@/components/ViewToggle'
 
 const supplierSchema = z.object({
   name: z.string().min(1, 'Supplier name is required'),
@@ -40,11 +41,6 @@ export default function SuppliersPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
-
-  const toggleButtonClass = (mode: 'list' | 'cards') =>
-    `flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-      activeViewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-    }`
 
   const showMessage = (message: string) => {
     setStatusMessage(message)
@@ -327,21 +323,8 @@ export default function SuppliersPage() {
                       <tr>
                         <th className="px-4 py-3" colSpan={isAdmin ? 3 : 2}>
                           <div className="flex items-center justify-between">
-                            <div className="hidden sm:flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
-                              <button
-                                type="button"
-                                onClick={() => setViewMode('list')}
-                                className={toggleButtonClass('list')}
-                              >
-                                <Rows className="w-4 h-4" /> Rows
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setViewMode('cards')}
-                                className={toggleButtonClass('cards')}
-                              >
-                                <LayoutGrid className="w-4 h-4" /> Cards
-                              </button>
+                            <div className="hidden sm:flex">
+                              <ViewToggle value={activeViewMode} onChange={setViewMode} />
                             </div>
                           </div>
                         </th>
@@ -458,22 +441,7 @@ export default function SuppliersPage() {
             ) : (
               <>
                 <div className="hidden sm:flex justify-end px-4">
-                  <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('list')}
-                      className={toggleButtonClass('list')}
-                    >
-                      <Rows className="w-4 h-4" /> Rows
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setViewMode('cards')}
-                      className={toggleButtonClass('cards')}
-                    >
-                      <LayoutGrid className="w-4 h-4" /> Cards
-                    </button>
-                  </div>
+                  <ViewToggle value={activeViewMode} onChange={setViewMode} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
                   {filteredSuppliers.map((supplier) => (

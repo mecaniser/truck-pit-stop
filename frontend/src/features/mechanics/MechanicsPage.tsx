@@ -9,7 +9,8 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
-import { LayoutGrid, Rows, Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
+import ViewToggle from '@/components/ViewToggle'
 import SearchAddBar from '@/components/SearchAddBar'
 
 const mechanicSchema = z.object({
@@ -187,11 +188,6 @@ export default function MechanicsPage() {
     isActive
       ? 'bg-green-500/15 text-green-400 border border-green-500/30'
       : 'bg-gray-500/15 text-gray-300 border border-gray-500/30'
-
-  const toggleButtonClass = (mode: 'list' | 'cards') =>
-    `flex-1 sm:flex-none flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-      activeViewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-    }`
 
   const handleStartAdd = () => {
     setIsAdding(true)
@@ -406,23 +402,8 @@ export default function MechanicsPage() {
           </div>
         ) : (
           <>
-              <div className="hidden sm:flex items-center justify-between mb-3">
-                <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('list')}
-                    className={toggleButtonClass('list')}
-                >
-                  <Rows className="w-4 h-4" /> List
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('cards')}
-                  className={toggleButtonClass('cards')}
-                >
-                  <LayoutGrid className="w-4 h-4" /> Cards
-                </button>
-              </div>
+            <div className="hidden sm:flex items-center justify-between mb-3">
+              <ViewToggle value={activeViewMode} onChange={setViewMode} />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredMechanics.map((mechanic) => {

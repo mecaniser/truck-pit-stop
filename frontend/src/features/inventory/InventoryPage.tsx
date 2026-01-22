@@ -2,10 +2,11 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { InventoryItem } from '../../types'
-import { ArrowRight, Plus, LayoutGrid, Rows, X, Loader2 } from 'lucide-react'
+import { ArrowRight, Plus, X, Loader2 } from 'lucide-react'
 import BaseSelect from '../../components/BaseSelect'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
+import ViewToggle from '@/components/ViewToggle'
 import { formatUSPhone } from '../../utils/phone'
 type SupplierOption = { name: string; address?: string }
 
@@ -39,11 +40,6 @@ export default function InventoryPage() {
     supplier_contact: '',
   })
   const [error, setError] = useState<string | null>(null)
-
-  const desktopToggleClass = (mode: 'cards' | 'list') =>
-    `flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-semibold transition ${
-      viewMode === mode ? 'bg-amber-500 text-white shadow' : 'text-gray-700 hover:bg-gray-100'
-    }`
 
   const queryClient = useQueryClient()
 
@@ -233,25 +229,11 @@ export default function InventoryPage() {
           </div>
         )}
       </div>
-      
       {viewMode === 'cards' ? (
         <>
-          <div className="hidden lg:flex justify-start mb-3">
-            <div className="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-1 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setViewMode('cards')}
-                className={desktopToggleClass('cards')}
-              >
-                <LayoutGrid className="w-4 h-4" /> Cards
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={desktopToggleClass('list')}
-              >
-                <Rows className="w-4 h-4" /> List
-              </button>
+          <div className="hidden lg:block rounded-xl border border-white/10 bg-white/5 overflow-hidden mb-3">
+            <div className="px-4 py-3">
+              <ViewToggle value={viewMode} onChange={setViewMode} />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -260,51 +242,48 @@ export default function InventoryPage() {
               return (
                 <div
                   key={item.id}
-                  className={`aspect-square p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer ${stockStatus.surface} ${stockStatus.border}`}
+                  className="p-4 sm:p-5 rounded-xl border border-white/15 bg-white/5 flex flex-col gap-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
                 >
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-mono text-slate-500 bg-white/50 px-2 py-0.5 rounded">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
                         {item.sku}
                       </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${stockStatus.bg} ${stockStatus.text}`}>
-                        {stockStatus.label}
-                      </span>
+                      <h3 className="text-lg font-semibold text-white leading-tight line-clamp-2">
+                        {item.name}
+                      </h3>
+                      {item.category && (
+                        <p className="text-xs text-gray-400">{item.category}</p>
+                      )}
                     </div>
-                    <h3 className="text-base font-bold text-slate-800 leading-tight line-clamp-2">
-                      {item.name}
-                    </h3>
-                    {item.category && (
-                      <p className="text-xs text-slate-500 mt-1">{item.category}</p>
-                    )}
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
+                      {stockStatus.label}
+                    </span>
                   </div>
-                  
-                  <div className="space-y-2">
-                    <div className="bg-white/50 rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-xs text-slate-500">In Stock</div>
-                          <div className="text-2xl font-bold text-slate-800">{item.stock_quantity}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-slate-500">Reorder at</div>
-                          <div className="text-lg font-semibold text-slate-600">{item.reorder_level}</div>
-                        </div>
-                      </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm text-gray-200">
+                    <div>
+                      <p className="text-xs text-gray-400">In stock</p>
+                      <p className="font-semibold">{item.stock_quantity}</p>
                     </div>
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Price</span>
-                      <span className="font-bold text-slate-800">
-                        ${parseFloat(item.selling_price).toFixed(2)}
-                      </span>
+                    <div>
+                      <p className="text-xs text-gray-400">Reorder</p>
+                      <p className="font-semibold">{item.reorder_level}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Cost</p>
+                      <p className="font-semibold">${parseFloat(item.cost).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Price</p>
+                      <p className="font-semibold">${parseFloat(item.selling_price).toFixed(2)}</p>
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-amber-200/50">
+                  <div className="pt-3 border-t border-white/10">
                     <button
                       onClick={() => openManage(item)}
-                      className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                      className="w-full py-2 text-sm font-semibold text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-lg hover:bg-amber-500/20 transition-colors inline-flex items-center justify-center gap-1"
                     >
                       Manage Stock
                       <ArrowRight className="w-4 h-4" />
@@ -333,16 +312,18 @@ export default function InventoryPage() {
               return (
                 <div
                   key={item.id}
-                  className={`rounded-lg p-3 shadow-sm flex flex-col gap-2 ${stockStatus.surface} ${stockStatus.border}`}
+                  className="rounded-lg p-3 flex flex-col gap-3 bg-white/10 border border-white/15 text-white"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-0.5">
-                      <div className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2">
+                      <div className="text-sm font-semibold leading-tight line-clamp-2">
                         {item.name}
                       </div>
-                      <div className="text-[11px] font-mono text-gray-500">{item.sku}</div>
+                      <div className="text-[11px] font-mono text-gray-300 bg-white/10 px-2 py-0.5 rounded border border-white/20 inline-flex">
+                        {item.sku}
+                      </div>
                       {item.category && (
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">
+                        <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[11px] text-gray-200">
                           {item.category}
                         </span>
                       )}
@@ -354,29 +335,29 @@ export default function InventoryPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs text-gray-600 flex-wrap gap-2">
+                  <div className="flex items-center justify-between text-xs text-gray-200 flex-wrap gap-2">
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-500">Stock</span>
-                      <span className="font-semibold text-gray-900">{item.stock_quantity}</span>
+                      <span className="text-gray-400">Stock</span>
+                      <span className="font-semibold text-white">{item.stock_quantity}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-500">Reorder</span>
-                      <span className="font-semibold text-gray-900">{item.reorder_level}</span>
+                      <span className="text-gray-400">Reorder</span>
+                      <span className="font-semibold text-white">{item.reorder_level}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-500">Cost</span>
-                      <span className="font-semibold text-gray-900">${item.cost}</span>
+                      <span className="text-gray-400">Cost</span>
+                      <span className="font-semibold text-white">${item.cost}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <span className="text-gray-500">Price</span>
-                      <span className="font-semibold text-gray-900">${item.selling_price}</span>
+                      <span className="text-gray-400">Price</span>
+                      <span className="font-semibold text-white">${item.selling_price}</span>
                     </div>
                   </div>
 
                   <div className="flex justify-end">
                     <button
                       onClick={() => openManage(item)}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition"
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-200 bg-amber-500/10 border border-amber-400/40 hover:bg-amber-500/20 transition"
                     >
                       Manage
                       <ArrowRight className="w-3 h-3" />
@@ -387,33 +368,18 @@ export default function InventoryPage() {
             })}
           </div>
 
-          <div className="hidden lg:block rounded-xl shadow-sm border border-gray-100 bg-white/80 backdrop-blur overflow-hidden">
+          <div className="hidden lg:block rounded-xl border border-white/10 bg-white/5 overflow-hidden">
             <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-260px)]">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-white/10">
+                <thead className="bg-white/5 border-b border-white/10">
                   <tr>
-                    <th colSpan={9} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-1 bg-white rounded-md border border-gray-200 p-0.5 shadow-sm">
-                          <button
-                            type="button"
-                            onClick={() => setViewMode('list')}
-                            className={desktopToggleClass('list')}
-                          >
-                            <Rows className="w-4 h-4" /> List
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setViewMode('cards')}
-                            className={desktopToggleClass('cards')}
-                          >
-                            <LayoutGrid className="w-4 h-4" /> Cards
-                          </button>
-                        </div>
+                    <th colSpan={8} className="px-4 py-3">
+                      <div className="flex items-center justify-start gap-3">
+                        <ViewToggle value={viewMode} onChange={setViewMode} />
                       </div>
                     </th>
                   </tr>
-                  <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <tr className="text-left text-xs font-medium text-gray-400 uppercase tracking-wide bg-white/5 border-b border-white/10">
                     <th className="px-4 py-3">SKU</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Category</th>
@@ -424,32 +390,32 @@ export default function InventoryPage() {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
+                <tbody className="divide-y divide-white/5 text-sm text-gray-100">
                   {filteredInventory?.map((item) => {
                     const stockStatus = getStockStatus(item)
                     return (
-                      <tr key={item.id} className={`transition ${stockStatus.surface}`}>
-                        <td className="px-4 py-3 font-semibold text-gray-900">{item.sku}</td>
+                      <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-white">{item.sku}</td>
                         <td className="px-4 py-3">
-                          <div className="font-semibold text-gray-900">{item.name}</div>
-                          {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
+                          <div className="font-semibold text-white">{item.name}</div>
+                          {item.description && <div className="text-xs text-gray-400">{item.description}</div>}
                         </td>
-                        <td className="px-4 py-3 text-gray-700">
+                        <td className="px-4 py-3 text-gray-300">
                           <div className="space-y-1 text-center">
-                            <div className="text-sm text-gray-700">{item.category || 'Uncategorized'}</div>
+                            <div className="text-sm">{item.category || 'Uncategorized'}</div>
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${stockStatus.bg} ${stockStatus.text}`}>
                               {stockStatus.label}
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3">{item.stock_quantity}</td>
-                        <td className="px-4 py-3">{item.reorder_level}</td>
-                        <td className="px-4 py-3">${item.cost}</td>
-                        <td className="px-4 py-3">${item.selling_price}</td>
+                        <td className="px-4 py-3 text-gray-200">{item.stock_quantity}</td>
+                        <td className="px-4 py-3 text-gray-200">{item.reorder_level}</td>
+                        <td className="px-4 py-3 text-gray-200">${item.cost}</td>
+                        <td className="px-4 py-3 text-gray-200">${item.selling_price}</td>
                         <td className="px-4 py-3 text-right">
                           <button
                             onClick={() => openManage(item)}
-                            className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 transition"
+                            className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold text-amber-200 bg-amber-500/10 border border-amber-400/40 hover:bg-amber-500/20 transition"
                           >
                             Manage
                             <ArrowRight className="w-3 h-3" />
