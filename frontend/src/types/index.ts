@@ -16,6 +16,7 @@ export interface User {
   first_name: string
   last_name: string
   phone: string | null
+  address?: string | null
   role: UserRole
   is_active: boolean
   tenant_id: string | null

@@ -37,6 +37,11 @@ export default function SuppliersPage() {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
 
+  const toggleButtonClass = (mode: 'list' | 'cards') =>
+    `flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
+      viewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+    }`
+
   const showMessage = (message: string) => {
     setStatusMessage(message)
     setTimeout(() => setStatusMessage(null), 2800)
@@ -190,23 +195,19 @@ export default function SuppliersPage() {
             {isAdmin ? 'Admin access' : 'Read-only'}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+        <div className="flex items-center gap-2 sm:justify-end">
+          <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1 sm:hidden">
             <button
               type="button"
               onClick={() => setViewMode('list')}
-              className={`flex-1 flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-                viewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-              }`}
+              className={toggleButtonClass('list')}
             >
               <Rows className="w-4 h-4" /> Rows
             </button>
             <button
               type="button"
               onClick={() => setViewMode('cards')}
-              className={`flex-1 flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-                viewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-              }`}
+              className={toggleButtonClass('cards')}
             >
               <LayoutGrid className="w-4 h-4" /> Cards
             </button>
@@ -355,6 +356,28 @@ export default function SuppliersPage() {
                   <table className="min-w-full divide-y divide-white/10">
                     <thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-gray-400">
                       <tr>
+                        <th className="px-4 py-3" colSpan={isAdmin ? 3 : 2}>
+                          <div className="flex items-center justify-between">
+                            <div className="hidden sm:flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+                              <button
+                                type="button"
+                                onClick={() => setViewMode('list')}
+                                className={toggleButtonClass('list')}
+                              >
+                                <Rows className="w-4 h-4" /> Rows
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setViewMode('cards')}
+                                className={toggleButtonClass('cards')}
+                              >
+                                <LayoutGrid className="w-4 h-4" /> Cards
+                              </button>
+                            </div>
+                          </div>
+                        </th>
+                      </tr>
+                      <tr>
                         <th className="px-4 py-3">Supplier</th>
                         <th className="px-4 py-3">Contact</th>
                         {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
@@ -464,107 +487,127 @@ export default function SuppliersPage() {
                 </div>
               </>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
-                {filteredSuppliers.map((supplier) => (
-                  <div
-                    key={supplier.id}
-                    className="rounded-lg border border-white/10 bg-white/5 p-4 shadow-sm hover:border-amber-400/60 hover:bg-white/10 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm uppercase text-gray-400 font-semibold">Supplier</p>
-                        <h3 className="text-lg font-bold text-white">{supplier.name}</h3>
-                        {supplier.contact_name && (
-                          <p className="text-sm text-gray-200 flex items-center gap-2 mt-1">
-                            <UserRound className="w-4 h-4 text-amber-300" />
-                            {supplier.contact_name}
-                          </p>
-                        )}
-                      </div>
-                      {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setEditing(supplier)}
-                          className="text-amber-200 hover:text-white text-xs font-semibold"
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                    <div className="mt-3 space-y-1 text-sm text-gray-200">
-                      <div className="flex items-start gap-2">
-                        <Phone className="w-4 h-4 text-amber-300 mt-0.5" />
-                        <span>{supplier.phone || 'Phone not set'}</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-amber-300 mt-0.5" />
-                        <span className="line-clamp-2">{supplier.address || 'Address not set'}</span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <FileText className="w-4 h-4 text-amber-300 mt-0.5" />
-                        <span className="line-clamp-3">{supplier.notes || 'No notes yet'}</span>
-                      </div>
-                    </div>
-                    {isAdmin && (
-                      <div className="mt-4 flex items-center justify-between text-xs relative overflow-hidden min-h-[30px]">
-                        <div
-                          className={`flex items-center gap-2 transition-all duration-200 ease-in-out ${
-                            confirmingDeleteId === supplier.id
-                              ? '-translate-x-4 opacity-0 pointer-events-none'
-                              : 'translate-x-0 opacity-100'
-                          }`}
-                        >
+              <>
+                <div className="hidden sm:flex justify-end px-4">
+                  <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('list')}
+                      className={toggleButtonClass('list')}
+                    >
+                      <Rows className="w-4 h-4" /> Rows
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('cards')}
+                      className={toggleButtonClass('cards')}
+                    >
+                      <LayoutGrid className="w-4 h-4" /> Cards
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+                  {filteredSuppliers.map((supplier) => (
+                    <div
+                      key={supplier.id}
+                      className="rounded-lg border border-white/10 bg-white/5 p-4 shadow-sm hover:border-amber-400/60 hover:bg-white/10 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm uppercase text-gray-400 font-semibold">Supplier</p>
+                          <h3 className="text-lg font-bold text-white">{supplier.name}</h3>
+                          {supplier.contact_name && (
+                            <p className="text-sm text-gray-200 flex items-center gap-2 mt-1">
+                              <UserRound className="w-4 h-4 text-amber-300" />
+                              {supplier.contact_name}
+                            </p>
+                          )}
+                        </div>
+                        {isAdmin && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditing(supplier)
-                              setConfirmingDeleteId(null)
-                            }}
-                            className="inline-flex items-center gap-1 font-semibold text-amber-200 hover:text-white"
+                            onClick={() => setEditing(supplier)}
+                            className="text-amber-200 hover:text-white text-xs font-semibold"
                           >
-                            <Pencil className="w-4 h-4" />
                             Edit
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmingDeleteId(supplier.id)}
-                            className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Delete
-                          </button>
+                        )}
+                      </div>
+                      <div className="mt-3 space-y-1 text-sm text-gray-200">
+                        <div className="flex items-start gap-2">
+                          <Phone className="w-4 h-4 text-amber-300 mt-0.5" />
+                          <span>{supplier.phone || 'Phone not set'}</span>
                         </div>
-                        <div
-                          className={`absolute right-0 top-0 flex items-center gap-2 transition-all duration-200 ease-out ${
-                            confirmingDeleteId === supplier.id
-                              ? 'translate-x-0 opacity-100'
-                              : 'translate-x-full opacity-0 pointer-events-none'
-                          }`}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(supplier)}
-                            className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
-                            disabled={deleteMutation.isPending}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmingDeleteId(null)}
-                            className="inline-flex items-center gap-1 font-semibold text-gray-200 hover:text-white"
-                            disabled={deleteMutation.isPending}
-                          >
-                            Cancel
-                          </button>
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-amber-300 mt-0.5" />
+                          <span className="line-clamp-2">{supplier.address || 'Address not set'}</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-amber-300 mt-0.5" />
+                          <span className="line-clamp-3">{supplier.notes || 'No notes yet'}</span>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      {isAdmin && (
+                        <div className="mt-4 flex items-center justify-between text-xs relative overflow-hidden min-h-[30px]">
+                          <div
+                            className={`flex items-center gap-2 transition-all duration-200 ease-in-out ${
+                              confirmingDeleteId === supplier.id
+                                ? '-translate-x-4 opacity-0 pointer-events-none'
+                                : 'translate-x-0 opacity-100'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditing(supplier)
+                                setConfirmingDeleteId(null)
+                              }}
+                              className="inline-flex items-center gap-1 font-semibold text-amber-200 hover:text-white"
+                            >
+                              <Pencil className="w-4 h-4" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingDeleteId(supplier.id)}
+                              className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
+                              disabled={deleteMutation.isPending}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </button>
+                          </div>
+                          <div
+                            className={`absolute right-0 top-0 flex items-center gap-2 transition-all duration-200 ease-out ${
+                              confirmingDeleteId === supplier.id
+                                ? 'translate-x-0 opacity-100'
+                                : 'translate-x-full opacity-0 pointer-events-none'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(supplier)}
+                              className="inline-flex items-center gap-1 font-semibold text-red-200 hover:text-red-100"
+                              disabled={deleteMutation.isPending}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingDeleteId(null)}
+                              className="inline-flex items-center gap-1 font-semibold text-gray-200 hover:text-white"
+                              disabled={deleteMutation.isPending}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>

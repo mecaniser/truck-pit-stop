@@ -34,6 +34,7 @@ class UserResponse(BaseModel):
     first_name: str
     last_name: str
     phone: Optional[str]
+    address: Optional[str] = None
     role: UserRole
     is_active: bool
     tenant_id: Optional[UUID] = None
@@ -65,5 +66,4 @@ class ResetPasswordRequest(BaseModel):
 
 class ResetPasswordResponse(BaseModel):
     message: str
-
 

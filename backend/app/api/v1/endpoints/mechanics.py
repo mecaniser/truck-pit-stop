@@ -12,7 +12,8 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.schemas.auth import UserResponse
 from app.schemas.mechanic import MechanicCreate
-from pydantic import BaseModel
+from app.schemas.mechanic_update import MechanicUpdate
+from pydantic import BaseModel, Field
 
 router = APIRouter()
 
@@ -75,6 +76,7 @@ async def create_mechanic(
         first_name=mechanic_data.first_name,
         last_name=mechanic_data.last_name,
         phone=mechanic_data.phone or None,
+        address=mechanic_data.address or None,
         role=UserRole.MECHANIC,
         tenant_id=current_user.tenant_id,
         is_active=True,
@@ -145,3 +147,91 @@ async def get_mechanic_work(
             )
         )
     return work_items
+
+
+class MechanicPasswordUpdate(BaseModel):
+    new_password: str = Field(..., min_length=8, description="New password for the mechanic")
+
+
+@router.put("/{mechanic_id}", response_model=UserResponse)
+async def update_mechanic(
+    mechanic_id: UUID,
+    mechanic_update: MechanicUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be associated with a tenant",
+        )
+
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.id == mechanic_id,
+                User.role == UserRole.MECHANIC,
+                User.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    mechanic = result.scalar_one_or_none()
+    if not mechanic:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mechanic not found")
+
+    if mechanic_update.email and mechanic_update.email != mechanic.email:
+        email_check = await db.execute(select(User).where(User.email == mechanic_update.email))
+        if email_check.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    if mechanic_update.first_name is not None:
+        mechanic.first_name = mechanic_update.first_name
+    if mechanic_update.last_name is not None:
+        mechanic.last_name = mechanic_update.last_name
+    if mechanic_update.email is not None:
+        mechanic.email = mechanic_update.email
+    if mechanic_update.phone is not None:
+        mechanic.phone = mechanic_update.phone or None
+    if mechanic_update.address is not None:
+        mechanic.address = mechanic_update.address or None
+    if mechanic_update.password:
+        mechanic.hashed_password = get_password_hash(mechanic_update.password)
+
+    db.add(mechanic)
+    await db.commit()
+    await db.refresh(mechanic)
+
+    return UserResponse.model_validate(mechanic)
+
+
+@router.put("/{mechanic_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+async def update_mechanic_password(
+    mechanic_id: UUID,
+    password_update: MechanicPasswordUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be associated with a tenant",
+        )
+
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.id == mechanic_id,
+                User.role == UserRole.MECHANIC,
+                User.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    mechanic = result.scalar_one_or_none()
+    if not mechanic:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mechanic not found")
+
+    mechanic.hashed_password = get_password_hash(password_update.new_password)
+    db.add(mechanic)
+    await db.commit()
+
+    return

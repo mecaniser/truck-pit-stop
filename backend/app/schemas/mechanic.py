@@ -8,3 +8,4 @@ class MechanicCreate(BaseModel):
     first_name: str
     last_name: str
     phone: Optional[str] = None
+    address: Optional[str] = None
