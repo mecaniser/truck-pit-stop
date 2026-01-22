@@ -49,6 +49,9 @@ export default function ServicesManagementPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
   const [searchQuery, setSearchQuery] = useState('')
 
+  const formOpen = isAddingNew || !!editingService
+  const iconOptions = ['🛠️', '🔧', '🧽', '🛢️', '🚗', '🚚', '🔋', '🧰', '⚙️', '✅']
+
   const { data: services, isLoading } = useQuery<Service[]>({
     queryKey: ['admin-services'],
     queryFn: async () => {
@@ -69,6 +72,8 @@ export default function ServicesManagementPage() {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<ServiceFormData>({
     resolver: zodResolver(serviceSchema),
@@ -79,6 +84,7 @@ export default function ServicesManagementPage() {
       is_active: true,
     },
   })
+  const selectedIcon = watch('icon')
 
   const createMutation = useMutation({
     mutationFn: async (data: ServiceFormData) => {
@@ -166,6 +172,12 @@ export default function ServicesManagementPage() {
       ? `${base} border-red-500 focus:ring-red-500`
       : `${base} border-white/20 focus:ring-amber-500`
   }
+  const drawerInputClasses = (hasError: boolean) => {
+    const base = "w-full px-3 py-2 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
+    return hasError
+      ? `${base} border-red-500 focus:ring-red-500`
+      : `${base} border-gray-200 focus:ring-amber-500`
+  }
 
   if (isLoading) {
     return (
@@ -224,122 +236,6 @@ export default function ServicesManagementPage() {
         <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
           <CheckCircle className="w-5 h-5 flex-shrink-0" />
           {successMessage}
-        </div>
-      )}
-
-      {/* Add/Edit Form */}
-      {(isAddingNew || editingService) && (
-        <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-          <h2 className="text-lg font-semibold text-white mb-4">
-            {editingService ? 'Edit Service' : 'Add New Service'}
-          </h2>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Name</label>
-                <input
-                  {...register('name')}
-                  className={inputClasses(!!errors.name)}
-                  placeholder="Oil Change"
-                />
-                {errors.name && <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Category</label>
-                <select
-                  {...register('category_id')}
-                  className={inputClasses(false)}
-                >
-                  <option value="">No Category</option>
-                  {categories?.map((cat) => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Base Price ($)</label>
-                <input
-                  {...register('base_price')}
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className={inputClasses(!!errors.base_price)}
-                  placeholder="99.00"
-                />
-                {errors.base_price && <p className="mt-1 text-xs text-red-400">{errors.base_price.message}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Duration (minutes)</label>
-                <input
-                  {...register('duration_minutes')}
-                  type="number"
-                  min="5"
-                  className={inputClasses(!!errors.duration_minutes)}
-                  placeholder="60"
-                />
-                {errors.duration_minutes && <p className="mt-1 text-xs text-red-400">{errors.duration_minutes.message}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Icon (emoji)</label>
-                <input
-                  {...register('icon')}
-                  className={inputClasses(false)}
-                  placeholder="Optional icon"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">Description</label>
-              <textarea
-                {...register('description')}
-                rows={2}
-                className={inputClasses(false)}
-                placeholder="Service description..."
-              />
-            </div>
-
-            <div className="flex items-center gap-6">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  {...register('requires_vehicle')}
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                />
-                <span className="text-sm text-gray-300">Requires vehicle</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  {...register('is_active')}
-                  type="checkbox"
-                  className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                />
-                <span className="text-sm text-gray-300">Active</span>
-              </label>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="submit"
-                disabled={createMutation.isPending || updateMutation.isPending}
-                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
-              >
-                {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingService ? 'Update' : 'Create'}
-              </button>
-              <button
-                type="button"
-                onClick={cancelEdit}
-                className="px-5 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
         </div>
       )}
 
@@ -490,6 +386,179 @@ export default function ServicesManagementPage() {
         )}
         </div>
       </div>
+
+      {/* Slide-out Add/Edit Form */}
+      {formOpen && (
+        <div
+          className={`fixed inset-0 z-50 transition ${formOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          aria-hidden={!formOpen}
+        >
+          <div
+            className={`absolute inset-0 bg-black/50 transition-opacity ${formOpen ? 'opacity-100' : 'opacity-0'}`}
+            onClick={cancelEdit}
+          />
+          <aside
+            className={`absolute top-0 right-0 h-full w-full sm:w-[520px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
+              formOpen ? 'translate-x-0' : 'translate-x-full'
+            }`}
+            role="dialog"
+            aria-label={editingService ? 'Edit Service' : 'Add Service'}
+          >
+            <form onSubmit={handleSubmit(onSubmit)} className="h-full flex flex-col">
+              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase text-gray-500 font-semibold">
+                    {editingService ? 'Edit Service' : 'Add Service'}
+                  </p>
+                  <p className="text-lg font-semibold text-slate-800">
+                    {editingService ? editingService.name : 'Create a new service'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
+                  aria-label="Close service form"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                    <input
+                      {...register('name')}
+                      className={drawerInputClasses(!!errors.name)}
+                      placeholder="Oil Change"
+                    />
+                    {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name.message}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
+                    <select
+                      {...register('category_id')}
+                      className={drawerInputClasses(false)}
+                    >
+                      <option value="">No Category</option>
+                      {categories?.map((cat) => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Base Price ($)</label>
+                    <input
+                      {...register('base_price')}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className={drawerInputClasses(!!errors.base_price)}
+                      placeholder="99.00"
+                    />
+                    {errors.base_price && <p className="mt-1 text-xs text-red-500">{errors.base_price.message}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Duration (minutes)</label>
+                    <input
+                      {...register('duration_minutes')}
+                      type="number"
+                      min="5"
+                      className={drawerInputClasses(!!errors.duration_minutes)}
+                      placeholder="60"
+                    />
+                    {errors.duration_minutes && <p className="mt-1 text-xs text-red-500">{errors.duration_minutes.message}</p>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Icon (emoji)</label>
+                    <input type="hidden" {...register('icon')} />
+                    <div className="grid grid-cols-5 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setValue('icon', '', { shouldValidate: true })}
+                        className={`py-2 text-sm font-semibold rounded-lg border transition ${
+                          !selectedIcon ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-200 hover:border-amber-300'
+                        }`}
+                      >
+                        None
+                      </button>
+                      {iconOptions.map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setValue('icon', opt, { shouldValidate: true })}
+                          className={`py-2 text-lg rounded-lg border transition ${
+                            selectedIcon === opt
+                              ? 'border-amber-500 bg-amber-50 shadow-sm'
+                              : 'border-gray-200 hover:border-amber-300'
+                          }`}
+                          aria-pressed={selectedIcon === opt}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                  <textarea
+                    {...register('description')}
+                    rows={2}
+                    className={drawerInputClasses(false)}
+                    placeholder="Service description..."
+                  />
+                </div>
+
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      {...register('requires_vehicle')}
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-gray-600">Requires vehicle</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      {...register('is_active')}
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-gray-600">Active</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
+                >
+                  {createMutation.isPending || updateMutation.isPending ? 'Saving...' : editingService ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
     </div>
   )
 }
