@@ -55,6 +55,12 @@ export default function SuppliersPage() {
     setTimeout(() => setStatusMessage(null), 2800)
   }
 
+  useEffect(() => {
+    if (!MAPBOX_TOKEN && import.meta.env.PROD) {
+      console.warn('Mapbox autocomplete disabled: VITE_MAPBOX_TOKEN missing at build time.')
+    }
+  }, [])
+
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
     queryKey: ['suppliers'],
     queryFn: async () => {
