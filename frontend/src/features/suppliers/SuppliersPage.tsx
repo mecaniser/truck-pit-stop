@@ -3,12 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AddressAutofill } from '@mapbox/search-js-react'
 import { LayoutGrid, Rows, Phone, MapPin, FileText, Loader2, Pencil, Trash2, UserRound } from 'lucide-react'
 import api from '@/lib/api'
 import { Supplier } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { formatUSPhone } from '@/utils/phone'
+import MapboxAddressInput from '@/components/MapboxAddressInput'
 
 const supplierSchema = z.object({
   name: z.string().min(1, 'Supplier name is required'),
@@ -23,19 +23,6 @@ type SupplierFormData = z.infer<typeof supplierSchema>
 const cleanString = (value?: string | null) => {
   const trimmed = (value || '').trim()
   return trimmed === '' ? undefined : trimmed
-}
-
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
-
-const formatAddressFromFeature = (feature: any) => {
-  const props = feature?.properties as Record<string, unknown> | undefined
-  if (!props) return ''
-  const parts = [props.place_formatted, props.full_address, props.address_line1, props.place, props.region, props.postcode]
-    .map((val) => (typeof val === 'string' ? val : ''))
-    .filter(Boolean)
-  if (parts.length === 0) return ''
-  const [primary, ...rest] = parts
-  return primary || rest.join(', ')
 }
 
 export default function SuppliersPage() {
@@ -54,12 +41,6 @@ export default function SuppliersPage() {
     setStatusMessage(message)
     setTimeout(() => setStatusMessage(null), 2800)
   }
-
-  useEffect(() => {
-    if (!MAPBOX_TOKEN && import.meta.env.PROD) {
-      console.warn('Mapbox autocomplete disabled: VITE_MAPBOX_TOKEN missing at build time.')
-    }
-  }, [])
 
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
     queryKey: ['suppliers'],
@@ -669,37 +650,20 @@ export default function SuppliersPage() {
                   </div>
 
                   <label className="text-sm text-gray-700 space-y-1 block">
-                    <span>Address powered by Mapbox</span>
-                    {MAPBOX_TOKEN ? (
-                      <AddressAutofill
-                        accessToken={MAPBOX_TOKEN}
-                        options={{ language: 'en', country: 'US' }}
-                        onRetrieve={(res) => {
-                          const feature = res?.features?.[0]
-                          const formatted = formatAddressFromFeature(feature)
-                          if (formatted) {
-                            setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
-                          }
-                        }}
-                      >
-                        <input
-                          type="text"
-                          {...register('address')}
-                          autoComplete="street-address"
-                          disabled={!isAdmin || isSaving}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                          placeholder="Start typing address..."
-                        />
-                      </AddressAutofill>
-                    ) : (
-                      <input
-                        type="text"
-                        {...register('address')}
-                        disabled={!isAdmin || isSaving}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        placeholder="Street, City, State"
-                      />
-                    )}
+                    <span>Address</span>
+                    <MapboxAddressInput
+                      {...register('address')}
+                      autoComplete="street-address"
+                      disabled={!isAdmin || isSaving}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      placeholder="Start typing address..."
+                      options={{ language: 'en', country: 'US' }}
+                      onAddressSelect={({ formatted }) => {
+                        if (formatted) {
+                          setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
+                        }
+                      }}
+                    />
                   </label>
 
                   <label className="text-sm text-gray-700 space-y-1 block">

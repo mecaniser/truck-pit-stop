@@ -1,13 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AddressAutofill } from '@mapbox/search-js-react'
 import api from '../../lib/api'
 import { InventoryItem } from '../../types'
 import { ArrowRight, Plus, LayoutGrid, Rows, X, Loader2 } from 'lucide-react'
 import BaseSelect from '../../components/BaseSelect'
+import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '../../utils/phone'
-
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 type SupplierOption = { name: string; address?: string }
 
 export default function InventoryPage() {
@@ -680,31 +678,13 @@ export default function InventoryPage() {
 
                     <div className="space-y-1">
                       <span className="text-xs text-gray-600">Supplier address (saved into contact)</span>
-                      {MAPBOX_TOKEN ? (
-                        <AddressAutofill
-                          accessToken={MAPBOX_TOKEN}
-                          onRetrieve={(e: any) => {
-                            const address = e.features?.[0]?.properties?.place_formatted || ''
-                            setNewSupplierAddress(address)
-                          }}
-                        >
-                          <input
-                            type="text"
-                            value={newSupplierAddress}
-                            onChange={(e) => setNewSupplierAddress(e.target.value)}
-                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                            placeholder="Search address"
-                          />
-                        </AddressAutofill>
-                      ) : (
-                        <input
-                          type="text"
-                          value={newSupplierAddress}
-                          onChange={(e) => setNewSupplierAddress(e.target.value)}
-                          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                          placeholder="Address"
-                        />
-                      )}
+                      <MapboxAddressInput
+                        value={newSupplierAddress}
+                        onChange={(e) => setNewSupplierAddress(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Search address"
+                        onAddressSelect={({ formatted }) => setNewSupplierAddress(formatted || '')}
+                      />
                       <input
                         type="text"
                         value={newSupplierPhone}

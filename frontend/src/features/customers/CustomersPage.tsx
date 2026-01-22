@@ -1,12 +1,10 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AddressAutofill } from '@mapbox/search-js-react'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
 import { AlertTriangle, ArrowRight, Mail, MapPin, Pencil, Phone, Plus, Trash2, X } from 'lucide-react'
+import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
-
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
 interface CustomerFormData {
   first_name: string
@@ -514,48 +512,34 @@ export default function CustomersPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Address Line 1
             </label>
-            {MAPBOX_TOKEN ? (
-              <AddressAutofill
-                accessToken={MAPBOX_TOKEN}
-                options={{
-                  country: formData.billing_country === 'USA' ? 'US' : formData.billing_country === 'Canada' ? 'CA' : 'MX',
-                  language: 'en',
-                }}
-                onRetrieve={(res) => {
-                  const feature = res.features[0]
-                  if (feature?.properties) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const props = feature.properties as any
-                    setFormData((prev) => ({
-                      ...prev,
-                      billing_address_line1: props.address_line1 || props.full_address?.split(',')[0] || prev.billing_address_line1,
-                      billing_city: props.place || props.locality || props.place_name || prev.billing_city,
-                      billing_state: props.region_code || props.region || prev.billing_state,
-                      billing_zip: props.postcode || prev.billing_zip,
-                    }))
-                  }
-                }}
-              >
-                <input
-                  type="text"
-                  name="billing_address_line1"
-                  defaultValue={formData.billing_address_line1}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, billing_address_line1: e.target.value }))}
-                  autoComplete="street-address"
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                  placeholder="Start typing address..."
-                />
-              </AddressAutofill>
-            ) : (
-              <input
-                type="text"
-                name="billing_address_line1"
-                value={formData.billing_address_line1}
-                onChange={handleInputChange}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                placeholder="123 Main Street"
-              />
-            )}
+            <MapboxAddressInput
+              name="billing_address_line1"
+              value={formData.billing_address_line1}
+              onChange={(e) => setFormData((prev) => ({ ...prev, billing_address_line1: e.target.value }))}
+              autoComplete="street-address"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+              placeholder="Start typing address..."
+              options={{
+                country: formData.billing_country === 'USA' ? 'US' : formData.billing_country === 'Canada' ? 'CA' : 'MX',
+                language: 'en',
+              }}
+              onAddressSelect={({ feature, formatted }) => {
+                if (feature?.properties) {
+                  const props = feature.properties as Record<string, any>
+                  setFormData((prev) => ({
+                    ...prev,
+                    billing_address_line1:
+                      props.address_line1 ||
+                      (typeof props.full_address === 'string' ? props.full_address.split(',')[0] : undefined) ||
+                      formatted ||
+                      prev.billing_address_line1,
+                    billing_city: props.place || props.locality || props.place_name || prev.billing_city,
+                    billing_state: props.region_code || props.region || prev.billing_state,
+                    billing_zip: props.postcode || prev.billing_zip,
+                  }))
+                }
+              }}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
