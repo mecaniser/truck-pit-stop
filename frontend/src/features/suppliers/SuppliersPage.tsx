@@ -25,6 +25,25 @@ const cleanString = (value?: string | null) => {
   return trimmed === '' ? undefined : trimmed
 }
 
+const extractAddress = (feature: any) => {
+  if (!feature?.properties) return ''
+  const props = feature.properties as Record<string, unknown>
+  const parts = [
+    props.place_formatted,
+    props.full_address,
+    props.address_line1,
+    props.place,
+    props.region,
+    props.postcode,
+  ]
+    .map((val) => (typeof val === 'string' ? val : ''))
+    .filter(Boolean)
+
+  if (parts.length === 0) return ''
+  const [primary, ...rest] = parts
+  return primary || rest.join(', ')
+}
+
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
 export default function SuppliersPage() {
@@ -654,24 +673,17 @@ export default function SuppliersPage() {
                   <label className="text-sm text-gray-700 space-y-1 block">
                     <span>Address</span>
                     {MAPBOX_TOKEN ? (
-                    <AddressAutofill
-                      accessToken={MAPBOX_TOKEN}
-                      options={{ language: 'en', country: 'US' }}
-                      onRetrieve={(res) => {
-                          const props = res?.features?.[0]?.properties as Record<string, unknown> | undefined
-                          const addressParts = [props?.place_formatted, props?.full_address, props?.address_line1, props?.place, props?.region, props?.postcode]
-                            .map((val) => {
-                              if (typeof val === 'string') return val
-                              if (Array.isArray(val)) return val.join(' ')
-                              return ''
-                            })
-                            .filter(Boolean)
-                          const formatted = addressParts[0] || addressParts.slice(2).join(', ')
+                      <AddressAutofill
+                        accessToken={MAPBOX_TOKEN}
+                        options={{ language: 'en', country: 'US' }}
+                        onRetrieve={(res) => {
+                          const feature = res?.features?.[0]
+                          const formatted = extractAddress(feature)
                           if (formatted) {
                             setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
                           }
-                      }}
-                    >
+                        }}
+                      >
                         <input
                           type="text"
                           {...register('address')}
