@@ -170,6 +170,14 @@ export default function ServicesManagementPage() {
     }
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setIsMobile(window.innerWidth < 640)
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const drawerInputClasses = (hasError: boolean) => {
     const base = "w-full px-3 py-2 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
     return hasError
@@ -185,6 +193,8 @@ export default function ServicesManagementPage() {
     )
   }
 
+  const activeViewMode = isMobile ? 'cards' : viewMode
+
   const filteredServices = services?.filter((svc) => {
     if (!searchQuery.trim()) return true
     const q = searchQuery.toLowerCase()
@@ -193,16 +203,6 @@ export default function ServicesManagementPage() {
       (svc.description || '').toLowerCase().includes(q)
     )
   })
-
-  const activeViewMode = isMobile ? 'cards' : viewMode
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const handleResize = () => setIsMobile(window.innerWidth < 640)
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
 
   return (
     <div className="space-y-6">

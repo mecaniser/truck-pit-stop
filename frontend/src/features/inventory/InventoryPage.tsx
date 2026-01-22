@@ -5,6 +5,7 @@ import { InventoryItem } from '../../types'
 import { ArrowRight, Plus, LayoutGrid, Rows, X, Loader2 } from 'lucide-react'
 import BaseSelect from '../../components/BaseSelect'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
+import SearchAddBar from '@/components/SearchAddBar'
 import { formatUSPhone } from '../../utils/phone'
 type SupplierOption = { name: string; address?: string }
 
@@ -38,11 +39,6 @@ export default function InventoryPage() {
     supplier_contact: '',
   })
   const [error, setError] = useState<string | null>(null)
-
-  const mobileToggleClass = (mode: 'cards' | 'list') =>
-    `flex items-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-      viewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
-    }`
 
   const desktopToggleClass = (mode: 'cards' | 'list') =>
     `flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-semibold transition ${
@@ -187,83 +183,48 @@ export default function InventoryPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center mb-4 sm:mb-6 gap-2 sm:gap-3">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1 lg:hidden">
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={mobileToggleClass('cards')}
-            >
-              <LayoutGrid className="w-4 h-4" /> Cards
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={mobileToggleClass('list')}
-            >
-              <Rows className="w-4 h-4" /> List
-            </button>
-          </div>
-          <button className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors lg:hidden">
-            + Add Part
-          </button>
-        </div>
-      </div>
-
       {/* Search Bar */}
-      <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <svg 
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search parts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-          </div>
+      <SearchAddBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="Search parts by SKU, name, or category..."
+        onAdd={() => {}}
+        addLabel="Add part"
+        addLabelMobile="Add"
+        className="mb-4"
+        inputWidthClass="sm:min-w-[320px] md:max-w-xl"
+      />
 
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="flex gap-2 min-w-max sm:min-w-0 sm:flex-wrap">
-              {[
-                { value: 'all', label: 'All' },
-                { value: 'sku', label: 'SKU' },
-                { value: 'name', label: 'Name' },
-                { value: 'category', label: 'Category' },
-              ].map((filter) => (
-                <button
-                  key={filter.value}
-                  onClick={() => setSearchType(filter.value as typeof searchType)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                    searchType === filter.value
-                      ? 'bg-amber-500 text-white'
-                      : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              ))}
-              <button
-                onClick={() => setShowLowStock(!showLowStock)}
-                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                  showLowStock
-                    ? 'bg-red-500 text-white'
-                    : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
-                }`}
-              >
-                ⚠️ Low Stock
-              </button>
-            </div>
-          </div>
+      <div className="mb-6 rounded-xl">
+        <div className="flex flex-wrap items-center gap-1 px-1">
+          {[
+            { value: 'all', label: 'All' },
+            { value: 'sku', label: 'SKU' },
+            { value: 'name', label: 'Name' },
+            { value: 'category', label: 'Category' },
+          ].map((filter) => (
+            <button
+              key={filter.value}
+              onClick={() => setSearchType(filter.value as typeof searchType)}
+              className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+                searchType === filter.value
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setShowLowStock(!showLowStock)}
+            className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
+              showLowStock
+                ? 'bg-red-500 text-white'
+                : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
+            }`}
+          >
+            ⚠️ Low stock
+          </button>
         </div>
 
         {(searchQuery || showLowStock) && (
@@ -449,10 +410,6 @@ export default function InventoryPage() {
                             <LayoutGrid className="w-4 h-4" /> Cards
                           </button>
                         </div>
-                        <button className="inline-flex items-center gap-1 px-3 py-2 rounded-md text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors">
-                          <Plus className="w-4 h-4" />
-                          Add Part
-                        </button>
                       </div>
                     </th>
                   </tr>
@@ -464,7 +421,6 @@ export default function InventoryPage() {
                     <th className="px-4 py-3">Reorder</th>
                     <th className="px-4 py-3">Cost</th>
                     <th className="px-4 py-3">Price</th>
-                    <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -478,16 +434,18 @@ export default function InventoryPage() {
                           <div className="font-semibold text-gray-900">{item.name}</div>
                           {item.description && <div className="text-xs text-gray-500">{item.description}</div>}
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{item.category || 'Uncategorized'}</td>
+                        <td className="px-4 py-3 text-gray-700">
+                          <div className="space-y-1 text-center">
+                            <div className="text-sm text-gray-700">{item.category || 'Uncategorized'}</div>
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${stockStatus.bg} ${stockStatus.text}`}>
+                              {stockStatus.label}
+                            </span>
+                          </div>
+                        </td>
                         <td className="px-4 py-3">{item.stock_quantity}</td>
                         <td className="px-4 py-3">{item.reorder_level}</td>
                         <td className="px-4 py-3">${item.cost}</td>
                         <td className="px-4 py-3">${item.selling_price}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${stockStatus.bg} ${stockStatus.text}`}>
-                            {stockStatus.label}
-                          </span>
-                        </td>
                         <td className="px-4 py-3 text-right">
                           <button
                             onClick={() => openManage(item)}

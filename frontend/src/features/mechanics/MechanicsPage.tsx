@@ -10,6 +10,7 @@ import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { LayoutGrid, Rows, Eye, EyeOff } from 'lucide-react'
+import SearchAddBar from '@/components/SearchAddBar'
 
 const mechanicSchema = z.object({
   first_name: z.string().min(1, 'First name is required'),
@@ -53,6 +54,10 @@ export default function MechanicsPage() {
   const [selectedWorkItem, setSelectedWorkItem] = useState<MechanicWorkItem | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  )
+  const [search, setSearch] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [editingMechanic, setEditingMechanic] = useState<MechanicWithCounts | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
@@ -123,6 +128,19 @@ export default function MechanicsPage() {
   })
 
   const mechanicRows = useMemo(() => mechanics || [], [mechanics])
+  const filteredMechanics = useMemo(() => {
+    if (!search.trim()) return mechanicRows
+    const query = search.toLowerCase().trim()
+    return mechanicRows.filter((mechanic) => {
+      const fullName = `${mechanic.first_name} ${mechanic.last_name}`.toLowerCase()
+      return (
+        fullName.includes(query) ||
+        (mechanic.email || '').toLowerCase().includes(query) ||
+        (mechanic.phone || '').toLowerCase().includes(query) ||
+        (mechanic.address || '').toLowerCase().includes(query)
+      )
+    })
+  }, [mechanicRows, search])
 
   const { data: workItems, isLoading: workLoading } = useQuery<MechanicWorkItem[]>({
     queryKey: ['mechanic-work', expandedMechanicId],
@@ -149,6 +167,22 @@ export default function MechanicsPage() {
     }
   }, [isDetailOpen])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setIsMobile(window.innerWidth < 640)
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const activeViewMode = isMobile ? 'cards' : viewMode
+
+  useEffect(() => {
+    if (expandedMechanicId && !filteredMechanics.some((m) => m.id === expandedMechanicId)) {
+      setExpandedMechanicId(null)
+    }
+  }, [expandedMechanicId, filteredMechanics])
+
   const statusBadge = (isActive: boolean) =>
     isActive
       ? 'bg-green-500/15 text-green-400 border border-green-500/30'
@@ -156,11 +190,8 @@ export default function MechanicsPage() {
 
   const toggleButtonClass = (mode: 'list' | 'cards') =>
     `flex-1 sm:flex-none flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-      viewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+      activeViewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
     }`
-
-  const addButtonClass =
-    'inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 transition-colors'
 
   const handleStartAdd = () => {
     setIsAdding(true)
@@ -255,87 +286,27 @@ export default function MechanicsPage() {
         </div>
       ) : (
         <>
-          <div className="bg-white/5 rounded-xl p-6 border border-white/10 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-xl font-semibold text-white">Mechanics</h1>
-            <div className="px-3 py-1 rounded-full border border-amber-500/30 text-amber-300 text-xs font-semibold bg-amber-500/10">
-              Admin view
-            </div>
-          </div>
-
+      <SearchAddBar
+        value={search}
+        onChange={setSearch}
+        placeholder="Search mechanics by name, email, phone, or address..."
+        onAdd={handleStartAdd}
+        addLabel="Add mechanic"
+        addLabelMobile="Add"
+        className="mb-4"
+        inputWidthClass="sm:min-w-[320px] md:max-w-xl"
+      />
       <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-        <div className="flex flex-wrap items-center gap-2 justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-white">Current Mechanics</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1 sm:hidden">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={toggleButtonClass('list')}
-              >
-                <Rows className="w-4 h-4" /> List
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('cards')}
-                className={toggleButtonClass('cards')}
-              >
-                <LayoutGrid className="w-4 h-4" /> Cards
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={handleStartAdd}
-              className={`${addButtonClass} sm:hidden`}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Add mechanic
-            </button>
-          </div>
-        </div>
         {isLoading ? (
           <div className="text-gray-400 text-sm">Loading mechanics...</div>
         ) : mechanicRows.length === 0 ? (
           <div className="text-gray-400 text-sm">No mechanics yet. Use Add mechanic to get started.</div>
-        ) : viewMode === 'list' ? (
+        ) : filteredMechanics.length === 0 ? (
+          <div className="text-gray-400 text-sm">No mechanics match your search.</div>
+        ) : activeViewMode === 'list' ? (
           <div className="overflow-hidden border border-white/10 rounded-lg">
             <table className="min-w-full divide-y divide-white/10">
               <thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-gray-400">
-                <tr>
-                  <th className="px-4 py-3" colSpan={5}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="hidden sm:flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
-                        <button
-                          type="button"
-                          onClick={() => setViewMode('list')}
-                          className={toggleButtonClass('list')}
-                        >
-                          <Rows className="w-4 h-4" /> List
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setViewMode('cards')}
-                          className={toggleButtonClass('cards')}
-                        >
-                          <LayoutGrid className="w-4 h-4" /> Cards
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleStartAdd}
-                        className={addButtonClass}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Add mechanic
-                      </button>
-                    </div>
-                  </th>
-                </tr>
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Email</th>
@@ -345,7 +316,7 @@ export default function MechanicsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5 text-sm text-gray-100">
-                {mechanicRows.map((mechanic) => (
+                {filteredMechanics.map((mechanic) => (
                   <React.Fragment key={mechanic.id}>
                     <tr className="hover:bg-white/5 transition-colors">
                       <td className="px-4 py-3 font-medium">
@@ -435,12 +406,12 @@ export default function MechanicsPage() {
           </div>
         ) : (
           <>
-            <div className="hidden sm:flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className={toggleButtonClass('list')}
+              <div className="hidden sm:flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('list')}
+                    className={toggleButtonClass('list')}
                 >
                   <Rows className="w-4 h-4" /> List
                 </button>
@@ -452,15 +423,9 @@ export default function MechanicsPage() {
                   <LayoutGrid className="w-4 h-4" /> Cards
                 </button>
               </div>
-              <button type="button" onClick={handleStartAdd} className={addButtonClass}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Add mechanic
-              </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {mechanicRows.map((mechanic) => {
+              {filteredMechanics.map((mechanic) => {
                 const inProgress = mechanic.assigned_count ? Math.min(mechanic.in_progress_count || 0, mechanic.assigned_count) : mechanic.in_progress_count || 0
                 const assigned = mechanic.assigned_count || 0
                 const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
@@ -518,8 +483,8 @@ export default function MechanicsPage() {
             {expandedMechanicId && (
               <div className="mt-4 border border-white/10 rounded-lg bg-white/5 p-4">
                 <h3 className="text-sm font-semibold text-white mb-2">
-                  Work for {mechanicRows.find((m) => m.id === expandedMechanicId)?.first_name}{' '}
-                  {mechanicRows.find((m) => m.id === expandedMechanicId)?.last_name}
+                  Work for {filteredMechanics.find((m) => m.id === expandedMechanicId)?.first_name}{' '}
+                  {filteredMechanics.find((m) => m.id === expandedMechanicId)?.last_name}
                 </h3>
                 {workLoading ? (
                   <p className="text-gray-400 text-sm">Loading work...</p>

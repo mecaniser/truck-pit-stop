@@ -9,6 +9,7 @@ import { Supplier } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
 import { formatUSPhone } from '@/utils/phone'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
+import SearchAddBar from '@/components/SearchAddBar'
 
 const supplierSchema = z.object({
   name: z.string().min(1, 'Supplier name is required'),
@@ -31,6 +32,9 @@ export default function SuppliersPage() {
   const isAdmin = user?.role === 'garage_admin' || user?.role === 'super_admin'
 
   const [viewMode, setViewMode] = useState<'list' | 'cards'>(window.innerWidth < 640 ? 'cards' : 'list')
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  )
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<Supplier | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -39,7 +43,7 @@ export default function SuppliersPage() {
 
   const toggleButtonClass = (mode: 'list' | 'cards') =>
     `flex items-center justify-center gap-1 px-3 py-1 rounded-md text-sm font-medium transition ${
-      viewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
+      activeViewMode === mode ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'
     }`
 
   const showMessage = (message: string) => {
@@ -178,6 +182,16 @@ export default function SuppliersPage() {
     })
   }, [search, suppliers])
 
+  const activeViewMode = isMobile ? 'cards' : viewMode
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleResize = () => setIsMobile(window.innerWidth < 640)
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const closeForm = () => {
     setFormOpen(false)
     setEditing(null)
@@ -188,68 +202,23 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-5">
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <p className="text-xs uppercase text-amber-200/80 font-semibold tracking-wide">Inventory partners</p>
-          <div className={`px-3 py-1 rounded-full border text-xs font-semibold ${isAdmin ? 'border-amber-500/40 text-amber-200 bg-amber-500/10' : 'border-gray-400/40 text-gray-200 bg-gray-500/10'}`}>
-            {isAdmin ? 'Admin access' : 'Read-only'}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 sm:justify-end">
-          <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-lg p-1 sm:hidden">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={toggleButtonClass('list')}
-            >
-              <Rows className="w-4 h-4" /> Rows
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={toggleButtonClass('cards')}
-            >
-              <LayoutGrid className="w-4 h-4" /> Cards
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[220px] sm:min-w-[280px] md:max-w-lg lg:max-w-xl">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search suppliers by name, contact, phone, or address..."
-              className="w-full pl-10 pr-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-            <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+        <SearchAddBar
+          value={search}
+          onChange={setSearch}
+          placeholder="Search suppliers by name, contact, phone, or address..."
+          onAdd={startAddSupplier}
+          addLabel="Add supplier"
+          addLabelMobile="Add"
+          inputWidthClass="sm:min-w-[280px] md:max-w-lg lg:max-w-xl"
+        />
+        {statusMessage && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full">
+              {statusMessage}
+            </span>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end sm:ml-auto">
-            {statusMessage && (
-              <span className="text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full">
-                {statusMessage}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={startAddSupplier}
-              className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600"
-            >
-              <span className="sm:hidden">+ Add</span>
-              <span className="hidden sm:inline">+ Add supplier</span>
-            </button>
-          </div>
-        </div>
+        )}
 
           <div className="bg-white/5 border border-white/10 rounded-xl">
             {isLoading ? (
@@ -258,7 +227,7 @@ export default function SuppliersPage() {
               <div className="p-6 text-sm text-gray-300">
                 No suppliers match your search. {suppliers && suppliers.length === 0 ? 'Add your first supplier with the button above.' : 'Try a different filter.'}
               </div>
-            ) : viewMode === 'list' ? (
+            ) : activeViewMode === 'list' ? (
               <>
                 <div className="sm:hidden space-y-3 p-4">
                   {filteredSuppliers.map((supplier) => (
