@@ -15,6 +15,8 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy frontend files and build
+ARG VITE_MAPBOX_TOKEN
+ENV VITE_MAPBOX_TOKEN=${VITE_MAPBOX_TOKEN}
 COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
 RUN npm ci
@@ -26,5 +28,3 @@ WORKDIR /app
 COPY backend/ .
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
-
-
