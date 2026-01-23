@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle } from '../../types'
@@ -6,6 +6,8 @@ import { ArrowRight, Plus } from 'lucide-react'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
+import ViewToggle from '@/components/ViewToggle'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 interface VehicleFormData {
   customer_id: string
@@ -54,6 +56,17 @@ export default function VehiclesPage() {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
   const [formData, setFormData] = useState<VehicleFormData>(emptyForm)
   const [formError, setFormError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useViewPreference('vehicles')
+  const [isMobile, setIsMobile] = useState(false)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  const activeViewMode = isMobile ? 'list' : viewMode
 
   const queryClient = useQueryClient()
 
@@ -428,79 +441,153 @@ export default function VehiclesPage() {
         )}
       </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredVehicles?.map((vehicle) => (
-          <div 
-            key={vehicle.id}
-            onClick={() => openDetailPanel(vehicle)}
-            className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
-          >
-            <div>
-              <div className="text-xs font-medium text-amber-600 uppercase tracking-wide mb-1">
-                {vehicle.year || 'Year N/A'}
-              </div>
-              <h3 className="text-lg font-bold text-slate-800 leading-tight">
-                {vehicle.make}
-              </h3>
-              <p className="text-slate-600 font-medium">{vehicle.model}</p>
-              <p className="text-sm text-slate-500 mt-1">
-                {customerLookup.get(vehicle.customer_id)
-                  ? `${customerLookup.get(vehicle.customer_id)?.first_name} ${customerLookup.get(vehicle.customer_id)?.last_name}`
-                  : 'Unknown customer'}
-              </p>
-            </div>
-            
-            <div className="space-y-2 text-sm">
-              {vehicle.license_plate && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Plate</span>
-                  <span className="font-semibold text-slate-700">{vehicle.license_plate}</span>
-                </div>
-              )}
-              {typeof vehicle.mileage === 'number' && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Mileage</span>
-                  <span className="font-semibold text-slate-700">{vehicle.mileage.toLocaleString()} mi</span>
-                </div>
-              )}
-              {vehicle.color && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Color</span>
-                  <span className="font-semibold text-slate-700">{vehicle.color}</span>
-                </div>
-              )}
-              {vehicle.vin && (
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">VIN</span>
-                  <span className="font-mono text-xs text-slate-600 truncate max-w-24">{vehicle.vin}</span>
-                </div>
-              )}
-            </div>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        {/* Header with ViewToggle */}
+        <div className="hidden lg:flex items-center justify-start px-4 py-3 border-b border-white/10">
+          <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
+        </div>
 
-            <div className="pt-3 border-t border-amber-200/50">
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation()
-                  openDetailPanel(vehicle)
-                }}
-                className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+        <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
+          {activeViewMode === 'list' ? (
+            /* List View */
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Vehicle</th>
+                    <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Owner</th>
+                    <th className="px-4 py-3 text-left font-medium hidden md:table-cell">Plate</th>
+                    <th className="px-4 py-3 text-left font-medium hidden lg:table-cell">Mileage</th>
+                    <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">VIN</th>
+                    <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {filteredVehicles?.map((vehicle) => {
+                    const owner = customerLookup.get(vehicle.customer_id)
+                    return (
+                      <tr
+                        key={vehicle.id}
+                        onClick={() => openDetailPanel(vehicle)}
+                        className="hover:bg-white/5 cursor-pointer transition-colors"
+                      >
+                        <td className="px-4 py-3">
+                          <div>
+                            <span className="text-white font-medium">
+                              {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
+                            </span>
+                            {vehicle.color && (
+                              <span className="text-white/50 text-xs ml-2">({vehicle.color})</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-white/70 hidden sm:table-cell">
+                          {owner ? `${owner.first_name} ${owner.last_name}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 hidden md:table-cell">
+                          {vehicle.license_plate || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
+                          {typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-white/50 font-mono text-xs hidden xl:table-cell">
+                          {vehicle.vin || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDetailPanel(vehicle)
+                            }}
+                            className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Cards View */
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredVehicles?.map((vehicle) => (
+                <div 
+                  key={vehicle.id}
+                  onClick={() => openDetailPanel(vehicle)}
+                  className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+                >
+                  <div>
+                    <div className="text-xs font-medium text-amber-600 uppercase tracking-wide mb-1">
+                      {vehicle.year || 'Year N/A'}
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 leading-tight">
+                      {vehicle.make}
+                    </h3>
+                    <p className="text-slate-600 font-medium">{vehicle.model}</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {customerLookup.get(vehicle.customer_id)
+                        ? `${customerLookup.get(vehicle.customer_id)?.first_name} ${customerLookup.get(vehicle.customer_id)?.last_name}`
+                        : 'Unknown customer'}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    {vehicle.license_plate && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Plate</span>
+                        <span className="font-semibold text-slate-700">{vehicle.license_plate}</span>
+                      </div>
+                    )}
+                    {typeof vehicle.mileage === 'number' && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Mileage</span>
+                        <span className="font-semibold text-slate-700">{vehicle.mileage.toLocaleString()} mi</span>
+                      </div>
+                    )}
+                    {vehicle.color && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Color</span>
+                        <span className="font-semibold text-slate-700">{vehicle.color}</span>
+                      </div>
+                    )}
+                    {vehicle.vin && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">VIN</span>
+                        <span className="font-mono text-xs text-slate-600 truncate max-w-24">{vehicle.vin}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-amber-200/50">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openDetailPanel(vehicle)
+                      }}
+                      className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                    >
+                      View Details
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Add Vehicle Card */}
+              <div 
+                onClick={openCreateModal}
+                className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
               >
-                View Details
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
+                  <Plus className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-white font-medium">Add Vehicle</span>
+              </div>
             </div>
-          </div>
-        ))}
-
-        {/* Add Vehicle Card */}
-        <div 
-          onClick={openCreateModal}
-          className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
-        >
-          <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
-            <Plus className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-white font-medium">Add Vehicle</span>
+          )}
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import api from '../../lib/api'
 import { CheckCircle, Wrench } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 interface Service {
   id: string
@@ -48,7 +49,7 @@ export default function ServicesManagementPage() {
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
+  const [viewMode, setViewMode] = useViewPreference('services')
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   )

@@ -12,6 +12,7 @@ import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { Eye, EyeOff } from 'lucide-react'
 import ViewToggle from '@/components/ViewToggle'
 import SearchAddBar from '@/components/SearchAddBar'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 const mechanicSchema = z.object({
   first_name: z.string().min(1, 'First name is required'),
@@ -54,7 +55,7 @@ export default function MechanicsPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
   const [selectedWorkItem, setSelectedWorkItem] = useState<MechanicWorkItem | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list')
+  const [viewMode, setViewMode] = useViewPreference('mechanics')
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   )

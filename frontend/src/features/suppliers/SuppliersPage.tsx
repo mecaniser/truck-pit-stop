@@ -11,6 +11,7 @@ import { formatUSPhone } from '@/utils/phone'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 const supplierSchema = z.object({
   name: z.string().min(1, 'Supplier name is required'),
@@ -32,7 +33,7 @@ export default function SuppliersPage() {
   const { user } = useAuthStore()
   const isAdmin = user?.role === 'garage_admin' || user?.role === 'super_admin'
 
-  const [viewMode, setViewMode] = useState<'list' | 'cards'>(window.innerWidth < 640 ? 'cards' : 'list')
+  const [viewMode, setViewMode] = useViewPreference('suppliers')
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   )

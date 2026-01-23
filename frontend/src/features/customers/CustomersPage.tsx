@@ -1,10 +1,12 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
 import { AlertTriangle, ArrowRight, Mail, MapPin, Pencil, Phone, Plus, Trash2, X } from 'lucide-react'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
+import ViewToggle from '@/components/ViewToggle'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 interface CustomerFormData {
   first_name: string
@@ -144,6 +146,8 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm)
   const [formError, setFormError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useViewPreference('customers')
+  const [isMobile, setIsMobile] = useState(false)
   
   // Detail panel state
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
@@ -152,6 +156,15 @@ export default function CustomersPage() {
   
   // Delete confirmation state
   const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  const activeViewMode = isMobile ? 'list' : viewMode
 
   const queryClient = useQueryClient()
 
@@ -748,66 +761,131 @@ export default function CustomersPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredCustomers?.map((customer) => (
-          <div 
-            key={customer.id}
-            onClick={() => openDetailPanel(customer)}
-            className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
-          >
-            <div>
-              <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center mb-3">
-                <span className="text-white font-bold text-lg">
-                  {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
-                </span>
-              </div>
-              <h3 className="text-lg font-bold text-slate-800 leading-tight">
-                {customer.first_name} {customer.last_name}
-              </h3>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        {/* Header with ViewToggle */}
+        <div className="hidden lg:flex items-center justify-start px-4 py-3 border-b border-white/10">
+          <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
+        </div>
+
+        <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
+          {activeViewMode === 'list' ? (
+            /* List View */
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Customer</th>
+                    <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Email</th>
+                    <th className="px-4 py-3 text-left font-medium hidden md:table-cell">Phone</th>
+                    <th className="px-4 py-3 text-left font-medium hidden lg:table-cell">Location</th>
+                    <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {filteredCustomers?.map((customer) => (
+                    <tr
+                      key={customer.id}
+                      onClick={() => openDetailPanel(customer)}
+                      className="hover:bg-white/5 cursor-pointer transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                            <span className="text-white font-bold text-xs">
+                              {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
+                            </span>
+                          </div>
+                          <span className="text-white font-medium">{customer.first_name} {customer.last_name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-white/70 hidden sm:table-cell">{customer.email}</td>
+                      <td className="px-4 py-3 text-white/70 hidden md:table-cell">{customer.phone || '—'}</td>
+                      <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
+                        {customer.billing_city && customer.billing_state
+                          ? `${customer.billing_city}, ${customer.billing_state}`
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openDetailPanel(customer)
+                          }}
+                          className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2 text-slate-600">
-                  <Mail className="w-4 h-4 flex-shrink-0" />
-                  <span className="truncate">{customer.email}</span>
+          ) : (
+            /* Cards View */
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredCustomers?.map((customer) => (
+                <div 
+                  key={customer.id}
+                  onClick={() => openDetailPanel(customer)}
+                  className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+                >
+                  <div>
+                    <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center mb-3">
+                      <span className="text-white font-bold text-lg">
+                        {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 leading-tight">
+                      {customer.first_name} {customer.last_name}
+                    </h3>
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <Mail className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{customer.email}</span>
+                    </div>
+                    {customer.phone && (
+                      <div className="flex items-center gap-2 text-slate-600">
+                        <Phone className="w-4 h-4 flex-shrink-0" />
+                        <span>{customer.phone}</span>
+                      </div>
+                    )}
+                    {customer.billing_city && customer.billing_state && (
+                      <div className="flex items-center gap-2 text-slate-600">
+                        <MapPin className="w-4 h-4 flex-shrink-0" />
+                        <span>{customer.billing_city}, {customer.billing_state}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-amber-200/50">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openDetailPanel(customer)
+                      }}
+                      className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                    >
+                      View Details
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                {customer.phone && (
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <Phone className="w-4 h-4 flex-shrink-0" />
-                    <span>{customer.phone}</span>
-                  </div>
-                )}
-                {customer.billing_city && customer.billing_state && (
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <MapPin className="w-4 h-4 flex-shrink-0" />
-                    <span>{customer.billing_city}, {customer.billing_state}</span>
-                  </div>
-                )}
-              </div>
+              ))}
 
-            <div className="pt-3 border-t border-amber-200/50">
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation()
-                  openDetailPanel(customer)
-                }}
-                className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+              <div 
+                onClick={openCreateModal}
+                className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
               >
-                View Details
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
+                  <Plus className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-white font-medium">Add Customer</span>
+              </div>
             </div>
-          </div>
-        ))}
-
-        <div 
-          onClick={openCreateModal}
-          className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
-        >
-          <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
-            <Plus className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-white font-medium">Add Customer</span>
+          )}
         </div>
       </div>
 

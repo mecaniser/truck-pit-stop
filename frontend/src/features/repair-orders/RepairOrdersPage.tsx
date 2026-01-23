@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, RepairOrder, Service, Vehicle } from '../../types'
@@ -9,6 +9,8 @@ import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
 import { formatUSPhone } from '@/utils/phone'
 import BaseSelect from '../../components/BaseSelect'
+import ViewToggle from '@/components/ViewToggle'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 interface NewCustomerForm {
   first_name: string
@@ -41,6 +43,8 @@ export default function RepairOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showDangerActions, setShowDangerActions] = useState(false)
+  const [viewMode, setViewMode] = useViewPreference('repair_orders')
+  const [isMobile, setIsMobile] = useState(false)
   const [newCustomer, setNewCustomer] = useState<NewCustomerForm>({
     first_name: '',
     last_name: '',
@@ -55,6 +59,15 @@ export default function RepairOrdersPage() {
     license_plate: '',
     mileage: '',
   })
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  const activeViewMode = isMobile ? 'list' : viewMode
 
   const queryClient = useQueryClient()
 
@@ -472,86 +485,170 @@ export default function RepairOrdersPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredOrders?.map((order) => {
-          const statusStyle = getStatusStyle(order.status)
-          const parsedServices = parseServiceNotes(order.internal_notes)
-          const estimatedTotal = parsedServices?.reduce(
-            (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
-            0
-          )
-          const backendTotal = parseFloat(order.total_cost) || 0
-          const showEstimate = backendTotal === 0 && estimatedTotal && estimatedTotal > 0
-          const showMechanic = ['quoted', 'in_progress', 'paid'].includes(order.status) && order.assigned_mechanic_id
-          return (
-            <div 
-              key={order.id}
-              onClick={() => openDetail(order)}
-              className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-mono text-slate-500">
-                    {order.order_number}
-                  </span>
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
-                    {order.status.replace('_', ' ')}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-700 line-clamp-3 leading-relaxed">
-                  {order.description}
-                </p>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">
-                    {format(new Date(order.created_at), 'MMM d, yyyy')}
-                  </span>
-                </div>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        {/* Header with ViewToggle */}
+        <div className="hidden lg:flex items-center justify-start px-4 py-3 border-b border-white/10">
+          <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
+        </div>
 
-                <div className="bg-white/50 rounded-lg p-3 space-y-2">
-                  <div className="text-xs text-slate-500 mb-1">{showEstimate ? 'Est. from services' : 'Total Cost'}</div>
-                  <div className="text-xl font-bold text-slate-800">
-                    $
-                    {(showEstimate ? estimatedTotal : backendTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </div>
-                  {showMechanic && (
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      <Wrench className="w-4 h-4 text-amber-600" />
-                      <span>{mechanicLookup.get(order.assigned_mechanic_id!) || 'Assigned mechanic'}</span>
+        <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
+          {activeViewMode === 'list' ? (
+            /* List View */
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium">Order #</th>
+                    <th className="px-4 py-3 text-left font-medium">Status</th>
+                    <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Description</th>
+                    <th className="px-4 py-3 text-left font-medium hidden md:table-cell">Customer</th>
+                    <th className="px-4 py-3 text-left font-medium hidden lg:table-cell">Vehicle</th>
+                    <th className="px-4 py-3 text-right font-medium hidden xl:table-cell">Total</th>
+                    <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {filteredOrders?.map((order) => {
+                    const statusStyle = getStatusStyle(order.status)
+                    const parsedServices = parseServiceNotes(order.internal_notes)
+                    const estimatedTotal = parsedServices?.reduce(
+                      (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                      0
+                    )
+                    const backendTotal = parseFloat(order.total_cost) || 0
+                    const displayTotal = backendTotal || estimatedTotal || 0
+                    const customer = customerLookup.get(order.customer_id)
+                    const vehicle = vehicleLookup.get(order.vehicle_id)
+
+                    return (
+                      <tr
+                        key={order.id}
+                        onClick={() => openDetail(order)}
+                        className="hover:bg-white/5 cursor-pointer transition-colors"
+                      >
+                        <td className="px-4 py-3">
+                          <span className="text-white font-mono text-xs">{order.order_number}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
+                            {order.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-white/70 hidden sm:table-cell max-w-xs truncate">
+                          {order.description || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 hidden md:table-cell">
+                          {customer ? `${customer.first_name} ${customer.last_name}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
+                          {vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right text-white font-medium hidden xl:table-cell">
+                          ${displayTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openDetail(order)
+                            }}
+                            className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Cards View */
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredOrders?.map((order) => {
+                const statusStyle = getStatusStyle(order.status)
+                const parsedServices = parseServiceNotes(order.internal_notes)
+                const estimatedTotal = parsedServices?.reduce(
+                  (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                  0
+                )
+                const backendTotal = parseFloat(order.total_cost) || 0
+                const showEstimate = backendTotal === 0 && estimatedTotal && estimatedTotal > 0
+                const showMechanic = ['quoted', 'in_progress', 'paid'].includes(order.status) && order.assigned_mechanic_id
+                return (
+                  <div 
+                    key={order.id}
+                    onClick={() => openDetail(order)}
+                    className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-mono text-slate-500">
+                          {order.order_number}
+                        </span>
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
+                          {order.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-700 line-clamp-3 leading-relaxed">
+                        {order.description}
+                      </p>
                     </div>
-                  )}
-                </div>
-              </div>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-500">
+                          {format(new Date(order.created_at), 'MMM d, yyyy')}
+                        </span>
+                      </div>
 
-              <div className="pt-3 border-t border-amber-200/50">
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openDetail(order)
-                  }}
-                  className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
-                >
-                  View Details
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                      <div className="bg-white/50 rounded-lg p-3 space-y-2">
+                        <div className="text-xs text-slate-500 mb-1">{showEstimate ? 'Est. from services' : 'Total Cost'}</div>
+                        <div className="text-xl font-bold text-slate-800">
+                          $
+                          {(showEstimate ? estimatedTotal : backendTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </div>
+                        {showMechanic && (
+                          <div className="flex items-center gap-2 text-xs text-slate-600">
+                            <Wrench className="w-4 h-4 text-amber-600" />
+                            <span>{mechanicLookup.get(order.assigned_mechanic_id!) || 'Assigned mechanic'}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-amber-200/50">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openDetail(order)
+                        }}
+                        className="w-full py-2 text-sm font-medium text-amber-700 hover:text-amber-900 hover:bg-amber-200/50 rounded-lg transition-colors inline-flex items-center justify-center gap-1"
+                      >
+                        View Details
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+
+              <div 
+                onClick={openModal}
+                className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
+              >
+                <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <span className="text-white font-medium">New Repair Order</span>
               </div>
             </div>
-          )
-        })}
-
-        <div 
-          onClick={openModal}
-          className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
-        >
-          <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </div>
-          <span className="text-white font-medium">New Repair Order</span>
+          )}
         </div>
       </div>
 

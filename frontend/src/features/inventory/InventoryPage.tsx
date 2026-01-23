@@ -9,13 +9,14 @@ import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import { formatUSPhone } from '../../utils/phone'
+import { useViewPreference } from '@/hooks/useViewPreference'
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'all' | 'sku' | 'name' | 'category'>('all')
   const [showLowStock, setShowLowStock] = useState(false)
   const [stockSort, setStockSort] = useState<'none' | 'low-high' | 'high-low'>('none')
-  const [viewMode, setViewMode] = useState<'cards' | 'list'>('list')
+  const [viewMode, setViewMode] = useViewPreference('inventory')
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   const [isAddingPart, setIsAddingPart] = useState(false)
   const [addForm, setAddForm] = useState({
