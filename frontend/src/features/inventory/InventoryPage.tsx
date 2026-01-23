@@ -1,14 +1,14 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { InventoryItem } from '../../types'
+import { InventoryItem, Supplier } from '../../types'
 import { ArrowRight, Plus, X, Loader2 } from 'lucide-react'
 import BaseSelect from '../../components/BaseSelect'
+import CurrencyInput from '../../components/CurrencyInput'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import { formatUSPhone } from '../../utils/phone'
-type SupplierOption = { name: string; address?: string }
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
@@ -17,21 +17,28 @@ export default function InventoryPage() {
   const [stockSort, setStockSort] = useState<'none' | 'low-high' | 'high-low'>('none')
   const [viewMode, setViewMode] = useState<'cards' | 'list'>('list')
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
-  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([
-    { name: 'Dealership' },
-    { name: 'NAPA' },
-    { name: 'AutoZone' },
-    { name: "O'Reilly Auto Parts" },
-    { name: 'Advance Auto Parts' },
-    { name: 'CarQuest' },
-    { name: 'Pep Boys' },
-    { name: 'RockAuto' },
-    { name: 'Local Yard' },
-  ])
-  const [addingSupplier, setAddingSupplier] = useState(false)
-  const [newSupplier, setNewSupplier] = useState('')
-  const [newSupplierAddress, setNewSupplierAddress] = useState('')
-  const [newSupplierPhone, setNewSupplierPhone] = useState('')
+  const [isAddingPart, setIsAddingPart] = useState(false)
+  const [addForm, setAddForm] = useState({
+    sku: '',
+    name: '',
+    description: '',
+    category: '',
+    stock_quantity: '',
+    reorder_level: '',
+    cost: '',
+    selling_price: '',
+    supplier_name: '',
+    supplier_contact: '',
+  })
+  const [addError, setAddError] = useState<string | null>(null)
+  const [addingSupplierInManage, setAddingSupplierInManage] = useState(false)
+  const [addingSupplierInAdd, setAddingSupplierInAdd] = useState(false)
+  const [newSupplierForm, setNewSupplierForm] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    contact_name: '',
+  })
   const [manageForm, setManageForm] = useState({
     stock_quantity: '',
     reorder_level: '',
@@ -48,6 +55,14 @@ export default function InventoryPage() {
     queryKey: ['inventory'],
     queryFn: async () => {
       const response = await api.get('/inventory')
+      return response.data
+    },
+  })
+
+  const { data: suppliers } = useQuery<Supplier[]>({
+    queryKey: ['suppliers'],
+    queryFn: async () => {
+      const response = await api.get('/suppliers')
       return response.data
     },
   })
@@ -184,8 +199,212 @@ export default function InventoryPage() {
     },
   })
 
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const payload: Record<string, any> = {
+        sku: addForm.sku.trim(),
+        name: addForm.name.trim(),
+        cost: Number(addForm.cost) || 0,
+        selling_price: Number(addForm.selling_price) || 0,
+      }
+
+      if (addForm.description.trim()) payload.description = addForm.description.trim()
+      if (addForm.category.trim()) payload.category = addForm.category.trim()
+      if (addForm.stock_quantity !== '') payload.stock_quantity = Number(addForm.stock_quantity)
+      if (addForm.reorder_level !== '') payload.reorder_level = Number(addForm.reorder_level)
+      if (addForm.supplier_name.trim()) payload.supplier_name = addForm.supplier_name.trim()
+      if (addForm.supplier_contact.trim()) payload.supplier_contact = addForm.supplier_contact.trim()
+
+      return api.post('/inventory', payload)
+    },
+    onSuccess: () => {
+      setAddError(null)
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setIsAddingPart(false)
+      setAddForm({
+        sku: '',
+        name: '',
+        description: '',
+        category: '',
+        stock_quantity: '',
+        reorder_level: '',
+        cost: '',
+        selling_price: '',
+        supplier_name: '',
+        supplier_contact: '',
+      })
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.detail || 'Failed to add part'
+      setAddError(Array.isArray(message) ? message.join(', ') : message)
+    },
+  })
+
+  const createSupplierMutation = useMutation({
+    mutationFn: async (target: 'manage' | 'add') => {
+      const payload = {
+        name: newSupplierForm.name.trim(),
+        address: newSupplierForm.address.trim() || undefined,
+        phone: newSupplierForm.phone.trim() || undefined,
+        contact_name: newSupplierForm.contact_name.trim() || undefined,
+      }
+      const response = await api.post('/suppliers', payload)
+      return { supplier: response.data as Supplier, target }
+    },
+    onSuccess: ({ supplier, target }) => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] })
+      // Auto-select the new supplier and populate contact
+      const contactParts = [supplier.phone, supplier.address].filter(Boolean)
+      if (target === 'manage') {
+        handleManageChange('supplier_name', supplier.name)
+        if (contactParts.length) handleManageChange('supplier_contact', contactParts.join(' | '))
+        setAddingSupplierInManage(false)
+      } else {
+        handleAddFormChange('supplier_name', supplier.name)
+        if (contactParts.length) handleAddFormChange('supplier_contact', contactParts.join(' | '))
+        setAddingSupplierInAdd(false)
+      }
+      setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.detail || 'Failed to add supplier'
+      // Show error in the appropriate form
+      if (err.target === 'manage') {
+        setError(Array.isArray(message) ? message.join(', ') : message)
+      } else {
+        setAddError(Array.isArray(message) ? message.join(', ') : message)
+      }
+    },
+  })
+
+  const handleNewSupplierChange = (field: keyof typeof newSupplierForm, value: string) => {
+    setNewSupplierForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleSelectSupplier = (supplierId: string, target: 'manage' | 'add') => {
+    const supplier = suppliers?.find((s) => s.id === supplierId)
+    if (!supplier) return
+    const contactParts = [supplier.phone, supplier.address].filter(Boolean)
+    if (target === 'manage') {
+      handleManageChange('supplier_name', supplier.name)
+      if (contactParts.length) handleManageChange('supplier_contact', contactParts.join(' | '))
+    } else {
+      handleAddFormChange('supplier_name', supplier.name)
+      if (contactParts.length) handleAddFormChange('supplier_contact', contactParts.join(' | '))
+    }
+  }
+
   const openManage = (item: InventoryItem) => {
     setSelectedItem(item)
+    setAddingSupplierInManage(false)
+  }
+
+  const openAddPart = () => {
+    setAddForm({
+      sku: '',
+      name: '',
+      description: '',
+      category: '',
+      stock_quantity: '',
+      reorder_level: '',
+      cost: '',
+      selling_price: '',
+      supplier_name: '',
+      supplier_contact: '',
+    })
+    setAddError(null)
+    setIsAddingPart(true)
+  }
+
+  const handleAddFormChange = (field: keyof typeof addForm, value: string) => {
+    setAddForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  // Generate SKU suggestion from category + name
+  const generateSkuSuggestion = (name: string, category: string): string => {
+    const catTrimmed = category.trim()
+    const catPrefix = catTrimmed ? catTrimmed.substring(0, 3).toUpperCase() : 'GEN'
+    const catLower = catTrimmed.toLowerCase()
+    
+    // Extract meaningful words (letters/numbers), skip hyphens
+    const words = name
+      .trim()
+      .split(/[\s\-_]+/)
+      .filter((word) => word.length > 0)
+      .map((word) => word.replace(/[^a-zA-Z0-9]/g, '')) // remove special chars
+      .filter((word) => word.length > 0)
+      // Filter out words that are redundant with category (e.g., "Brake" when category is "Brakes")
+      .filter((word) => {
+        if (!catTrimmed) return true
+        const wordLower = word.toLowerCase()
+        // Skip if word matches category or vice versa
+        return !(catLower.startsWith(wordLower) || wordLower.startsWith(catLower.substring(0, Math.min(4, catLower.length))))
+      })
+    
+    if (words.length === 0) return ''
+    
+    // Take first 3 chars of up to 3 significant words
+    const nameAbbrev = words
+      .slice(0, 3)
+      .map((word) => {
+        // If it's a number, keep it as-is (up to 3 digits)
+        if (/^\d+$/.test(word)) return word.substring(0, 3)
+        // Otherwise take first 3 letters
+        return word.substring(0, 3).toUpperCase()
+      })
+      .join('-')
+    
+    if (!nameAbbrev) return ''
+    
+    // Find next sequence number for this prefix pattern
+    const basePattern = `${catPrefix}-${nameAbbrev}`
+    const existingWithPattern = inventory?.filter((item) =>
+      item.sku.toUpperCase().startsWith(basePattern.toUpperCase())
+    ) || []
+    const nextNum = existingWithPattern.length + 1
+    const seq = String(nextNum).padStart(3, '0')
+    
+    return `${basePattern}-${seq}`
+  }
+
+  // Get name suggestions from existing inventory
+  const nameSuggestions = useMemo(() => {
+    if (!addForm.name.trim() || addForm.name.length < 2) return []
+    const query = addForm.name.toLowerCase()
+    const matches = inventory?.filter((item) =>
+      item.name.toLowerCase().includes(query)
+    ) || []
+    // Return unique names, max 5
+    const uniqueNames = [...new Set(matches.map((m) => m.name))]
+    return uniqueNames.slice(0, 5)
+  }, [addForm.name, inventory])
+
+  // Auto-update SKU suggestion when name or category changes
+  const skuSuggestion = useMemo(() => {
+    if (addForm.sku) return '' // Don't suggest if user already entered something
+    return generateSkuSuggestion(addForm.name, addForm.category)
+  }, [addForm.name, addForm.category, addForm.sku, inventory])
+
+  const handleAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setAddError(null)
+    if (!addForm.sku.trim()) {
+      setAddError('SKU is required')
+      return
+    }
+    if (!addForm.name.trim()) {
+      setAddError('Name is required')
+      return
+    }
+    if (!addForm.cost || Number(addForm.cost) < 0) {
+      setAddError('Cost is required')
+      return
+    }
+    if (!addForm.selling_price || Number(addForm.selling_price) < 0) {
+      setAddError('Selling price is required')
+      return
+    }
+    createMutation.mutate()
   }
 
   const handleManageChange = (field: keyof typeof manageForm, value: string) => {
@@ -209,7 +428,7 @@ export default function InventoryPage() {
         value={searchQuery}
         onChange={setSearchQuery}
         placeholder="Search parts by SKU, name, or category..."
-        onAdd={() => {}}
+        onAdd={openAddPart}
         addLabel="Add part"
         addLabelMobile="Add"
         className="mb-4"
@@ -571,139 +790,108 @@ export default function InventoryPage() {
                 </label>
                 <label className="text-sm text-gray-700 space-y-1">
                   <span>Cost</span>
-                  <input
-                    type="number"
-                    step="0.01"
+                  <CurrencyInput
                     value={manageForm.cost}
-                    onChange={(e) => handleManageChange('cost', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    onChange={(val) => handleManageChange('cost', val)}
                   />
                 </label>
                 <label className="text-sm text-gray-700 space-y-1">
                   <span>Selling Price</span>
-                  <input
-                    type="number"
-                    step="0.01"
+                  <CurrencyInput
                     value={manageForm.selling_price}
-                    onChange={(e) => handleManageChange('selling_price', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    onChange={(val) => handleManageChange('selling_price', val)}
                   />
                 </label>
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>Supplier Name</span>
+                  <span>Supplier</span>
                   <BaseSelect
-                    options={supplierOptions.map((opt) => ({
-                      value: opt.name,
-                      label: opt.name,
-                      subLabel: opt.address || 'Address not set',
+                    options={(suppliers || []).map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                      subLabel: s.address || s.phone || 'No contact info',
                     }))}
-                    value={manageForm.supplier_name}
-                    onChange={(val) => {
-                      if (val === 'add_new') return
-                      handleManageChange('supplier_name', val)
-                    }}
+                    value={suppliers?.find((s) => s.name === manageForm.supplier_name)?.id || ''}
+                    onChange={(val) => handleSelectSupplier(val, 'manage')}
                     placeholder="Select a supplier"
                     allowAddNew
-                    addNewLabel="+ Add supplier"
-                    onAddNew={() => setAddingSupplier(true)}
+                    addNewLabel="+ Add new supplier"
+                    onAddNew={() => setAddingSupplierInManage(true)}
                   />
-                  <div className="text-[12px] text-amber-700 font-semibold mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setAddingSupplier(true)}
-                      className="hover:underline"
-                    >
-                      + Add supplier
-                    </button>
-                  </div>
                 </label>
 
-                {addingSupplier && (
-                  <div className="space-y-2 rounded-lg border border-gray-200 p-3 bg-gray-50">
-                    <div className="flex items-center gap-2">
+                {addingSupplierInManage && (
+                  <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
+                    <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <input
                         type="text"
-                        value={newSupplier}
-                        onChange={(e) => setNewSupplier(e.target.value)}
-                        className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Add supplier name"
+                        value={newSupplierForm.name}
+                        onChange={(e) => handleNewSupplierChange('name', e.target.value)}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Supplier name *"
                       />
+                      <input
+                        type="text"
+                        value={newSupplierForm.contact_name}
+                        onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Contact name"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={newSupplierForm.phone}
+                      onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      placeholder="Phone"
+                    />
+                    <MapboxAddressInput
+                      value={newSupplierForm.address}
+                      onChange={(e) => handleNewSupplierChange('address', e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      placeholder="Address"
+                      onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
+                    />
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => {
-                          const trimmed = newSupplier.trim()
-                          if (!trimmed) return
-                          const exists = supplierOptions.some(
-                            (s) => s.name.toLowerCase() === trimmed.toLowerCase()
-                          )
-                          if (!exists) {
-                            setSupplierOptions((prev) => [
-                              ...prev,
-                              { name: trimmed, address: newSupplierAddress.trim() || undefined },
-                            ])
-                          }
-                          handleManageChange('supplier_name', trimmed)
-                          const contactParts = [newSupplierAddress.trim(), newSupplierPhone.trim()].filter(Boolean)
-                          if (contactParts.length) {
-                            handleManageChange('supplier_contact', contactParts.join(' | '))
-                          }
-                          setNewSupplier('')
-                          setNewSupplierAddress('')
-                          setNewSupplierPhone('')
-                          setAddingSupplier(false)
+                          if (!newSupplierForm.name.trim()) return
+                          createSupplierMutation.mutate('manage')
                         }}
-                        className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600"
+                        disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
+                        className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
                       >
-                        Add
+                        {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          setNewSupplier('')
-                          setNewSupplierAddress('')
-                          setNewSupplierPhone('')
-                          setAddingSupplier(false)
+                          setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
+                          setAddingSupplierInManage(false)
                         }}
                         className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
                       >
                         Cancel
                       </button>
                     </div>
-
-                    <div className="space-y-1">
-                      <span className="text-xs text-gray-600">Supplier address (saved into contact)</span>
-                      <MapboxAddressInput
-                        value={newSupplierAddress}
-                        onChange={(e) => setNewSupplierAddress(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Search address"
-                        onAddressSelect={({ formatted }) => setNewSupplierAddress(formatted || '')}
-                      />
-                      <input
-                        type="text"
-                        value={newSupplierPhone}
-                        onChange={(e) => setNewSupplierPhone(formatUSPhone(e.target.value))}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Phone (optional)"
-                      />
-                    </div>
                   </div>
                 )}
-              </div>
 
-              <label className="text-sm text-gray-700 space-y-1 block">
-                <span>Supplier Contact</span>
-                <input
-                  type="text"
-                  value={manageForm.supplier_contact}
-                  onChange={(e) => handleManageChange('supplier_contact', e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  placeholder="Optional"
-                />
-              </label>
+                <label className="text-sm text-gray-700 space-y-1 block">
+                  <span>Supplier Contact</span>
+                  <input
+                    type="text"
+                    value={manageForm.supplier_contact}
+                    onChange={(e) => handleManageChange('supplier_contact', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Auto-filled from supplier, or enter manually"
+                  />
+                </label>
+              </div>
 
               {error && <div className="text-sm text-red-600">{error}</div>}
             </div>
@@ -723,6 +911,269 @@ export default function InventoryPage() {
               >
                 {updateMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Save Changes
+              </button>
+            </div>
+          </form>
+        </aside>
+      </div>
+
+      {/* Add Part Drawer */}
+      <div
+        className={`fixed inset-0 z-50 transition ${isAddingPart ? 'pointer-events-auto' : 'pointer-events-none'}`}
+        aria-hidden={!isAddingPart}
+      >
+        <div
+          className={`absolute inset-0 bg-black/50 transition-opacity ${isAddingPart ? 'opacity-100' : 'opacity-0'}`}
+          onClick={() => setIsAddingPart(false)}
+        />
+        <aside
+          className={`absolute top-0 right-0 h-full w-full sm:w-[520px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
+            isAddingPart ? 'translate-x-0' : 'translate-x-full'
+          }`}
+          role="dialog"
+          aria-label="Add part"
+        >
+          <form className="h-full flex flex-col" onSubmit={handleAddSubmit}>
+            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase text-gray-500 font-semibold">Inventory</p>
+                <p className="text-lg font-semibold text-slate-800">Add New Part</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddingPart(false)}
+                className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {/* Name field with suggestions */}
+              <div className="space-y-1">
+                <label className="text-sm text-gray-700 space-y-1 block">
+                  <span>Name *</span>
+                  <input
+                    type="text"
+                    value={addForm.name}
+                    onChange={(e) => handleAddFormChange('name', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="e.g. Brake Pads - Front"
+                  />
+                </label>
+                {nameSuggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-[10px] text-gray-400">Similar:</span>
+                    {nameSuggestions.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => {
+                          const existing = inventory?.find((i) => i.name === name)
+                          if (existing) {
+                            handleAddFormChange('name', existing.name)
+                            handleAddFormChange('category', existing.category || '')
+                            handleAddFormChange('description', existing.description || '')
+                          }
+                        }}
+                        className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <label className="text-sm text-gray-700 space-y-1 block">
+                <span>Category</span>
+                <input
+                  type="text"
+                  value={addForm.category}
+                  onChange={(e) => handleAddFormChange('category', e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="e.g. Brakes, Filters, Engine"
+                />
+              </label>
+
+              {/* SKU field with auto-suggestion */}
+              <div className="space-y-1">
+                <label className="text-sm text-gray-700 space-y-1 block">
+                  <span>SKU *</span>
+                  <input
+                    type="text"
+                    value={addForm.sku}
+                    onChange={(e) => handleAddFormChange('sku', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Auto-generated or enter custom"
+                  />
+                </label>
+                {skuSuggestion && (
+                  <button
+                    type="button"
+                    onClick={() => handleAddFormChange('sku', skuSuggestion)}
+                    className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
+                  >
+                    Use suggested: <span className="font-mono font-semibold">{skuSuggestion}</span>
+                  </button>
+                )}
+              </div>
+
+              <label className="text-sm text-gray-700 space-y-1 block">
+                <span>Description</span>
+                <textarea
+                  value={addForm.description}
+                  onChange={(e) => handleAddFormChange('description', e.target.value)}
+                  rows={2}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                  placeholder="Optional description..."
+                />
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Stock Quantity</span>
+                  <input
+                    type="number"
+                    value={addForm.stock_quantity}
+                    onChange={(e) => handleAddFormChange('stock_quantity', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="0"
+                  />
+                </label>
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Reorder Level</span>
+                  <input
+                    type="number"
+                    value={addForm.reorder_level}
+                    onChange={(e) => handleAddFormChange('reorder_level', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="0"
+                  />
+                </label>
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Cost *</span>
+                  <CurrencyInput
+                    value={addForm.cost}
+                    onChange={(val) => handleAddFormChange('cost', val)}
+                  />
+                </label>
+                <label className="text-sm text-gray-700 space-y-1">
+                  <span>Selling Price *</span>
+                  <CurrencyInput
+                    value={addForm.selling_price}
+                    onChange={(val) => handleAddFormChange('selling_price', val)}
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-gray-700 space-y-1 block">
+                  <span>Supplier</span>
+                  <BaseSelect
+                    options={(suppliers || []).map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                      subLabel: s.address || s.phone || 'No contact info',
+                    }))}
+                    value={suppliers?.find((s) => s.name === addForm.supplier_name)?.id || ''}
+                    onChange={(val) => handleSelectSupplier(val, 'add')}
+                    placeholder="Select a supplier"
+                    allowAddNew
+                    addNewLabel="+ Add new supplier"
+                    onAddNew={() => setAddingSupplierInAdd(true)}
+                  />
+                </label>
+
+                {addingSupplierInAdd && (
+                  <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
+                    <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        value={newSupplierForm.name}
+                        onChange={(e) => handleNewSupplierChange('name', e.target.value)}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Supplier name *"
+                      />
+                      <input
+                        type="text"
+                        value={newSupplierForm.contact_name}
+                        onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                        placeholder="Contact name"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={newSupplierForm.phone}
+                      onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      placeholder="Phone"
+                    />
+                    <MapboxAddressInput
+                      value={newSupplierForm.address}
+                      onChange={(e) => handleNewSupplierChange('address', e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                      placeholder="Address"
+                      onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!newSupplierForm.name.trim()) return
+                          createSupplierMutation.mutate('add')
+                        }}
+                        disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
+                        className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
+                          setAddingSupplierInAdd(false)
+                        }}
+                        className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <label className="text-sm text-gray-700 space-y-1 block">
+                  <span>Supplier Contact</span>
+                  <input
+                    type="text"
+                    value={addForm.supplier_contact}
+                    onChange={(e) => handleAddFormChange('supplier_contact', e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    placeholder="Auto-filled from supplier, or enter manually"
+                  />
+                </label>
+              </div>
+
+              {addError && <div className="text-sm text-red-600">{addError}</div>}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsAddingPart(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-70"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                Add Part
               </button>
             </div>
           </form>
