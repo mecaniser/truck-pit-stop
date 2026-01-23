@@ -4,6 +4,7 @@ import api from '../../lib/api'
 import { Customer, RepairOrder, Service, Vehicle } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp } from 'lucide-react'
+import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
@@ -1067,38 +1068,74 @@ export default function RepairOrdersPage() {
       )}
 
       {/* Repair Order Detail Panel */}
-      {isDetailOpen && selectedOrder && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={closeDetail} />
-          <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl flex flex-col animate-slide-in-right">
-            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-8 text-white">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs text-amber-100 uppercase tracking-wide">Repair Order</p>
-                  <h2 className="text-2xl font-bold">#{selectedOrder.order_number}</h2>
-                  <p className="text-amber-100 text-sm mt-1">
-                    Created {format(new Date(selectedOrder.created_at), 'MMM d, yyyy')}
-                  </p>
-                </div>
-                <button
-                  onClick={closeDetail}
-                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                  aria-label="Close"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
-                <span className={`w-2 h-2 rounded-full ${getStatusStyle(selectedOrder.status).dot}`}></span>
-                {selectedOrder.status.replace('_', ' ')}
-              </div>
+      <SlidePanel
+        isOpen={isDetailOpen && !!selectedOrder}
+        onClose={closeDetail}
+        title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
+        subtitle="Repair Order"
+        headerExtra={
+          selectedOrder && (
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
+              <span className={`w-2 h-2 rounded-full ${getStatusStyle(selectedOrder.status).dot}`}></span>
+              {selectedOrder.status.replace('_', ' ')}
             </div>
-
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-6 space-y-6">
+          )
+        }
+        footer={
+          selectedOrder && (
+            <div className="space-y-4 -mx-6 -my-4 px-6 py-6 bg-red-50">
+              <button
+                type="button"
+                onClick={() => setShowDangerActions((prev) => !prev)}
+                className="w-full flex items-center justify-between text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-red-100 text-red-700">
+                    <TriangleAlert className="w-5 h-5" />
+                  </div>
+                  <div className="text-sm font-semibold text-red-700 uppercase tracking-wide">
+                    Danger Zone
+                  </div>
+                </div>
+                <div className="p-2 text-red-700">
+                  {showDangerActions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+              </button>
+              {showDangerActions && (
+                <div className="flex flex-wrap gap-2 justify-end">
+                  <div className="w-full text-sm text-red-600">
+                    Cancel stops work without deleting history. Delete will permanently remove this order.
+                  </div>
+                  <button
+                    type="button"
+                    disabled={cancelRepairOrderMutation.isPending || deleteRepairOrderMutation.isPending || selectedOrder.status === 'cancelled'}
+                    onClick={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <OctagonX className="w-4 h-4" />
+                    {cancelRepairOrderMutation.isPending ? 'Cancelling...' : 'Cancel order'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteRepairOrderMutation.isPending}
+                    onClick={() => {
+                      if (selectedOrder.id && window.confirm('Delete this repair order? This cannot be undone.')) {
+                        deleteRepairOrderMutation.mutate(selectedOrder.id)
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    {deleteRepairOrderMutation.isPending ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        }
+      >
+        {selectedOrder && (
+          <div className="p-6 space-y-6">
                 {(() => {
                   const detailServices = parseServiceNotes(selectedOrder.internal_notes)
                   const detailEstimate = detailServices?.reduce(
@@ -1287,61 +1324,8 @@ export default function RepairOrdersPage() {
                   )
                 })()}
               </div>
-            </div>
-
-            <div className="border-t border-gray-200 px-6 py-6 bg-red-50">
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={() => setShowDangerActions((prev) => !prev)}
-                  className="w-full flex items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-red-100 text-red-700">
-                      <TriangleAlert className="w-5 h-5" />
-                    </div>
-                    <div className="text-sm font-semibold text-red-700 uppercase tracking-wide">
-                      Danger Zone
-                    </div>
-                  </div>
-                  <div className="p-2 text-red-700">
-                    {showDangerActions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                </button>
-                {showDangerActions && (
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    <div className="w-full text-sm text-red-600">
-                      Cancel stops work without deleting history. Delete will permanently remove this order.
-                    </div>
-                    <button
-                      type="button"
-                      disabled={cancelRepairOrderMutation.isPending || deleteRepairOrderMutation.isPending || selectedOrder.status === 'cancelled'}
-                      onClick={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <OctagonX className="w-4 h-4" />
-                      {cancelRepairOrderMutation.isPending ? 'Cancelling...' : 'Cancel order'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={deleteRepairOrderMutation.isPending}
-                      onClick={() => {
-                        if (selectedOrder.id && window.confirm('Delete this repair order? This cannot be undone.')) {
-                          deleteRepairOrderMutation.mutate(selectedOrder.id)
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      {deleteRepairOrderMutation.isPending ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+            )}
+      </SlidePanel>
     </div>
   )
 }

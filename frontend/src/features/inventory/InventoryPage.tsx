@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { InventoryItem, Supplier } from '../../types'
-import { ArrowRight, Plus, X, Loader2 } from 'lucide-react'
+import { ArrowRight, Plus } from 'lucide-react'
+import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
@@ -736,450 +737,365 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <div
-        className={`fixed inset-0 z-50 transition ${selectedItem ? 'pointer-events-auto' : 'pointer-events-none'}`}
-        aria-hidden={!selectedItem}
+      <SlidePanelForm
+        isOpen={!!selectedItem}
+        onClose={() => setSelectedItem(null)}
+        category="Manage Inventory"
+        title={selectedItem?.name || ''}
+        subtitle={selectedItem?.sku ? `SKU: ${selectedItem.sku}` : undefined}
+        onSubmit={handleSubmit}
+        submitLabel="Save Changes"
+        isSubmitting={updateMutation.isPending}
+        submitDisabled={!selectedItem}
+        ariaLabel="Manage inventory"
       >
-        <div
-          className={`absolute inset-0 bg-black/50 transition-opacity ${selectedItem ? 'opacity-100' : 'opacity-0'}`}
-          onClick={() => setSelectedItem(null)}
-        />
-        <aside
-          className={`absolute top-0 right-0 h-full w-full sm:w-[520px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
-            selectedItem ? 'translate-x-0' : 'translate-x-full'
-          }`}
-          role="dialog"
-          aria-label="Manage inventory"
-        >
-          <form className="h-full flex flex-col" onSubmit={handleSubmit}>
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase text-gray-500 font-semibold">Manage Inventory</p>
-                <p className="text-lg font-semibold text-slate-800">
-                  {selectedItem?.name || ''}
-                </p>
-                {selectedItem?.sku && <p className="text-sm text-gray-500">SKU: {selectedItem.sku}</p>}
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedItem(null)}
-                className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Stock Quantity</span>
+            <input
+              type="number"
+              value={manageForm.stock_quantity}
+              onChange={(e) => handleManageChange('stock_quantity', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Reorder Level</span>
+            <input
+              type="number"
+              value={manageForm.reorder_level}
+              onChange={(e) => handleManageChange('reorder_level', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Cost</span>
+            <CurrencyInput
+              value={manageForm.cost}
+              onChange={(val) => handleManageChange('cost', val)}
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Selling Price</span>
+            <CurrencyInput
+              value={manageForm.selling_price}
+              onChange={(val) => handleManageChange('selling_price', val)}
+            />
+          </label>
+        </div>
 
-            <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Stock Quantity</span>
-                  <input
-                    type="number"
-                    value={manageForm.stock_quantity}
-                    onChange={(e) => handleManageChange('stock_quantity', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </label>
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Reorder Level</span>
-                  <input
-                    type="number"
-                    value={manageForm.reorder_level}
-                    onChange={(e) => handleManageChange('reorder_level', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                </label>
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Cost</span>
-                  <CurrencyInput
-                    value={manageForm.cost}
-                    onChange={(val) => handleManageChange('cost', val)}
-                  />
-                </label>
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Selling Price</span>
-                  <CurrencyInput
-                    value={manageForm.selling_price}
-                    onChange={(val) => handleManageChange('selling_price', val)}
-                  />
-                </label>
-              </div>
+        <div className="space-y-2">
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Supplier</span>
+            <BaseSelect
+              options={(suppliers || []).map((s) => ({
+                value: s.id,
+                label: s.name,
+                subLabel: s.address || s.phone || 'No contact info',
+              }))}
+              value={suppliers?.find((s) => s.name === manageForm.supplier_name)?.id || ''}
+              onChange={(val) => handleSelectSupplier(val, 'manage')}
+              placeholder="Select a supplier"
+              allowAddNew
+              addNewLabel="+ Add new supplier"
+              onAddNew={() => setAddingSupplierInManage(true)}
+            />
+          </label>
 
-              <div className="space-y-2">
-                <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>Supplier</span>
-                  <BaseSelect
-                    options={(suppliers || []).map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                      subLabel: s.address || s.phone || 'No contact info',
-                    }))}
-                    value={suppliers?.find((s) => s.name === manageForm.supplier_name)?.id || ''}
-                    onChange={(val) => handleSelectSupplier(val, 'manage')}
-                    placeholder="Select a supplier"
-                    allowAddNew
-                    addNewLabel="+ Add new supplier"
-                    onAddNew={() => setAddingSupplierInManage(true)}
-                  />
-                </label>
-
-                {addingSupplierInManage && (
-                  <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
-                    <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={newSupplierForm.name}
-                        onChange={(e) => handleNewSupplierChange('name', e.target.value)}
-                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Supplier name *"
-                      />
-                      <input
-                        type="text"
-                        value={newSupplierForm.contact_name}
-                        onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
-                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Contact name"
-                      />
-                    </div>
-                    <input
-                      type="text"
-                      value={newSupplierForm.phone}
-                      onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                      placeholder="Phone"
-                    />
-                    <MapboxAddressInput
-                      value={newSupplierForm.address}
-                      onChange={(e) => handleNewSupplierChange('address', e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                      placeholder="Address"
-                      onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!newSupplierForm.name.trim()) return
-                          createSupplierMutation.mutate('manage')
-                        }}
-                        disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
-                        className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
-                      >
-                        {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
-                          setAddingSupplierInManage(false)
-                        }}
-                        className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>Supplier Contact</span>
-                  <input
-                    type="text"
-                    value={manageForm.supplier_contact}
-                    onChange={(e) => handleManageChange('supplier_contact', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="Auto-filled from supplier, or enter manually"
-                  />
-                </label>
-              </div>
-
-              {error && <div className="text-sm text-red-600">{error}</div>}
-            </div>
-
-            <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedItem(null)}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!selectedItem || updateMutation.isPending}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-70"
-              >
-                {updateMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Save Changes
-              </button>
-            </div>
-          </form>
-        </aside>
-      </div>
-
-      {/* Add Part Drawer */}
-      <div
-        className={`fixed inset-0 z-50 transition ${isAddingPart ? 'pointer-events-auto' : 'pointer-events-none'}`}
-        aria-hidden={!isAddingPart}
-      >
-        <div
-          className={`absolute inset-0 bg-black/50 transition-opacity ${isAddingPart ? 'opacity-100' : 'opacity-0'}`}
-          onClick={() => setIsAddingPart(false)}
-        />
-        <aside
-          className={`absolute top-0 right-0 h-full w-full sm:w-[520px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
-            isAddingPart ? 'translate-x-0' : 'translate-x-full'
-          }`}
-          role="dialog"
-          aria-label="Add part"
-        >
-          <form className="h-full flex flex-col" onSubmit={handleAddSubmit}>
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase text-gray-500 font-semibold">Inventory</p>
-                <p className="text-lg font-semibold text-slate-800">Add New Part</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddingPart(false)}
-                className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              {/* Name field with suggestions */}
-              <div className="space-y-1">
-                <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>Name *</span>
-                  <input
-                    type="text"
-                    value={addForm.name}
-                    onChange={(e) => handleAddFormChange('name', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="e.g. Brake Pads - Front"
-                  />
-                </label>
-                {nameSuggestions.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    <span className="text-[10px] text-gray-400">Similar:</span>
-                    {nameSuggestions.map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => {
-                          const existing = inventory?.find((i) => i.name === name)
-                          if (existing) {
-                            handleAddFormChange('name', existing.name)
-                            handleAddFormChange('category', existing.category || '')
-                            handleAddFormChange('description', existing.description || '')
-                          }
-                        }}
-                        className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <label className="text-sm text-gray-700 space-y-1 block">
-                <span>Category</span>
+          {addingSupplierInManage && (
+            <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
-                  value={addForm.category}
-                  onChange={(e) => handleAddFormChange('category', e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  placeholder="e.g. Brakes, Filters, Engine"
+                  value={newSupplierForm.name}
+                  onChange={(e) => handleNewSupplierChange('name', e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  placeholder="Supplier name *"
                 />
-              </label>
-
-              {/* SKU field with auto-suggestion */}
-              <div className="space-y-1">
-                <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>SKU *</span>
-                  <input
-                    type="text"
-                    value={addForm.sku}
-                    onChange={(e) => handleAddFormChange('sku', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="Auto-generated or enter custom"
-                  />
-                </label>
-                {skuSuggestion && (
-                  <button
-                    type="button"
-                    onClick={() => handleAddFormChange('sku', skuSuggestion)}
-                    className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
-                  >
-                    Use suggested: <span className="font-mono font-semibold">{skuSuggestion}</span>
-                  </button>
-                )}
-              </div>
-
-              <label className="text-sm text-gray-700 space-y-1 block">
-                <span>Description</span>
-                <textarea
-                  value={addForm.description}
-                  onChange={(e) => handleAddFormChange('description', e.target.value)}
-                  rows={2}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                  placeholder="Optional description..."
+                <input
+                  type="text"
+                  value={newSupplierForm.contact_name}
+                  onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  placeholder="Contact name"
                 />
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Stock Quantity</span>
-                  <input
-                    type="number"
-                    value={addForm.stock_quantity}
-                    onChange={(e) => handleAddFormChange('stock_quantity', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="0"
-                  />
-                </label>
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Reorder Level</span>
-                  <input
-                    type="number"
-                    value={addForm.reorder_level}
-                    onChange={(e) => handleAddFormChange('reorder_level', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="0"
-                  />
-                </label>
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Cost *</span>
-                  <CurrencyInput
-                    value={addForm.cost}
-                    onChange={(val) => handleAddFormChange('cost', val)}
-                  />
-                </label>
-                <label className="text-sm text-gray-700 space-y-1">
-                  <span>Selling Price *</span>
-                  <CurrencyInput
-                    value={addForm.selling_price}
-                    onChange={(val) => handleAddFormChange('selling_price', val)}
-                  />
-                </label>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>Supplier</span>
-                  <BaseSelect
-                    options={(suppliers || []).map((s) => ({
-                      value: s.id,
-                      label: s.name,
-                      subLabel: s.address || s.phone || 'No contact info',
-                    }))}
-                    value={suppliers?.find((s) => s.name === addForm.supplier_name)?.id || ''}
-                    onChange={(val) => handleSelectSupplier(val, 'add')}
-                    placeholder="Select a supplier"
-                    allowAddNew
-                    addNewLabel="+ Add new supplier"
-                    onAddNew={() => setAddingSupplierInAdd(true)}
-                  />
-                </label>
-
-                {addingSupplierInAdd && (
-                  <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
-                    <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={newSupplierForm.name}
-                        onChange={(e) => handleNewSupplierChange('name', e.target.value)}
-                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Supplier name *"
-                      />
-                      <input
-                        type="text"
-                        value={newSupplierForm.contact_name}
-                        onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
-                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                        placeholder="Contact name"
-                      />
-                    </div>
-                    <input
-                      type="text"
-                      value={newSupplierForm.phone}
-                      onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                      placeholder="Phone"
-                    />
-                    <MapboxAddressInput
-                      value={newSupplierForm.address}
-                      onChange={(e) => handleNewSupplierChange('address', e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
-                      placeholder="Address"
-                      onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
-                    />
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!newSupplierForm.name.trim()) return
-                          createSupplierMutation.mutate('add')
-                        }}
-                        disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
-                        className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
-                      >
-                        {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
-                          setAddingSupplierInAdd(false)
-                        }}
-                        className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <label className="text-sm text-gray-700 space-y-1 block">
-                  <span>Supplier Contact</span>
-                  <input
-                    type="text"
-                    value={addForm.supplier_contact}
-                    onChange={(e) => handleAddFormChange('supplier_contact', e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    placeholder="Auto-filled from supplier, or enter manually"
-                  />
-                </label>
+              <input
+                type="text"
+                value={newSupplierForm.phone}
+                onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                placeholder="Phone"
+              />
+              <MapboxAddressInput
+                value={newSupplierForm.address}
+                onChange={(e) => handleNewSupplierChange('address', e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                placeholder="Address"
+                onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newSupplierForm.name.trim()) return
+                    createSupplierMutation.mutate('manage')
+                  }}
+                  disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
+                  className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
+                    setAddingSupplierInManage(false)
+                  }}
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
               </div>
-
-              {addError && <div className="text-sm text-red-600">{addError}</div>}
             </div>
+          )}
 
-            <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsAddingPart(false)}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={createMutation.isPending}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-70"
-              >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Add Part
-              </button>
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Supplier Contact</span>
+            <input
+              type="text"
+              value={manageForm.supplier_contact}
+              onChange={(e) => handleManageChange('supplier_contact', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="Auto-filled from supplier, or enter manually"
+            />
+          </label>
+        </div>
+
+        {error && <div className="text-sm text-red-600">{error}</div>}
+      </SlidePanelForm>
+
+      {/* Add Part Drawer */}
+      <SlidePanelForm
+        isOpen={isAddingPart}
+        onClose={() => setIsAddingPart(false)}
+        category="Inventory"
+        title="Add New Part"
+        onSubmit={handleAddSubmit}
+        submitLabel="Add Part"
+        isSubmitting={createMutation.isPending}
+        ariaLabel="Add part"
+      >
+        {/* Name field with suggestions */}
+        <div className="space-y-1">
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Name *</span>
+            <input
+              type="text"
+              value={addForm.name}
+              onChange={(e) => handleAddFormChange('name', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="e.g. Brake Pads - Front"
+            />
+          </label>
+          {nameSuggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              <span className="text-[10px] text-gray-400">Similar:</span>
+              {nameSuggestions.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => {
+                    const existing = inventory?.find((i) => i.name === name)
+                    if (existing) {
+                      handleAddFormChange('name', existing.name)
+                      handleAddFormChange('category', existing.category || '')
+                      handleAddFormChange('description', existing.description || '')
+                    }
+                  }}
+                  className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
+                >
+                  {name}
+                </button>
+              ))}
             </div>
-          </form>
-        </aside>
-      </div>
+          )}
+        </div>
+
+        <label className="text-sm text-gray-700 space-y-1 block">
+          <span>Category</span>
+          <input
+            type="text"
+            value={addForm.category}
+            onChange={(e) => handleAddFormChange('category', e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            placeholder="e.g. Brakes, Filters, Engine"
+          />
+        </label>
+
+        {/* SKU field with auto-suggestion */}
+        <div className="space-y-1">
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>SKU *</span>
+            <input
+              type="text"
+              value={addForm.sku}
+              onChange={(e) => handleAddFormChange('sku', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="Auto-generated or enter custom"
+            />
+          </label>
+          {skuSuggestion && (
+            <button
+              type="button"
+              onClick={() => handleAddFormChange('sku', skuSuggestion)}
+              className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
+            >
+              Use suggested: <span className="font-mono font-semibold">{skuSuggestion}</span>
+            </button>
+          )}
+        </div>
+
+        <label className="text-sm text-gray-700 space-y-1 block">
+          <span>Description</span>
+          <textarea
+            value={addForm.description}
+            onChange={(e) => handleAddFormChange('description', e.target.value)}
+            rows={2}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+            placeholder="Optional description..."
+          />
+        </label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Stock Quantity</span>
+            <input
+              type="number"
+              value={addForm.stock_quantity}
+              onChange={(e) => handleAddFormChange('stock_quantity', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="0"
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Reorder Level</span>
+            <input
+              type="number"
+              value={addForm.reorder_level}
+              onChange={(e) => handleAddFormChange('reorder_level', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="0"
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Cost *</span>
+            <CurrencyInput
+              value={addForm.cost}
+              onChange={(val) => handleAddFormChange('cost', val)}
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Selling Price *</span>
+            <CurrencyInput
+              value={addForm.selling_price}
+              onChange={(val) => handleAddFormChange('selling_price', val)}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Supplier</span>
+            <BaseSelect
+              options={(suppliers || []).map((s) => ({
+                value: s.id,
+                label: s.name,
+                subLabel: s.address || s.phone || 'No contact info',
+              }))}
+              value={suppliers?.find((s) => s.name === addForm.supplier_name)?.id || ''}
+              onChange={(val) => handleSelectSupplier(val, 'add')}
+              placeholder="Select a supplier"
+              allowAddNew
+              addNewLabel="+ Add new supplier"
+              onAddNew={() => setAddingSupplierInAdd(true)}
+            />
+          </label>
+
+          {addingSupplierInAdd && (
+            <div className="space-y-3 rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-600 uppercase">New Supplier</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  value={newSupplierForm.name}
+                  onChange={(e) => handleNewSupplierChange('name', e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  placeholder="Supplier name *"
+                />
+                <input
+                  type="text"
+                  value={newSupplierForm.contact_name}
+                  onChange={(e) => handleNewSupplierChange('contact_name', e.target.value)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  placeholder="Contact name"
+                />
+              </div>
+              <input
+                type="text"
+                value={newSupplierForm.phone}
+                onChange={(e) => handleNewSupplierChange('phone', formatUSPhone(e.target.value))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                placeholder="Phone"
+              />
+              <MapboxAddressInput
+                value={newSupplierForm.address}
+                onChange={(e) => handleNewSupplierChange('address', e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                placeholder="Address"
+                onAddressSelect={({ formatted }) => handleNewSupplierChange('address', formatted || '')}
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!newSupplierForm.name.trim()) return
+                    createSupplierMutation.mutate('add')
+                  }}
+                  disabled={!newSupplierForm.name.trim() || createSupplierMutation.isPending}
+                  className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
+                >
+                  {createSupplierMutation.isPending ? 'Adding...' : 'Add Supplier'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewSupplierForm({ name: '', address: '', phone: '', contact_name: '' })
+                    setAddingSupplierInAdd(false)
+                  }}
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Supplier Contact</span>
+            <input
+              type="text"
+              value={addForm.supplier_contact}
+              onChange={(e) => handleAddFormChange('supplier_contact', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="Auto-filled from supplier, or enter manually"
+            />
+          </label>
+        </div>
+
+        {addError && <div className="text-sm text-red-600">{addError}</div>}
+      </SlidePanelForm>
     </div>
   )
 }

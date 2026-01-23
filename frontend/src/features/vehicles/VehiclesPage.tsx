@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle } from '../../types'
-import { ArrowRight, Plus } from 'lucide-react'
+import { ArrowRight, Pencil, Plus } from 'lucide-react'
+import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
@@ -640,134 +641,100 @@ export default function VehiclesPage() {
       )}
 
       {/* Vehicle Detail Panel */}
-      {isDetailOpen && selectedVehicle && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-            onClick={closeDetailPanel}
-          />
-          
-          {/* Panel */}
-          <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl flex flex-col animate-slide-in-right">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-8 text-white">
-              <div className="flex items-start justify-between">
+      <SlidePanel
+        isOpen={isDetailOpen && !!selectedVehicle}
+        onClose={closeDetailPanel}
+        title={selectedVehicle ? `${selectedVehicle.year ? `${selectedVehicle.year} ` : ''}${selectedVehicle.make} ${selectedVehicle.model}` : ''}
+        subtitle={selectedVehicle ? `Added ${new Date(selectedVehicle.created_at).toLocaleDateString()}` : undefined}
+        footer={
+          !isEditingInPanel ? (
+            <div className="flex items-center justify-end">
+              <button
+                onClick={handleEditFromDetail}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Pencil className="w-4 h-4" />
+                Edit Vehicle
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {!selectedVehicle ? null : isEditingInPanel ? (
+          <div className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Editing</p>
+                <h3 className="text-xl font-bold text-gray-900">Vehicle Details</h3>
+              </div>
+              <button
+                onClick={cancelPanelEditing}
+                className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+              {renderVehicleForm(cancelPanelEditing)}
+            </div>
+          </div>
+        ) : (
+          <div className="p-6 space-y-6">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Owner</h3>
+              <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+                  {(customerLookup.get(selectedVehicle.customer_id)?.first_name || 'C').charAt(0)}
+                  {(customerLookup.get(selectedVehicle.customer_id)?.last_name || 'U').charAt(0)}
+                </div>
                 <div>
-                  <p className="text-sm text-amber-100 uppercase tracking-wide">Vehicle</p>
-                  <h2 className="text-2xl font-bold">
-                    {selectedVehicle.year ? `${selectedVehicle.year} ` : ''}{selectedVehicle.make} {selectedVehicle.model}
-                  </h2>
-                  <p className="text-amber-100 text-sm mt-1">
-                    Added {new Date(selectedVehicle.created_at).toLocaleDateString()}
+                  <p className="text-gray-900 font-semibold">
+                    {customerLookup.get(selectedVehicle.customer_id)
+                      ? `${customerLookup.get(selectedVehicle.customer_id)?.first_name} ${customerLookup.get(selectedVehicle.customer_id)?.last_name}`
+                      : 'Unknown Customer'}
+                  </p>
+                  <p className="text-sm text-gray-500">{customerLookup.get(selectedVehicle.customer_id)?.email}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Key Details</h3>
+              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
+                <div>
+                  <p className="text-gray-500">VIN</p>
+                  <p className="font-mono break-all">{selectedVehicle.vin || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Plate</p>
+                  <p className="font-semibold">{selectedVehicle.license_plate || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Color</p>
+                  <p className="font-semibold">{selectedVehicle.color || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Mileage</p>
+                  <p className="font-semibold">
+                    {typeof selectedVehicle.mileage === 'number'
+                      ? `${selectedVehicle.mileage.toLocaleString()} mi`
+                      : '—'}
                   </p>
                 </div>
-                <button
-                  onClick={closeDetailPanel}
-                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
-              {isEditingInPanel ? (
-                <div className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Editing</p>
-                    <h3 className="text-xl font-bold text-gray-900">Vehicle Details</h3>
-                  </div>
-                  <button
-                    onClick={cancelPanelEditing}
-                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
-                  {renderVehicleForm(cancelPanelEditing)}
-                </div>
-              </div>
-            ) : (
-                <div className="p-6 space-y-6">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Owner</h3>
-                    <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-                        {(customerLookup.get(selectedVehicle.customer_id)?.first_name || 'C').charAt(0)}
-                        {(customerLookup.get(selectedVehicle.customer_id)?.last_name || 'U').charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-gray-900 font-semibold">
-                          {customerLookup.get(selectedVehicle.customer_id)
-                            ? `${customerLookup.get(selectedVehicle.customer_id)?.first_name} ${customerLookup.get(selectedVehicle.customer_id)?.last_name}`
-                            : 'Unknown Customer'}
-                        </p>
-                        <p className="text-sm text-gray-500">{customerLookup.get(selectedVehicle.customer_id)?.email}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Key Details</h3>
-                    <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
-                      <div>
-                        <p className="text-gray-500">VIN</p>
-                        <p className="font-mono break-all">{selectedVehicle.vin || '—'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Plate</p>
-                        <p className="font-semibold">{selectedVehicle.license_plate || '—'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Color</p>
-                        <p className="font-semibold">{selectedVehicle.color || '—'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Mileage</p>
-                        <p className="font-semibold">
-                          {typeof selectedVehicle.mileage === 'number'
-                            ? `${selectedVehicle.mileage.toLocaleString()} mi`
-                            : '—'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedVehicle.notes && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Notes</h3>
-                      <div className="bg-gray-50 rounded-xl p-4">
-                        <p className="text-gray-700 whitespace-pre-wrap">{selectedVehicle.notes}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {!isEditingInPanel && (
-              <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
-                <div className="flex items-center justify-end">
-                  <button
-                    onClick={handleEditFromDetail}
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Edit Vehicle
-                  </button>
+            {selectedVehicle.notes && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Notes</h3>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedVehicle.notes}</p>
                 </div>
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </SlidePanel>
     </div>
   )
 }

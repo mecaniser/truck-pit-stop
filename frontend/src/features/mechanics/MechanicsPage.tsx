@@ -10,6 +10,7 @@ import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { Eye, EyeOff } from 'lucide-react'
+import SlidePanel from '@/components/SlidePanel'
 import ViewToggle from '@/components/ViewToggle'
 import SearchAddBar from '@/components/SearchAddBar'
 import { useViewPreference } from '@/hooks/useViewPreference'
@@ -737,116 +738,91 @@ export default function MechanicsPage() {
     </div>
 
       {/* Slide-in detail drawer */}
-      <div
-        className={`fixed inset-0 z-40 transition ${isDetailOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
-        aria-hidden={!isDetailOpen}
+      <SlidePanel
+        isOpen={isDetailOpen}
+        onClose={() => setIsDetailOpen(false)}
+        title={orderDetail?.order_number || selectedWorkItem?.order_number || 'Loading...'}
+        subtitle="Repair Order"
+        headerVariant="minimal"
+        width="max-w-md"
       >
-        <div
-          className={`absolute inset-0 bg-black/40 transition-opacity ${isDetailOpen ? 'opacity-100' : 'opacity-0'}`}
-          onClick={() => setIsDetailOpen(false)}
-        />
-        <aside
-          className={`absolute top-0 right-0 h-full w-full sm:w-[480px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
-            isDetailOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
-        >
-          <div className="h-full flex flex-col">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase text-gray-500 font-semibold">Repair Order</p>
-                <p className="text-lg font-semibold text-slate-800">
-                  {orderDetail?.order_number || selectedWorkItem?.order_number || 'Loading...'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDetailOpen(false)}
-                className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4 space-y-3 overflow-y-auto text-sm text-gray-700 flex-1">
-              {!orderDetail && !selectedWorkItem ? (
-                <p className="text-gray-500">Loading...</p>
-              ) : (
+        <div className="p-4 space-y-3 text-sm text-gray-700">
+          {!orderDetail && !selectedWorkItem ? (
+            <p className="text-gray-500">Loading...</p>
+          ) : (
+            <>
+              {orderDetail ? (
                 <>
-                  {orderDetail ? (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-gray-800">Status</span>
-                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
-                          {formatStatus(orderDetail.status)}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800">Description</p>
-                        <p className="text-gray-600 mt-1">{orderDetail.description || 'No description'}</p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800">Customer</p>
-                        <p className="text-gray-600 mt-1">
-                          {selectedWorkItem?.customer_name || 'Customer'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800">Vehicle</p>
-                        <p className="text-gray-600 mt-1">
-                          {selectedWorkItem?.vehicle_info || 'Vehicle'}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <p className="text-xs uppercase text-gray-500">Total Parts</p>
-                          <p className="font-semibold text-gray-800">${orderDetail.total_parts_cost}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs uppercase text-gray-500">Total Labor</p>
-                          <p className="font-semibold text-gray-800">${orderDetail.total_labor_cost}</p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-xs uppercase text-gray-500">Total</p>
-                          <p className="font-semibold text-gray-900 text-lg">${orderDetail.total_cost}</p>
-                        </div>
-                      </div>
-                      {orderDetail.internal_notes && (
-                        <div>
-                          <p className="font-semibold text-gray-800">Internal Notes</p>
-                          <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-gray-800">Status</span>
-                        <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
-                          {formatStatus(selectedWorkItem?.status) || 'Unknown'}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800">Customer</p>
-                        <p className="text-gray-600 mt-1">
-                          {selectedWorkItem?.customer_name || 'Customer'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-800">Vehicle</p>
-                        <p className="text-gray-600 mt-1">
-                          {selectedWorkItem?.vehicle_info || 'Vehicle'}
-                        </p>
-                      </div>
-                      <p className="text-gray-500">No additional details available.</p>
-                    </>
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-800">Status</span>
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
+                      {formatStatus(orderDetail.status)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">Description</p>
+                    <p className="text-gray-600 mt-1">{orderDetail.description || 'No description'}</p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">Customer</p>
+                    <p className="text-gray-600 mt-1">
+                      {selectedWorkItem?.customer_name || 'Customer'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">Vehicle</p>
+                    <p className="text-gray-600 mt-1">
+                      {selectedWorkItem?.vehicle_info || 'Vehicle'}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Total Parts</p>
+                      <p className="font-semibold text-gray-800">${orderDetail.total_parts_cost}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Total Labor</p>
+                      <p className="font-semibold text-gray-800">${orderDetail.total_labor_cost}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs uppercase text-gray-500">Total</p>
+                      <p className="font-semibold text-gray-900 text-lg">${orderDetail.total_cost}</p>
+                    </div>
+                  </div>
+                  {orderDetail.internal_notes && (
+                    <div>
+                      <p className="font-semibold text-gray-800">Internal Notes</p>
+                      <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
+                    </div>
                   )}
                 </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-800">Status</span>
+                    <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
+                      {formatStatus(selectedWorkItem?.status) || 'Unknown'}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">Customer</p>
+                    <p className="text-gray-600 mt-1">
+                      {selectedWorkItem?.customer_name || 'Customer'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-800">Vehicle</p>
+                    <p className="text-gray-600 mt-1">
+                      {selectedWorkItem?.vehicle_info || 'Vehicle'}
+                    </p>
+                  </div>
+                  <p className="text-gray-500">No additional details available.</p>
+                </>
               )}
-            </div>
-          </div>
-        </aside>
-      </div>
+            </>
+          )}
+        </div>
+      </SlidePanel>
     </>
   )
 }

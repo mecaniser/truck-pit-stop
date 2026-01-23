@@ -2,7 +2,8 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
-import { AlertTriangle, ArrowRight, Mail, MapPin, Pencil, Phone, Plus, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Mail, MapPin, Pencil, Phone, Plus, Trash2, Truck, X } from 'lucide-react'
+import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
 import ViewToggle from '@/components/ViewToggle'
@@ -154,6 +155,7 @@ export default function CustomersPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isEditingInPanel, setIsEditingInPanel] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
+  const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   
   // Delete confirmation state
   const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
@@ -298,6 +300,7 @@ export default function CustomersPage() {
     setIsDetailOpen(false)
     setSelectedCustomer(null)
     setIsEditingInPanel(false)
+    setSelectedVehicleInPanel(null)
     resetForm()
   }
 
@@ -937,44 +940,117 @@ export default function CustomersPage() {
       )}
 
       {/* Customer Detail Slide-out Panel */}
-      {isDetailOpen && selectedCustomer && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-            onClick={closeDetailPanel}
-          />
-          
-          {/* Panel */}
-          <div className="absolute inset-y-0 right-0 w-full max-w-lg bg-white shadow-2xl flex flex-col animate-slide-in-right">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-8 text-white">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">
-                    <span className="text-2xl font-bold">
-                      {selectedCustomer.first_name.charAt(0)}{selectedCustomer.last_name.charAt(0)}
-                    </span>
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">
-                      {selectedCustomer.first_name} {selectedCustomer.last_name}
-                    </h2>
-                    <p className="text-amber-100 text-sm mt-1">Customer since {new Date(selectedCustomer.created_at).toLocaleDateString()}</p>
-                  </div>
+      <SlidePanel
+        isOpen={isDetailOpen && !!selectedCustomer}
+        onClose={closeDetailPanel}
+        title={
+          selectedVehicleInPanel
+            ? `${selectedVehicleInPanel.year ? `${selectedVehicleInPanel.year} ` : ''}${selectedVehicleInPanel.make} ${selectedVehicleInPanel.model}`
+            : selectedCustomer
+            ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`
+            : ''
+        }
+        subtitle={
+          selectedVehicleInPanel
+            ? selectedVehicleInPanel.license_plate || undefined
+            : selectedCustomer
+            ? `Customer since ${new Date(selectedCustomer.created_at).toLocaleDateString()}`
+            : undefined
+        }
+        headerVariant={selectedVehicleInPanel ? 'slate' : 'amber'}
+        headerIcon={
+          selectedVehicleInPanel ? (
+            <div className="w-12 h-12 rounded-lg bg-white/20 flex items-center justify-center">
+              <Truck className="w-6 h-6" />
+            </div>
+          ) : selectedCustomer ? (
+            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">
+              <span className="text-2xl font-bold">
+                {selectedCustomer.first_name.charAt(0)}{selectedCustomer.last_name.charAt(0)}
+              </span>
+            </div>
+          ) : null
+        }
+        onBack={selectedVehicleInPanel ? () => setSelectedVehicleInPanel(null) : undefined}
+        backLabel={selectedVehicleInPanel && selectedCustomer ? `Back to ${selectedCustomer.first_name}` : undefined}
+        footer={
+          !isEditingInPanel && !selectedVehicleInPanel && selectedCustomer ? (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => handleDeleteClick(selectedCustomer)}
+                className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+              <button
+                onClick={handleEditFromDetail}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Pencil className="w-4 h-4" />
+                Edit Customer
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {!selectedCustomer ? null : selectedVehicleInPanel ? (
+          /* Vehicle Detail Content */
+          <div className="p-6 space-y-6">
+            {/* Owner */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Owner</h3>
+              <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+                  {selectedCustomer.first_name.charAt(0)}{selectedCustomer.last_name.charAt(0)}
                 </div>
-                <button
-                  onClick={closeDetailPanel}
-                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <div>
+                  <p className="text-gray-900 font-semibold">
+                    {selectedCustomer.first_name} {selectedCustomer.last_name}
+                  </p>
+                  <p className="text-sm text-gray-500">{selectedCustomer.email}</p>
+                </div>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto">
-              {isEditingInPanel ? (
+            {/* Key Details */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Key Details</h3>
+              <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
+                <div>
+                  <p className="text-gray-500">VIN</p>
+                  <p className="font-mono break-all">{selectedVehicleInPanel.vin || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Plate</p>
+                  <p className="font-semibold">{selectedVehicleInPanel.license_plate || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Color</p>
+                  <p className="font-semibold">{selectedVehicleInPanel.color || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Mileage</p>
+                  <p className="font-semibold">
+                    {typeof selectedVehicleInPanel.mileage === 'number'
+                      ? `${selectedVehicleInPanel.mileage.toLocaleString()} mi`
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            {selectedVehicleInPanel.notes && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Notes</h3>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedVehicleInPanel.notes}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : isEditingInPanel ? (
                 <div className="p-6 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1086,7 +1162,11 @@ export default function CustomersPage() {
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                               {customerVehicles.map((vehicle) => (
-                                <tr key={vehicle.id} className="hover:bg-gray-100/50">
+                                <tr 
+                                  key={vehicle.id} 
+                                  onClick={() => setSelectedVehicleInPanel(vehicle)}
+                                  className="hover:bg-gray-100/50 cursor-pointer"
+                                >
                                   <td className="px-3 py-2.5 text-gray-900 font-medium">
                                     {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
                                     {vehicle.color && <span className="text-gray-500 font-normal"> · {vehicle.color}</span>}
@@ -1111,7 +1191,11 @@ export default function CustomersPage() {
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {customerVehicles.map((vehicle) => (
-                            <div key={vehicle.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                            <div 
+                              key={vehicle.id} 
+                              onClick={() => setSelectedVehicleInPanel(vehicle)}
+                              className="bg-gray-50 rounded-xl p-4 border border-gray-100 cursor-pointer hover:bg-gray-100 hover:border-gray-200 transition-colors"
+                            >
                               <p className="text-sm font-semibold text-gray-900 mb-1">
                                 {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
                               </p>
@@ -1123,7 +1207,6 @@ export default function CustomersPage() {
                               <div className="text-xs text-gray-500 space-y-0.5 mt-2">
                                 {vehicle.color && <p>{vehicle.color}</p>}
                                 <p>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</p>
-                                {vehicle.vin && <p>VIN: ...{vehicle.vin.slice(-6)}</p>}
                               </div>
                             </div>
                           ))}
@@ -1160,32 +1243,7 @@ export default function CustomersPage() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Footer Actions */}
-            {!isEditingInPanel && (
-              <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => handleDeleteClick(selectedCustomer)}
-                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Delete
-                  </button>
-                  <button
-                    onClick={handleEditFromDetail}
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <Pencil className="w-4 h-4" />
-                    Edit Customer
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      </SlidePanel>
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmCustomer && (

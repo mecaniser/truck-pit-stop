@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Phone, MapPin, FileText, Loader2, Pencil, Trash2, UserRound } from 'lucide-react'
+import SlidePanelForm from '@/components/SlidePanelForm'
 import api from '@/lib/api'
 import { Supplier } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
@@ -541,153 +542,121 @@ export default function SuppliersPage() {
           </div>
         </div>
 
-      {(formOpen || editing) && (
-        <div
-          className={`fixed inset-0 z-50 transition ${formOpen || editing ? 'pointer-events-auto' : 'pointer-events-none'}`}
-          aria-hidden={!(formOpen || editing)}
-        >
-          <div
-            className={`absolute inset-0 bg-black/50 transition-opacity ${formOpen || editing ? 'opacity-100' : 'opacity-0'}`}
-            onClick={closeForm}
-          />
-          <aside
-            className={`absolute top-0 right-0 h-full w-full sm:w-[520px] bg-white/95 backdrop-blur border-l border-gray-200 shadow-xl transform transition-transform ${
-              formOpen || editing ? 'translate-x-0' : 'translate-x-full'
-            }`}
-            role="dialog"
-            aria-label="Supplier form"
-          >
-            <div className="h-full flex flex-col">
-              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase text-gray-500 font-semibold">Suppliers</p>
-                  <p className="text-lg font-semibold text-slate-800">
-                    {editing ? `Edit ${editing.name}` : 'Add supplier'}
-                  </p>
-                </div>
+      <SlidePanelForm
+        isOpen={formOpen || !!editing}
+        onClose={closeForm}
+        category="Suppliers"
+        title={editing ? `Edit ${editing.name}` : 'Add supplier'}
+        hideFooter
+        ariaLabel="Supplier form"
+      >
+        {!isAdmin && (
+          <div className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded-lg p-3">
+            You can browse suppliers, but only garage admins can add or edit them.
+          </div>
+        )}
+
+        <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Name</span>
+            <input
+              type="text"
+              {...register('name')}
+              disabled={!isAdmin || isSaving}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="Acme Parts Co."
+            />
+            {errors.name && <p className="text-xs text-red-600">{errors.name.message}</p>}
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-sm text-gray-700 space-y-1 block">
+              <span>Primary contact</span>
+              <input
+                type="text"
+                {...register('contact_name')}
+                disabled={!isAdmin || isSaving}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="Contact name"
+              />
+            </label>
+
+            <label className="text-sm text-gray-700 space-y-1 block">
+              <span>Phone</span>
+              <input
+                type="tel"
+                {...register('phone')}
+                onChange={(e) => setValue('phone', formatUSPhone(e.target.value), { shouldValidate: true })}
+                disabled={!isAdmin || isSaving}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                placeholder="(555) 123-4567"
+              />
+            </label>
+          </div>
+
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Address</span>
+            <MapboxAddressInput
+              {...register('address')}
+              autoComplete="street-address"
+              disabled={!isAdmin || isSaving}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="Start typing address..."
+              options={{ language: 'en', country: 'US' }}
+              onAddressSelect={({ formatted }) => {
+                if (formatted) {
+                  setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
+                }
+              }}
+            />
+          </label>
+
+          <label className="text-sm text-gray-700 space-y-1 block">
+            <span>Notes</span>
+            <textarea
+              {...register('notes')}
+              rows={3}
+              disabled={!isAdmin || isSaving}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+              placeholder="Ordering preferences, payment terms, delivery timing..."
+            />
+          </label>
+
+          <div className="space-y-2">
+            <p className="text-xs uppercase font-semibold text-gray-500">Actions</p>
+            {statusMessage ? (
+              <span className="block text-xs text-amber-700 bg-amber-100 border border-amber-200 px-3 py-1 rounded-lg text-center">
+              {statusMessage}
+              </span>
+            ) : (
+              <span className="block text-xs text-gray-500 text-center">Fields sync to all admins.</span>
+            )}
+            <div className="space-y-2">
+              {editing && (
                 <button
                   type="button"
-                  onClick={closeForm}
-                  className="p-2 text-gray-500 hover:text-amber-600 rounded-full hover:bg-amber-50"
+                  onClick={() => {
+                    setEditing(null)
+                    reset({ name: '', address: '', phone: '', contact_name: '', notes: '' })
+                  }}
+                  className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200"
+                  disabled={isSaving}
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  Cancel edit
                 </button>
-              </div>
-
-              <div className="p-5 space-y-4 overflow-y-auto flex-1">
-                {!isAdmin && (
-                  <div className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded-lg p-3">
-                    You can browse suppliers, but only garage admins can add or edit them.
-                  </div>
-                )}
-
-                <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
-                  <label className="text-sm text-gray-700 space-y-1 block">
-                    <span>Name</span>
-                    <input
-                      type="text"
-                      {...register('name')}
-                      disabled={!isAdmin || isSaving}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      placeholder="Acme Parts Co."
-                    />
-                    {errors.name && <p className="text-xs text-red-600">{errors.name.message}</p>}
-                  </label>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="text-sm text-gray-700 space-y-1 block">
-                      <span>Primary contact</span>
-                      <input
-                        type="text"
-                        {...register('contact_name')}
-                        disabled={!isAdmin || isSaving}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        placeholder="Contact name"
-                      />
-                    </label>
-
-                    <label className="text-sm text-gray-700 space-y-1 block">
-                      <span>Phone</span>
-                      <input
-                        type="tel"
-                        {...register('phone')}
-                        onChange={(e) => setValue('phone', formatUSPhone(e.target.value), { shouldValidate: true })}
-                        disabled={!isAdmin || isSaving}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        placeholder="(555) 123-4567"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="text-sm text-gray-700 space-y-1 block">
-                    <span>Address</span>
-                    <MapboxAddressInput
-                      {...register('address')}
-                      autoComplete="street-address"
-                      disabled={!isAdmin || isSaving}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      placeholder="Start typing address..."
-                      options={{ language: 'en', country: 'US' }}
-                      onAddressSelect={({ formatted }) => {
-                        if (formatted) {
-                          setValue('address', formatted, { shouldValidate: true, shouldDirty: true })
-                        }
-                      }}
-                    />
-                  </label>
-
-                  <label className="text-sm text-gray-700 space-y-1 block">
-                    <span>Notes</span>
-                    <textarea
-                      {...register('notes')}
-                      rows={3}
-                      disabled={!isAdmin || isSaving}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
-                      placeholder="Ordering preferences, payment terms, delivery timing..."
-                    />
-                  </label>
-
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase font-semibold text-gray-500">Actions</p>
-                    {statusMessage ? (
-                      <span className="block text-xs text-amber-700 bg-amber-100 border border-amber-200 px-3 py-1 rounded-lg text-center">
-                      {statusMessage}
-                      </span>
-                    ) : (
-                      <span className="block text-xs text-gray-500 text-center">Fields sync to all admins.</span>
-                    )}
-                    <div className="space-y-2">
-                      {editing && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditing(null)
-                            reset({ name: '', address: '', phone: '', contact_name: '', notes: '' })
-                          }}
-                          className="w-full px-4 py-2 rounded-lg text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200"
-                          disabled={isSaving}
-                        >
-                          Cancel edit
-                        </button>
-                      )}
-                      <button
-                        type="submit"
-                        disabled={!isAdmin || isSaving}
-                        className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-60"
-                      >
-                        {(isSaving || deleteMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
-                        {editing ? 'Save changes' : 'Add supplier'}
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
+              )}
+              <button
+                type="submit"
+                disabled={!isAdmin || isSaving}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-60"
+              >
+                {(isSaving || deleteMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editing ? 'Save changes' : 'Add supplier'}
+              </button>
             </div>
-          </aside>
-        </div>
-      )}
+          </div>
+        </form>
+      </SlidePanelForm>
     </div>
   )
 }
