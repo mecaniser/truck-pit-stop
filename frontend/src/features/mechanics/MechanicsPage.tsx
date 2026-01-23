@@ -292,15 +292,18 @@ export default function MechanicsPage() {
         className="mb-4"
         inputWidthClass="sm:min-w-[320px] md:max-w-xl"
       />
-      <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {isLoading ? (
-          <div className="text-gray-400 text-sm">Loading mechanics...</div>
+          <div className="text-gray-400 text-sm p-6">Loading mechanics...</div>
         ) : mechanicRows.length === 0 ? (
-          <div className="text-gray-400 text-sm">No mechanics yet. Use Add mechanic to get started.</div>
+          <div className="text-gray-400 text-sm p-6">No mechanics yet. Use Add mechanic to get started.</div>
         ) : filteredMechanics.length === 0 ? (
-          <div className="text-gray-400 text-sm">No mechanics match your search.</div>
+          <div className="text-gray-400 text-sm p-6">No mechanics match your search.</div>
         ) : activeViewMode === 'list' ? (
-          <div className="overflow-hidden border border-white/10 rounded-lg">
+          <>
+            <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
+              <ViewToggle value={activeViewMode} onChange={setViewMode} />
+            </div>
             <table className="min-w-full divide-y divide-white/10">
               <thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-gray-400">
                 <tr>
@@ -399,13 +402,13 @@ export default function MechanicsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </>
         ) : (
           <>
-            <div className="hidden sm:flex items-center justify-between mb-3">
+            <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
               <ViewToggle value={activeViewMode} onChange={setViewMode} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
               {filteredMechanics.map((mechanic) => {
                 const inProgress = mechanic.assigned_count ? Math.min(mechanic.in_progress_count || 0, mechanic.assigned_count) : mechanic.in_progress_count || 0
                 const assigned = mechanic.assigned_count || 0
@@ -462,7 +465,7 @@ export default function MechanicsPage() {
               })}
             </div>
             {expandedMechanicId && (
-              <div className="mt-4 border border-white/10 rounded-lg bg-white/5 p-4">
+              <div className="border-t border-white/10 bg-white/5 p-4">
                 <h3 className="text-sm font-semibold text-white mb-2">
                   Work for {filteredMechanics.find((m) => m.id === expandedMechanicId)?.first_name}{' '}
                   {filteredMechanics.find((m) => m.id === expandedMechanicId)?.last_name}

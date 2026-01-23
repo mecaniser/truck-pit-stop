@@ -216,7 +216,10 @@ export default function SuppliersPage() {
           </div>
         )}
 
-          <div className="bg-white/5 border border-white/10 rounded-xl">
+          <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+            <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
+              <ViewToggle value={activeViewMode} onChange={setViewMode} />
+            </div>
             {isLoading ? (
               <div className="p-6 text-sm text-gray-300">Loading suppliers...</div>
             ) : filteredSuppliers.length === 0 ? (
@@ -320,15 +323,6 @@ export default function SuppliersPage() {
                 <div className="hidden sm:block overflow-hidden">
                   <table className="min-w-full divide-y divide-white/10">
                     <thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-gray-400">
-                      <tr>
-                        <th className="px-4 py-3" colSpan={isAdmin ? 3 : 2}>
-                          <div className="flex items-center justify-between">
-                            <div className="hidden sm:flex">
-                              <ViewToggle value={activeViewMode} onChange={setViewMode} />
-                            </div>
-                          </div>
-                        </th>
-                      </tr>
                       <tr>
                         <th className="px-4 py-3">Supplier</th>
                         <th className="px-4 py-3">Contact</th>
@@ -440,9 +434,6 @@ export default function SuppliersPage() {
               </>
             ) : (
               <>
-                <div className="hidden sm:flex justify-end px-4">
-                  <ViewToggle value={activeViewMode} onChange={setViewMode} />
-                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
                   {filteredSuppliers.map((supplier) => (
                     <div

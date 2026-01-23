@@ -4,8 +4,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
-import { CheckCircle, Wrench, LayoutGrid, Rows } from 'lucide-react'
+import { CheckCircle, Wrench } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
+import ViewToggle from '@/components/ViewToggle'
 
 interface Service {
   id: string
@@ -228,23 +229,8 @@ export default function ServicesManagementPage() {
 
       {/* Services Table / Cards */}
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        <div className="hidden sm:flex items-center justify-start gap-1 px-3 py-2 border-b border-white/10">
-          <div className="flex w-full sm:w-auto items-center gap-1 bg-white/10 border border-white/15 rounded-md p-0.5">
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${activeViewMode === 'list' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'} ${isMobile ? 'pointer-events-none opacity-40' : ''}`}
-            >
-              <Rows className="w-4 h-4" /> List
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('cards')}
-              className={`flex-1 sm:flex-none flex items-center justify-center gap-1 px-2.5 py-1 rounded-md text-sm font-medium transition ${activeViewMode === 'cards' ? 'bg-amber-500 text-white' : 'text-white hover:bg-white/20'} ${isMobile ? 'pointer-events-none opacity-40' : ''}`}
-            >
-              <LayoutGrid className="w-4 h-4" /> Cards
-            </button>
-          </div>
+        <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
+          <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
         <div className="overflow-y-auto max-h-[calc(100vh-240px)]">
         {activeViewMode === 'list' ? (
