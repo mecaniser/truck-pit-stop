@@ -153,6 +153,7 @@ export default function CustomersPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isEditingInPanel, setIsEditingInPanel] = useState(false)
+  const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   
   // Delete confirmation state
   const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
@@ -1061,30 +1062,73 @@ export default function CustomersPage() {
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Vehicles</h3>
-                      {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
+                      <div className="flex items-center gap-2">
+                        {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
+                        {customerVehicles && customerVehicles.length > 1 && (
+                          <ViewToggle 
+                            value={vehiclesViewMode} 
+                            onChange={setVehiclesViewMode}
+                            variant="light"
+                          />
+                        )}
+                      </div>
                     </div>
                     {customerVehicles && customerVehicles.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {customerVehicles.map((vehicle) => (
-                          <div key={vehicle.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                            <div className="flex items-center justify-between mb-2">
-                              <p className="text-sm font-semibold text-gray-900">
+                      vehiclesViewMode === 'list' ? (
+                        <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Vehicle</th>
+                                <th className="px-3 py-2 text-left font-medium">Plate</th>
+                                <th className="px-3 py-2 text-right font-medium">Mileage</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {customerVehicles.map((vehicle) => (
+                                <tr key={vehicle.id} className="hover:bg-gray-100/50">
+                                  <td className="px-3 py-2.5 text-gray-900 font-medium">
+                                    {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
+                                    {vehicle.color && <span className="text-gray-500 font-normal"> · {vehicle.color}</span>}
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    {vehicle.license_plate ? (
+                                      <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded px-1.5 py-0.5">
+                                        {vehicle.license_plate}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right text-gray-600">
+                                    {typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {customerVehicles.map((vehicle) => (
+                            <div key={vehicle.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                              <p className="text-sm font-semibold text-gray-900 mb-1">
                                 {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
                               </p>
                               {vehicle.license_plate && (
-                                <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded-full px-2 py-1">
+                                <span className="inline-block text-xs font-medium text-amber-700 bg-amber-100 rounded px-2 py-0.5 mb-2">
                                   {vehicle.license_plate}
                                 </span>
                               )}
+                              <div className="text-xs text-gray-500 space-y-0.5 mt-2">
+                                {vehicle.color && <p>{vehicle.color}</p>}
+                                <p>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</p>
+                                {vehicle.vin && <p>VIN: ...{vehicle.vin.slice(-6)}</p>}
+                              </div>
                             </div>
-                            <div className="text-sm text-gray-600 space-y-1">
-                              <p>VIN: {vehicle.vin || '—'}</p>
-                              <p>Mileage: {typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : '—'}</p>
-                              <p>Color: {vehicle.color || '—'}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )
                     ) : (
                       <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-500 border border-gray-100">
                         No vehicles on file for this customer.
