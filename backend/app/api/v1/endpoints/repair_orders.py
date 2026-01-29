@@ -297,11 +297,23 @@ async def assign_mechanic(
     if current_user.tenant_id != order.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
-    if order.status != RepairOrderStatus.APPROVED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only assign mechanic to approved repair orders",
-        )
+    # Check if this is a reassignment (mechanic already assigned)
+    is_reassignment = order.assigned_mechanic_id is not None
+    
+    if is_reassignment:
+        # Only admins can reassign
+        if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only shop managers can reassign mechanics. Please contact your manager.",
+            )
+    else:
+        # First assignment - must be approved status
+        if order.status != RepairOrderStatus.APPROVED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only assign mechanic to approved repair orders",
+            )
     
     # Verify mechanic exists and belongs to tenant
     result = await db.execute(
@@ -317,16 +329,17 @@ async def assign_mechanic(
     if not mechanic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mechanic not found")
     
-    # Assign mechanic and update status
+    # Assign mechanic and update status (only on first assignment)
     order.assigned_mechanic_id = body.mechanic_id
-    order.status = RepairOrderStatus.IN_PROGRESS
+    if not is_reassignment:
+        order.status = RepairOrderStatus.IN_PROGRESS
     
     await db.commit()
     await db.refresh(order)
     
-    # Send email notification to customer
+    # Send email notification to customer (only on first assignment, not reassignment)
     customer = order.customer
-    if customer and customer.email:
+    if not is_reassignment and customer and customer.email:
         vehicle = order.vehicle
         vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "your vehicle"
         

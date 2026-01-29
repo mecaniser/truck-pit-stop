@@ -276,12 +276,14 @@ export default function RepairOrdersPage() {
       const response = await api.put(`/repair-orders/${orderId}`, { assigned_mechanic_id: mechanicId || null })
       return response.data as RepairOrder
     },
-    onSuccess: (updated) => {
+    onSuccess: (updated, variables) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
-      toast.success(updated.status === 'in_progress' ? 'Mechanic assigned - Customer notified' : 'Mechanic assigned')
+      // Show different message for first assignment vs reassignment
+      const wasApproved = variables.orderStatus === 'approved'
+      toast.success(wasApproved ? 'Mechanic assigned - Customer notified' : 'Mechanic reassigned')
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to assign mechanic')
