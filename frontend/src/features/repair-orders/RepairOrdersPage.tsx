@@ -67,7 +67,6 @@ export default function RepairOrdersPage() {
   const [addLaborRate, setAddLaborRate] = useState('100')
   const [isEditingLaborRate, setIsEditingLaborRate] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
-  const [mechanicSectionExpanded, setMechanicSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
@@ -335,31 +334,6 @@ export default function RepairOrdersPage() {
       hourly_rate,
     }: { orderId: string; description: string; hours: number; hourly_rate: number }) => {
       const response = await api.post(`/repair-orders/${orderId}/labor`, { description, hours, hourly_rate })
-      return response.data as Labor
-    },
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
-      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      refetchOrderDetail()
-      setQuoteNeedsUpdate(true)
-    },
-  })
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _updateLaborMutation = useMutation({
-    mutationFn: async ({
-      orderId,
-      laborId,
-      description,
-      hours,
-      hourly_rate,
-    }: { orderId: string; laborId: string; description?: string; hours?: number; hourly_rate?: number }) => {
-      const payload: Record<string, unknown> = {}
-      if (description !== undefined) payload.description = description
-      if (hours !== undefined) payload.hours = hours
-      if (hourly_rate !== undefined) payload.hourly_rate = hourly_rate
-      const response = await api.put(`/repair-orders/${orderId}/labor/${laborId}`, payload)
       return response.data as Labor
     },
     onSuccess: (_, vars) => {
@@ -1594,7 +1568,7 @@ export default function RepairOrdersPage() {
                                       if (Number.isNaN(hours) || Number.isNaN(rate) || hours <= 0 || rate < 0) return
                                       addLaborMutation.mutate({
                                         orderId: selectedOrder.id,
-                                        description: addLaborDescription.trim() || undefined,
+                                        description: addLaborDescription.trim() || '',
                                         hours,
                                         hourly_rate: rate,
                                       })
@@ -1822,13 +1796,6 @@ export default function RepairOrdersPage() {
                   const isApproved = quoteForOrder?.is_approved
                   const hasMechanic = !!selectedOrder.assigned_mechanic_id
                   const mechanicName = mechanics?.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
-
-                  // Determine current step: 1=Create, 2=Send, 3=Approved, 4=Mechanic
-                  let currentStep = 1
-                  if (hasQuote && !quoteSent && !isApproved) currentStep = 2
-                  if (quoteSent && !isApproved) currentStep = 2
-                  if (isApproved && !hasMechanic) currentStep = 3
-                  if (isApproved && hasMechanic) currentStep = 4
 
                   return (
                     <div>
