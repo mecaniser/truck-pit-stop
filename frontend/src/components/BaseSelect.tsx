@@ -1,5 +1,5 @@
-import { Fragment, useMemo, useState } from 'react'
-import { Listbox, Transition } from '@headlessui/react'
+import { useMemo, useState, useRef, useEffect } from 'react'
+import { ChevronDown } from 'lucide-react'
 
 export interface BaseSelectOption {
   value: string
@@ -16,6 +16,7 @@ interface BaseSelectProps {
   allowAddNew?: boolean
   addNewLabel?: string
   onAddNew?: () => void
+  disabled?: boolean
 }
 
 export default function BaseSelect({
@@ -27,8 +28,12 @@ export default function BaseSelect({
   allowAddNew = false,
   addNewLabel = '+ Add new',
   onAddNew,
+  disabled = false,
 }: BaseSelectProps) {
+  const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
     if (!searchable || !query.trim()) return options
@@ -38,76 +43,106 @@ export default function BaseSelect({
 
   const selected = options.find((opt) => opt.value === value)
 
-  const handleChange = (val: string) => {
+  // Focus input when dropdown opens
+  useEffect(() => {
+    if (isOpen && searchable && inputRef.current) {
+      inputRef.current.focus()
+    }
+  }, [isOpen, searchable])
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleSelect = (val: string) => {
     if (allowAddNew && val === 'add_new') {
       if (onAddNew) onAddNew()
-      return
+    } else {
+      onChange(val)
     }
-    onChange(val)
+    setIsOpen(false)
+    setQuery('')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setIsOpen(false)
+      setQuery('')
+    } else if (e.key === 'Enter' && filtered.length === 1) {
+      handleSelect(filtered[0].value)
+    }
   }
 
   return (
-    <Listbox value={value} onChange={handleChange}>
-      <div className="relative">
-        <Listbox.Button className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white text-left text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors">
-          <span className="block truncate">{selected ? selected.label : placeholder}</span>
-        </Listbox.Button>
-        <Transition
-          as={Fragment}
-          leave="transition ease-in duration-100"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
+    <div ref={containerRef} className="relative">
+      {/* Closed state: show button */}
+      {!isOpen ? (
+        <button
+          type="button"
+          onClick={() => !disabled && setIsOpen(true)}
+          disabled={disabled}
+          className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white text-left text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors flex items-center justify-between ${
+            disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         >
-          <Listbox.Options className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-lg bg-white py-2 shadow-xl ring-1 ring-black/10 focus:outline-none">
-            {searchable && (
-              <div className="px-3 pb-2">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  placeholder="Search..."
-                />
+          <span className="block truncate">{selected ? selected.label : placeholder}</span>
+          <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+        </button>
+      ) : (
+        /* Open state: show search input */
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={selected ? selected.label : placeholder}
+          className="w-full px-4 py-2.5 border border-amber-500 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
+        />
+      )}
+
+      {/* Dropdown */}
+      {isOpen && (
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg bg-white py-1 shadow-xl ring-1 ring-black/10">
+          {filtered.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => handleSelect(opt.value)}
+              className={`w-full text-left px-4 py-2 text-sm hover:bg-amber-50 hover:text-amber-700 transition-colors ${
+                opt.value === value ? 'bg-amber-50 text-amber-700' : 'text-gray-900'
+              }`}
+            >
+              <div className="flex flex-col">
+                <span className="font-medium">{opt.label}</span>
+                {opt.subLabel && <span className="text-xs text-gray-500">{opt.subLabel}</span>}
               </div>
-            )}
+            </button>
+          ))}
 
-            {filtered.map((opt) => (
-              <Listbox.Option
-                key={opt.value}
-                className={({ active }) =>
-                  `cursor-pointer select-none px-4 py-2 text-sm ${
-                    active ? 'bg-amber-50 text-amber-700' : 'text-gray-900'
-                  }`
-                }
-                value={opt.value}
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium">{opt.label}</span>
-                  {opt.subLabel && <span className="text-xs text-gray-500">{opt.subLabel}</span>}
-                </div>
-              </Listbox.Option>
-            ))}
+          {allowAddNew && (
+            <button
+              type="button"
+              onClick={() => handleSelect('add_new')}
+              className="w-full text-left px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 hover:text-amber-800 transition-colors"
+            >
+              {addNewLabel}
+            </button>
+          )}
 
-            {allowAddNew && (
-              <Listbox.Option
-                key="add_new"
-                value="add_new"
-                className={({ active }) =>
-                  `cursor-pointer select-none px-4 py-2 text-sm font-medium ${
-                    active ? 'bg-amber-100 text-amber-800' : 'text-amber-700'
-                  }`
-                }
-              >
-                {addNewLabel}
-              </Listbox.Option>
-            )}
-
-            {filtered.length === 0 && (
-              <div className="px-4 py-2 text-sm text-gray-500">No results</div>
-            )}
-          </Listbox.Options>
-        </Transition>
-      </div>
-    </Listbox>
+          {filtered.length === 0 && !allowAddNew && (
+            <div className="px-4 py-2 text-sm text-gray-500">No results</div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

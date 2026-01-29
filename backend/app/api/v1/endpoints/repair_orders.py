@@ -12,6 +12,7 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor
+from app.db.models.quote import Quote
 from app.schemas.repair_order import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -289,6 +290,23 @@ async def delete_repair_order(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    # Delete related records first (no cascade in FK)
+    # Delete quote if exists
+    quote_result = await db.execute(select(Quote).where(Quote.repair_order_id == order_id))
+    quote = quote_result.scalar_one_or_none()
+    if quote:
+        await db.delete(quote)
+
+    # Delete parts usage
+    parts_result = await db.execute(select(PartsUsage).where(PartsUsage.repair_order_id == order_id))
+    for part in parts_result.scalars().all():
+        await db.delete(part)
+
+    # Delete labor items
+    labor_result = await db.execute(select(Labor).where(Labor.repair_order_id == order_id))
+    for labor in labor_result.scalars().all():
+        await db.delete(labor)
 
     await db.delete(order)
     await db.commit()

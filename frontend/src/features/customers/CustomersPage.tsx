@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
 import { AlertTriangle, ArrowRight, Mail, MapPin, Pencil, Phone, Plus, Trash2, Truck, X } from 'lucide-react'
@@ -146,7 +147,6 @@ export default function CustomersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm)
-  const [formError, setFormError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useViewPreference('customers')
   const [isMobile, setIsMobile] = useState(false)
   
@@ -193,10 +193,11 @@ export default function CustomersPage() {
     queryKey: ['customerRepairOrders', selectedCustomer?.id],
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
-      const response = await api.get('/repair_orders', { params: { customer_id: selectedCustomer.id } })
+      const response = await api.get('/repair-orders', { params: { customer_id: selectedCustomer.id } })
       return response.data
     },
     enabled: !!selectedCustomer?.id && isDetailOpen,
+    staleTime: 0,
   })
 
   const OPEN_ORDER_STATUSES: RepairOrderStatus[] = [
@@ -211,12 +212,13 @@ export default function CustomersPage() {
       const response = await api.post('/customers', data)
       return response.data
     },
-    onSuccess: () => {
+    onSuccess: (customer: Customer) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       closeModal()
+      toast.success(`Customer ${customer.first_name} ${customer.last_name} created`)
     },
     onError: (error: any) => {
-      setFormError(error.response?.data?.detail || 'Failed to create customer')
+      toast.error(error.response?.data?.detail || 'Failed to create customer')
     },
   })
 
@@ -234,9 +236,10 @@ export default function CustomersPage() {
       } else {
         closeModal()
       }
+      toast.success('Customer updated')
     },
     onError: (error: any) => {
-      setFormError(error.response?.data?.detail || 'Failed to update customer')
+      toast.error(error.response?.data?.detail || 'Failed to update customer')
     },
   })
 
@@ -249,16 +252,16 @@ export default function CustomersPage() {
       setDeleteConfirmCustomer(null)
       setIsDetailOpen(false)
       setSelectedCustomer(null)
+      toast.success('Customer deleted')
     },
     onError: (error: any) => {
-      alert(error.response?.data?.detail || 'Failed to delete customer')
+      toast.error(error.response?.data?.detail || 'Failed to delete customer')
     },
   })
 
   const resetForm = () => {
     setEditingCustomer(null)
     setFormData(emptyForm)
-    setFormError(null)
   }
 
   const openCreateModal = () => {
@@ -282,7 +285,6 @@ export default function CustomersPage() {
       billing_country: customer.billing_country || 'USA',
       notes: customer.notes || '',
     })
-    setFormError(null)
   }
 
   const closeModal = () => {
@@ -328,10 +330,9 @@ export default function CustomersPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    setFormError(null)
 
     if (!formData.first_name.trim() || !formData.last_name.trim() || !formData.email.trim()) {
-      setFormError('First name, last name, and email are required')
+      toast.error('First name, last name, and email are required')
       return
     }
 
@@ -434,12 +435,6 @@ export default function CustomersPage() {
 
   const renderCustomerForm = (onCancel: () => void) => (
     <form onSubmit={handleSubmit} className="p-6 space-y-6">
-      {formError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {formError}
-        </div>
-      )}
-
       {/* Name Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>

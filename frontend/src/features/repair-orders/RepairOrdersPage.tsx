@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -39,7 +40,6 @@ export default function RepairOrdersPage() {
   const [description, setDescription] = useState('')
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
-  const [formError, setFormError] = useState<string | null>(null)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -65,7 +65,10 @@ export default function RepairOrdersPage() {
   const [addLaborDescription, setAddLaborDescription] = useState('')
   const [addLaborHours, setAddLaborHours] = useState('')
   const [addLaborRate, setAddLaborRate] = useState('100')
+  const [isEditingLaborRate, setIsEditingLaborRate] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
+  const [mechanicSectionExpanded, setMechanicSectionExpanded] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -225,7 +228,7 @@ export default function RepairOrdersPage() {
       return response.data as RepairOrder
     },
     onError: (error: any) => {
-      setFormError(error.response?.data?.detail || 'Failed to create repair order')
+      toast.error(error.response?.data?.detail || 'Failed to create repair order')
     },
   })
 
@@ -236,10 +239,12 @@ export default function RepairOrdersPage() {
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
+      toast.success(`Repair order ${updated.order_number} — Status: Cancelled`)
     },
     onError: (error: any) => {
-      setFormError(error.response?.data?.detail || 'Failed to cancel repair order')
+      toast.error(error.response?.data?.detail || 'Failed to cancel repair order')
     },
   })
 
@@ -250,12 +255,14 @@ export default function RepairOrdersPage() {
     },
     onSuccess: (orderId) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       if (selectedOrder?.id === orderId) {
         closeDetail()
       }
+      toast.success('Repair order deleted')
     },
     onError: (error: any) => {
-      setFormError(error.response?.data?.detail || 'Failed to delete repair order')
+      toast.error(error.response?.data?.detail || 'Failed to delete repair order')
     },
   })
 
@@ -267,10 +274,29 @@ export default function RepairOrdersPage() {
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
+      toast.success('Mechanic assigned')
     },
     onError: (error: any) => {
-      setFormError(error.response?.data?.detail || 'Failed to assign mechanic')
+      toast.error(error.response?.data?.detail || 'Failed to assign mechanic')
+    },
+  })
+
+  const updateServicesMutation = useMutation({
+    mutationFn: async ({ orderId, selectedServices }: { orderId: string; selectedServices: { id: string; name: string; base_price: string }[] }) => {
+      const internal_notes = selectedServices.length > 0
+        ? JSON.stringify({ selected_services: selectedServices })
+        : null
+      const response = await api.put(`/repair-orders/${orderId}`, { internal_notes })
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      setSelectedOrder(updated)
+      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -282,7 +308,9 @@ export default function RepairOrdersPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
+      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -293,7 +321,9 @@ export default function RepairOrdersPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
+      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -310,11 +340,14 @@ export default function RepairOrdersPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
+      setQuoteNeedsUpdate(true)
     },
   })
 
-  const updateLaborMutation = useMutation({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _updateLaborMutation = useMutation({
     mutationFn: async ({
       orderId,
       laborId,
@@ -332,7 +365,9 @@ export default function RepairOrdersPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
+      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -343,7 +378,9 @@ export default function RepairOrdersPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
+      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -352,31 +389,64 @@ export default function RepairOrdersPage() {
       const response = await api.post('/quotes', { repair_order_id })
       return response.data as Quote
     },
-    onSuccess: (_, orderId) => {
+    onSuccess: (quote, orderId) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['quote', orderId] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchQuote()
       refetchOrderDetail()
       setSelectedOrder((prev) => (prev && prev.id === orderId ? { ...prev, status: 'quoted' } : prev))
+      toast.success(`Quote ${quote.quote_number} created — Status: Quoted`)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to create quote')
     },
   })
 
-  const approveQuoteMutation = useMutation({
+  const updateQuoteMutation = useMutation({
     mutationFn: async (quoteId: string) => {
-      const response = await api.post(`/quotes/${quoteId}/approve`)
+      const response = await api.put(`/quotes/${quoteId}`)
       return response.data as Quote
     },
-    onSuccess: (_, __) => {
+    onSuccess: (quote) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       if (selectedOrder?.id) {
         queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder.id] })
+        queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
         refetchQuote()
         refetchOrderDetail()
       }
-      closeDetail()
+      setQuoteNeedsUpdate(false)
+      toast.success(`Quote ${quote.quote_number} updated — $${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to update quote')
     },
   })
+
+  const sendQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      const response = await api.post(`/quotes/${quoteId}/send`)
+      return response.data as Quote
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      if (selectedOrder?.id) {
+        queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder.id] })
+        refetchQuote()
+      }
+      toast.success('Quote sent — Awaiting customer approval')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to send quote')
+    },
+  })
+
+  const [quoteSent, setQuoteSent] = useState(false)
+  const [quoteNeedsUpdate, setQuoteNeedsUpdate] = useState(false)
 
   const filteredOrders = useMemo(() => {
     if (!orders) return orders
@@ -434,7 +504,6 @@ export default function RepairOrdersPage() {
     setDescription('')
     setServiceSearch('')
     setSelectedServiceIds([])
-    setFormError(null)
     setNewCustomer({ first_name: '', last_name: '', email: '', phone: '' })
     setNewVehicle({ make: '', model: '', year: '', vin: '', license_plate: '', mileage: '' })
   }
@@ -452,16 +521,21 @@ export default function RepairOrdersPage() {
   const openDetail = (order: RepairOrder) => {
     setSelectedOrder(order)
     setIsDetailOpen(true)
+    setQuoteSent(false)
+    setQuoteNeedsUpdate(false)
+    setShowDangerActions(false)
   }
 
   const closeDetail = () => {
     setSelectedOrder(null)
     setIsDetailOpen(false)
+    setQuoteSent(false)
+    setQuoteNeedsUpdate(false)
+    setShowDangerActions(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setFormError(null)
     setIsSubmitting(true)
 
     try {
@@ -472,7 +546,7 @@ export default function RepairOrdersPage() {
       // New customer flow
       if (isNewCustomer) {
         if (!newCustomer.first_name.trim() || !newCustomer.last_name.trim() || !newCustomer.email.trim()) {
-          setFormError('New customer requires first name, last name, and email.')
+          toast.error('New customer requires first name, last name, and email')
           return
         }
         const createdCustomer = await createCustomerMutation.mutateAsync({
@@ -483,7 +557,7 @@ export default function RepairOrdersPage() {
         })
         finalCustomerId = createdCustomer.id
       } else if (!finalCustomerId) {
-        setFormError('Select a customer or create a new one.')
+        toast.error('Select a customer or create a new one')
         return
       }
 
@@ -492,11 +566,11 @@ export default function RepairOrdersPage() {
 
       if (shouldCreateVehicle) {
         if (!finalCustomerId) {
-          setFormError('A customer is required to add a vehicle.')
+          toast.error('A customer is required to add a vehicle')
           return
         }
         if (!newVehicle.make.trim() || !newVehicle.model.trim()) {
-          setFormError('New vehicle requires make and model.')
+          toast.error('New vehicle requires make and model')
           return
         }
         const createdVehicle = await createVehicleMutation.mutateAsync({
@@ -508,7 +582,7 @@ export default function RepairOrdersPage() {
       } else {
         const vehicle = vehicles?.find((v) => v.id === selectedVehicleId)
         if (!vehicle) {
-          setFormError('Selected vehicle not found.')
+          toast.error('Selected vehicle not found')
           return
         }
         finalVehicleId = vehicle.id
@@ -516,7 +590,7 @@ export default function RepairOrdersPage() {
       }
 
       if (!finalCustomerId || !finalVehicleId) {
-        setFormError('Customer and vehicle are required.')
+        toast.error('Customer and vehicle are required')
         return
       }
 
@@ -557,9 +631,11 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      toast.success(`Repair order ${createdOrder.order_number} created — Status: Draft`)
       closeModal()
     } catch (err: any) {
-      setFormError(err.response?.data?.detail || 'Failed to create repair order')
+      toast.error(err.response?.data?.detail || 'Failed to create repair order')
     } finally {
       setIsSubmitting(false)
     }
@@ -579,7 +655,7 @@ export default function RepairOrdersPage() {
 
       {/* Search Bar */}
       <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 relative">
             <svg 
               className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" 
@@ -594,7 +670,7 @@ export default function RepairOrdersPage() {
               placeholder="Search by order # or description..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
           </div>
 
@@ -604,7 +680,7 @@ export default function RepairOrdersPage() {
                 <button
                   key={option.value}
                   onClick={() => setStatusFilter(option.value)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  className={`h-10 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                     statusFilter === option.value
                       ? 'bg-amber-500 text-white'
                       : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
@@ -828,12 +904,6 @@ export default function RepairOrdersPage() {
               </div>
 
               <form onSubmit={handleSubmit} className="p-6 space-y-6">
-                {formError && (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                    {formError}
-                  </div>
-                )}
-
                 {/* Customer + Vehicle */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -1256,11 +1326,7 @@ export default function RepairOrdersPage() {
                   <button
                     type="button"
                     disabled={deleteRepairOrderMutation.isPending}
-                    onClick={() => {
-                      if (selectedOrder.id && window.confirm('Delete this repair order? This cannot be undone.')) {
-                        deleteRepairOrderMutation.mutate(selectedOrder.id)
-                      }
-                    }}
+                    onClick={() => setShowDeleteConfirm(true)}
                     className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -1275,30 +1341,87 @@ export default function RepairOrdersPage() {
         {selectedOrder && (
           <div className="p-6 space-y-6">
                 {(() => {
-                  const detailServices = parseServiceNotes(selectedOrder.internal_notes)
-                  const detailEstimate = detailServices?.reduce(
+                  const detailServices = parseServiceNotes(selectedOrder.internal_notes) || []
+                  const laborFromServices = detailServices.reduce(
                     (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                     0
                   )
-                  return detailServices && detailServices.length > 0 ? (
+                  const canEditServices = ['draft', 'quoted'].includes(selectedOrder.status)
+                  const availableServices = services?.filter(
+                    (s) => !detailServices.some((ds) => ds.id === s.id)
+                  ) || []
+
+                  const handleAddService = (serviceId: string) => {
+                    const svc = services?.find((s) => s.id === serviceId)
+                    if (!svc || !selectedOrder.id) return
+                    const newServices = [
+                      ...detailServices,
+                      { id: svc.id, name: svc.name, base_price: svc.base_price },
+                    ]
+                    updateServicesMutation.mutate({ orderId: selectedOrder.id, selectedServices: newServices })
+                  }
+
+                  const handleRemoveService = (serviceId: string) => {
+                    if (!selectedOrder.id) return
+                    const newServices = detailServices.filter((s) => s.id !== serviceId)
+                    updateServicesMutation.mutate({ orderId: selectedOrder.id, selectedServices: newServices })
+                  }
+
+                  return (
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Selected Services</h3>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Services</h3>
+                      {detailServices.length > 0 && (
+                        <p className="text-xs text-gray-500 mb-3">Price includes parts and labor</p>
+                      )}
                       <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-800">
-                        {detailServices.map((svc) => (
-                          <div key={svc.id} className="flex items-center justify-between">
-                            <span>{svc.name}</span>
-                            <span className="font-semibold">${parseFloat(svc.base_price || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        {detailServices.length > 0 ? (
+                          <>
+                            {detailServices.map((svc) => (
+                              <div key={svc.id} className="flex items-center justify-between">
+                                <span>{svc.name}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">${parseFloat(svc.base_price || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                                  {canEditServices && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveService(svc.id)}
+                                      className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                      aria-label="Remove service"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                            {detailServices.length > 1 && (
+                              <div className="pt-2 mt-2 border-t border-gray-200 flex items-center justify-between font-semibold">
+                                <span>Total</span>
+                                <span>${laborFromServices.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-gray-500">No services selected</p>
+                        )}
+                        {canEditServices && availableServices.length > 0 && (
+                          <div className={detailServices.length > 0 ? 'pt-3 mt-2 border-t border-gray-200' : ''}>
+                            <BaseSelect
+                              options={availableServices.map((s) => ({
+                                value: s.id,
+                                label: s.name,
+                                subLabel: `$${parseFloat(s.base_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                              }))}
+                              value=""
+                              onChange={handleAddService}
+                              placeholder="Add service..."
+                              allowAddNew={false}
+                            />
                           </div>
-                        ))}
-                        {detailEstimate ? (
-                          <div className="pt-2 mt-2 border-t border-gray-200 flex items-center justify-between font-semibold">
-                            <span>Estimated total</span>
-                            <span>${detailEstimate.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                        ) : null}
+                        )}
                       </div>
                     </div>
-                  ) : null
+                  )
                 })()}
 
                 {/* Parts and labor: use detail when available */}
@@ -1307,38 +1430,46 @@ export default function RepairOrdersPage() {
                   const partsUsage = orderDetail?.parts_usage ?? []
                   const laborItems = orderDetail?.labor_items ?? []
                   const canEditLineItems = displayOrder && ['draft', 'quoted'].includes(displayOrder.status)
+                  const hasSelectedServices = !!parseServiceNotes(selectedOrder?.internal_notes)?.length
                   return (
                     <>
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Parts</h3>
-                        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                          {partsUsage.length === 0 ? (
-                            <p className="text-sm text-gray-500">No parts added</p>
-                          ) : (
-                            partsUsage.map((pu) => (
-                              <div key={pu.id} className="flex items-center justify-between text-sm text-gray-800 py-1 border-b border-gray-200 last:border-0">
-                                <div>
-                                  <span className="font-medium">{pu.inventory_name}</span>
-                                  <span className="text-gray-500 ml-2">({pu.inventory_sku}) × {pu.quantity}</span>
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                          {hasSelectedServices ? 'Parts used' : 'Parts'}
+                        </h3>
+                        {hasSelectedServices && (
+                          <p className="text-xs text-gray-500 mb-3">For inventory tracking — cost included in service price</p>
+                        )}
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          {partsUsage.length > 0 && (
+                            <div className="space-y-2 mb-3">
+                              {partsUsage.map((pu) => (
+                                <div key={pu.id} className="flex items-center justify-between gap-2 text-sm text-gray-800">
+                                  <div className="flex-1 min-w-0" title={`${pu.inventory_name} (${pu.inventory_sku}) × ${pu.quantity}`}>
+                                    <span className="font-medium truncate block">{pu.inventory_name}</span>
+                                    <span className="text-gray-500 text-xs">({pu.inventory_sku}) × {pu.quantity}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {!hasSelectedServices && (
+                                      <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
+                                    )}
+                                    {canEditLineItems && (
+                                      <button
+                                        type="button"
+                                        onClick={() => selectedOrder?.id && removePartMutation.mutate({ orderId: selectedOrder.id, partsUsageId: pu.id })}
+                                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                        aria-label="Remove part"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
-                                  {canEditLineItems && (
-                                    <button
-                                      type="button"
-                                      onClick={() => selectedOrder?.id && removePartMutation.mutate({ orderId: selectedOrder.id, partsUsageId: pu.id })}
-                                      className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                      aria-label="Remove part"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            ))
+                              ))}
+                            </div>
                           )}
                           {canEditLineItems && inventory && inventory.length > 0 && (
-                            <div className="pt-3 mt-2 border-t border-gray-200 flex flex-wrap gap-2 items-end">
+                            <div className="flex items-center gap-2">
                               <div className="min-w-[200px] flex-1 max-w-xs">
                                 <BaseSelect
                                   options={inventory
@@ -1359,7 +1490,7 @@ export default function RepairOrdersPage() {
                                 min={1}
                                 value={addPartQuantity}
                                 onChange={(e) => setAddPartQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-20"
+                                className="h-[42px] rounded-lg border border-gray-300 px-3 text-sm w-20"
                               />
                               <button
                                 type="button"
@@ -1370,165 +1501,209 @@ export default function RepairOrdersPage() {
                                   setAddPartInventoryId('')
                                   setAddPartQuantity(1)
                                 }}
-                                className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                                className="h-[42px] px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                               >
-                                Add part
+                                Add
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Labor</h3>
-                        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                          {laborItems.length === 0 ? (
-                            <p className="text-sm text-gray-500">No labor lines</p>
-                          ) : (
-                            laborItems.map((li) => (
-                              <div key={li.id} className="flex items-center justify-between text-sm text-gray-800 py-1 border-b border-gray-200 last:border-0">
-                                <div>
-                                  {li.description ? (
-                                    <><span className="font-medium">{li.description}</span><span className="text-gray-500 ml-2">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span></>
+                      {/* Only show Labor section if no services selected (services include labor cost) */}
+                      {!hasSelectedServices && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Labor</h3>
+                          <div className="bg-gray-50 rounded-xl p-4">
+                            {laborItems.length > 0 && (
+                              <div className="space-y-2 mb-3">
+                                {laborItems.map((li) => (
+                                  <div key={li.id} className="flex items-center justify-between text-sm text-gray-800">
+                                    <div>
+                                      {li.description ? (
+                                        <><span className="font-medium">{li.description}</span><span className="text-gray-500 ml-2">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span></>
+                                      ) : (
+                                        <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
+                                      {canEditLineItems && (
+                                        <button
+                                          type="button"
+                                          onClick={() => selectedOrder?.id && removeLaborMutation.mutate({ orderId: selectedOrder.id, laborId: li.id })}
+                                          className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                          aria-label="Remove labor"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {canEditLineItems && (
+                              <div className="flex flex-col gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Description (optional)"
+                                  value={addLaborDescription}
+                                  onChange={(e) => setAddLaborDescription(e.target.value)}
+                                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                                />
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <input
+                                    type="number"
+                                    step={0.25}
+                                    min={0}
+                                    placeholder="Hours"
+                                    value={addLaborHours}
+                                    onChange={(e) => setAddLaborHours(e.target.value)}
+                                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                  />
+                                  <span className="text-gray-500 text-sm">×</span>
+                                  {isEditingLaborRate ? (
+                                    <input
+                                      type="number"
+                                      step={0.01}
+                                      min={0}
+                                      autoFocus
+                                      value={addLaborRate}
+                                      onChange={(e) => setAddLaborRate(e.target.value)}
+                                      onBlur={() => setIsEditingLaborRate(false)}
+                                      onKeyDown={(e) => e.key === 'Enter' && setIsEditingLaborRate(false)}
+                                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                    />
                                   ) : (
-                                    <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
-                                  {canEditLineItems && (
                                     <button
                                       type="button"
-                                      onClick={() => selectedOrder?.id && removeLaborMutation.mutate({ orderId: selectedOrder.id, laborId: li.id })}
-                                      className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                      aria-label="Remove labor"
+                                      onClick={() => setIsEditingLaborRate(true)}
+                                      className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
                                     >
-                                      <Trash2 className="w-4 h-4" />
+                                      <span className="font-medium">${addLaborRate}/hr</span>
+                                      <Pencil className="w-3 h-3 text-gray-400" />
                                     </button>
                                   )}
+                                  <button
+                                    type="button"
+                                    disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
+                                    onClick={() => {
+                                      if (!selectedOrder?.id) return
+                                      const hours = parseFloat(addLaborHours)
+                                      const rate = parseFloat(addLaborRate)
+                                      if (Number.isNaN(hours) || Number.isNaN(rate) || hours <= 0 || rate < 0) return
+                                      addLaborMutation.mutate({
+                                        orderId: selectedOrder.id,
+                                        description: addLaborDescription.trim() || undefined,
+                                        hours,
+                                        hourly_rate: rate,
+                                      })
+                                      setAddLaborDescription('')
+                                      setAddLaborHours('')
+                                      setAddLaborRate('100')
+                                      setIsEditingLaborRate(false)
+                                    }}
+                                    className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                                  >
+                                    Add
+                                  </button>
                                 </div>
                               </div>
-                            ))
-                          )}
-                          {canEditLineItems && (
-                            <div className="pt-3 mt-2 border-t border-gray-200 flex flex-col gap-2">
-                              <input
-                                type="text"
-                                placeholder="Description (optional)"
-                                value={addLaborDescription}
-                                onChange={(e) => setAddLaborDescription(e.target.value)}
-                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                              />
-                              <div className="flex flex-wrap gap-2">
-                                <input
-                                  type="number"
-                                  step={0.25}
-                                  min={0}
-                                  placeholder="Hours"
-                                  value={addLaborHours}
-                                  onChange={(e) => setAddLaborHours(e.target.value)}
-                                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
-                                />
-                                <input
-                                  type="number"
-                                  step={0.01}
-                                  min={0}
-                                  placeholder="Hourly rate"
-                                  value={addLaborRate}
-                                  onChange={(e) => setAddLaborRate(e.target.value)}
-                                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-28"
-                                />
-                                <button
-                                  type="button"
-                                  disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
-                                  onClick={() => {
-                                    if (!selectedOrder?.id) return
-                                    const hours = parseFloat(addLaborHours)
-                                    const rate = parseFloat(addLaborRate)
-                                    if (Number.isNaN(hours) || Number.isNaN(rate) || hours <= 0 || rate < 0) return
-                                    addLaborMutation.mutate({
-                                      orderId: selectedOrder.id,
-                                      description: addLaborDescription.trim() || undefined,
-                                      hours,
-                                      hourly_rate: rate,
-                                    })
-                                    setAddLaborDescription('')
-                                    setAddLaborHours('')
-                                    setAddLaborRate('100')
-                                  }}
-                                  className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
-                                >
-                                  Add labor
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </>
                   )
                 })()}
 
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Assigned mechanic</h3>
-                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center gap-2 text-sm text-gray-800">
-                      <Wrench className="w-4 h-4 text-amber-600" />
-                      <span>
-                        {selectedOrder.assigned_mechanic_id
-                          ? mechanicLookup.get(selectedOrder.assigned_mechanic_id) || 'Assigned mechanic'
-                          : 'Unassigned'}
-                      </span>
-                    </div>
-                    <div className="space-y-3">
-                      <BaseSelect
-                        options={[
-                          { value: '', label: 'Unassigned', subLabel: 'Keep this job unassigned for now' },
-                          ...(mechanics || []).map((m) => {
-                            const inProgress = m.in_progress_count ?? 0
-                            const assigned = m.assigned_count ?? 0
-                            const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                            return {
-                              value: m.mechanic_id,
-                              label: m.mechanic_name,
-                              subLabel: `${inProgress}/${assigned || '—'} in progress · Load ${load.toFixed(0)}%`,
-                            }
-                          }),
-                        ]}
-                        value={selectedOrder.assigned_mechanic_id || ''}
-                        onChange={(val) =>
-                          selectedOrder.id &&
-                          assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: val })
-                        }
-                        placeholder="Select mechanic"
-                        allowAddNew={false}
-                      />
-                      {selectedOrder.assigned_mechanic_id && mechanics && (
-                        (() => {
-                          const mech = mechanics.find((m) => m.mechanic_id === selectedOrder.assigned_mechanic_id)
-                          if (!mech) return null
-                          const inProgress = mech.in_progress_count ?? 0
-                          const assigned = mech.assigned_count ?? 0
-                          const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                          return (
-                            <div className="bg-white/60 border border-amber-200 rounded-lg p-3">
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm font-semibold text-gray-800">{mech.mechanic_name}</p>
-                                <span className="text-xs text-gray-600">{inProgress}/{assigned || '—'} in progress</span>
+                {(() => {
+                  // Mechanic can only be assigned after customer approves quote (status: approved or in_progress)
+                  const canAssignMechanic = ['approved', 'in_progress', 'completed'].includes(selectedOrder.status)
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Mechanic</h3>
+                      <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                        {!canAssignMechanic ? (
+                          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            A mechanic will be assigned once the customer approves this repair order.
+                          </p>
+                        ) : (
+                          <>
+                            <BaseSelect
+                              options={[
+                                { value: '', label: 'Unassigned', subLabel: 'Keep this job unassigned for now' },
+                                ...(mechanics || []).map((m) => {
+                                  const inProgress = m.in_progress_count ?? 0
+                                  const assigned = m.assigned_count ?? 0
+                                  const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                  return {
+                                    value: m.mechanic_id,
+                                    label: m.mechanic_name,
+                                    subLabel: `${inProgress}/${assigned || '—'} in progress · Load ${load.toFixed(0)}%`,
+                                  }
+                                }),
+                              ]}
+                              value={selectedOrder.assigned_mechanic_id || ''}
+                              onChange={(val) =>
+                                selectedOrder.id &&
+                                assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: val })
+                              }
+                              placeholder="Select mechanic"
+                              allowAddNew={false}
+                            />
+                            {mechanics && mechanics.length > 0 && (
+                              <div className="space-y-2">
+                                <p className="text-xs text-gray-500">Quick pick by availability:</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {[...(mechanics || [])]
+                                    .map((m) => {
+                                      const inProgress = m.in_progress_count ?? 0
+                                      const assigned = m.assigned_count ?? 0
+                                      const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                      return { ...m, load, inProgress, assigned }
+                                    })
+                                    .sort((a, b) => a.load - b.load)
+                                    .map((m) => {
+                                      const isSelected = selectedOrder.assigned_mechanic_id === m.mechanic_id
+                                      return (
+                                        <button
+                                          key={m.mechanic_id}
+                                          type="button"
+                                          onClick={() =>
+                                            selectedOrder.id &&
+                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id })
+                                          }
+                                          className={`w-full text-left p-2 rounded-lg border transition-all ${
+                                            isSelected
+                                              ? 'border-amber-500 bg-amber-50'
+                                              : 'border-gray-200 bg-white hover:border-amber-300'
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
+                                            <span className={`text-xs ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                                              {m.load.toFixed(0)}%
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                            <div
+                                              className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                              style={{ width: `${m.load}%` }}
+                                            />
+                                          </div>
+                                        </button>
+                                      )
+                                    })}
+                                </div>
                               </div>
-                              <div className="mt-2 h-2 rounded-full bg-gray-200 overflow-hidden">
-                                <div className="h-full bg-amber-500 transition-all" style={{ width: `${load}%` }} />
-                              </div>
-                              <p className="mt-1 text-xs text-gray-600">Load: {load.toFixed(0)}%</p>
-                            </div>
-                          )
-                        })()
-                      )}
-                      <div className="text-xs text-gray-500">
-                        Assigning is available for quoted or in-progress work. Paid orders stay read-only.
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                  </div>
-                </div>
+                  )
+                })()}
 
                 <div>
                   <button
@@ -1602,42 +1777,66 @@ export default function RepairOrdersPage() {
                   const totalsOrder = orderDetail ?? selectedOrder
                   const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
                   const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
-                  const backendTotal = parseFloat(totalsOrder?.total_cost ?? '0') || 0
                   const detailServices = parseServiceNotes(selectedOrder?.internal_notes)
-                  const detailEstimate = detailServices?.reduce(
+                  const hasServices = detailServices && detailServices.length > 0
+                  const serviceTotal = detailServices?.reduce(
                     (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                     0
-                  )
-                  const showEstimate = backendTotal === 0 && detailEstimate && detailEstimate > 0
-                  const partsVal = showEstimate ? detailEstimate || 0 : backendParts
-                  const laborVal = showEstimate ? 0 : backendLabor
-                  const totalVal = showEstimate ? detailEstimate || 0 : backendTotal
+                  ) || 0
+                  
+                  // If services selected: service price is all-in (includes parts + labor)
+                  // Parts are for inventory tracking only, not added to total
+                  // If no services: parts + labor from backend
+                  const partsVal = hasServices ? 0 : backendParts
+                  const laborVal = hasServices ? serviceTotal : backendLabor
+                  const totalVal = hasServices ? serviceTotal : (backendParts + backendLabor)
                   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
 
                   return (
                     <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                        <span className="text-gray-500">Parts</span>
-                        <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
-                        <span className="text-gray-400">·</span>
-                        <span className="text-gray-500">Labor</span>
-                        <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
-                        <span className="text-gray-400">·</span>
-                        <span className="text-gray-500">Total</span>
-                        <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
-                      </div>
+                      {hasServices ? (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                          <span className="text-gray-500">Service total</span>
+                          <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
+                          <span className="text-xs text-gray-400">(includes parts & labor)</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                          <span className="text-gray-500">Parts</span>
+                          <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
+                          <span className="text-gray-400">·</span>
+                          <span className="text-gray-500">Labor</span>
+                          <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
+                          <span className="text-gray-400">·</span>
+                          <span className="text-gray-500">Total</span>
+                          <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
 
-                {/* Quote — both buttons visible, Approve grayed until quote exists */}
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Quote</h3>
-                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                    {selectedOrder && ['draft', 'quoted'].includes(selectedOrder.status) && !quoteForOrder?.is_approved && (
-                      <>
+                {/* Quote Workflow */}
+                {(() => {
+                  const hasQuote = !!quoteForOrder
+                  const isApproved = quoteForOrder?.is_approved
+                  const hasMechanic = !!selectedOrder.assigned_mechanic_id
+                  const mechanicName = mechanics?.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
+
+                  // Determine current step: 1=Create, 2=Send, 3=Approved, 4=Mechanic
+                  let currentStep = 1
+                  if (hasQuote && !quoteSent && !isApproved) currentStep = 2
+                  if (quoteSent && !isApproved) currentStep = 2
+                  if (isApproved && !hasMechanic) currentStep = 3
+                  if (isApproved && hasMechanic) currentStep = 4
+
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Workflow</h3>
+                      <div className="bg-gray-50 rounded-xl p-4 space-y-4">
+                        {/* Quote details if exists */}
                         {quoteForOrder && (
-                          <div className="space-y-1 text-sm text-gray-800 mb-3">
+                          <div className="space-y-1 text-sm text-gray-800 pb-3 border-b border-gray-200">
                             <div className="flex justify-between">
                               <span className="text-gray-500">Quote #</span>
                               <span className="font-mono font-medium">{quoteForOrder.quote_number}</span>
@@ -1646,45 +1845,198 @@ export default function RepairOrdersPage() {
                               <span className="text-gray-500">Amount</span>
                               <span className="font-semibold">${parseFloat(quoteForOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                             </div>
-                            {quoteForOrder.expires_at && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-500">Expires</span>
-                                <span>{format(new Date(quoteForOrder.expires_at), 'PP')}</span>
-                              </div>
-                            )}
                           </div>
                         )}
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
-                            disabled={createQuoteMutation.isPending || !!quoteForOrder}
-                            className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg"
-                          >
-                            {createQuoteMutation.isPending ? 'Creating...' : 'Create quote'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => quoteForOrder && approveQuoteMutation.mutate(quoteForOrder.id)}
-                            disabled={approveQuoteMutation.isPending || !quoteForOrder}
-                            className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg"
-                          >
-                            {approveQuoteMutation.isPending ? 'Approving...' : 'Approve quote'}
-                          </button>
+
+                        {/* Workflow steps */}
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {/* Step 1: Create/Update Quote */}
+                          {quoteNeedsUpdate && hasQuote ? (
+                            <button
+                              type="button"
+                              onClick={() => quoteForOrder && updateQuoteMutation.mutate(quoteForOrder.id)}
+                              disabled={updateQuoteMutation.isPending}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                            >
+                              {updateQuoteMutation.isPending ? 'Updating...' : 'Update'}
+                            </button>
+                          ) : (
+                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                              hasQuote 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-amber-500 text-white'
+                            }`}>
+                              {hasQuote ? (
+                                <span className="flex items-center gap-1">✓ Created</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
+                                  disabled={createQuoteMutation.isPending}
+                                  className="bg-transparent"
+                                >
+                                  {createQuoteMutation.isPending ? 'Creating...' : 'Create Quote'}
+                                </button>
+                              )}
+                            </span>
+                          )}
+
+                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasQuote && !quoteNeedsUpdate ? 'text-amber-500' : 'text-gray-300'}`} />
+
+                          {/* Step 2: Send to Customer */}
+                          {hasQuote && !isApproved && !quoteNeedsUpdate ? (
+                            quoteSent ? (
+                              <span className="px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-100 text-blue-700 flex items-center gap-1">
+                                ⏳ Sent
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (quoteForOrder) {
+                                    sendQuoteMutation.mutate(quoteForOrder.id)
+                                    setQuoteSent(true)
+                                  }
+                                }}
+                                disabled={sendQuoteMutation.isPending}
+                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                              >
+                                {sendQuoteMutation.isPending ? 'Sending...' : 'Send'}
+                              </button>
+                            )
+                          ) : (
+                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                              isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
+                            }`}>
+                              {isApproved ? '✓ Sent' : 'Send'}
+                            </span>
+                          )}
+
+                          <ArrowRight className={`w-4 h-4 shrink-0 ${isApproved ? 'text-amber-500' : 'text-gray-300'}`} />
+
+                          {/* Step 3: Customer Approved */}
+                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                            isApproved 
+                              ? 'bg-green-100 text-green-700' 
+                              : quoteSent 
+                                ? 'bg-blue-100 text-blue-700 animate-pulse' 
+                                : 'bg-gray-200 text-gray-400'
+                          }`}>
+                            {isApproved ? '✓ Approved' : quoteSent ? 'Awaiting...' : 'Approved'}
+                          </span>
+
+                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
+
+                          {/* Step 4: Mechanic Assigned */}
+                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                            hasMechanic 
+                              ? 'bg-green-100 text-green-700' 
+                              : isApproved 
+                                ? 'bg-amber-100 text-amber-700' 
+                                : 'bg-gray-200 text-gray-400'
+                          }`}>
+                            {hasMechanic ? `✓ ${mechanicName}` : isApproved ? 'Assign ↓' : 'Mechanic'}
+                          </span>
                         </div>
-                      </>
-                    )}
-                    {quoteForOrder?.is_approved && (
-                      <p className="text-sm font-medium text-green-600">Quote approved — you can close this panel and see the repair order in the list.</p>
-                    )}
-                    {selectedOrder && !['draft', 'quoted', 'approved'].includes(selectedOrder.status) && !quoteForOrder && (
-                      <p className="text-sm text-gray-500">No quote for this order</p>
-                    )}
-                  </div>
-                </div>
+
+                        {/* Status messages */}
+                        {quoteNeedsUpdate && hasQuote && (
+                          <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            Quote needs to be updated before sending.
+                          </p>
+                        )}
+                        {quoteSent && !isApproved && !quoteNeedsUpdate && (
+                          <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                            Waiting for customer approval...
+                          </p>
+                        )}
+                        {isApproved && !hasMechanic && (
+                          <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                            Customer approved! Assign a mechanic below to start work.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
       </SlidePanel>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && selectedOrder && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowDeleteConfirm(false)}
+            />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="p-3 rounded-full bg-red-100">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Repair Order</h3>
+                  <p className="text-sm text-gray-500">#{selectedOrder.order_number}</p>
+                </div>
+              </div>
+              
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to delete this repair order? This will permanently remove:
+              </p>
+              
+              <ul className="text-sm text-gray-600 mb-6 space-y-1 ml-4">
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                  The repair order and all details
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                  Associated quote (if any)
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                  Parts and labor records
+                </li>
+              </ul>
+              
+              <p className="text-sm text-red-600 font-medium mb-6">
+                This action cannot be undone.
+              </p>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteRepairOrderMutation.isPending}
+                  onClick={() => {
+                    if (selectedOrder.id) {
+                      deleteRepairOrderMutation.mutate(selectedOrder.id)
+                      setShowDeleteConfirm(false)
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {deleteRepairOrderMutation.isPending && (
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  Delete permanently
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

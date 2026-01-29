@@ -22,6 +22,30 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
   cancelled: 'bg-red-100 text-red-700',
 }
 
+// Calculate total including service prices from internal_notes
+const getOrderTotal = (order: RepairOrder): number => {
+  const backendTotal = parseFloat(order.total_cost) || 0
+  
+  // Parse services from internal_notes
+  let serviceTotal = 0
+  if (order.internal_notes) {
+    try {
+      const notes = JSON.parse(order.internal_notes)
+      const services = notes?.selected_services || []
+      serviceTotal = services.reduce(
+        (sum: number, svc: { base_price?: string }) => sum + (parseFloat(svc.base_price || '0') || 0),
+        0
+      )
+    } catch {
+      // ignore parse errors
+    }
+  }
+  
+  // If services selected, service total is all-in (includes parts)
+  // Otherwise use backend total
+  return serviceTotal > 0 ? serviceTotal : backendTotal
+}
+
 function CustomerDashboard() {
   const { user } = useAuthStore()
   const { data: customer } = useQuery<Customer>({
@@ -203,7 +227,7 @@ function CustomerDashboard() {
                     </div>
                     <div className="text-right shrink-0">
                       <div className="text-xs sm:text-sm font-medium text-white">
-                        ${parseFloat(order.total_cost).toFixed(2)}
+                        ${getOrderTotal(order).toFixed(2)}
                       </div>
                       <div className="text-[10px] sm:text-xs text-gray-500">
                         {format(new Date(order.created_at), 'MMM d')}
@@ -400,7 +424,7 @@ function CustomerRepairs() {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-lg sm:text-xl font-bold text-white">
-                      ${parseFloat(order.total_cost).toFixed(2)}
+                      ${getOrderTotal(order).toFixed(2)}
                     </div>
                     <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Total</div>
                   </div>
