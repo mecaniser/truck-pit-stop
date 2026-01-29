@@ -1868,7 +1868,7 @@ export default function RepairOrdersPage() {
                                 disabled={sendQuoteMutation.isPending}
                                 className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                               >
-                                {sendQuoteMutation.isPending ? 'Sending...' : 'Send'}
+                                {sendQuoteMutation.isPending ? 'Sending...' : (quoteForOrder?.sent_to_customer ? 'Resend' : 'Send')}
                               </button>
                             )
                           ) : (

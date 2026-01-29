@@ -21,6 +21,8 @@ class Quote(BaseModel):
     is_approved = Column(Boolean, default=False, nullable=False)
     is_declined = Column(Boolean, default=False, nullable=False)
     decline_notes = Column(Text, nullable=True)
+    sent_to_customer = Column(Boolean, default=False, nullable=False)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
     
     # Magic link token for customer approval without login
     approval_token = Column(String(64), unique=True, nullable=True, index=True)

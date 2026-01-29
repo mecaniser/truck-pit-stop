@@ -113,6 +113,9 @@ export interface Quote {
   notes: string | null
   expires_at: string | null
   is_approved: boolean
+  is_declined: boolean
+  sent_to_customer: boolean
+  sent_at: string | null
   created_at: string
   updated_at: string
 }

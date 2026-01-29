@@ -39,6 +39,8 @@ class QuoteResponse(BaseModel):
     is_approved: bool
     is_declined: bool = False
     decline_notes: Optional[str] = None
+    sent_to_customer: bool = False
+    sent_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -365,6 +367,10 @@ async def send_quote_to_customer(
     </body>
     </html>
     """
+    
+    # Mark as sent
+    quote.sent_to_customer = True
+    quote.sent_at = datetime.utcnow()
     
     await db.commit()
     await db.refresh(quote)
