@@ -266,7 +266,13 @@ export default function RepairOrdersPage() {
   })
 
   const assignMechanicMutation = useMutation({
-    mutationFn: async ({ orderId, mechanicId }: { orderId: string; mechanicId: string }) => {
+    mutationFn: async ({ orderId, mechanicId, orderStatus }: { orderId: string; mechanicId: string; orderStatus?: string }) => {
+      // Use dedicated assign-mechanic endpoint for approved orders (sends email notification)
+      if (orderStatus === 'approved' && mechanicId) {
+        const response = await api.post(`/repair-orders/${orderId}/assign-mechanic`, { mechanic_id: mechanicId })
+        return response.data as RepairOrder
+      }
+      // Fallback to generic update for other cases
       const response = await api.put(`/repair-orders/${orderId}`, { assigned_mechanic_id: mechanicId || null })
       return response.data as RepairOrder
     },
@@ -275,7 +281,7 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
-      toast.success('Mechanic assigned')
+      toast.success(updated.status === 'in_progress' ? 'Mechanic assigned - Customer notified' : 'Mechanic assigned')
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to assign mechanic')
@@ -1629,7 +1635,7 @@ export default function RepairOrdersPage() {
                               value={selectedOrder.assigned_mechanic_id || ''}
                               onChange={(val) =>
                                 selectedOrder.id &&
-                                assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: val })
+                                assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: val, orderStatus: selectedOrder.status })
                               }
                               placeholder="Select mechanic"
                               allowAddNew={false}
@@ -1654,7 +1660,7 @@ export default function RepairOrdersPage() {
                                           type="button"
                                           onClick={() =>
                                             selectedOrder.id &&
-                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id })
+                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: selectedOrder.status })
                                           }
                                           className={`w-full text-left p-2 rounded-lg border transition-all ${
                                             isSelected

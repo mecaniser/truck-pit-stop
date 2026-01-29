@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
+from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -13,6 +14,8 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.quote import Quote
+from app.services.email_service import send_email
+from app.core.config import settings
 from app.schemas.repair_order import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -261,6 +264,114 @@ async def update_repair_order(
     
     await db.commit()
     await db.refresh(order)
+    
+    return RepairOrderResponse.model_validate(order)
+
+
+class AssignMechanicRequest(BaseModel):
+    mechanic_id: UUID
+
+
+@router.post("/{order_id}/assign-mechanic", response_model=RepairOrderResponse)
+async def assign_mechanic(
+    order_id: UUID,
+    body: AssignMechanicRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+    )),
+):
+    """Assign mechanic to repair order, set status to in_progress, notify customer"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    if order.status != RepairOrderStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only assign mechanic to approved repair orders",
+        )
+    
+    # Verify mechanic exists and belongs to tenant
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.id == body.mechanic_id,
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRole.MECHANIC,
+            )
+        )
+    )
+    mechanic = result.scalar_one_or_none()
+    if not mechanic:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mechanic not found")
+    
+    # Assign mechanic and update status
+    order.assigned_mechanic_id = body.mechanic_id
+    order.status = RepairOrderStatus.IN_PROGRESS
+    
+    await db.commit()
+    await db.refresh(order)
+    
+    # Send email notification to customer
+    customer = order.customer
+    if customer and customer.email:
+        vehicle = order.vehicle
+        vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "your vehicle"
+        
+        html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+            </div>
+            
+            <h2 style="color: #333;">Work Has Started!</h2>
+            <p>Hi {customer.first_name},</p>
+            <p>Great news! A mechanic has been assigned to your repair order and work is now in progress.</p>
+            
+            <div style="background: #f0fdf4; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #bbf7d0;">
+                <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
+                <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
+                <p style="margin: 0 0 10px 0;"><strong>Mechanic:</strong> {mechanic.first_name} {mechanic.last_name}</p>
+                <p style="margin: 0; font-size: 18px; color: #16a34a;"><strong>Status: In Progress</strong></p>
+            </div>
+            
+            <p>We'll keep you updated on the progress. You can also check your customer portal for real-time updates.</p>
+            
+            <p style="margin: 30px 0; text-align: center;">
+                <a href="{settings.FRONTEND_URL}/portal" 
+                   style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                    View in Portal
+                </a>
+            </p>
+            
+            <p style="color: #666; font-size: 14px;">
+                If you have any questions, please contact us directly.
+            </p>
+        </body>
+        </html>
+        """
+        
+        await send_email(
+            db=db,
+            tenant_id=str(current_user.tenant_id),
+            to=customer.email,
+            subject=f"Work Started on {order.order_number} - Truck Pit Stop",
+            body=html_body,
+            template_name="work_started",
+        )
     
     return RepairOrderResponse.model_validate(order)
 
