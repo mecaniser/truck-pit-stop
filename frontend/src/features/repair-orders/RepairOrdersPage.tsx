@@ -1256,12 +1256,20 @@ export default function RepairOrdersPage() {
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
         headerExtra={
-          selectedOrder && (
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
-              <span className={`w-2 h-2 rounded-full ${getStatusStyle((orderDetail ?? selectedOrder).status).dot}`}></span>
-              {(orderDetail ?? selectedOrder).status.replace('_', ' ')}
-            </div>
-          )
+          selectedOrder && (() => {
+            const status = (orderDetail ?? selectedOrder).status
+            const isAwaitingApproval = status === 'quoted' && (quoteForOrder?.sent_to_customer || quoteSent)
+            const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : status.replace('_', ' ')
+            const statusStyle = isAwaitingApproval 
+              ? { dot: 'bg-amber-500' } 
+              : getStatusStyle(status)
+            return (
+              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${isAwaitingApproval ? 'bg-amber-500/30' : 'bg-white/20'}`}>
+                <span className={`w-2 h-2 rounded-full ${statusStyle.dot}`}></span>
+                {displayStatus}
+              </div>
+            )
+          })()
         }
         footer={
           selectedOrder && (
@@ -1794,6 +1802,7 @@ export default function RepairOrdersPage() {
                 {(() => {
                   const hasQuote = !!quoteForOrder
                   const isApproved = quoteForOrder?.is_approved
+                  const isSent = quoteForOrder?.sent_to_customer || quoteSent
                   const hasMechanic = !!selectedOrder.assigned_mechanic_id
                   const mechanicName = mechanics?.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
 
@@ -1852,25 +1861,23 @@ export default function RepairOrdersPage() {
 
                           {/* Step 2: Send to Customer */}
                           {hasQuote && !isApproved && !quoteNeedsUpdate ? (
-                            quoteSent ? (
-                              <span className="px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-100 text-blue-700 flex items-center gap-1">
-                                ⏳ Sent
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (quoteForOrder) {
-                                    sendQuoteMutation.mutate(quoteForOrder.id)
-                                    setQuoteSent(true)
-                                  }
-                                }}
-                                disabled={sendQuoteMutation.isPending}
-                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
-                              >
-                                {sendQuoteMutation.isPending ? 'Sending...' : (quoteForOrder?.sent_to_customer ? 'Resend' : 'Send')}
-                              </button>
-                            )
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (quoteForOrder) {
+                                  sendQuoteMutation.mutate(quoteForOrder.id)
+                                  setQuoteSent(true)
+                                }
+                              }}
+                              disabled={sendQuoteMutation.isPending}
+                              className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                                isSent 
+                                  ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                                  : 'bg-amber-500 hover:bg-amber-600 text-white'
+                              }`}
+                            >
+                              {sendQuoteMutation.isPending ? 'Sending...' : (isSent ? '⏳ Resend' : 'Send')}
+                            </button>
                           ) : (
                             <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
                               isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
@@ -1885,11 +1892,11 @@ export default function RepairOrdersPage() {
                           <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
                             isApproved 
                               ? 'bg-green-100 text-green-700' 
-                              : quoteSent 
-                                ? 'bg-blue-100 text-blue-700 animate-pulse' 
+                              : isSent 
+                                ? 'bg-amber-100 text-amber-700 animate-pulse' 
                                 : 'bg-gray-200 text-gray-400'
                           }`}>
-                            {isApproved ? '✓ Approved' : quoteSent ? 'Awaiting...' : 'Approved'}
+                            {isApproved ? '✓ Approved' : isSent ? 'Awaiting Approval' : 'Approved'}
                           </span>
 
                           <ArrowRight className={`w-4 h-4 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
@@ -1912,7 +1919,7 @@ export default function RepairOrdersPage() {
                             Quote needs to be updated before sending.
                           </p>
                         )}
-                        {quoteSent && !isApproved && !quoteNeedsUpdate && (
+                        {isSent && !isApproved && !quoteNeedsUpdate && (
                           <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                             Waiting for customer approval...
                           </p>

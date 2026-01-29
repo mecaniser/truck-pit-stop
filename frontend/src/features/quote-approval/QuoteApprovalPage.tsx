@@ -108,9 +108,15 @@ export default function QuoteApprovalPage() {
           <p className="text-gray-400 mb-2">
             Thank you, {customer_first_name}! Your quote <strong className="text-white">{quote.quote_number}</strong> has been approved.
           </p>
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-500 text-sm mb-6">
             We'll get started on your repair soon. You'll receive updates via email.
           </p>
+          <Link
+            to="/login"
+            className="inline-block px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
+          >
+            Go to Customer Portal
+          </Link>
         </div>
       </div>
     )

@@ -582,8 +582,7 @@ async def approve_quote_by_token(
     quote.is_approved = True
     quote.is_declined = False
     order.status = RepairOrderStatus.APPROVED
-    # Invalidate token after use for security
-    quote.approval_token = None
+    # Keep token valid so customer can view their approved quote status
     await db.commit()
     await db.refresh(quote)
     return QuoteResponse.model_validate(quote)

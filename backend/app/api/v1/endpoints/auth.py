@@ -25,6 +25,7 @@ from app.core.redis import (
 from app.core.config import settings
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
+from app.db.models.customer import Customer
 from app.schemas.auth import (
     UserLogin,
     UserRegister,
@@ -93,9 +94,20 @@ async def register(
             detail="Email already registered",
         )
     
-    # Get tenant if provided
+    # Check if there's an existing Customer record with this email
+    # This links the new User account to the Customer created by staff
+    result = await db.execute(select(Customer).where(Customer.email == user_data.email))
+    existing_customer = result.scalar_one_or_none()
+    
+    customer_id = None
     tenant_id = None
-    if user_data.tenant_slug:
+    
+    if existing_customer:
+        # Link to existing customer - inherit their tenant
+        customer_id = existing_customer.id
+        tenant_id = existing_customer.tenant_id
+    elif user_data.tenant_slug:
+        # No existing customer, but tenant slug provided
         result = await db.execute(select(Tenant).where(Tenant.slug == user_data.tenant_slug))
         tenant = result.scalar_one_or_none()
         if not tenant:
@@ -105,7 +117,7 @@ async def register(
             )
         tenant_id = tenant.id
     
-    # Create user
+    # Create user linked to existing customer (if any)
     user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
@@ -114,6 +126,7 @@ async def register(
         phone=user_data.phone,
         role=UserRole.CUSTOMER,
         tenant_id=tenant_id,
+        customer_id=customer_id,
         is_active=True,
         is_verified=False,
     )
