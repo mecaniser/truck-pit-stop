@@ -17,7 +17,6 @@ async def send_email(
     template_name: Optional[str] = None,
 ) -> Notification:
     """Send email via Resend and create notification record"""
-    
     notification = Notification(
         tenant_id=tenant_id,
         type=NotificationType.EMAIL,
@@ -32,16 +31,16 @@ async def send_email(
     await db.commit()
     
     try:
-        params = resend.Emails.SendParams(
-            from_=settings.RESEND_FROM_EMAIL,
-            to=to,
-            subject=subject,
-            html=body,
-        )
+        params = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": to,
+            "subject": subject,
+            "html": body,
+        }
         email = resend.Emails.send(params)
         
         notification.status = NotificationStatus.SENT
-        notification.external_id = email.id
+        notification.external_id = email.get("id") if isinstance(email, dict) else getattr(email, "id", None)
         notification.sent_at = datetime.utcnow()
         
     except Exception as e:
@@ -81,12 +80,12 @@ async def send_password_reset_email(to: str, reset_token: str):
     """
     
     try:
-        params = resend.Emails.SendParams(
-            from_=settings.RESEND_FROM_EMAIL,
-            to=to,
-            subject="Reset Your Password - Truck Pit Stop",
-            html=html_body,
-        )
+        params = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": to,
+            "subject": "Reset Your Password - Truck Pit Stop",
+            "html": html_body,
+        }
         resend.Emails.send(params)
     except Exception as e:
         # Log error but don't reveal to user for security
