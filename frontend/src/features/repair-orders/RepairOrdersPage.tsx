@@ -1536,57 +1536,57 @@ export default function RepairOrdersPage() {
                     onClick={() => setCustomerSectionExpanded((prev) => !prev)}
                     className="w-full flex items-center justify-between text-left bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors"
                   >
-                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer</span>
-                    <span className="text-gray-900 font-medium truncate max-w-[60%]">
-                      {customerLookup.get(selectedOrder.customer_id)
-                        ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                        : 'Unknown customer'}
-                    </span>
-                    {customerSectionExpanded ? (
-                      <ChevronUp className="w-5 h-5 text-gray-500 shrink-0 ml-2" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-500 shrink-0 ml-2" />
-                    )}
+                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer & Vehicle</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-900 font-medium truncate max-w-[200px]">
+                        {customerLookup.get(selectedOrder.customer_id)
+                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                          : 'Unknown'}
+                      </span>
+                      {customerSectionExpanded ? (
+                        <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
+                      )}
+                    </div>
                   </button>
                   {customerSectionExpanded && (
-                    <div className="bg-gray-50 rounded-b-xl p-4 flex items-center gap-3 border-t border-gray-200 -mt-1 pt-4">
-                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-                        {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
-                        {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
+                    <div className="bg-gray-50 rounded-b-xl p-4 border-t border-gray-200 -mt-1 pt-4 space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+                          {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
+                          {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-gray-900 font-semibold">
+                            {customerLookup.get(selectedOrder.customer_id)
+                              ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                              : 'Unknown customer'}
+                          </p>
+                          <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-gray-900 font-semibold">
-                          {customerLookup.get(selectedOrder.customer_id)
-                            ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                            : 'Unknown customer'}
-                        </p>
-                        <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
+                      <div className="border-t border-gray-200 pt-3 text-sm text-gray-700">
+                        {vehicleLookup.get(selectedOrder.vehicle_id) ? (
+                          <>
+                            <p className="font-semibold text-gray-900">
+                              {vehicleLookup.get(selectedOrder.vehicle_id)?.year || 'Year'}{' '}
+                              {vehicleLookup.get(selectedOrder.vehicle_id)?.make}{' '}
+                              {vehicleLookup.get(selectedOrder.vehicle_id)?.model}
+                            </p>
+                            <p className="text-gray-600 mt-1">
+                              VIN: {vehicleLookup.get(selectedOrder.vehicle_id)?.vin || '—'}
+                            </p>
+                            <p className="text-gray-600">
+                              Plate: {vehicleLookup.get(selectedOrder.vehicle_id)?.license_plate || '—'}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-gray-500">Vehicle not found</p>
+                        )}
                       </div>
                     </div>
                   )}
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Vehicle</h3>
-                  <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
-                    {vehicleLookup.get(selectedOrder.vehicle_id) ? (
-                      <>
-                        <p className="font-semibold text-gray-900">
-                          {vehicleLookup.get(selectedOrder.vehicle_id)?.year || 'Year'}{' '}
-                          {vehicleLookup.get(selectedOrder.vehicle_id)?.make}{' '}
-                          {vehicleLookup.get(selectedOrder.vehicle_id)?.model}
-                        </p>
-                        <p className="text-gray-600 mt-1">
-                          VIN: {vehicleLookup.get(selectedOrder.vehicle_id)?.vin || '—'}
-                        </p>
-                        <p className="text-gray-600">
-                          Plate: {vehicleLookup.get(selectedOrder.vehicle_id)?.license_plate || '—'}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="text-gray-500">Vehicle not found</p>
-                    )}
-                  </div>
                 </div>
 
                 <div>
@@ -1630,52 +1630,48 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
-                {/* Quote — steps: Create → Approve */}
+                {/* Quote — both buttons visible, Approve grayed until quote exists */}
                 <div>
                   <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Quote</h3>
                   <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                    {!quoteForOrder && selectedOrder && ['draft', 'quoted'].includes(selectedOrder.status) && (
+                    {selectedOrder && ['draft', 'quoted'].includes(selectedOrder.status) && !quoteForOrder?.is_approved && (
                       <>
-                        <p className="text-sm text-gray-600"><span className="font-medium text-gray-800">1. Create quote</span> — Next step</p>
-                        <button
-                          type="button"
-                          onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
-                          disabled={createQuoteMutation.isPending}
-                          className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
-                        >
-                          {createQuoteMutation.isPending ? 'Creating...' : 'Create quote'}
-                        </button>
-                      </>
-                    )}
-                    {quoteForOrder && !quoteForOrder.is_approved && (
-                      <>
-                        <p className="text-sm text-gray-600"><span className="font-medium text-gray-800">2. Approve quote</span> — Next step</p>
-                        <div className="space-y-1 text-sm text-gray-800">
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Quote #</span>
-                            <span className="font-mono font-medium">{quoteForOrder.quote_number}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">Amount</span>
-                            <span className="font-semibold">${parseFloat(quoteForOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                          </div>
-                          {quoteForOrder.expires_at && (
+                        {quoteForOrder && (
+                          <div className="space-y-1 text-sm text-gray-800 mb-3">
                             <div className="flex justify-between">
-                              <span className="text-gray-500">Expires</span>
-                              <span>{format(new Date(quoteForOrder.expires_at), 'PP')}</span>
+                              <span className="text-gray-500">Quote #</span>
+                              <span className="font-mono font-medium">{quoteForOrder.quote_number}</span>
                             </div>
-                          )}
-                        </div>
-                        {selectedOrder?.id && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Amount</span>
+                              <span className="font-semibold">${parseFloat(quoteForOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                            {quoteForOrder.expires_at && (
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">Expires</span>
+                                <span>{format(new Date(quoteForOrder.expires_at), 'PP')}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => approveQuoteMutation.mutate(quoteForOrder.id)}
-                            disabled={approveQuoteMutation.isPending}
-                            className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                            onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
+                            disabled={createQuoteMutation.isPending || !!quoteForOrder}
+                            className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg"
+                          >
+                            {createQuoteMutation.isPending ? 'Creating...' : 'Create quote'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => quoteForOrder && approveQuoteMutation.mutate(quoteForOrder.id)}
+                            disabled={approveQuoteMutation.isPending || !quoteForOrder}
+                            className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg"
                           >
                             {approveQuoteMutation.isPending ? 'Approving...' : 'Approve quote'}
                           </button>
-                        )}
+                        </div>
                       </>
                     )}
                     {quoteForOrder?.is_approved && (
