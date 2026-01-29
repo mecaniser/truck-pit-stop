@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, RepairOrder, Service, Vehicle } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -60,6 +60,12 @@ export default function RepairOrdersPage() {
     license_plate: '',
     mileage: '',
   })
+  const [addPartInventoryId, setAddPartInventoryId] = useState('')
+  const [addPartQuantity, setAddPartQuantity] = useState(1)
+  const [addLaborDescription, setAddLaborDescription] = useState('')
+  const [addLaborHours, setAddLaborHours] = useState('')
+  const [addLaborRate, setAddLaborRate] = useState('100')
+  const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -110,6 +116,33 @@ export default function RepairOrdersPage() {
       const response = await api.get('/dashboard/stats')
       return response.data?.mechanic_workload || []
     },
+  })
+
+  const { data: orderDetail, refetch: refetchOrderDetail } = useQuery<RepairOrderDetail>({
+    queryKey: ['repair-order-detail', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`)
+      return response.data
+    },
+    enabled: !!(selectedOrder?.id && isDetailOpen),
+  })
+
+  const { data: inventory } = useQuery<InventoryItem[]>({
+    queryKey: ['inventory'],
+    queryFn: async () => {
+      const response = await api.get('/inventory')
+      return response.data
+    },
+    enabled: isDetailOpen,
+  })
+
+  const { data: quoteForOrder, refetch: refetchQuote } = useQuery<Quote | null>({
+    queryKey: ['quote', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/quotes?repair_order_id=${selectedOrder!.id}`)
+      return response.data
+    },
+    enabled: !!(selectedOrder?.id && isDetailOpen),
   })
 
   const filteredVehicles = useMemo(() => {
@@ -233,10 +266,115 @@ export default function RepairOrdersPage() {
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       setSelectedOrder(updated)
     },
     onError: (error: any) => {
       setFormError(error.response?.data?.detail || 'Failed to assign mechanic')
+    },
+  })
+
+  const addPartMutation = useMutation({
+    mutationFn: async ({ orderId, inventory_id, quantity }: { orderId: string; inventory_id: string; quantity: number }) => {
+      const response = await api.post(`/repair-orders/${orderId}/parts`, { inventory_id, quantity })
+      return response.data as PartsUsage
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      refetchOrderDetail()
+    },
+  })
+
+  const removePartMutation = useMutation({
+    mutationFn: async ({ orderId, partsUsageId }: { orderId: string; partsUsageId: string }) => {
+      await api.delete(`/repair-orders/${orderId}/parts/${partsUsageId}`)
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      refetchOrderDetail()
+    },
+  })
+
+  const addLaborMutation = useMutation({
+    mutationFn: async ({
+      orderId,
+      description,
+      hours,
+      hourly_rate,
+    }: { orderId: string; description: string; hours: number; hourly_rate: number }) => {
+      const response = await api.post(`/repair-orders/${orderId}/labor`, { description, hours, hourly_rate })
+      return response.data as Labor
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      refetchOrderDetail()
+    },
+  })
+
+  const updateLaborMutation = useMutation({
+    mutationFn: async ({
+      orderId,
+      laborId,
+      description,
+      hours,
+      hourly_rate,
+    }: { orderId: string; laborId: string; description?: string; hours?: number; hourly_rate?: number }) => {
+      const payload: Record<string, unknown> = {}
+      if (description !== undefined) payload.description = description
+      if (hours !== undefined) payload.hours = hours
+      if (hourly_rate !== undefined) payload.hourly_rate = hourly_rate
+      const response = await api.put(`/repair-orders/${orderId}/labor/${laborId}`, payload)
+      return response.data as Labor
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      refetchOrderDetail()
+    },
+  })
+
+  const removeLaborMutation = useMutation({
+    mutationFn: async ({ orderId, laborId }: { orderId: string; laborId: string }) => {
+      await api.delete(`/repair-orders/${orderId}/labor/${laborId}`)
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
+      refetchOrderDetail()
+    },
+  })
+
+  const createQuoteMutation = useMutation({
+    mutationFn: async (repair_order_id: string) => {
+      const response = await api.post('/quotes', { repair_order_id })
+      return response.data as Quote
+    },
+    onSuccess: (_, orderId) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['quote', orderId] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
+      refetchQuote()
+      refetchOrderDetail()
+      setSelectedOrder((prev) => (prev && prev.id === orderId ? { ...prev, status: 'quoted' } : prev))
+    },
+  })
+
+  const approveQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      const response = await api.post(`/quotes/${quoteId}/approve`)
+      return response.data as Quote
+    },
+    onSuccess: (_, __) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      if (selectedOrder?.id) {
+        queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder.id] })
+        refetchQuote()
+        refetchOrderDetail()
+      }
+      closeDetail()
     },
   })
 
@@ -1076,8 +1214,8 @@ export default function RepairOrdersPage() {
         headerExtra={
           selectedOrder && (
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium">
-              <span className={`w-2 h-2 rounded-full ${getStatusStyle(selectedOrder.status).dot}`}></span>
-              {selectedOrder.status.replace('_', ' ')}
+              <span className={`w-2 h-2 rounded-full ${getStatusStyle((orderDetail ?? selectedOrder).status).dot}`}></span>
+              {(orderDetail ?? selectedOrder).status.replace('_', ' ')}
             </div>
           )
         }
@@ -1163,6 +1301,173 @@ export default function RepairOrdersPage() {
                   ) : null
                 })()}
 
+                {/* Parts and labor: use detail when available */}
+                {(() => {
+                  const displayOrder = orderDetail ?? selectedOrder
+                  const partsUsage = orderDetail?.parts_usage ?? []
+                  const laborItems = orderDetail?.labor_items ?? []
+                  const canEditLineItems = displayOrder && ['draft', 'quoted'].includes(displayOrder.status)
+                  return (
+                    <>
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Parts</h3>
+                        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                          {partsUsage.length === 0 ? (
+                            <p className="text-sm text-gray-500">No parts added</p>
+                          ) : (
+                            partsUsage.map((pu) => (
+                              <div key={pu.id} className="flex items-center justify-between text-sm text-gray-800 py-1 border-b border-gray-200 last:border-0">
+                                <div>
+                                  <span className="font-medium">{pu.inventory_name}</span>
+                                  <span className="text-gray-500 ml-2">({pu.inventory_sku}) × {pu.quantity}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
+                                  {canEditLineItems && (
+                                    <button
+                                      type="button"
+                                      onClick={() => selectedOrder?.id && removePartMutation.mutate({ orderId: selectedOrder.id, partsUsageId: pu.id })}
+                                      className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                      aria-label="Remove part"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          {canEditLineItems && inventory && inventory.length > 0 && (
+                            <div className="pt-3 mt-2 border-t border-gray-200 flex flex-wrap gap-2 items-end">
+                              <div className="min-w-[200px] flex-1 max-w-xs">
+                                <BaseSelect
+                                  options={inventory
+                                    .filter((i) => i.stock_quantity > 0)
+                                    .map((i) => ({
+                                      value: i.id,
+                                      label: i.name,
+                                      subLabel: `${i.sku} — ${i.stock_quantity} in stock`,
+                                    }))}
+                                  value={addPartInventoryId}
+                                  onChange={setAddPartInventoryId}
+                                  placeholder="Select part"
+                                  allowAddNew={false}
+                                />
+                              </div>
+                              <input
+                                type="number"
+                                min={1}
+                                value={addPartQuantity}
+                                onChange={(e) => setAddPartQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-20"
+                              />
+                              <button
+                                type="button"
+                                disabled={!addPartInventoryId || addPartMutation.isPending}
+                                onClick={() => {
+                                  if (!selectedOrder?.id || !addPartInventoryId) return
+                                  addPartMutation.mutate({ orderId: selectedOrder.id, inventory_id: addPartInventoryId, quantity: addPartQuantity })
+                                  setAddPartInventoryId('')
+                                  setAddPartQuantity(1)
+                                }}
+                                className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                              >
+                                Add part
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Labor</h3>
+                        <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                          {laborItems.length === 0 ? (
+                            <p className="text-sm text-gray-500">No labor lines</p>
+                          ) : (
+                            laborItems.map((li) => (
+                              <div key={li.id} className="flex items-center justify-between text-sm text-gray-800 py-1 border-b border-gray-200 last:border-0">
+                                <div>
+                                  {li.description ? (
+                                    <><span className="font-medium">{li.description}</span><span className="text-gray-500 ml-2">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span></>
+                                  ) : (
+                                    <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
+                                  {canEditLineItems && (
+                                    <button
+                                      type="button"
+                                      onClick={() => selectedOrder?.id && removeLaborMutation.mutate({ orderId: selectedOrder.id, laborId: li.id })}
+                                      className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                      aria-label="Remove labor"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                          {canEditLineItems && (
+                            <div className="pt-3 mt-2 border-t border-gray-200 flex flex-col gap-2">
+                              <input
+                                type="text"
+                                placeholder="Description (optional)"
+                                value={addLaborDescription}
+                                onChange={(e) => setAddLaborDescription(e.target.value)}
+                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                              />
+                              <div className="flex flex-wrap gap-2">
+                                <input
+                                  type="number"
+                                  step={0.25}
+                                  min={0}
+                                  placeholder="Hours"
+                                  value={addLaborHours}
+                                  onChange={(e) => setAddLaborHours(e.target.value)}
+                                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                />
+                                <input
+                                  type="number"
+                                  step={0.01}
+                                  min={0}
+                                  placeholder="Hourly rate"
+                                  value={addLaborRate}
+                                  onChange={(e) => setAddLaborRate(e.target.value)}
+                                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-28"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
+                                  onClick={() => {
+                                    if (!selectedOrder?.id) return
+                                    const hours = parseFloat(addLaborHours)
+                                    const rate = parseFloat(addLaborRate)
+                                    if (Number.isNaN(hours) || Number.isNaN(rate) || hours <= 0 || rate < 0) return
+                                    addLaborMutation.mutate({
+                                      orderId: selectedOrder.id,
+                                      description: addLaborDescription.trim() || undefined,
+                                      hours,
+                                      hourly_rate: rate,
+                                    })
+                                    setAddLaborDescription('')
+                                    setAddLaborHours('')
+                                    setAddLaborRate('100')
+                                  }}
+                                  className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                                >
+                                  Add labor
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
+
                 <div>
                   <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Assigned mechanic</h3>
                   <div className="bg-gray-50 rounded-xl p-4 space-y-3">
@@ -1226,21 +1531,39 @@ export default function RepairOrdersPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Customer</h3>
-                  <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-                      {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
-                      {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
+                  <button
+                    type="button"
+                    onClick={() => setCustomerSectionExpanded((prev) => !prev)}
+                    className="w-full flex items-center justify-between text-left bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors"
+                  >
+                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer</span>
+                    <span className="text-gray-900 font-medium truncate max-w-[60%]">
+                      {customerLookup.get(selectedOrder.customer_id)
+                        ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                        : 'Unknown customer'}
+                    </span>
+                    {customerSectionExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-gray-500 shrink-0 ml-2" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-gray-500 shrink-0 ml-2" />
+                    )}
+                  </button>
+                  {customerSectionExpanded && (
+                    <div className="bg-gray-50 rounded-b-xl p-4 flex items-center gap-3 border-t border-gray-200 -mt-1 pt-4">
+                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
+                        {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
+                        {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-gray-900 font-semibold">
+                          {customerLookup.get(selectedOrder.customer_id)
+                            ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                            : 'Unknown customer'}
+                        </p>
+                        <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-gray-900 font-semibold">
-                        {customerLookup.get(selectedOrder.customer_id)
-                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                          : 'Unknown customer'}
-                      </p>
-                      <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <div>
@@ -1276,53 +1599,93 @@ export default function RepairOrdersPage() {
                 </div>
 
                 {(() => {
-                  const backendParts = parseFloat(selectedOrder.total_parts_cost) || 0
-                  const backendLabor = parseFloat(selectedOrder.total_labor_cost) || 0
-                  const backendTotal = parseFloat(selectedOrder.total_cost) || 0
-                  const detailServices = parseServiceNotes(selectedOrder.internal_notes)
+                  const totalsOrder = orderDetail ?? selectedOrder
+                  const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
+                  const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
+                  const backendTotal = parseFloat(totalsOrder?.total_cost ?? '0') || 0
+                  const detailServices = parseServiceNotes(selectedOrder?.internal_notes)
                   const detailEstimate = detailServices?.reduce(
                     (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                     0
                   )
                   const showEstimate = backendTotal === 0 && detailEstimate && detailEstimate > 0
+                  const partsVal = showEstimate ? detailEstimate || 0 : backendParts
+                  const laborVal = showEstimate ? 0 : backendLabor
+                  const totalVal = showEstimate ? detailEstimate || 0 : backendTotal
+                  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
 
                   return (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                        {showEstimate ? 'Estimated totals' : 'Totals'}
-                      </h3>
-                      <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-xl p-4 text-sm text-gray-700">
-                        <div>
-                          <p className="text-gray-500">{showEstimate ? 'Services' : 'Parts'}</p>
-                          <p className="font-semibold">
-                            $
-                            {(showEstimate ? detailEstimate || 0 : backendParts).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-gray-500">Labor</p>
-                          <p className="font-semibold">
-                            $
-                            {(showEstimate ? 0 : backendLabor).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </p>
-                        </div>
-                        <div className="col-span-2">
-                          <p className="text-gray-500">Total</p>
-                          <p className="text-lg font-bold text-gray-900">
-                            $
-                            {(showEstimate ? detailEstimate || 0 : backendTotal).toLocaleString('en-US', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </p>
-                        </div>
+                    <div className="bg-gray-50 rounded-xl p-4">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <span className="text-gray-500">Parts</span>
+                        <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
+                        <span className="text-gray-400">·</span>
+                        <span className="text-gray-500">Labor</span>
+                        <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
+                        <span className="text-gray-400">·</span>
+                        <span className="text-gray-500">Total</span>
+                        <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
                       </div>
                     </div>
                   )
                 })()}
+
+                {/* Quote — steps: Create → Approve */}
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Quote</h3>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                    {!quoteForOrder && selectedOrder && ['draft', 'quoted'].includes(selectedOrder.status) && (
+                      <>
+                        <p className="text-sm text-gray-600"><span className="font-medium text-gray-800">1. Create quote</span> — Next step</p>
+                        <button
+                          type="button"
+                          onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
+                          disabled={createQuoteMutation.isPending}
+                          className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                        >
+                          {createQuoteMutation.isPending ? 'Creating...' : 'Create quote'}
+                        </button>
+                      </>
+                    )}
+                    {quoteForOrder && !quoteForOrder.is_approved && (
+                      <>
+                        <p className="text-sm text-gray-600"><span className="font-medium text-gray-800">2. Approve quote</span> — Next step</p>
+                        <div className="space-y-1 text-sm text-gray-800">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Quote #</span>
+                            <span className="font-mono font-medium">{quoteForOrder.quote_number}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Amount</span>
+                            <span className="font-semibold">${parseFloat(quoteForOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          {quoteForOrder.expires_at && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Expires</span>
+                              <span>{format(new Date(quoteForOrder.expires_at), 'PP')}</span>
+                            </div>
+                          )}
+                        </div>
+                        {selectedOrder?.id && (
+                          <button
+                            type="button"
+                            onClick={() => approveQuoteMutation.mutate(quoteForOrder.id)}
+                            disabled={approveQuoteMutation.isPending}
+                            className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                          >
+                            {approveQuoteMutation.isPending ? 'Approving...' : 'Approve quote'}
+                          </button>
+                        )}
+                      </>
+                    )}
+                    {quoteForOrder?.is_approved && (
+                      <p className="text-sm font-medium text-green-600">Quote approved — you can close this panel and see the repair order in the list.</p>
+                    )}
+                    {selectedOrder && !['draft', 'quoted', 'approved'].includes(selectedOrder.status) && !quoteForOrder && (
+                      <p className="text-sm text-gray-500">No quote for this order</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
       </SlidePanel>

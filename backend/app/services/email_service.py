@@ -93,4 +93,3 @@ async def send_password_reset_email(to: str, reset_token: str):
         print(f"Error sending password reset email: {e}")
         raise Exception("Failed to send password reset email")
 
-

@@ -57,6 +57,30 @@ export interface Vehicle {
   updated_at: string
 }
 
+export interface PartsUsage {
+  id: string
+  repair_order_id: string
+  inventory_id: string
+  inventory_sku: string
+  inventory_name: string
+  quantity: number
+  unit_price: string
+  total_price: string
+  created_at: string
+}
+
+export interface Labor {
+  id: string
+  repair_order_id: string
+  description: string
+  hours: string
+  hourly_rate: string
+  total_cost: string
+  mechanic_id: string | null
+  service_code: string | null
+  created_at: string
+}
+
 export interface RepairOrder {
   id: string
   tenant_id: string
@@ -71,6 +95,24 @@ export interface RepairOrder {
   total_parts_cost: string
   total_labor_cost: string
   total_cost: string
+  created_at: string
+  updated_at: string
+}
+
+export interface RepairOrderDetail extends RepairOrder {
+  parts_usage: PartsUsage[]
+  labor_items: Labor[]
+}
+
+export interface Quote {
+  id: string
+  tenant_id: string
+  repair_order_id: string
+  quote_number: string
+  total_amount: string
+  notes: string | null
+  expires_at: string | null
+  is_approved: boolean
   created_at: string
   updated_at: string
 }

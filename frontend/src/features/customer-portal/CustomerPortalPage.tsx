@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, Vehicle, RepairOrder } from '../../types'
+import { Customer, Vehicle, RepairOrder, Quote } from '../../types'
 import { format } from 'date-fns'
 import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
@@ -292,11 +292,35 @@ function CustomerVehicles() {
 }
 
 function CustomerRepairs() {
+  const queryClient = useQueryClient()
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
     queryFn: async () => {
       const response = await api.get('/repair-orders')
       return response.data
+    },
+  })
+
+  const quotedOrders = orders?.filter((o) => o.status === 'quoted') ?? []
+  const quoteQueries = useQueries({
+    queries: quotedOrders.map((order) => ({
+      queryKey: ['quote', order.id],
+      queryFn: async () => {
+        const response = await api.get(`/quotes?repair_order_id=${order.id}`)
+        return response.data as Quote | null
+      },
+      enabled: true,
+    })),
+  })
+
+  const approveQuoteMutation = useMutation({
+    mutationFn: async (quoteId: string) => {
+      const response = await api.post(`/quotes/${quoteId}/approve`)
+      return response.data as Quote
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['quote'] })
     },
   })
 
@@ -314,6 +338,45 @@ function CustomerRepairs() {
         <h1 className="text-2xl sm:text-3xl font-bold text-white">Repair History</h1>
         <p className="text-gray-400 mt-1">Track all your past and current repairs</p>
       </div>
+
+      {quotedOrders.length > 0 && (
+        <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4 sm:p-6">
+          <h2 className="text-lg font-semibold text-white mb-3">Quotes pending your approval</h2>
+          <div className="space-y-3">
+            {quotedOrders.map((order, idx) => {
+              const quoteData = quoteQueries[idx]?.data as Quote | null | undefined
+              const quoteLoading = quoteQueries[idx]?.isLoading
+              return (
+                <div key={order.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span className="font-medium text-white">{order.order_number}</span>
+                    <span className="text-gray-400 ml-2">— {order.description || 'Repair'}</span>
+                    {quoteData && (
+                      <p className="text-sm text-gray-400 mt-1">
+                        Quote #{quoteData.quote_number} · ${parseFloat(quoteData.total_amount).toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                  {quoteLoading ? (
+                    <span className="text-gray-500 text-sm">Loading quote...</span>
+                  ) : quoteData && !quoteData.is_approved ? (
+                    <button
+                      type="button"
+                      onClick={() => approveQuoteMutation.mutate(quoteData.id)}
+                      disabled={approveQuoteMutation.isPending}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-500 text-white text-sm font-medium rounded-lg"
+                    >
+                      {approveQuoteMutation.isPending ? 'Approving...' : 'Approve quote'}
+                    </button>
+                  ) : quoteData?.is_approved ? (
+                    <span className="text-green-400 text-sm font-medium">Approved</span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {orders && orders.length > 0 ? (
