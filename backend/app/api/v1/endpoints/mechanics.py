@@ -1,8 +1,8 @@
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, cast, Date
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 import json
@@ -144,6 +144,111 @@ class MechanicHistoryItem(BaseModel):
     vehicle_info: str
     services_count: int = 0
     completed_at: datetime
+
+
+class MechanicStats(BaseModel):
+    """Stats for mechanic gamification"""
+    jobs_completed_today: int = 0
+    jobs_completed_week: int = 0
+    jobs_completed_month: int = 0
+    total_points: int = 0
+    streak_days: int = 0
+
+
+@router.get("/my-stats", response_model=MechanicStats)
+async def get_my_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Get stats for the current mechanic - gamification"""
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+    
+    completed_statuses = [
+        RepairOrderStatus.COMPLETED,
+        RepairOrderStatus.INVOICED,
+        RepairOrderStatus.PAID,
+    ]
+    
+    # Count jobs completed today
+    result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
+            and_(
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_(completed_statuses),
+                cast(RepairOrder.updated_at, Date) == today,
+            )
+        )
+    )
+    jobs_today = result.scalar() or 0
+    
+    # Count jobs completed this week
+    result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
+            and_(
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_(completed_statuses),
+                cast(RepairOrder.updated_at, Date) >= week_start,
+            )
+        )
+    )
+    jobs_week = result.scalar() or 0
+    
+    # Count jobs completed this month
+    result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
+            and_(
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_(completed_statuses),
+                cast(RepairOrder.updated_at, Date) >= month_start,
+            )
+        )
+    )
+    jobs_month = result.scalar() or 0
+    
+    # Total completed jobs (for points - 10 pts per job)
+    result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
+            and_(
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_(completed_statuses),
+            )
+        )
+    )
+    total_completed = result.scalar() or 0
+    total_points = total_completed * 10
+    
+    # Calculate streak (consecutive days with at least 1 completed job)
+    streak_days = 0
+    check_date = today
+    while True:
+        result = await db.execute(
+            select(func.count(RepairOrder.id)).where(
+                and_(
+                    RepairOrder.assigned_mechanic_id == current_user.id,
+                    RepairOrder.status.in_(completed_statuses),
+                    cast(RepairOrder.updated_at, Date) == check_date,
+                )
+            )
+        )
+        count = result.scalar() or 0
+        if count > 0:
+            streak_days += 1
+            check_date -= timedelta(days=1)
+        else:
+            break
+        # Safety limit
+        if streak_days > 365:
+            break
+    
+    return MechanicStats(
+        jobs_completed_today=jobs_today,
+        jobs_completed_week=jobs_week,
+        jobs_completed_month=jobs_month,
+        total_points=total_points,
+        streak_days=streak_days,
+    )
 
 
 @router.get("/my-jobs", response_model=List[MechanicJobSummary])
