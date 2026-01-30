@@ -17,8 +17,7 @@ import {
   Star,
   Zap,
   Calendar,
-  DollarSign,
-  X
+  DollarSign
 } from 'lucide-react'
 
 interface MechanicJob {
@@ -919,21 +918,21 @@ export default function MechanicPortalPage() {
         <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-around">
           <button
             onClick={() => setView('list')}
-            className={`flex flex-col items-center gap-1 ${view === 'list' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className="flex flex-col items-center gap-1 text-amber-400"
           >
             <Wrench className="w-6 h-6" />
             <span className="text-xs">Jobs</span>
           </button>
           <button
             onClick={() => setView('history')}
-            className={`flex flex-col items-center gap-1 ${view === 'history' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className="flex flex-col items-center gap-1 text-gray-500 hover:text-gray-300"
           >
             <History className="w-6 h-6" />
             <span className="text-xs">History</span>
           </button>
           <button
             onClick={() => setView('stats')}
-            className={`flex flex-col items-center gap-1 ${view === 'stats' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className="flex flex-col items-center gap-1 text-gray-500 hover:text-gray-300"
           >
             <Trophy className="w-6 h-6" />
             <span className="text-xs">Stats</span>
