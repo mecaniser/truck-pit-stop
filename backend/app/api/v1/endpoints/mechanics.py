@@ -1,13 +1,16 @@
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.orm import selectinload
 from uuid import UUID
+import json
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.security import get_password_hash
 from app.db.models.user import User, UserRole
-from app.db.models.repair_order import RepairOrder
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.schemas.auth import UserResponse
@@ -97,6 +100,203 @@ class MechanicWorkItem(BaseModel):
     customer_name: str
     vehicle_info: str
     updated_at: str
+
+
+class ServiceItem(BaseModel):
+    name: str
+    description: Optional[str] = None
+    base_price: Optional[str] = None
+
+
+class MechanicJobDetail(BaseModel):
+    """Job detail for mechanic portal - NO customer info"""
+    id: str
+    order_number: str
+    status: str
+    description: Optional[str] = None
+    vehicle_year: Optional[int] = None
+    vehicle_make: str
+    vehicle_model: str
+    vehicle_vin: Optional[str] = None
+    vehicle_license_plate: Optional[str] = None
+    vehicle_mileage: Optional[int] = None
+    services: List[ServiceItem] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class MechanicJobSummary(BaseModel):
+    """Job summary for mechanic job list"""
+    id: str
+    order_number: str
+    status: str
+    vehicle_info: str
+    description: Optional[str] = None
+    services_count: int = 0
+    updated_at: datetime
+
+
+class MechanicHistoryItem(BaseModel):
+    """Work history item for mechanic"""
+    id: str
+    order_number: str
+    status: str
+    vehicle_info: str
+    services_count: int = 0
+    completed_at: datetime
+
+
+@router.get("/my-jobs", response_model=List[MechanicJobSummary])
+async def get_my_jobs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Get all jobs assigned to the current mechanic"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(
+            and_(
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_([
+                    RepairOrderStatus.ASSIGNED,
+                    RepairOrderStatus.ACKNOWLEDGED,
+                    RepairOrderStatus.IN_PROGRESS,
+                    RepairOrderStatus.PENDING_REVIEW,
+                ]),
+            )
+        )
+        .options(selectinload(RepairOrder.vehicle))
+        .order_by(RepairOrder.updated_at.desc())
+    )
+    orders = result.scalars().all()
+    
+    jobs = []
+    for order in orders:
+        vehicle = order.vehicle
+        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Unknown"
+        
+        # Count services
+        services_count = 0
+        if order.internal_notes:
+            try:
+                notes = json.loads(order.internal_notes)
+                services_count = len(notes.get("selected_services", []))
+            except:
+                pass
+        
+        jobs.append(MechanicJobSummary(
+            id=str(order.id),
+            order_number=order.order_number,
+            status=order.status.value,
+            vehicle_info=vehicle_info,
+            description=order.description,
+            services_count=services_count,
+            updated_at=order.updated_at,
+        ))
+    
+    return jobs
+
+
+@router.get("/my-history", response_model=List[MechanicHistoryItem])
+async def get_my_history(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Get completed work history for the current mechanic"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(
+            and_(
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_([
+                    RepairOrderStatus.COMPLETED,
+                    RepairOrderStatus.INVOICED,
+                    RepairOrderStatus.PAID,
+                ]),
+            )
+        )
+        .options(selectinload(RepairOrder.vehicle))
+        .order_by(RepairOrder.updated_at.desc())
+        .limit(50)  # Limit history to last 50 jobs
+    )
+    orders = result.scalars().all()
+    
+    history = []
+    for order in orders:
+        vehicle = order.vehicle
+        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Unknown"
+        
+        services_count = 0
+        if order.internal_notes:
+            try:
+                notes = json.loads(order.internal_notes)
+                services_count = len(notes.get("selected_services", []))
+            except:
+                pass
+        
+        history.append(MechanicHistoryItem(
+            id=str(order.id),
+            order_number=order.order_number,
+            status=order.status.value,
+            vehicle_info=vehicle_info,
+            services_count=services_count,
+            completed_at=order.updated_at,
+        ))
+    
+    return history
+
+
+@router.get("/my-jobs/{order_id}", response_model=MechanicJobDetail)
+async def get_my_job_detail(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Get job detail for mechanic - NO customer info exposed"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    
+    if order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    
+    vehicle = order.vehicle
+    
+    # Parse services
+    services = []
+    if order.internal_notes:
+        try:
+            notes = json.loads(order.internal_notes)
+            for svc in notes.get("selected_services", []):
+                services.append(ServiceItem(
+                    name=svc.get("name", "Service"),
+                    description=svc.get("description"),
+                    base_price=svc.get("base_price"),
+                ))
+        except:
+            pass
+    
+    return MechanicJobDetail(
+        id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        description=order.description,
+        vehicle_year=vehicle.year if vehicle else None,
+        vehicle_make=vehicle.make if vehicle else "Unknown",
+        vehicle_model=vehicle.model if vehicle else "Unknown",
+        vehicle_vin=vehicle.vin if vehicle else None,
+        vehicle_license_plate=vehicle.license_plate if vehicle else None,
+        vehicle_mileage=vehicle.mileage if vehicle else None,
+        services=services,
+        created_at=order.created_at,
+        updated_at=order.updated_at,
+    )
 
 
 @router.get("/{mechanic_id}/work", response_model=list[MechanicWorkItem])

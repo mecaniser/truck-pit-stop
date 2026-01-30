@@ -58,6 +58,8 @@ export default function LoginPage() {
 
       if (userResponse.data.role === 'customer') {
         navigate('/portal')
+      } else if (userResponse.data.role === 'mechanic') {
+        navigate('/mechanic')
       } else {
         navigate('/dashboard')
       }

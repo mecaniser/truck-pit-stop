@@ -10,8 +10,11 @@ class RepairOrderStatus(str, enum.Enum):
     DRAFT = "draft"
     QUOTED = "quoted"
     APPROVED = "approved"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
+    ASSIGNED = "assigned"           # Mechanic assigned, awaiting acknowledgment
+    ACKNOWLEDGED = "acknowledged"   # Mechanic confirmed assignment
+    IN_PROGRESS = "in_progress"     # Work actively being done
+    PENDING_REVIEW = "pending_review"  # Mechanic finished, manager needs to verify
+    COMPLETED = "completed"         # Manager approved work
     INVOICED = "invoiced"
     PAID = "paid"
     CANCELLED = "cancelled"

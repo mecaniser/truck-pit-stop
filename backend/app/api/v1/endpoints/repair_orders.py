@@ -332,14 +332,137 @@ async def assign_mechanic(
     # Assign mechanic and update status (only on first assignment)
     order.assigned_mechanic_id = body.mechanic_id
     if not is_reassignment:
-        order.status = RepairOrderStatus.IN_PROGRESS
+        order.status = RepairOrderStatus.ASSIGNED
     
     await db.commit()
     await db.refresh(order)
     
-    # Send email notification to customer (only on first assignment, not reassignment)
+    # Send email notification to MECHANIC (not customer - customer notified when work starts)
+    vehicle = order.vehicle
+    vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "Vehicle"
+    
+    # Parse services from internal_notes
+    services_html = ""
+    if order.internal_notes:
+        try:
+            import json
+            notes_data = json.loads(order.internal_notes)
+            selected_services = notes_data.get("selected_services", [])
+            if selected_services:
+                services_html = '<ul style="margin: 10px 0; padding-left: 20px;">'
+                for svc in selected_services:
+                    services_html += f'<li>{svc.get("name", "Service")}</li>'
+                services_html += '</ul>'
+        except:
+            pass
+    
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+        </div>
+        
+        <h2 style="color: #333;">New Job Assigned</h2>
+        <p>Hi {mechanic.first_name},</p>
+        <p>You have been assigned a new repair job. Please acknowledge and start when ready.</p>
+        
+        <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #fcd34d;">
+            <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
+            <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
+            <p style="margin: 0 0 10px 0;"><strong>Description:</strong> {order.description or 'See services below'}</p>
+            {f'<p style="margin: 0;"><strong>Services:</strong>{services_html}</p>' if services_html else ''}
+        </div>
+        
+        <p style="margin: 30px 0; text-align: center;">
+            <a href="{settings.FRONTEND_URL}/mechanic" 
+               style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                View in Mechanic Portal
+            </a>
+        </p>
+    </body>
+    </html>
+    """
+    
+    if mechanic.email:
+        await send_email(
+            db=db,
+            tenant_id=str(current_user.tenant_id),
+            to=mechanic.email,
+            subject=f"New Job Assigned: {order.order_number} - Truck Pit Stop",
+            body=html_body,
+            template_name="job_assigned",
+        )
+    
+    return RepairOrderResponse.model_validate(order)
+
+
+# ============ Mechanic Workflow Endpoints ============
+
+@router.post("/{order_id}/acknowledge", response_model=RepairOrderResponse)
+async def acknowledge_job(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Mechanic acknowledges job assignment"""
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id)
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    
+    if order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    
+    if order.status != RepairOrderStatus.ASSIGNED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot acknowledge job in '{order.status.value}' status",
+        )
+    
+    order.status = RepairOrderStatus.ACKNOWLEDGED
+    await db.commit()
+    await db.refresh(order)
+    
+    return RepairOrderResponse.model_validate(order)
+
+
+@router.post("/{order_id}/start-work", response_model=RepairOrderResponse)
+async def start_work(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Mechanic starts work - notifies customer"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    
+    if order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    
+    if order.status not in (RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot start work on job in '{order.status.value}' status",
+        )
+    
+    order.status = RepairOrderStatus.IN_PROGRESS
+    await db.commit()
+    await db.refresh(order)
+    
+    # Notify customer that work has started
     customer = order.customer
-    if not is_reassignment and customer and customer.email:
+    if customer and customer.email:
         vehicle = order.vehicle
         vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "your vehicle"
         
@@ -352,16 +475,15 @@ async def assign_mechanic(
             
             <h2 style="color: #333;">Work Has Started!</h2>
             <p>Hi {customer.first_name},</p>
-            <p>Great news! A mechanic has been assigned to your repair order and work is now in progress.</p>
+            <p>Great news! Work has begun on your vehicle.</p>
             
             <div style="background: #f0fdf4; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #bbf7d0;">
                 <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
                 <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
-                <p style="margin: 0 0 10px 0;"><strong>Mechanic:</strong> {mechanic.first_name} {mechanic.last_name}</p>
                 <p style="margin: 0; font-size: 18px; color: #16a34a;"><strong>Status: In Progress</strong></p>
             </div>
             
-            <p>We'll keep you updated on the progress. You can also check your customer portal for real-time updates.</p>
+            <p>We'll notify you when the work is complete. You can also check your customer portal for updates.</p>
             
             <p style="margin: 30px 0; text-align: center;">
                 <a href="{settings.FRONTEND_URL}/portal" 
@@ -369,9 +491,177 @@ async def assign_mechanic(
                     View in Portal
                 </a>
             </p>
+        </body>
+        </html>
+        """
+        
+        await send_email(
+            db=db,
+            tenant_id=str(order.tenant_id),
+            to=customer.email,
+            subject=f"Work Started on {order.order_number} - Truck Pit Stop",
+            body=html_body,
+            template_name="work_started",
+        )
+    
+    return RepairOrderResponse.model_validate(order)
+
+
+@router.post("/{order_id}/complete-work", response_model=RepairOrderResponse)
+async def complete_work(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Mechanic marks work as complete - notifies manager for review"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    
+    if order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    
+    if order.status != RepairOrderStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot complete job in '{order.status.value}' status",
+        )
+    
+    order.status = RepairOrderStatus.PENDING_REVIEW
+    await db.commit()
+    await db.refresh(order)
+    
+    # Notify managers that work is ready for review
+    # Get all admins for this tenant
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == order.tenant_id,
+                User.role.in_([UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN]),
+                User.is_active == True,
+            )
+        )
+    )
+    managers = result.scalars().all()
+    
+    vehicle = order.vehicle
+    vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "Vehicle"
+    
+    for manager in managers:
+        if manager.email:
+            html_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+                </div>
+                
+                <h2 style="color: #333;">Work Ready for Review</h2>
+                <p>Hi {manager.first_name},</p>
+                <p>{current_user.first_name} {current_user.last_name} has completed work on a repair order and it's ready for your review.</p>
+                
+                <div style="background: #fef3c7; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #fcd34d;">
+                    <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
+                    <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
+                    <p style="margin: 0 0 10px 0;"><strong>Mechanic:</strong> {current_user.first_name} {current_user.last_name}</p>
+                    <p style="margin: 0; font-size: 18px; color: #d97706;"><strong>Status: Pending Review</strong></p>
+                </div>
+                
+                <p style="margin: 30px 0; text-align: center;">
+                    <a href="{settings.FRONTEND_URL}/dashboard/repair-orders" 
+                       style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                        Review in Dashboard
+                    </a>
+                </p>
+            </body>
+            </html>
+            """
+            
+            await send_email(
+                db=db,
+                tenant_id=str(order.tenant_id),
+                to=manager.email,
+                subject=f"Review Needed: {order.order_number} - Truck Pit Stop",
+                body=html_body,
+                template_name="work_pending_review",
+            )
+    
+    return RepairOrderResponse.model_validate(order)
+
+
+@router.post("/{order_id}/approve-completion", response_model=RepairOrderResponse)
+async def approve_completion(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_ADMIN,
+    )),
+):
+    """Manager approves completed work - notifies customer"""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    if order.status != RepairOrderStatus.PENDING_REVIEW:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot approve job in '{order.status.value}' status",
+        )
+    
+    order.status = RepairOrderStatus.COMPLETED
+    await db.commit()
+    await db.refresh(order)
+    
+    # Notify customer that work is complete
+    customer = order.customer
+    if customer and customer.email:
+        vehicle = order.vehicle
+        vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "your vehicle"
+        
+        html_body = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+            </div>
+            
+            <h2 style="color: #16a34a;">Work Complete!</h2>
+            <p>Hi {customer.first_name},</p>
+            <p>Great news! The work on your vehicle has been completed and verified.</p>
+            
+            <div style="background: #f0fdf4; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #bbf7d0;">
+                <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
+                <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
+                <p style="margin: 0; font-size: 18px; color: #16a34a;"><strong>Status: Completed ✓</strong></p>
+            </div>
+            
+            <p>You can pick up your vehicle or view the invoice in your customer portal.</p>
+            
+            <p style="margin: 30px 0; text-align: center;">
+                <a href="{settings.FRONTEND_URL}/portal" 
+                   style="background-color: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                    View in Portal
+                </a>
+            </p>
             
             <p style="color: #666; font-size: 14px;">
-                If you have any questions, please contact us directly.
+                Thank you for choosing Truck Pit Stop!
             </p>
         </body>
         </html>
@@ -379,11 +669,11 @@ async def assign_mechanic(
         
         await send_email(
             db=db,
-            tenant_id=str(current_user.tenant_id),
+            tenant_id=str(order.tenant_id),
             to=customer.email,
-            subject=f"Work Started on {order.order_number} - Truck Pit Stop",
+            subject=f"Work Complete: {order.order_number} - Truck Pit Stop",
             body=html_body,
-            template_name="work_started",
+            template_name="work_complete",
         )
     
     return RepairOrderResponse.model_validate(order)

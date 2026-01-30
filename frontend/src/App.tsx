@@ -8,12 +8,21 @@ import ResetPasswordPage from './features/auth/ResetPasswordPage'
 import DashboardLayout from './components/layout/DashboardLayout'
 import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
 import QuoteApprovalPage from './features/quote-approval/QuoteApprovalPage'
+import MechanicPortalPage from './features/mechanic-portal/MechanicPortalPage'
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore()
+function StaffRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
+  }
+  
+  // Redirect customers and mechanics to their portals
+  if (user?.role === 'customer') {
+    return <Navigate to="/portal" replace />
+  }
+  if (user?.role === 'mechanic') {
+    return <Navigate to="/mechanic" replace />
   }
   
   return <>{children}</>
@@ -27,6 +36,20 @@ function CustomerRoute({ children }: { children: React.ReactNode }) {
   }
   
   if (user?.role !== 'customer') {
+    return <Navigate to="/dashboard" replace />
+  }
+  
+  return <>{children}</>
+}
+
+function MechanicRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+  
+  if (user?.role !== 'mechanic') {
     return <Navigate to="/dashboard" replace />
   }
   
@@ -70,9 +93,9 @@ function App() {
         <Route
           path="/dashboard/*"
           element={
-            <PrivateRoute>
+            <StaffRoute>
               <DashboardLayout />
-            </PrivateRoute>
+            </StaffRoute>
           }
         />
         
@@ -82,6 +105,15 @@ function App() {
             <CustomerRoute>
               <CustomerPortalPage />
             </CustomerRoute>
+          }
+        />
+        
+        <Route
+          path="/mechanic/*"
+          element={
+            <MechanicRoute>
+              <MechanicPortalPage />
+            </MechanicRoute>
           }
         />
         
