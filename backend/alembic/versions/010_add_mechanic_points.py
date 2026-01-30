@@ -38,7 +38,8 @@ def upgrade() -> None:
             notes TEXT,
             redemption_value NUMERIC(10, 2),
             created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            deleted_at TIMESTAMP WITH TIME ZONE
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_mechanic_points_tenant_id ON mechanic_points(tenant_id)")
@@ -57,7 +58,8 @@ def upgrade() -> None:
             current_streak_days INTEGER NOT NULL DEFAULT 0,
             last_work_date TIMESTAMP WITH TIME ZONE,
             created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            deleted_at TIMESTAMP WITH TIME ZONE
         )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_mechanic_points_balance_tenant_id ON mechanic_points_balance(tenant_id)")
