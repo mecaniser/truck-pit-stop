@@ -98,10 +98,10 @@ const STATUS_LABELS: Record<string, string> = {
 
 type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request'
 
-// Responsive container - max 480px on larger screens, centered
+// Responsive container - full width on mobile, max 512px on larger screens, centered
 const Container = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
   <div className={`min-h-screen bg-gray-900 ${className}`}>
-    <div className="max-w-lg mx-auto bg-gray-900 min-h-screen relative shadow-2xl shadow-black/50">
+    <div className="w-full sm:max-w-lg sm:mx-auto bg-gray-900 min-h-screen relative sm:shadow-2xl sm:shadow-black/50">
       {children}
     </div>
   </div>
