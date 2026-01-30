@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, Calendar, DollarSign, Check, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import ViewToggle from '@/components/ViewToggle'
 import SearchAddBar from '@/components/SearchAddBar'
@@ -43,7 +43,14 @@ const mechanicSchema = z.object({
 })
 
 type MechanicFormData = z.infer<typeof mechanicSchema>
-type MechanicWithCounts = User & { assigned_count?: number; in_progress_count?: number }
+type MechanicWithCounts = User & { 
+  assigned_count?: number
+  in_progress_count?: number
+  available_points?: number
+  total_earned?: number
+  streak_days?: number
+  pending_requests?: number
+}
 
 const formatStatus = (status?: RepairOrderStatus | string | null) =>
   status ? status.replace(/_/g, ' ') : ''
@@ -70,6 +77,41 @@ export default function MechanicsPage() {
     queryFn: async () => {
       const response = await api.get('/mechanics')
       return response.data
+    },
+  })
+
+  // Pending PTO requests
+  interface PTORequestItem {
+    id: string
+    mechanic_id: string
+    mechanic_name: string
+    request_type: string
+    status: string
+    pto_start_date: string | null
+    pto_end_date: string | null
+    pto_days: number | null
+    points_requested: number
+    cash_value: number | null
+    mechanic_notes: string | null
+    created_at: string
+  }
+
+  const { data: pendingRequests } = useQuery<PTORequestItem[]>({
+    queryKey: ['pending-pto-requests'],
+    queryFn: async () => {
+      const response = await api.get('/mechanics/pto-requests/pending')
+      return response.data
+    },
+  })
+
+  const processRequestMutation = useMutation({
+    mutationFn: async ({ requestId, action, notes }: { requestId: string; action: string; notes?: string }) => {
+      const response = await api.post(`/mechanics/pto-requests/${requestId}/process`, { action, manager_notes: notes })
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-pto-requests'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-users'] })
     },
   })
 
@@ -284,6 +326,65 @@ export default function MechanicsPage() {
         </div>
       ) : (
         <>
+      {/* Pending Requests Section */}
+      {pendingRequests && pendingRequests.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-4">
+          <h3 className="text-amber-300 font-semibold mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+            Pending Requests ({pendingRequests.length})
+          </h3>
+          <div className="space-y-3">
+            {pendingRequests.map((req) => (
+              <div key={req.id} className="bg-white/5 rounded-lg p-3 flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    {req.request_type === 'pto' ? (
+                      <Calendar className="w-4 h-4 text-blue-400 shrink-0" />
+                    ) : (
+                      <DollarSign className="w-4 h-4 text-green-400 shrink-0" />
+                    )}
+                    <span className="text-white font-medium truncate">{req.mechanic_name}</span>
+                  </div>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {req.request_type === 'pto' 
+                      ? `${req.pto_days} day${req.pto_days !== 1 ? 's' : ''} PTO: ${new Date(req.pto_start_date!).toLocaleDateString()} - ${new Date(req.pto_end_date!).toLocaleDateString()}`
+                      : `Cash out: $${req.cash_value?.toFixed(2)}`
+                    }
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {req.points_requested.toLocaleString()} points • {new Date(req.created_at).toLocaleDateString()}
+                  </p>
+                  {req.mechanic_notes && (
+                    <p className="text-xs text-gray-400 italic mt-1">"{req.mechanic_notes}"</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => processRequestMutation.mutate({ requestId: req.id, action: 'approve' })}
+                    disabled={processRequestMutation.isPending}
+                    className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-colors"
+                    title="Approve"
+                  >
+                    <Check className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const notes = prompt('Reason for denial (optional):')
+                      processRequestMutation.mutate({ requestId: req.id, action: 'deny', notes: notes || undefined })
+                    }}
+                    disabled={processRequestMutation.isPending}
+                    className="p-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors"
+                    title="Deny"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <SearchAddBar
         value={search}
         onChange={setSearch}
@@ -423,10 +524,36 @@ export default function MechanicsPage() {
                         <h3 className="text-lg font-semibold text-white">{mechanic.first_name} {mechanic.last_name}</h3>
                         <p className="text-xs text-gray-400">{mechanic.phone || 'No phone'}</p>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusBadge(mechanic.is_active)}`}>
-                        {mechanic.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusBadge(mechanic.is_active)}`}>
+                          {mechanic.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        {(mechanic.pending_requests || 0) > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            {mechanic.pending_requests} request{mechanic.pending_requests !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                    
+                    {/* Points Display */}
+                    <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-400">⭐</span>
+                        <span className="text-sm text-gray-300">Points</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-lg font-bold text-amber-400">{(mechanic.available_points || 0).toLocaleString()}</span>
+                        <span className="text-xs text-gray-500 ml-1">available</span>
+                      </div>
+                    </div>
+                    {(mechanic.streak_days || 0) > 0 && (
+                      <div className="flex items-center gap-1 text-xs text-orange-400">
+                        <span>🔥</span>
+                        <span>{mechanic.streak_days} day streak</span>
+                      </div>
+                    )}
+                    
                     <div className="text-sm text-gray-200">In progress: {inProgress}/{assigned || '—'}</div>
                     <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                       <div className="h-full bg-amber-500" style={{ width: `${load}%` }} />

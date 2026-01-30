@@ -12,6 +12,8 @@ from app.db.models.payment import Payment
 from app.db.models.notification import Notification
 from app.db.models.service import ServiceCategory, Service
 from app.db.models.appointment import Appointment, AppointmentStatus
+from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
+from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
 
 __all__ = [
     "Tenant",
@@ -30,6 +32,12 @@ __all__ = [
     "Service",
     "Appointment",
     "AppointmentStatus",
+    "MechanicPoints",
+    "MechanicPointsBalance",
+    "PointsTransactionType",
+    "PTORequest",
+    "PTORequestStatus",
+    "PTORequestType",
 ]
 
 

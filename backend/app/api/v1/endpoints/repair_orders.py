@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
@@ -14,6 +15,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.quote import Quote
+from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.services.email_service import send_email
 from app.core.config import settings
 from app.schemas.repair_order import (
@@ -513,7 +515,7 @@ async def complete_work(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
-    """Mechanic marks work as complete - notifies manager for review"""
+    """Mechanic marks work as complete - awards points and notifies manager"""
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id)
@@ -534,11 +536,88 @@ async def complete_work(
         )
     
     order.status = RepairOrderStatus.PENDING_REVIEW
+    
+    # ============ AWARD POINTS ============
+    # Points = labor cost (1 point per $1 of labor)
+    labor_value = float(order.total_labor_cost or 0)
+    
+    # Get or create balance record
+    result = await db.execute(
+        select(MechanicPointsBalance).where(
+            MechanicPointsBalance.mechanic_id == current_user.id
+        )
+    )
+    balance = result.scalar_one_or_none()
+    
+    if not balance:
+        balance = MechanicPointsBalance(
+            tenant_id=current_user.tenant_id,
+            mechanic_id=current_user.id,
+            available_points=0,
+            total_earned=0,
+            total_redeemed=0,
+            current_streak_days=0,
+        )
+        db.add(balance)
+    
+    # Calculate streak multiplier
+    today = date.today()
+    multiplier = Decimal("1.00")
+    
+    if balance.last_work_date:
+        last_work = balance.last_work_date.date() if hasattr(balance.last_work_date, 'date') else balance.last_work_date
+        days_since = (today - last_work).days
+        
+        if days_since == 0:
+            # Same day, keep streak
+            pass
+        elif days_since == 1:
+            # Consecutive day, increment streak
+            balance.current_streak_days += 1
+        else:
+            # Streak broken
+            balance.current_streak_days = 1
+    else:
+        balance.current_streak_days = 1
+    
+    balance.last_work_date = today
+    
+    # Apply streak bonus
+    if balance.current_streak_days >= 10:
+        multiplier = Decimal("1.25")  # 25% bonus after 10 days
+    elif balance.current_streak_days >= 5:
+        multiplier = Decimal("1.10")  # 10% bonus after 5 days
+    
+    # Calculate final points
+    base_points = int(labor_value)  # 1 point per $1 labor
+    final_points = int(base_points * float(multiplier))
+    
+    # Minimum 10 points per job (even if no labor recorded yet)
+    if final_points < 10:
+        final_points = 10
+        labor_value = 10.0
+    
+    # Create points transaction
+    points_tx = MechanicPoints(
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+        transaction_type=PointsTransactionType.EARNED,
+        points=final_points,
+        repair_order_id=order.id,
+        labor_value=Decimal(str(labor_value)),
+        multiplier=multiplier,
+        notes=f"Completed {order.order_number}" + (f" (streak x{multiplier})" if multiplier > 1 else ""),
+    )
+    db.add(points_tx)
+    
+    # Update balance
+    balance.available_points += final_points
+    balance.total_earned += final_points
+    
     await db.commit()
     await db.refresh(order)
     
     # Notify managers that work is ready for review
-    # Get all admins for this tenant
     result = await db.execute(
         select(User).where(
             and_(
