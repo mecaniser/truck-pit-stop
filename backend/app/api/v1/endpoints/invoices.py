@@ -179,6 +179,7 @@ async def create_invoice(
 @router.get("", response_model=List[InvoiceResponse])
 async def list_invoices(
     status_filter: Optional[str] = Query(None),
+    repair_order_id: Optional[UUID] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -193,6 +194,8 @@ async def list_invoices(
         query = query.where(Invoice.tenant_id == current_user.tenant_id)
     if status_filter:
         query = query.where(Invoice.status == status_filter)
+    if repair_order_id:
+        query = query.where(Invoice.repair_order_id == repair_order_id)
     query = query.order_by(Invoice.created_at.desc())
     result = await db.execute(query)
     invoices = result.scalars().all()

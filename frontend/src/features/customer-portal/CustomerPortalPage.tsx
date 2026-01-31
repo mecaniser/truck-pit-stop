@@ -1,15 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, Vehicle, RepairOrder, Quote } from '../../types'
+import { Customer, Vehicle, RepairOrder, Quote, Invoice } from '../../types'
 import { format } from 'date-fns'
 import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
-import { CheckCircle, ClipboardList, Truck, Wrench } from 'lucide-react'
+import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft } from 'lucide-react'
+import { loadStripe } from '@stripe/stripe-js'
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
+import toast from 'react-hot-toast'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -209,9 +212,11 @@ function CustomerDashboard() {
           {repairOrders && repairOrders.length > 0 ? (
             <div className="space-y-2 sm:space-y-3">
               {repairOrders.slice(0, 5).map((order) => (
-                <div
+                <Link
                   key={order.id}
-                  className="bg-white/5 rounded-lg p-2.5 sm:p-3 border border-white/5 hover:bg-white/10 active:bg-white/15 transition-colors"
+                  to="/portal/repairs"
+                  state={{ selectedOrderId: order.id }}
+                  className="block bg-white/5 rounded-lg p-2.5 sm:p-3 border border-white/5 hover:bg-white/10 active:bg-white/15 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -220,6 +225,11 @@ function CustomerDashboard() {
                         <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
                           {order.status.replace('_', ' ')}
                         </span>
+                        {order.status === 'invoiced' && (
+                          <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-green-500 text-white">
+                            Pay Now
+                          </span>
+                        )}
                       </div>
                       {order.description && (
                         <p className="text-gray-400 text-xs sm:text-sm truncate mt-1">{order.description}</p>
@@ -234,7 +244,7 @@ function CustomerDashboard() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           ) : (
@@ -315,14 +325,133 @@ function CustomerVehicles() {
   )
 }
 
+// Stripe promise - loaded once
+let stripePromise: ReturnType<typeof loadStripe> | null = null
+const getStripe = async () => {
+  if (!stripePromise) {
+    const { data } = await api.get('/payments/config')
+    stripePromise = loadStripe(data.publishable_key)
+  }
+  return stripePromise
+}
+
+// Payment form component
+function PaymentForm({ 
+  invoiceId, 
+  onSuccess 
+}: { 
+  invoiceId: string
+  onSuccess: () => void 
+}) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!stripe || !elements) return
+
+    setIsProcessing(true)
+    setError(null)
+
+    const { error: submitError, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: 'if_required',
+    })
+
+    if (submitError) {
+      setError(submitError.message || 'Payment failed')
+      setIsProcessing(false)
+      return
+    }
+
+    if (paymentIntent && paymentIntent.status === 'succeeded') {
+      // Confirm payment on backend
+      try {
+        await api.post('/payments/confirm-payment', {
+          invoice_id: invoiceId,
+          payment_intent_id: paymentIntent.id,
+        })
+        toast.success('Payment successful!')
+        onSuccess()
+      } catch {
+        setError('Payment confirmed but failed to update records. Please contact support.')
+      }
+    }
+    setIsProcessing(false)
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      {error && (
+        <div className="text-red-400 text-sm bg-red-500/10 p-3 rounded-lg">{error}</div>
+      )}
+      <button
+        type="submit"
+        disabled={!stripe || isProcessing}
+        className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+      >
+        {isProcessing ? (
+          <>
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            Processing...
+          </>
+        ) : (
+          <>
+            <CreditCard className="w-5 h-5" />
+            Pay Now
+          </>
+        )}
+      </button>
+    </form>
+  )
+}
+
 function CustomerRepairs() {
   const queryClient = useQueryClient()
+  const location = useLocation()
+  const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
+  const [showPayment, setShowPayment] = useState(false)
+  const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string } | null>(null)
+  const [stripeInstance, setStripeInstance] = useState<Awaited<ReturnType<typeof loadStripe>> | null>(null)
+  
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
     queryFn: async () => {
       const response = await api.get('/repair-orders')
       return response.data
     },
+  })
+
+  // Handle navigation state to auto-select an order
+  useEffect(() => {
+    const state = location.state as { selectedOrderId?: string } | null
+    if (state?.selectedOrderId && orders) {
+      const order = orders.find(o => o.id === state.selectedOrderId)
+      if (order) {
+        setSelectedOrder(order)
+        // Clear the state to prevent re-selection on refresh
+        window.history.replaceState({}, document.title)
+      }
+    }
+  }, [location.state, orders])
+
+  // Fetch invoice for selected order if it's invoiced
+  const { data: invoice } = useQuery<Invoice | null>({
+    queryKey: ['invoice', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get('/invoices', {
+        params: { repair_order_id: selectedOrder?.id }
+      })
+      const invoices = response.data as Invoice[]
+      return invoices[0] || null
+    },
+    enabled: !!selectedOrder && ['invoiced', 'paid'].includes(selectedOrder.status),
   })
 
   const quotedOrders = orders?.filter((o) => o.status === 'quoted') ?? []
@@ -348,6 +477,34 @@ function CustomerRepairs() {
     },
   })
 
+  const handlePayClick = async () => {
+    if (!invoice) return
+    try {
+      const stripe = await getStripe()
+      setStripeInstance(stripe)
+      
+      const { data } = await api.post('/payments/create-payment-intent', {
+        invoice_id: invoice.id,
+      })
+      setStripeOptions({ clientSecret: data.client_secret })
+      setShowPayment(true)
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } } }
+      toast.error(error.response?.data?.detail || 'Failed to initialize payment')
+    }
+  }
+
+  const handlePaymentSuccess = () => {
+    setShowPayment(false)
+    setStripeOptions(null)
+    queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+    queryClient.invalidateQueries({ queryKey: ['invoice'] })
+    // Update local state
+    if (selectedOrder) {
+      setSelectedOrder({ ...selectedOrder, status: 'paid' })
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -356,6 +513,150 @@ function CustomerRepairs() {
     )
   }
 
+  // Detail view for selected order
+  if (selectedOrder) {
+    const services = (() => {
+      try {
+        const notes = JSON.parse(selectedOrder.internal_notes || '{}')
+        return notes?.selected_services || []
+      } catch {
+        return []
+      }
+    })()
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => {
+              setSelectedOrder(null)
+              setShowPayment(false)
+              setStripeOptions(null)
+            }}
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-gray-400" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-white">{selectedOrder.order_number}</h1>
+            <p className="text-gray-400">
+              {format(new Date(selectedOrder.created_at), 'MMMM d, yyyy')}
+            </p>
+          </div>
+          <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium ${STATUS_BADGE_COLORS[selectedOrder.status] || 'bg-gray-100 text-gray-700'}`}>
+            {selectedOrder.status.replace('_', ' ')}
+          </span>
+        </div>
+
+        {/* Order Details */}
+        <div className="bg-white/5 rounded-xl border border-white/10 p-4 sm:p-6">
+          {selectedOrder.description && (
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-400 mb-1">Description</h3>
+              <p className="text-white">{selectedOrder.description}</p>
+            </div>
+          )}
+
+          {services.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-400 mb-2">Services</h3>
+              <div className="space-y-2">
+                {services.map((svc: { id: string; name: string; base_price?: string }, idx: number) => (
+                  <div key={svc.id || idx} className="flex justify-between items-center bg-white/5 p-3 rounded-lg">
+                    <span className="text-white">{svc.name}</span>
+                    {svc.base_price && (
+                      <span className="text-gray-400">${parseFloat(svc.base_price).toFixed(2)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="border-t border-white/10 pt-4 mt-4">
+            <div className="flex justify-between items-center text-lg">
+              <span className="font-medium text-white">Total</span>
+              <span className="font-bold text-white">${getOrderTotal(selectedOrder).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Invoice & Payment Section */}
+        {selectedOrder.status === 'invoiced' && invoice && (
+          <div className="bg-purple-500/10 rounded-xl border border-purple-500/30 p-4 sm:p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <FileText className="w-6 h-6 text-purple-400" />
+              <div>
+                <h3 className="font-semibold text-white">Invoice {invoice.invoice_number}</h3>
+                <p className="text-sm text-gray-400">Ready for payment</p>
+              </div>
+            </div>
+
+            <div className="bg-white/5 rounded-lg p-4 mb-4">
+              <div className="flex justify-between mb-2">
+                <span className="text-gray-400">Subtotal</span>
+                <span className="text-white">${parseFloat(invoice.subtotal).toFixed(2)}</span>
+              </div>
+              {parseFloat(invoice.tax_amount) > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Tax</span>
+                  <span className="text-white">${parseFloat(invoice.tax_amount).toFixed(2)}</span>
+                </div>
+              )}
+              {parseFloat(invoice.discount_amount) > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Discount</span>
+                  <span className="text-green-400">-${parseFloat(invoice.discount_amount).toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-2 border-t border-white/10">
+                <span className="font-semibold text-white">Total Due</span>
+                <span className="font-bold text-xl text-white">${parseFloat(invoice.total_amount).toFixed(2)}</span>
+              </div>
+            </div>
+
+            {!showPayment ? (
+              <button
+                onClick={handlePayClick}
+                className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+              >
+                <CreditCard className="w-5 h-5" />
+                Pay Now
+              </button>
+            ) : stripeOptions && stripeInstance ? (
+              <Elements stripe={stripeInstance} options={stripeOptions}>
+                <PaymentForm invoiceId={invoice.id} onSuccess={handlePaymentSuccess} />
+              </Elements>
+            ) : (
+              <div className="flex items-center justify-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Paid confirmation */}
+        {selectedOrder.status === 'paid' && (
+          <div className="bg-green-500/10 rounded-xl border border-green-500/30 p-4 sm:p-6">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-8 h-8 text-green-400" />
+              <div>
+                <h3 className="font-semibold text-white">Payment Complete</h3>
+                <p className="text-sm text-gray-400">
+                  Thank you for your payment{invoice?.paid_at ? ` on ${format(new Date(invoice.paid_at), 'MMM d, yyyy')}` : ''}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // List view
+  const invoicedOrders = orders?.filter((o) => o.status === 'invoiced') ?? []
+
   return (
     <div className="space-y-6">
       <div>
@@ -363,6 +664,37 @@ function CustomerRepairs() {
         <p className="text-gray-400 mt-1">Track all your past and current repairs</p>
       </div>
 
+      {/* Invoices awaiting payment - prominent */}
+      {invoicedOrders.length > 0 && (
+        <div className="bg-purple-500/10 rounded-xl border border-purple-500/30 p-4 sm:p-6">
+          <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-purple-400" />
+            Invoices Ready for Payment
+          </h2>
+          <div className="space-y-3">
+            {invoicedOrders.map((order) => (
+              <button
+                key={order.id}
+                onClick={() => setSelectedOrder(order)}
+                className="w-full bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3"
+              >
+                <div>
+                  <span className="font-medium text-white">{order.order_number}</span>
+                  <span className="text-gray-400 ml-2">— {order.description || 'Repair'}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-white">${getOrderTotal(order).toFixed(2)}</span>
+                  <span className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg">
+                    Pay Now
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Quotes pending approval */}
       {quotedOrders.length > 0 && (
         <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-white mb-3">Quotes pending your approval</h2>
@@ -402,11 +734,16 @@ function CustomerRepairs() {
         </div>
       )}
 
+      {/* All orders list */}
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {orders && orders.length > 0 ? (
           <div className="divide-y divide-white/5">
             {orders.map((order) => (
-              <div key={order.id} className="p-3 sm:p-6 hover:bg-white/5 active:bg-white/10 transition-colors">
+              <button
+                key={order.id}
+                onClick={() => setSelectedOrder(order)}
+                className="w-full p-3 sm:p-6 hover:bg-white/5 active:bg-white/10 transition-colors text-left"
+              >
                 <div className="flex items-start justify-between gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -429,7 +766,7 @@ function CustomerRepairs() {
                     <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Total</div>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : (

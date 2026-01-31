@@ -212,3 +212,28 @@ export interface Supplier {
   created_at?: string
   updated_at?: string
 }
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled'
+
+export interface Invoice {
+  id: string
+  tenant_id: string
+  repair_order_id: string
+  invoice_number: string
+  status: InvoiceStatus
+  subtotal: string
+  tax_amount: string
+  discount_amount: string
+  total_amount: string
+  due_date: string | null
+  paid_at: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InvoiceDetail extends Invoice {
+  order_number: string
+  customer_name: string
+  vehicle_info: string
+}
