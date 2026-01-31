@@ -70,6 +70,9 @@ export default function RepairOrdersPage() {
   const [isEditingLaborRate, setIsEditingLaborRate] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showResendInvoice, setShowResendInvoice] = useState(false)
+  const [resendCustomEmail, setResendCustomEmail] = useState('')
+  const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -161,6 +164,16 @@ export default function RepairOrdersPage() {
       return response.data
     },
     enabled: !!(selectedOrder?.id && isDetailOpen),
+  })
+
+  const { data: invoiceForOrder } = useQuery<{ id: string; invoice_number: string; total_amount: string } | null>({
+    queryKey: ['invoice-for-order', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`)
+      const invoices = response.data
+      return invoices.length > 0 ? invoices[0] : null
+    },
+    enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
   })
 
   const filteredVehicles = useMemo(() => {
@@ -341,6 +354,38 @@ export default function RepairOrdersPage() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to create invoice')
+    },
+  })
+
+  const resendInvoiceMutation = useMutation({
+    mutationFn: async ({ invoiceId, customEmail }: { invoiceId: string; customEmail?: string }) => {
+      const response = await api.post(`/invoices/${invoiceId}/resend`, { 
+        custom_email: customEmail || null 
+      })
+      return response.data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Invoice resent successfully')
+      setShowResendInvoice(false)
+      setResendCustomEmail('')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to resend invoice')
+    },
+  })
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      await api.delete(`/invoices/${invoiceId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-for-order'] })
+      setSelectedOrder(prev => prev ? { ...prev, status: 'completed' } : null)
+      toast.success('Invoice deleted. You can now recreate it.')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to delete invoice')
     },
   })
 
@@ -1822,6 +1867,121 @@ export default function RepairOrdersPage() {
                   </div>
                 )}
 
+                {/* Invoice section for invoiced orders */}
+                {selectedOrder.status === 'invoiced' && invoiceForOrder && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-purple-900">Invoice {invoiceForOrder.invoice_number}</p>
+                        <p className="text-sm text-purple-700">
+                          Total: ${parseFloat(invoiceForOrder.total_amount).toFixed(2)} — Awaiting payment
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {!showResendInvoice ? (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowResendInvoice(true)}
+                          className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          Resend Invoice
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowDeleteInvoiceConfirm(true)}
+                          disabled={deleteInvoiceMutation.isPending}
+                          className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-colors"
+                          title="Delete invoice"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-purple-800 mb-1">
+                            Send to different email (optional)
+                          </label>
+                          <input
+                            type="email"
+                            value={resendCustomEmail}
+                            onChange={(e) => setResendCustomEmail(e.target.value)}
+                            placeholder={customerLookup.get(selectedOrder.customer_id)?.email || 'customer@email.com'}
+                            className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                          />
+                          <p className="text-xs text-purple-600 mt-1">
+                            Leave empty to send to customer's default email
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowResendInvoice(false)
+                              setResendCustomEmail('')
+                            }}
+                            className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => resendInvoiceMutation.mutate({
+                              invoiceId: invoiceForOrder.id,
+                              customEmail: resendCustomEmail || undefined,
+                            })}
+                            disabled={resendInvoiceMutation.isPending}
+                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            {resendInvoiceMutation.isPending ? (
+                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                              </svg>
+                            )}
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Paid confirmation for paid orders */}
+                {selectedOrder.status === 'paid' && invoiceForOrder && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-green-900">Payment Complete</p>
+                        <p className="text-sm text-green-700">
+                          Invoice {invoiceForOrder.invoice_number} — ${parseFloat(invoiceForOrder.total_amount).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <button
                     type="button"
@@ -2140,6 +2300,66 @@ export default function RepairOrdersPage() {
                     </svg>
                   )}
                   Delete permanently
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Invoice Confirmation Modal */}
+      {showDeleteInvoiceConfirm && invoiceForOrder && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowDeleteInvoiceConfirm(false)}
+            />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="p-3 rounded-full bg-amber-100">
+                  <Trash2 className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Invoice</h3>
+                  <p className="text-sm text-gray-500">#{invoiceForOrder.invoice_number}</p>
+                </div>
+              </div>
+              
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to delete this invoice?
+              </p>
+              
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6">
+                <p className="text-sm text-amber-800">
+                  The repair order will return to <strong>"completed"</strong> status and you can create a new invoice.
+                </p>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteInvoiceConfirm(false)}
+                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleteInvoiceMutation.isPending}
+                  onClick={() => {
+                    deleteInvoiceMutation.mutate(invoiceForOrder.id)
+                    setShowDeleteInvoiceConfirm(false)
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {deleteInvoiceMutation.isPending && (
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  Delete Invoice
                 </button>
               </div>
             </div>

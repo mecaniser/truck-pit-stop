@@ -417,7 +417,7 @@ function CustomerRepairs() {
   const location = useLocation()
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [showPayment, setShowPayment] = useState(false)
-  const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string } | null>(null)
+  const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
   const [stripeInstance, setStripeInstance] = useState<Awaited<ReturnType<typeof loadStripe>> | null>(null)
   
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
@@ -486,7 +486,35 @@ function CustomerRepairs() {
       const { data } = await api.post('/payments/create-payment-intent', {
         invoice_id: invoice.id,
       })
-      setStripeOptions({ clientSecret: data.client_secret })
+      setStripeOptions({ 
+        clientSecret: data.client_secret,
+        appearance: {
+          theme: 'night',
+          variables: {
+            colorPrimary: '#22c55e',
+            colorBackground: '#1e293b',
+            colorText: '#f1f5f9',
+            colorTextSecondary: '#94a3b8',
+            colorDanger: '#ef4444',
+            fontFamily: 'system-ui, sans-serif',
+            borderRadius: '8px',
+          },
+          rules: {
+            '.Input': {
+              backgroundColor: '#334155',
+              border: '1px solid #475569',
+              color: '#f1f5f9',
+            },
+            '.Input:focus': {
+              border: '1px solid #22c55e',
+              boxShadow: '0 0 0 1px #22c55e',
+            },
+            '.Label': {
+              color: '#e2e8f0',
+            },
+          },
+        },
+      })
       setShowPayment(true)
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } } }
@@ -676,17 +704,22 @@ function CustomerRepairs() {
               <button
                 key={order.id}
                 onClick={() => setSelectedOrder(order)}
-                className="w-full bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:bg-white/10 transition-colors text-left flex items-center justify-between gap-3"
+                className="w-full bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:bg-white/10 transition-colors text-left"
               >
-                <div>
-                  <span className="font-medium text-white">{order.order_number}</span>
-                  <span className="text-gray-400 ml-2">— {order.description || 'Repair'}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-white">${getOrderTotal(order).toFixed(2)}</span>
-                  <span className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg">
-                    Pay Now
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+                  <div className="min-w-0">
+                    <span className="font-medium text-white">{order.order_number}</span>
+                    <span className="text-gray-400 ml-2 hidden sm:inline">— {order.description || 'Repair'}</span>
+                    {order.description && (
+                      <p className="text-gray-400 text-sm truncate sm:hidden">{order.description}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between sm:justify-end gap-3">
+                    <span className="font-bold text-white text-lg">${getOrderTotal(order).toFixed(2)}</span>
+                    <span className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg whitespace-nowrap">
+                      Pay Now
+                    </span>
+                  </div>
                 </div>
               </button>
             ))}

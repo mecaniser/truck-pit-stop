@@ -230,6 +230,13 @@ async def create_payment_intent_for_invoice(
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
     
+    # Stripe minimum is $0.50 USD
+    if invoice.total_amount < Decimal("0.50"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice amount is below the minimum charge amount ($0.50)",
+        )
+    
     # Get customer for Stripe customer ID
     result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
     customer = result.scalar_one_or_none()
