@@ -8,11 +8,14 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.config import settings
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.services.email_service import send_email
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -81,7 +84,9 @@ async def create_invoice(
             detail="User must be associated with a tenant",
         )
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == body.repair_order_id)
+        select(RepairOrder)
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .where(RepairOrder.id == body.repair_order_id)
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -128,6 +133,46 @@ async def create_invoice(
     order.status = RepairOrderStatus.INVOICED
     await db.commit()
     await db.refresh(invoice)
+    
+    # Send invoice email to customer
+    customer = order.customer
+    vehicle = order.vehicle
+    if customer and customer.email:
+        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+        portal_url = f"{settings.FRONTEND_URL}/portal"
+        
+        email_html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #1f2937;">Invoice Ready for Payment</h2>
+            <p>Hi {customer.first_name},</p>
+            <p>Your invoice for the repair work on your <strong>{vehicle_info}</strong> is ready.</p>
+            
+            <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <p style="margin: 0 0 10px 0;"><strong>Invoice #:</strong> {invoice.invoice_number}</p>
+                <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
+                <p style="margin: 0; font-size: 24px; color: #1f2937;"><strong>Total: ${invoice.total_amount:.2f}</strong></p>
+            </div>
+            
+            <p>You can view and pay your invoice through your customer portal:</p>
+            
+            <a href="{portal_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">
+                View Invoice & Pay
+            </a>
+            
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                If you have any questions about your invoice, please contact us.
+            </p>
+            
+            <p>Thank you for your business!</p>
+        </div>
+        """
+        
+        await send_email(
+            to_email=customer.email,
+            subject=f"Invoice {invoice.invoice_number} - Payment Ready",
+            html_content=email_html,
+        )
+    
     return InvoiceResponse.model_validate(invoice)
 
 

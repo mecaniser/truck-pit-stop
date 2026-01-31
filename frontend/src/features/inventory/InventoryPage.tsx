@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier } from '../../types'
 import { ArrowRight, Plus } from 'lucide-react'
@@ -13,6 +14,7 @@ import { formatUSPhone } from '../../utils/phone'
 import { useViewPreference } from '@/hooks/useViewPreference'
 
 export default function InventoryPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'all' | 'sku' | 'name' | 'category'>('all')
   const [showLowStock, setShowLowStock] = useState(false)
@@ -68,6 +70,19 @@ export default function InventoryPage() {
       return response.data
     },
   })
+
+  // Handle ?selected= query param to auto-open an inventory item
+  useEffect(() => {
+    const selectedId = searchParams.get('selected')
+    if (selectedId && inventory) {
+      const item = inventory.find(i => i.id === selectedId)
+      if (item) {
+        setSelectedItem(item)
+        // Clear the query param after opening
+        setSearchParams({}, { replace: true })
+      }
+    }
+  }, [searchParams, inventory, setSearchParams])
 
   const filteredInventory = useMemo(() => {
     if (!inventory) return inventory
@@ -462,7 +477,7 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Mobile: Stock sort only */}
+      {/* Mobile: Sort + Low stock filter */}
       <div className="flex items-center gap-2 mb-3 lg:hidden">
         <span className="text-xs text-gray-400 font-medium">Sort:</span>
         <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
@@ -491,8 +506,25 @@ export default function InventoryPage() {
             Stock ↓
           </button>
         </div>
+        <button
+          onClick={() => setShowLowStock(!showLowStock)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap border ${
+            showLowStock
+              ? 'bg-red-500/20 text-red-300 border-red-500/40'
+              : 'bg-white/10 text-white border-white/15'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${showLowStock ? 'bg-red-400' : 'bg-yellow-400'}`} />
+          Low stock
+          {showLowStock && inventory && (
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/30 text-red-200">
+              {inventory.filter((item) => item.stock_quantity <= item.reorder_level).length}
+            </span>
+          )}
+        </button>
       </div>
 
+      {/* Mobile/Tablet: Always cards */}
       <div className="space-y-2 lg:hidden">
         {filteredInventory?.map((item) => {
           const stockStatus = getStockStatus(item)

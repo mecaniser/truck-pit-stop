@@ -14,7 +14,7 @@ import {
   UserPlus,
   Wrench,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -97,6 +97,7 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
 
 export default function DashboardHome() {
   const { user } = useAuthStore()
+  const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -107,6 +108,7 @@ export default function DashboardHome() {
   useEffect(() => {
     fetchStats()
   }, [])
+
 
   const fetchStats = async () => {
     try {
@@ -213,7 +215,7 @@ export default function DashboardHome() {
               value={stats?.low_stock_count || 0}
               icon={<Boxes className="w-6 h-6 text-red-200" />}
               color={stats?.low_stock_count ? 'red' : 'gray'}
-              linkTo="/dashboard/inventory"
+              linkTo="/dashboard/garage/inventory"
             />
           </>
         )}
@@ -243,7 +245,7 @@ export default function DashboardHome() {
               color="cyan"
             />
             <QuickActionButton
-              to="/dashboard/inventory"
+              to="/dashboard/garage/inventory"
               icon={<Boxes className="w-6 h-6" />}
               label="Manage Inventory"
               color="purple"
@@ -293,10 +295,10 @@ export default function DashboardHome() {
               <p className="text-gray-400 text-center py-8">No repair orders yet</p>
             ) : (
               stats.recent_orders.slice(0, 8).map((order) => (
-                <Link
+                <button
                   key={order.id}
-                  to={`/dashboard/repair-orders/${order.id}`}
-                  className="block bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors border border-white/5"
+                  onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                  className="w-full text-left bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors border border-white/5"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -326,7 +328,7 @@ export default function DashboardHome() {
                       <div className="text-xs text-gray-500">{formatDate(order.updated_at)}</div>
                     </div>
                   </div>
-                </Link>
+                </button>
               ))
             )}
           </div>
@@ -338,7 +340,7 @@ export default function DashboardHome() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">Low Stock Alerts</h2>
               <Link
-                to="/dashboard/inventory"
+                to="/dashboard/garage/inventory"
                 className="text-sm text-amber-500 hover:text-amber-400"
               >
                 Inventory
@@ -354,9 +356,10 @@ export default function DashboardHome() {
             ) : (
               <div className="space-y-2">
                 {stats.low_stock_items.map((item) => (
-                  <div
+                  <button
                     key={item.id}
-                    className="bg-red-500/10 border border-red-500/20 rounded-lg p-3"
+                    onClick={() => navigate(`/dashboard/garage/inventory?selected=${item.id}`)}
+                    className="w-full text-left bg-red-500/10 border border-red-500/20 rounded-lg p-3 hover:bg-red-500/20 transition-colors"
                   >
                     <div className="font-medium text-white text-sm truncate">{item.name}</div>
                     <div className="text-xs text-gray-400">SKU: {item.sku}</div>
@@ -368,7 +371,7 @@ export default function DashboardHome() {
                         Reorder at {item.reorder_level}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -473,6 +476,7 @@ export default function DashboardHome() {
           <StatCard title="Total Orders" value={stats?.total_repair_orders || 0} />
         </div>
       )}
+
     </div>
   )
 }

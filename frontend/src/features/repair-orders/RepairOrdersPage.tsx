@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote } from '../../types'
@@ -31,6 +32,7 @@ interface NewVehicleForm {
 }
 
 export default function RepairOrdersPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -87,6 +89,20 @@ export default function RepairOrdersPage() {
       return response.data
     },
   })
+
+  // Handle ?selected= query param to auto-open a repair order
+  useEffect(() => {
+    const selectedId = searchParams.get('selected')
+    if (selectedId && orders) {
+      const order = orders.find(o => o.id === selectedId)
+      if (order) {
+        setSelectedOrder(order)
+        setIsDetailOpen(true)
+        // Clear the query param after opening
+        setSearchParams({}, { replace: true })
+      }
+    }
+  }, [searchParams, orders, setSearchParams])
 
   const { data: customers } = useQuery<Customer[]>({
     queryKey: ['customers'],
@@ -304,6 +320,27 @@ export default function RepairOrdersPage() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to approve completion')
+    },
+  })
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: async (repairOrderId: string) => {
+      const response = await api.post('/invoices', { repair_order_id: repairOrderId })
+      return response.data
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      // Refetch the order to get updated status
+      if (selectedOrder?.id) {
+        queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
+        // Update local state to reflect new status
+        setSelectedOrder(prev => prev ? { ...prev, status: 'invoiced' } : null)
+      }
+      toast.success('Invoice created and sent to customer')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to create invoice')
     },
   })
 
@@ -1746,6 +1783,41 @@ export default function RepairOrdersPage() {
                         </svg>
                       )}
                       Approve Completion
+                    </button>
+                  </div>
+                )}
+
+                {/* Create Invoice Button for completed orders */}
+                {selectedOrder.status === 'completed' && (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-indigo-900">Work Completed</p>
+                        <p className="text-sm text-indigo-700">Create invoice to send to customer for payment</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectedOrder.id && createInvoiceMutation.mutate(selectedOrder.id)}
+                      disabled={createInvoiceMutation.isPending}
+                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      {createInvoiceMutation.isPending ? (
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      )}
+                      Create Invoice
                     </button>
                   </div>
                 )}

@@ -22,7 +22,7 @@ export default function DashboardLayout() {
   ]
 
   const isActive = (path: string, exact?: boolean) => 
-    exact ? location.pathname === path : location.pathname === path
+    exact ? location.pathname === path : location.pathname.startsWith(path)
 
   const isOnSubPage = location.pathname !== '/dashboard'
   

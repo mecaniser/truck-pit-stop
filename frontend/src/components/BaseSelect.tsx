@@ -65,11 +65,13 @@ export default function BaseSelect({
   const handleSelect = (val: string) => {
     if (allowAddNew && val === 'add_new') {
       if (onAddNew) onAddNew()
+      setIsOpen(false)
+      setQuery('')
     } else {
       onChange(val)
+      setIsOpen(false)
+      setQuery('')
     }
-    setIsOpen(false)
-    setQuery('')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -116,7 +118,11 @@ export default function BaseSelect({
             <button
               key={opt.value}
               type="button"
-              onClick={() => handleSelect(opt.value)}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSelect(opt.value)
+              }}
               className={`w-full text-left px-4 py-2 text-sm hover:bg-amber-50 hover:text-amber-700 transition-colors ${
                 opt.value === value ? 'bg-amber-50 text-amber-700' : 'text-gray-900'
               }`}
@@ -131,7 +137,11 @@ export default function BaseSelect({
           {allowAddNew && (
             <button
               type="button"
-              onClick={() => handleSelect('add_new')}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                handleSelect('add_new')
+              }}
               className="w-full text-left px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 hover:text-amber-800 transition-colors"
             >
               {addNewLabel}
