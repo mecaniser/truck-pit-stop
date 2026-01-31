@@ -290,6 +290,23 @@ export default function RepairOrdersPage() {
     },
   })
 
+  const approveCompletionMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const response = await api.post(`/repair-orders/${orderId}/approve-completion`)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      setSelectedOrder(updated)
+      toast.success('Work approved - Customer notified')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to approve completion')
+    },
+  })
+
   const updateServicesMutation = useMutation({
     mutationFn: async ({ orderId, selectedServices }: { orderId: string; selectedServices: { id: string; name: string; base_price: string }[] }) => {
       const internal_notes = selectedServices.length > 0
@@ -1697,6 +1714,41 @@ export default function RepairOrdersPage() {
                     </div>
                   )
                 })()}
+
+                {/* Approve Completion Button for pending_review status */}
+                {selectedOrder.status === 'pending_review' && (
+                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                        <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-orange-900">Mechanic Completed Work</p>
+                        <p className="text-sm text-orange-700">Review and approve to notify customer</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => selectedOrder.id && approveCompletionMutation.mutate(selectedOrder.id)}
+                      disabled={approveCompletionMutation.isPending}
+                      className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                    >
+                      {approveCompletionMutation.isPending ? (
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                      Approve Completion
+                    </button>
+                  </div>
+                )}
 
                 <div>
                   <button
