@@ -11,5 +11,9 @@ class Tenant(BaseModel):
     phone = Column(String(20), nullable=True)
     email = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    
+    # Stripe Connect
+    stripe_account_id = Column(String(255), unique=True, nullable=True, index=True)
+    stripe_onboarding_complete = Column(Boolean, default=False, nullable=False)
 
 

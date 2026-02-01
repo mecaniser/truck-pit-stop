@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     
+    # Stripe Connect
+    STRIPE_CONNECT_WEBHOOK_SECRET: str = ""
+    PLATFORM_FEE_PERCENT: float = 1.5
+    
     # Twilio
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""

@@ -7,6 +7,7 @@ import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
 import MyGaragePage from '@/features/garage/MyGaragePage'
 import DashboardHome from '@/features/dashboard/DashboardHome'
 import AdminProfilePage from '@/features/dashboard/AdminProfilePage'
+import StripeSettingsPage from '@/features/dashboard/StripeSettingsPage'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
@@ -202,6 +203,7 @@ export default function DashboardLayout() {
           <Route path="repair-orders" element={<RepairOrdersPage />} />
           <Route path="garage/*" element={<MyGaragePage />} />
           <Route path="settings" element={<AdminProfilePage />} />
+          <Route path="settings/stripe" element={<StripeSettingsPage />} />
           <Route path="" element={<DashboardHome />} />
         </Routes>
       </main>

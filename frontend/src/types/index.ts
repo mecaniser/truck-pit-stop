@@ -100,6 +100,7 @@ export interface RepairOrder {
   total_cost: string
   created_at: string
   updated_at: string
+  quote_sent?: boolean | null
 }
 
 export interface RepairOrderDetail extends RepairOrder {

@@ -15,6 +15,7 @@ from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
+from app.db.models.tenant import Tenant
 
 
 async def generate_payment_number(db: AsyncSession, tenant_id: UUID) -> str:
@@ -254,6 +255,10 @@ async def create_payment_intent_for_invoice(
             await db.commit()
         stripe_customer_id = customer.stripe_customer_id
     
+    # Get tenant for Stripe Connect routing
+    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
     # Create PaymentIntent
     amount_cents = int(invoice.total_amount * 100)
     intent_params = {
@@ -262,10 +267,22 @@ async def create_payment_intent_for_invoice(
         "metadata": {
             "invoice_id": str(invoice.id),
             "invoice_number": invoice.invoice_number,
+            "tenant_id": str(invoice.tenant_id),
         },
         "automatic_payment_methods": {"enabled": True},
     }
-    if stripe_customer_id:
+    
+    # Route to connected account if tenant has Stripe Connect set up
+    if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
+        intent_params["stripe_account"] = tenant.stripe_account_id
+        # Calculate platform fee
+        platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
+        if platform_fee > 0:
+            intent_params["application_fee_amount"] = platform_fee
+        # For connected accounts, customer must be on the connected account
+        # So we don't pass the platform's customer ID
+    elif stripe_customer_id:
+        # Fallback to platform account (no Connect)
         intent_params["customer"] = stripe_customer_id
     
     payment_intent = stripe.PaymentIntent.create(**intent_params)

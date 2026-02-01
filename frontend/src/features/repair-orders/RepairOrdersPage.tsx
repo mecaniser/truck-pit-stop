@@ -73,6 +73,9 @@ export default function RepairOrdersPage() {
   const [showResendInvoice, setShowResendInvoice] = useState(false)
   const [resendCustomEmail, setResendCustomEmail] = useState('')
   const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false)
+  const [showReassignMechanic, setShowReassignMechanic] = useState(false)
+  const [reviewNotes, setReviewNotes] = useState('')
+  const [showReviewNotes, setShowReviewNotes] = useState(false)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -320,8 +323,10 @@ export default function RepairOrdersPage() {
   })
 
   const approveCompletionMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      const response = await api.post(`/repair-orders/${orderId}/approve-completion`)
+    mutationFn: async ({ orderId, reviewNotes }: { orderId: string; reviewNotes?: string }) => {
+      const response = await api.post(`/repair-orders/${orderId}/approve-completion`, {
+        review_notes: reviewNotes || null,
+      })
       return response.data as RepairOrder
     },
     onSuccess: (updated) => {
@@ -606,6 +611,9 @@ export default function RepairOrdersPage() {
     setSelectedOrder(order)
     setIsDetailOpen(true)
     setQuoteSent(false)
+    setShowReassignMechanic(false)
+    setReviewNotes('')
+    setShowReviewNotes(false)
     setQuoteNeedsUpdate(false)
     setShowDangerActions(false)
   }
@@ -808,7 +816,11 @@ export default function RepairOrdersPage() {
                 </thead>
                 <tbody className="divide-y divide-white/10">
                   {filteredOrders?.map((order) => {
-                    const statusStyle = getStatusStyle(order.status)
+                    const isAwaitingApproval = order.status === 'quoted' && order.quote_sent
+                    const statusStyle = isAwaitingApproval 
+                      ? { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' }
+                      : getStatusStyle(order.status)
+                    const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : order.status.replace('_', ' ')
                     const parsedServices = parseServiceNotes(order.internal_notes)
                     const estimatedTotal = parsedServices?.reduce(
                       (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
@@ -831,7 +843,7 @@ export default function RepairOrdersPage() {
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
-                            {order.status.replace('_', ' ')}
+                            {displayStatus}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-white/70 hidden sm:table-cell max-w-xs truncate">
@@ -867,7 +879,11 @@ export default function RepairOrdersPage() {
             /* Cards View */
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredOrders?.map((order) => {
-                const statusStyle = getStatusStyle(order.status)
+                const isAwaitingApproval = order.status === 'quoted' && order.quote_sent
+                const statusStyle = isAwaitingApproval 
+                  ? { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' }
+                  : getStatusStyle(order.status)
+                const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : order.status.replace('_', ' ')
                 const parsedServices = parseServiceNotes(order.internal_notes)
                 const estimatedTotal = parsedServices?.reduce(
                   (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
@@ -889,7 +905,7 @@ export default function RepairOrdersPage() {
                         </span>
                         <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
-                          {order.status.replace('_', ' ')}
+                          {displayStatus}
                         </span>
                       </div>
                       <p className="text-sm text-slate-700 line-clamp-3 leading-relaxed">
@@ -1709,93 +1725,6 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
-                {(() => {
-                  // Mechanic can only be assigned after customer approves quote (status: approved or in_progress)
-                  const canAssignMechanic = ['approved', 'in_progress', 'completed'].includes(selectedOrder.status)
-                  return (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Mechanic</h3>
-                      <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                        {!canAssignMechanic ? (
-                          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                            A mechanic will be assigned once the customer approves this repair order.
-                          </p>
-                        ) : (
-                          <>
-                            <BaseSelect
-                              options={[
-                                { value: '', label: 'Unassigned', subLabel: 'Keep this job unassigned for now' },
-                                ...(mechanics || []).map((m) => {
-                                  const inProgress = m.in_progress_count ?? 0
-                                  const assigned = m.assigned_count ?? 0
-                                  const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                                  return {
-                                    value: m.mechanic_id,
-                                    label: m.mechanic_name,
-                                    subLabel: `${inProgress}/${assigned || '—'} in progress · Load ${load.toFixed(0)}%`,
-                                  }
-                                }),
-                              ]}
-                              value={selectedOrder.assigned_mechanic_id || ''}
-                              onChange={(val) =>
-                                selectedOrder.id &&
-                                assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: val, orderStatus: selectedOrder.status })
-                              }
-                              placeholder="Select mechanic"
-                              allowAddNew={false}
-                            />
-                            {mechanics && mechanics.length > 0 && (
-                              <div className="space-y-2">
-                                <p className="text-xs text-gray-500">Quick pick by availability:</p>
-                                <div className="grid grid-cols-3 gap-2">
-                                  {[...(mechanics || [])]
-                                    .map((m) => {
-                                      const inProgress = m.in_progress_count ?? 0
-                                      const assigned = m.assigned_count ?? 0
-                                      const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                                      return { ...m, load, inProgress, assigned }
-                                    })
-                                    .sort((a, b) => a.load - b.load)
-                                    .map((m) => {
-                                      const isSelected = selectedOrder.assigned_mechanic_id === m.mechanic_id
-                                      return (
-                                        <button
-                                          key={m.mechanic_id}
-                                          type="button"
-                                          onClick={() =>
-                                            selectedOrder.id &&
-                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: selectedOrder.status })
-                                          }
-                                          className={`w-full text-left p-2 rounded-lg border transition-all ${
-                                            isSelected
-                                              ? 'border-amber-500 bg-amber-50'
-                                              : 'border-gray-200 bg-white hover:border-amber-300'
-                                          }`}
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
-                                            <span className={`text-xs ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
-                                              {m.load.toFixed(0)}%
-                                            </span>
-                                          </div>
-                                          <div className="mt-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                                            <div
-                                              className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                              style={{ width: `${m.load}%` }}
-                                            />
-                                          </div>
-                                        </button>
-                                      )
-                                    })}
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })()}
 
                 {/* Approve Completion Button for pending_review status */}
                 {selectedOrder.status === 'pending_review' && (
@@ -1811,9 +1740,42 @@ export default function RepairOrdersPage() {
                         <p className="text-sm text-orange-700">Review and approve to notify customer</p>
                       </div>
                     </div>
+                    
+                    <div className="mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowReviewNotes(!showReviewNotes)}
+                        className="flex items-center gap-2 text-sm font-medium text-orange-800 hover:text-orange-900"
+                      >
+                        <svg 
+                          className={`w-4 h-4 transition-transform ${showReviewNotes ? 'rotate-90' : ''}`} 
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        Add Review Notes <span className="text-orange-500 font-normal">(optional)</span>
+                      </button>
+                      {showReviewNotes && (
+                        <textarea
+                          value={reviewNotes}
+                          onChange={(e) => setReviewNotes(e.target.value)}
+                          placeholder="Add any notes about the review, additional work needed, quality observations..."
+                          rows={3}
+                          className="mt-2 w-full px-3 py-2 border border-orange-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm resize-none"
+                        />
+                      )}
+                    </div>
+                    
                     <button
                       type="button"
-                      onClick={() => selectedOrder.id && approveCompletionMutation.mutate(selectedOrder.id)}
+                      onClick={() => {
+                        if (selectedOrder.id) {
+                          approveCompletionMutation.mutate({ orderId: selectedOrder.id, reviewNotes: reviewNotes || undefined })
+                          setReviewNotes('')
+                        }
+                      }}
                       disabled={approveCompletionMutation.isPending}
                       className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
@@ -2221,8 +2183,119 @@ export default function RepairOrdersPage() {
                         )}
                         {isApproved && !hasMechanic && (
                           <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                            Customer approved! Assign a mechanic below to start work.
+                            Customer approved! Assign a mechanic to start work.
                           </p>
+                        )}
+
+                        {/* Mechanic Assignment - shown inline when approved but no mechanic */}
+                        {isApproved && !hasMechanic && mechanics && mechanics.length > 0 && (
+                          <div className="pt-3 border-t border-gray-200 space-y-3">
+                            <p className="text-xs font-medium text-gray-500 uppercase">Available Mechanics</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {[...(mechanics || [])]
+                                .map((m) => {
+                                  const inProgress = m.in_progress_count ?? 0
+                                  const assigned = m.assigned_count ?? 0
+                                  const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                  return { ...m, load, inProgress, assigned }
+                                })
+                                .sort((a, b) => a.load - b.load)
+                                .map((m) => (
+                                  <button
+                                    key={m.mechanic_id}
+                                    type="button"
+                                    onClick={() =>
+                                      selectedOrder.id &&
+                                      assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: selectedOrder.status })
+                                    }
+                                    disabled={assignMechanicMutation.isPending}
+                                    className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
+                                      <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                                        {m.load.toFixed(0)}%
+                                      </span>
+                                    </div>
+                                    <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                      <div
+                                        className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                        style={{ width: `${m.load}%` }}
+                                      />
+                                    </div>
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Reassign Mechanic - shown when mechanic is already assigned */}
+                        {hasMechanic && mechanics && mechanics.length > 1 && (
+                          <div className="pt-3 border-t border-gray-200">
+                            {!showReassignMechanic ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowReassignMechanic(true)}
+                                className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1.5"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                </svg>
+                                Reassign Mechanic
+                              </button>
+                            ) : (
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-medium text-gray-500 uppercase">Select New Mechanic</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowReassignMechanic(false)}
+                                    className="text-xs text-gray-500 hover:text-gray-700"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  {[...(mechanics || [])]
+                                    .filter(m => m.mechanic_id !== selectedOrder.assigned_mechanic_id)
+                                    .map((m) => {
+                                      const inProgress = m.in_progress_count ?? 0
+                                      const assigned = m.assigned_count ?? 0
+                                      const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                      return { ...m, load, inProgress, assigned }
+                                    })
+                                    .sort((a, b) => a.load - b.load)
+                                    .map((m) => (
+                                      <button
+                                        key={m.mechanic_id}
+                                        type="button"
+                                        onClick={() => {
+                                          if (selectedOrder.id) {
+                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: selectedOrder.status })
+                                            setShowReassignMechanic(false)
+                                          }
+                                        }}
+                                        disabled={assignMechanicMutation.isPending}
+                                        className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
+                                          <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                                            {m.load.toFixed(0)}%
+                                          </span>
+                                        </div>
+                                        <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                          <div
+                                            className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                            style={{ width: `${m.load}%` }}
+                                          />
+                                        </div>
+                                      </button>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>

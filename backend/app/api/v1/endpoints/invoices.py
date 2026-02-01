@@ -189,9 +189,12 @@ async def create_invoice(
         """
         
         await send_email(
-            to_email=customer.email,
+            db=db,
+            tenant_id=str(order.tenant_id),
+            to=customer.email,
             subject=f"Invoice {invoice.invoice_number} - Payment Ready",
-            html_content=email_html,
+            body=email_html,
+            template_name="invoice_created",
         )
     
     return InvoiceResponse.model_validate(invoice)
@@ -366,9 +369,12 @@ async def resend_invoice(
     """
     
     await send_email(
-        to_email=to_email,
+        db=db,
+        tenant_id=str(invoice.tenant_id),
+        to=to_email,
         subject=f"Invoice {invoice.invoice_number} - Payment Ready",
-        html_content=email_html,
+        body=email_html,
+        template_name="invoice_resend",
     )
     
     return {"status": "success", "message": f"Invoice sent to {to_email}"}

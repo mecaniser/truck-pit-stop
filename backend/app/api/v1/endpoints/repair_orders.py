@@ -158,7 +158,24 @@ async def list_repair_orders(
     result = await db.execute(query)
     orders = result.scalars().all()
     
-    return [RepairOrderResponse.model_validate(o) for o in orders]
+    # Get quote_sent status for all orders
+    order_ids = [o.id for o in orders]
+    if order_ids:
+        quote_result = await db.execute(
+            select(Quote.repair_order_id, Quote.sent_to_customer)
+            .where(Quote.repair_order_id.in_(order_ids))
+        )
+        quote_sent_map = {row[0]: row[1] for row in quote_result.fetchall()}
+    else:
+        quote_sent_map = {}
+    
+    return [
+        RepairOrderResponse(
+            **RepairOrderResponse.model_validate(o).model_dump(exclude={'quote_sent'}),
+            quote_sent=quote_sent_map.get(o.id),
+        )
+        for o in orders
+    ]
 
 
 @router.get("/{order_id}/detail", response_model=RepairOrderDetailResponse)
@@ -674,9 +691,14 @@ async def complete_work(
     return RepairOrderResponse.model_validate(order)
 
 
+class ApproveCompletionRequest(BaseModel):
+    review_notes: Optional[str] = None
+
+
 @router.post("/{order_id}/approve-completion", response_model=RepairOrderResponse)
 async def approve_completion(
     order_id: UUID,
+    body: Optional[ApproveCompletionRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
         UserRole.SUPER_ADMIN,
@@ -704,6 +726,27 @@ async def approve_completion(
         )
     
     order.status = RepairOrderStatus.COMPLETED
+    
+    # Append review notes to internal_notes if provided
+    if body and body.review_notes:
+        import json
+        from datetime import datetime
+        review_entry = {
+            "type": "manager_review",
+            "notes": body.review_notes,
+            "reviewed_by": f"{current_user.first_name} {current_user.last_name}",
+            "reviewed_at": datetime.utcnow().isoformat(),
+        }
+        try:
+            existing_notes = json.loads(order.internal_notes) if order.internal_notes else {}
+        except json.JSONDecodeError:
+            existing_notes = {"raw_notes": order.internal_notes}
+        
+        if "reviews" not in existing_notes:
+            existing_notes["reviews"] = []
+        existing_notes["reviews"].append(review_entry)
+        order.internal_notes = json.dumps(existing_notes)
+    
     await db.commit()
     await db.refresh(order)
     

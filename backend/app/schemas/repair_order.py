@@ -94,6 +94,7 @@ class RepairOrderResponse(RepairOrderBase):
     total_cost: Decimal
     created_at: datetime
     updated_at: datetime
+    quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
 
     class Config:
         from_attributes = True
