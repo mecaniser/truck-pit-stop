@@ -1,4 +1,4 @@
-export type UserRole = 'super_admin' | 'garage_admin' | 'mechanic' | 'receptionist' | 'customer'
+export type UserRole = 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'customer'
 
 export type RepairOrderStatus = 
   | 'draft'

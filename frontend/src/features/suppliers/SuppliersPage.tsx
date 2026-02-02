@@ -32,7 +32,7 @@ const cleanString = (value?: string | null) => {
 export default function SuppliersPage() {
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
-  const isAdmin = user?.role === 'garage_admin' || user?.role === 'super_admin'
+  const isAdmin = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   const [viewMode, setViewMode] = useViewPreference('suppliers')
   const [isMobile, setIsMobile] = useState(() =>

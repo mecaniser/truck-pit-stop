@@ -11,6 +11,7 @@ import PaymentMethodsCard from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
 import { formatUSPhone } from '@/utils/phone'
 import { isValidUSPhone } from '@/utils/phone'
+import toast from 'react-hot-toast'
 
 function CollapsiblePasswordChange() {
   const [isOpen, setIsOpen] = useState(false)
@@ -163,6 +164,7 @@ const profileSchema = z.object({
   phone: z.string().optional().refine((val) => isValidUSPhone(val), {
     message: 'Invalid phone number',
   }),
+  password: z.string().optional(),
 })
 
 const passwordSchema = z.object({
@@ -183,10 +185,13 @@ type ProfileFormData = z.infer<typeof profileSchema>
 type PasswordFormData = z.infer<typeof passwordSchema>
 
 export default function ProfileSettingsPage() {
-  const { user, logout } = useAuthStore()
+  const { user, logout, setUser } = useAuthStore()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [originalEmail, setOriginalEmail] = useState('')
 
   const handleLogout = () => {
     logout()
@@ -208,10 +213,13 @@ export default function ProfileSettingsPage() {
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors, isDirty },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
   })
+
+  const currentEmailValue = watch('email')
 
   useEffect(() => {
     if (customer) {
@@ -220,23 +228,56 @@ export default function ProfileSettingsPage() {
         last_name: customer.last_name,
         email: customer.email,
         phone: customer.phone || '',
+        password: '',
       })
+      setOriginalEmail(customer.email)
     }
   }, [customer, reset])
 
   const updateMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {
-      const response = await api.put(`/customers/${user?.customer_id}`, data)
+      // Use /auth/me endpoint for proper email verification flow
+      const response = await api.put('/auth/me', data)
       return response.data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Handle new response format with user object wrapped
+      const responseUser = data.user || data
+      const isVerificationPending = data.email_verification_pending || false
+      
+      // Always update auth store and invalidate queries - other fields may have been updated
+      setUser(responseUser)
       queryClient.invalidateQueries({ queryKey: ['customer'] })
-      setSuccessMessage('Profile updated successfully!')
-      setTimeout(() => setSuccessMessage(null), 3000)
+      queryClient.invalidateQueries({ queryKey: ['user'] })
+      
+      if (isVerificationPending) {
+        toast.success('Verification email sent! Check your new email to confirm.')
+        setSuccessMessage(data.message || 'Profile updated. Please check your new email to confirm the email change.')
+        setIsEditingProfile(false)
+        setValue('password', '')
+        setTimeout(() => setSuccessMessage(null), 8000)
+      } else {
+        toast.success('Profile updated successfully!')
+        setSuccessMessage('Profile updated successfully!')
+        setIsEditingProfile(false)
+        setTimeout(() => setSuccessMessage(null), 3000)
+      }
+    },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.detail || 'Failed to update profile'
+      toast.error(errorMsg)
     },
   })
 
   const onSubmit = (data: ProfileFormData) => {
+    const isEmailChanging = data.email !== originalEmail
+    
+    // If email is changing, password is required
+    if (isEmailChanging && !data.password) {
+      toast.error('Password is required to change your email address')
+      return
+    }
+    
     updateMutation.mutate(data)
   }
 
@@ -271,29 +312,60 @@ export default function ProfileSettingsPage() {
         <p className="text-gray-400 mt-1">Update your personal information</p>
       </div>
 
+      {successMessage && (
+        <div className="mb-6 flex items-center gap-3 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
+          <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          </svg>
+          <span className="text-sm">{successMessage}</span>
+        </div>
+      )}
+
       {/* Two column layout on desktop */}
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Personal Information */}
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-        {successMessage && (
-          <div className="mb-6 flex items-center gap-3 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
-            <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
-            <span className="text-sm">{successMessage}</span>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white">Personal Information</h2>
+            {!isEditingProfile && (
+              <button
+                onClick={() => setIsEditingProfile(true)}
+                className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6.232-6.232a2 2 0 112.828 2.828L11.828 13.828A4 4 0 019 15H7v-2a4 4 0 011.172-2.828z" />
+                </svg>
+                Edit
+              </button>
+            )}
           </div>
-        )}
 
         {updateMutation.isError && (
-          <div className="mb-6 flex items-center gap-3 bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg">
+          <div className="mb-4 flex items-center gap-3 bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg">
             <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
-            <span className="text-sm">Failed to update profile. Please try again.</span>
+            <span className="text-sm">{(updateMutation.error as any)?.response?.data?.detail || 'Failed to update profile'}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+        {!isEditingProfile ? (
+          <div className="space-y-4">
+            <div>
+              <div className="text-xs text-gray-400 mb-1">Name</div>
+              <div className="text-white font-medium">{customer.first_name} {customer.last_name}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-400 mb-1">Email</div>
+              <div className="text-white font-medium">{customer.email}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-400 mb-1">Phone</div>
+              <div className="text-white font-medium">{customer.phone || 'Not provided'}</div>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">
@@ -338,9 +410,14 @@ export default function ProfileSettingsPage() {
             {errors.email && (
               <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
-              Note: This updates your contact email. Login email remains unchanged.
-            </p>
+            <p className="mt-1 text-xs text-gray-500">This is your login email</p>
+            {currentEmailValue !== originalEmail && (
+              <div className="mt-2 bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                <p className="text-blue-400 text-xs">
+                  📧 Changing email requires verification. You'll receive a confirmation link at the new address.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -359,11 +436,66 @@ export default function ProfileSettingsPage() {
             )}
           </div>
 
-          <div className="pt-4">
+          {/* Password field - required when changing email */}
+          {currentEmailValue !== originalEmail && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <input
+                  {...register('password')}
+                  type={showPassword ? 'text' : 'password'}
+                  className={inputClasses('password')}
+                  placeholder="Enter your current password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                >
+                  {showPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
+              )}
+              <p className="mt-1 text-xs text-amber-400">
+                🔒 Password required to confirm email change
+              </p>
+            </div>
+          )}
+
+          <div className="pt-4 flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditingProfile(false)
+                reset({
+                  first_name: customer.first_name,
+                  last_name: customer.last_name,
+                  email: customer.email,
+                  phone: customer.phone || '',
+                  password: '',
+                })
+              }}
+              className="flex-1 sm:flex-none px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
             <button
               type="submit"
               disabled={!isDirty || updateMutation.isPending}
-              className="w-full sm:w-auto px-6 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="flex-1 sm:flex-none px-6 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               {updateMutation.isPending ? (
                 <>
@@ -377,8 +509,9 @@ export default function ProfileSettingsPage() {
                 'Save Changes'
               )}
             </button>
-            </div>
+          </div>
         </form>
+        )}
 
         {/* Collapsible Password Change */}
         <CollapsiblePasswordChange />

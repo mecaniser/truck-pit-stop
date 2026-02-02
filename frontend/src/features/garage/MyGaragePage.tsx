@@ -3,6 +3,7 @@ import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
+import GarageAnalyticsPage from './GarageAnalyticsPage'
 
 const tabClass =
   'shrink-0 px-1.5 py-1.5 sm:px-2.5 sm:py-2 text-sm font-medium rounded-lg transition-colors border border-transparent'
@@ -52,6 +53,16 @@ export default function MyGaragePage() {
           >
             Suppliers
           </NavLink>
+          <NavLink
+            to="analytics"
+            className={({ isActive }) =>
+              isActive
+                ? `${tabClass} bg-amber-500/20 text-amber-200 border-amber-400/40`
+                : `${tabClass} text-gray-200 hover:text-white hover:border-white/20`
+            }
+          >
+            Analytics
+          </NavLink>
         </div>
         <div className="p-4">
           <Routes>
@@ -60,6 +71,7 @@ export default function MyGaragePage() {
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="mechanics" element={<MechanicsPage />} />
             <Route path="suppliers" element={<SuppliersPage />} />
+            <Route path="analytics" element={<GarageAnalyticsPage />} />
           </Routes>
         </div>
       </div>

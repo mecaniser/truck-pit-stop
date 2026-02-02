@@ -51,7 +51,7 @@ class MechanicWithPoints(BaseModel):
 @router.get("", response_model=List[MechanicWithPoints])
 async def list_mechanics(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """List mechanics with their points info for dashboard"""
     if not current_user.tenant_id:
@@ -108,7 +108,7 @@ async def list_mechanics(
 async def create_mechanic(
     mechanic_data: MechanicCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     if not current_user.tenant_id:
         raise HTTPException(
@@ -539,7 +539,7 @@ async def get_my_job_detail(
 async def get_mechanic_work(
     mechanic_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN, UserRole.MECHANIC)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.MECHANIC)),
 ):
     # Ensure mechanic exists and belongs to tenant
     result = await db.execute(select(User).where(User.id == mechanic_id, User.role == UserRole.MECHANIC))
@@ -594,7 +594,7 @@ async def update_mechanic(
     mechanic_id: UUID,
     mechanic_update: MechanicUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     if not current_user.tenant_id:
         raise HTTPException(
@@ -645,7 +645,7 @@ async def update_mechanic_password(
     mechanic_id: UUID,
     password_update: MechanicPasswordUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     if not current_user.tenant_id:
         raise HTTPException(
@@ -840,7 +840,7 @@ async def cancel_pto_request(
 @router.get("/pto-requests/pending", response_model=List[PTORequestResponse])
 async def get_pending_pto_requests(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """Manager views all pending PTO requests"""
     result = await db.execute(
@@ -887,7 +887,7 @@ async def process_pto_request(
     request_id: UUID,
     body: ProcessPTORequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """Manager approves or denies a PTO request"""
     if body.action not in ("approve", "deny"):

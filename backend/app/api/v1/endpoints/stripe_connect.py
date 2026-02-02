@@ -33,7 +33,7 @@ class DashboardLinkResponse(BaseModel):
 
 def _require_garage_admin(current_user: User) -> None:
     """Only garage admins can manage Stripe Connect"""
-    if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN):
+    if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only garage administrators can manage Stripe settings",

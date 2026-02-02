@@ -28,7 +28,22 @@ async def seed():
 
         print("Seeding database...")
 
-        # Create Tenant (Garage)
+        # Create Platform Super Admin (Platform Owner)
+        super_admin = User(
+            id=uuid4(),
+            email="admin@truckpitstop.com",
+            hashed_password=get_password_hash("superadmin123"),
+            first_name="Platform",
+            last_name="Admin",
+            phone="(555) 000-0000",
+            role=UserRole.SUPER_ADMIN,
+            tenant_id=None,  # Super admin not tied to any tenant
+            is_active=True,
+            is_verified=True,
+        )
+        db.add(super_admin)
+
+        # Create Tenant (Garage) - without owner_id initially
         tenant = Tenant(
             id=uuid4(),
             name="Truck Pit Stop Wisconsin",
@@ -41,14 +56,33 @@ async def seed():
         db.add(tenant)
         await db.flush()
 
-        # Create Admin User
-        admin_user = User(
+        # Create Garage Owner (Owner of this specific garage)
+        garage_owner = User(
             id=uuid4(),
             email="truxpitstop@gmail.com",
             hashed_password=get_password_hash("BUse@1534"),
-            first_name="Admin",
-            last_name="User",
+            first_name="James",
+            last_name="Wilson",
             phone="(414) 555-0001",
+            role=UserRole.GARAGE_OWNER,
+            tenant_id=tenant.id,
+            is_active=True,
+            is_verified=True,
+        )
+        db.add(garage_owner)
+        await db.flush()
+
+        # Link tenant to owner
+        tenant.owner_id = garage_owner.id
+
+        # Create Garage Admin (Employee manager)
+        admin_user = User(
+            id=uuid4(),
+            email="admin@truckpitstopwi.com",
+            hashed_password=get_password_hash("admin123"),
+            first_name="Sarah",
+            last_name="Martinez",
+            phone="(414) 555-0002",
             role=UserRole.GARAGE_ADMIN,
             tenant_id=tenant.id,
             is_active=True,
@@ -63,7 +97,7 @@ async def seed():
             hashed_password=get_password_hash("mechanic123"),
             first_name="Mike",
             last_name="Johnson",
-            phone="(414) 555-0002",
+            phone="(414) 555-0003",
             role=UserRole.MECHANIC,
             tenant_id=tenant.id,
             is_active=True,
@@ -817,8 +851,13 @@ async def seed():
         print(f"\n📦 {len(inventory_items)} inventory items created")
         print(f"🔧 {len(services)} services created in 5 categories")
         print("\nTest accounts created:")
-        print("  Admin: admin@truckpitstop.com / admin123")
+        print("\n🔐 Platform Level:")
+        print("  Super Admin: admin@truckpitstop.com / superadmin123")
+        print("\n🏢 Garage Level (Truck Pit Stop Wisconsin):")
+        print("  Garage Owner: truxpitstop@gmail.com / BUse@1534")
+        print("  Garage Admin: admin@truckpitstopwi.com / admin123")
         print("  Mechanic: mike@truckpitstop.com / mechanic123")
+        print("\n👥 Customers:")
         print("  Customer 1: john.trucker@email.com / customer123")
         print("  Customer 2: sarah.hauler@email.com / customer123")
 

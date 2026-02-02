@@ -6,11 +6,12 @@ from app.db.base import BaseModel
 
 
 class UserRole(str, enum.Enum):
-    SUPER_ADMIN = "super_admin"
-    GARAGE_ADMIN = "garage_admin"
-    MECHANIC = "mechanic"
-    RECEPTIONIST = "receptionist"
-    CUSTOMER = "customer"
+    SUPER_ADMIN = "super_admin"      # Platform owner - manages all garages
+    GARAGE_OWNER = "garage_owner"    # Owner of a specific garage
+    GARAGE_ADMIN = "garage_admin"    # Admin employee at a garage
+    MECHANIC = "mechanic"            # Technician working on repairs
+    RECEPTIONIST = "receptionist"    # Front desk staff
+    CUSTOMER = "customer"            # Truck owner/operator
 
 
 class User(BaseModel):
@@ -31,7 +32,7 @@ class User(BaseModel):
     is_verified = Column(Boolean, default=False, nullable=False)
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
-    tenant = relationship("Tenant", backref="users")
+    tenant = relationship("Tenant", foreign_keys=[tenant_id], backref="users")
     
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, unique=True)
     customer = relationship("Customer", backref="user", uselist=False)

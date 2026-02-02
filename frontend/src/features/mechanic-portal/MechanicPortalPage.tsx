@@ -17,7 +17,10 @@ import {
   Star,
   Zap,
   Calendar,
-  DollarSign
+  DollarSign,
+  User,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 
 interface MechanicJob {
@@ -96,7 +99,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending_review: 'Done - Awaiting Review',
 }
 
-type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request'
+type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request' | 'profile'
 
 // Responsive container - full width on mobile, max 512px on larger screens, centered
 const Container = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
@@ -108,7 +111,7 @@ const Container = ({ children, className = '' }: { children: React.ReactNode; cl
 )
 
 export default function MechanicPortalPage() {
-  const { user, logout } = useAuthStore()
+  const { user, logout, setUser } = useAuthStore()
   const queryClient = useQueryClient()
   const [view, setView] = useState<ViewType>('list')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
@@ -118,6 +121,22 @@ export default function MechanicPortalPage() {
   const [ptoStartDate, setPtoStartDate] = useState('')
   const [ptoEndDate, setPtoEndDate] = useState('')
   const [requestNotes, setRequestNotes] = useState('')
+  
+  // Profile form state
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [firstName, setFirstName] = useState(user?.first_name || '')
+  const [lastName, setLastName] = useState(user?.last_name || '')
+  const [email, setEmail] = useState(user?.email || '')
+  const [phone, setPhone] = useState(user?.phone || '')
+  const [profilePassword, setProfilePassword] = useState('')
+  const [showProfilePassword, setShowProfilePassword] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const originalEmail = user?.email || ''
 
   // Active jobs
   const { data: jobs, isLoading } = useQuery<MechanicJob[]>({
@@ -138,14 +157,13 @@ export default function MechanicPortalPage() {
     },
   })
 
-  // History
+  // History (always load for empty state preview)
   const { data: history, isLoading: historyLoading } = useQuery<WorkHistoryItem[]>({
     queryKey: ['mechanic-history'],
     queryFn: async () => {
       const response = await api.get('/mechanics/my-history')
       return response.data
     },
-    enabled: view === 'history',
   })
   
   // My PTO requests
@@ -227,6 +245,53 @@ export default function MechanicPortalPage() {
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
   })
 
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: { first_name?: string; last_name?: string; email?: string; phone?: string; password?: string }) => {
+      const response = await api.put('/auth/me', data)
+      return response.data
+    },
+    onSuccess: (data) => {
+      // Handle new response format with user object wrapped
+      const responseUser = data.user || data
+      const isVerificationPending = data.email_verification_pending || false
+      
+      // Always update auth store - other fields may have been updated
+      setUser(responseUser)
+      setFirstName(responseUser.first_name)
+      setLastName(responseUser.last_name)
+      setEmail(responseUser.email)
+      setPhone(responseUser.phone || '')
+      
+      if (isVerificationPending) {
+        toast.success('Profile updated! Check your new email to confirm the email change.')
+        setProfilePassword('')
+        setIsEditingProfile(false)
+      } else {
+        toast.success('Profile updated!')
+        setIsEditingProfile(false)
+      }
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to update profile'),
+  })
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async (data: { current_password: string; new_password: string }) => {
+      const response = await api.post('/auth/change-password', data)
+      return response.data
+    },
+    onSuccess: () => {
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setIsChangingPassword(false)
+      toast.success('Password changed! Please log in again.')
+      setTimeout(() => {
+        logout()
+      }, 2000)
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to change password'),
+  })
+
   const handleLogout = async () => {
     try { await api.post('/auth/logout') } catch {}
     logout()
@@ -243,6 +308,45 @@ export default function MechanicPortalPage() {
   }
 
   const isPending = acknowledgeMutation.isPending || startWorkMutation.isPending || completeWorkMutation.isPending
+
+  // Bottom Navigation Component - defined here so it's available in all views
+  const BottomNav = () => {
+    const currentView = view as ViewType
+    return (
+      <div className="fixed bottom-0 left-0 right-0 z-10">
+        <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-around">
+          <button
+            onClick={() => setView('list')}
+            className={`flex flex-col items-center gap-1 ${currentView === 'list' || currentView === 'detail' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <Wrench className="w-6 h-6" />
+            <span className="text-xs">Jobs</span>
+          </button>
+          <button
+            onClick={() => setView('history')}
+            className={`flex flex-col items-center gap-1 ${currentView === 'history' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <History className="w-6 h-6" />
+            <span className="text-xs">History</span>
+          </button>
+          <button
+            onClick={() => setView('stats')}
+            className={`flex flex-col items-center gap-1 ${currentView === 'stats' || currentView === 'request' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <Trophy className="w-6 h-6" />
+            <span className="text-xs">Rewards</span>
+          </button>
+          <button
+            onClick={() => setView('profile')}
+            className={`flex flex-col items-center gap-1 ${currentView === 'profile' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <User className="w-6 h-6" />
+            <span className="text-xs">Profile</span>
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // ============ JOB DETAIL VIEW ============
   if (view === 'detail' && selectedJobId && jobDetail) {
@@ -338,7 +442,10 @@ export default function MechanicPortalPage() {
               </div>
             )}
           </div>
+          {/* Spacer for bottom nav */}
+          <div className="h-20" />
         </div>
+        <BottomNav />
       </Container>
     )
   }
@@ -383,6 +490,9 @@ export default function MechanicPortalPage() {
             </div>
           )}
         </div>
+        {/* Spacer for bottom nav */}
+        <div className="h-20" />
+        <BottomNav />
       </Container>
     )
   }
@@ -548,6 +658,9 @@ export default function MechanicPortalPage() {
             </div>
           </div>
         </div>
+        {/* Spacer for bottom nav */}
+        <div className="h-20" />
+        <BottomNav />
       </Container>
     )
   }
@@ -779,6 +892,312 @@ export default function MechanicPortalPage() {
             </div>
           )}
         </div>
+        {/* Spacer for bottom nav */}
+        <div className="h-20" />
+        <BottomNav />
+      </Container>
+    )
+  }
+
+  // ============ PROFILE VIEW ============
+  if (view === 'profile') {
+    const handleProfileUpdate = () => {
+      if (!firstName.trim() || !lastName.trim()) {
+        toast.error('Name is required')
+        return
+      }
+      if (!email.trim() || !email.includes('@')) {
+        toast.error('Valid email is required')
+        return
+      }
+      
+      const isEmailChanging = email !== originalEmail
+      
+      // If email is changing, password is required
+      if (isEmailChanging && !profilePassword) {
+        toast.error('Password required to change email')
+        return
+      }
+      
+      updateProfileMutation.mutate({
+        first_name: firstName,
+        last_name: lastName,
+        email: email,
+        phone: phone || undefined,
+        password: isEmailChanging ? profilePassword : undefined,
+      })
+    }
+
+    const handlePasswordChange = () => {
+      if (!currentPassword || !newPassword) {
+        toast.error('All password fields are required')
+        return
+      }
+      if (newPassword !== confirmPassword) {
+        toast.error('Passwords do not match')
+        return
+      }
+      if (newPassword.length < 8) {
+        toast.error('Password must be at least 8 characters')
+        return
+      }
+      changePasswordMutation.mutate({
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+    }
+
+    return (
+      <Container>
+        <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
+          <button onClick={() => setView('list')} className="p-2 -ml-2 hover:bg-gray-700 rounded-lg">
+            <ArrowLeft className="w-6 h-6 text-gray-400" />
+          </button>
+          <h1 className="text-lg font-bold text-white">Profile Settings</h1>
+        </header>
+
+        <div className="p-4 space-y-6 pb-24">
+          {/* Profile Info */}
+          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold">Personal Information</h2>
+              {!isEditingProfile && (
+                <button
+                  onClick={() => {
+                    setFirstName(user?.first_name || '')
+                    setLastName(user?.last_name || '')
+                    setEmail(user?.email || '')
+                    setPhone(user?.phone || '')
+                    setIsEditingProfile(true)
+                  }}
+                  className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+            
+            {!isEditingProfile ? (
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs text-gray-400">Name</div>
+                  <div className="text-white">{user?.first_name} {user?.last_name}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400">Email</div>
+                  <div className="text-white">{user?.email}</div>
+                </div>
+                {user?.phone && (
+                  <div>
+                    <div className="text-xs text-gray-400">Phone</div>
+                    <div className="text-white">{user?.phone}</div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">First Name</label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Last Name</label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                />
+                <p className="text-xs text-gray-500 mt-1">This is your login email</p>
+                {email !== originalEmail && (
+                  <div className="mt-2 bg-blue-500/10 border border-blue-500/30 rounded-lg p-2">
+                    <p className="text-blue-400 text-xs">
+                      📧 You'll receive a verification link at the new email
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="(555) 123-4567"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                />
+              </div>
+
+              {/* Password confirmation - shown when email is changing */}
+              {email !== originalEmail && (
+                <div>
+                  <label className="text-xs text-gray-400 block mb-1">Confirm Password</label>
+                  <div className="relative">
+                    <input
+                      type={showProfilePassword ? 'text' : 'password'}
+                      value={profilePassword}
+                      onChange={(e) => setProfilePassword(e.target.value)}
+                      placeholder="Enter your current password"
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowProfilePassword(!showProfilePassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                    >
+                      {showProfilePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-amber-400 mt-1">
+                    🔒 Password required for security
+                  </p>
+                </div>
+              )}
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFirstName(user?.first_name || '')
+                      setLastName(user?.last_name || '')
+                      setEmail(user?.email || '')
+                      setPhone(user?.phone || '')
+                      setProfilePassword('')
+                      setIsEditingProfile(false)
+                    }}
+                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleProfileUpdate}
+                    disabled={updateProfileMutation.isPending}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    {updateProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Change Password */}
+          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-white font-semibold">Change Password</h2>
+              {!isChangingPassword && (
+                <button
+                  onClick={() => {
+                    setCurrentPassword('')
+                    setNewPassword('')
+                    setConfirmPassword('')
+                    setIsChangingPassword(true)
+                  }}
+                  className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+                >
+                  Change
+                </button>
+              )}
+            </div>
+            
+            {isChangingPassword && (
+              <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Current Password</label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                  >
+                    {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">New Password</label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Min 8 characters</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                />
+              </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentPassword('')
+                      setNewPassword('')
+                      setConfirmPassword('')
+                      setIsChangingPassword(false)
+                    }}
+                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePasswordChange}
+                    disabled={changePasswordMutation.isPending || !currentPassword || !newPassword || !confirmPassword}
+                    className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    {changePasswordMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                    Change
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* Spacer for bottom nav */}
+        <div className="h-20" />
+        <BottomNav />
       </Container>
     )
   }
@@ -834,13 +1253,89 @@ export default function MechanicPortalPage() {
             <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
           </div>
         ) : activeJobs.length === 0 && pendingReview.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Wrench className="w-10 h-10 text-gray-600" />
+          <>
+            {/* No Active Jobs - Show Stats Instead */}
+            <div className="text-center py-8">
+              <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Wrench className="w-10 h-10 text-gray-600" />
+              </div>
+              <p className="text-gray-400 text-lg font-semibold">All caught up!</p>
+              <p className="text-gray-600 text-sm mt-1">No active jobs right now 🎉</p>
             </div>
-            <p className="text-gray-400 text-lg">No jobs right now</p>
-            <p className="text-gray-600 text-sm mt-1">Take a break! 🎉</p>
-          </div>
+
+            {/* Quick Stats */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
+                <p className="text-2xl font-bold text-white">{stats?.jobs_completed_today || 0}</p>
+                <p className="text-xs text-gray-500 uppercase">Today</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
+                <p className="text-2xl font-bold text-white">{stats?.jobs_completed_week || 0}</p>
+                <p className="text-xs text-gray-500 uppercase">This Week</p>
+              </div>
+              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
+                <p className="text-2xl font-bold text-white">{stats?.jobs_completed_month || 0}</p>
+                <p className="text-xs text-gray-500 uppercase">This Month</p>
+              </div>
+            </div>
+
+            {/* Recent Completed */}
+            {history && history.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm text-gray-400 font-medium">Recent Completed</h3>
+                  <button
+                    onClick={() => setView('history')}
+                    className="text-xs text-amber-400 hover:text-amber-300"
+                  >
+                    View All →
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {history.slice(0, 3).map((item) => (
+                    <div key={item.id} className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-white font-medium text-sm">{item.vehicle_info}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{item.order_number}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full">
+                            +10 pts
+                          </span>
+                          <CheckCircle className="w-4 h-4 text-green-400" />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-1">
+                        {format(new Date(item.completed_at), 'MMM d, h:mm a')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Points Highlight */}
+            {stats && stats.available_points > 0 && (
+              <div className="bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 rounded-2xl p-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                    <Trophy className="w-6 h-6 text-amber-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-amber-200 text-sm">Available Points</p>
+                    <p className="text-2xl font-bold text-white">{stats.available_points.toLocaleString()}</p>
+                  </div>
+                  <button
+                    onClick={() => setView('stats')}
+                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg"
+                  >
+                    Redeem
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <>
             {/* Active Jobs */}
@@ -913,32 +1408,11 @@ export default function MechanicPortalPage() {
         )}
       </main>
 
-      {/* Bottom Nav - Fixed within container */}
-      <div className="fixed bottom-0 left-0 right-0 z-10">
-        <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-around">
-          <button
-            onClick={() => setView('list')}
-            className="flex flex-col items-center gap-1 text-amber-400"
-          >
-            <Wrench className="w-6 h-6" />
-            <span className="text-xs">Jobs</span>
-          </button>
-          <button
-            onClick={() => setView('history')}
-            className="flex flex-col items-center gap-1 text-gray-500 hover:text-gray-300"
-          >
-            <History className="w-6 h-6" />
-            <span className="text-xs">History</span>
-          </button>
-          <button
-            onClick={() => setView('stats')}
-            className="flex flex-col items-center gap-1 text-gray-500 hover:text-gray-300"
-          >
-            <Trophy className="w-6 h-6" />
-            <span className="text-xs">Stats</span>
-          </button>
-        </div>
-      </div>
+      {/* Spacer for bottom nav */}
+      <div className="h-20" />
+
+      {/* Bottom Nav */}
+      <BottomNav />
     </Container>
   )
 }

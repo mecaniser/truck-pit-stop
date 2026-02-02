@@ -61,7 +61,7 @@ class InventoryUpdate(BaseModel):
 
 def require_admin():
     async def role_checker(current_user: User = Depends(get_current_active_user)):
-        if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN]:
+        if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Admin access required",

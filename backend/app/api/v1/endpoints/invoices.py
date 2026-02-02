@@ -56,7 +56,7 @@ class InvoiceDetailResponse(InvoiceResponse):
 
 def _require_staff(current_user: User) -> None:
     if current_user.role not in (
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,

@@ -27,7 +27,7 @@ async def create_customer(
     customer_data: CustomerCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
     )),

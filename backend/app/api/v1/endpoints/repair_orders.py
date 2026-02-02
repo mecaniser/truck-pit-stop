@@ -62,7 +62,7 @@ async def create_repair_order(
     order_data: RepairOrderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -255,7 +255,7 @@ async def update_repair_order(
     order_data: RepairOrderUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -297,7 +297,7 @@ async def assign_mechanic(
     body: AssignMechanicRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
     )),
@@ -321,7 +321,7 @@ async def assign_mechanic(
     
     if is_reassignment:
         # Only admins can reassign
-        if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN):
+        if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only shop managers can reassign mechanics. Please contact your manager.",
@@ -639,7 +639,7 @@ async def complete_work(
         select(User).where(
             and_(
                 User.tenant_id == order.tenant_id,
-                User.role.in_([UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN]),
+                User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
                 User.is_active == True,
             )
         )
@@ -701,7 +701,7 @@ async def approve_completion(
     body: Optional[ApproveCompletionRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
     )),
 ):
@@ -806,7 +806,7 @@ async def delete_repair_order(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -898,7 +898,7 @@ async def add_parts_to_repair_order(
     body: PartsUsageCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -1004,7 +1004,7 @@ async def remove_parts_from_repair_order(
     parts_usage_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -1048,7 +1048,7 @@ async def add_labor_to_repair_order(
     body: LaborCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -1106,7 +1106,7 @@ async def update_repair_order_labor(
     body: LaborUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,
@@ -1150,7 +1150,7 @@ async def remove_labor_from_repair_order(
     labor_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN,
+        UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
         UserRole.MECHANIC,

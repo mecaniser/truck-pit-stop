@@ -7,13 +7,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
+import toast from 'react-hot-toast'
 
 const profileSchema = z.object({
   first_name: z.string().min(1, 'First name is required').min(2, 'Min 2 characters'),
   last_name: z.string().min(1, 'Last name is required').min(2, 'Min 2 characters'),
+  email: z.string().email('Valid email required'),
   phone: z.string().optional().refine((val) => isValidUSPhone(val), {
     message: 'Invalid phone number',
   }),
+  password: z.string().optional(),
 })
 
 const passwordSchema = z.object({
@@ -183,6 +186,8 @@ export default function AdminProfilePage() {
   const queryClient = useQueryClient()
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [originalEmail, setOriginalEmail] = useState(user?.email || '')
 
   const handleLogout = () => {
     logout()
@@ -194,18 +199,24 @@ export default function AdminProfilePage() {
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors, isDirty },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
   })
+  
+  const currentEmailValue = watch('email')
 
   useEffect(() => {
     if (user) {
       reset({
         first_name: user.first_name || '',
         last_name: user.last_name || '',
+        email: user.email || '',
         phone: user.phone || '',
+        password: '',
       })
+      setOriginalEmail(user.email || '')
     }
   }, [user, reset])
 
@@ -215,15 +226,42 @@ export default function AdminProfilePage() {
       return response.data
     },
     onSuccess: (data) => {
-      setUser(data)
+      // Handle new response format with user object wrapped
+      const responseUser = data.user || data
+      const isVerificationPending = data.email_verification_pending || false
+      
+      // Always update auth store and invalidate queries - other fields may have been updated
+      setUser(responseUser)
       queryClient.invalidateQueries({ queryKey: ['user'] })
-      setSuccessMessage('Profile updated successfully!')
-      setIsEditingProfile(false)
-      setTimeout(() => setSuccessMessage(null), 3000)
+      
+      if (isVerificationPending) {
+        toast.success('Verification email sent! Check your new email to confirm.')
+        setSuccessMessage(data.message || 'Profile updated. Please check your new email to confirm the email change.')
+        setIsEditingProfile(false)
+        setValue('password', '')
+        setTimeout(() => setSuccessMessage(null), 8000)
+      } else {
+        toast.success('Profile updated successfully!')
+        setSuccessMessage('Profile updated successfully!')
+        setIsEditingProfile(false)
+        setTimeout(() => setSuccessMessage(null), 3000)
+      }
     },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.detail || 'Failed to update profile'
+      toast.error(errorMsg)
+    }
   })
 
   const onSubmit = (data: ProfileFormData) => {
+    const isEmailChanging = data.email !== originalEmail
+    
+    // If email is changing, password is required
+    if (isEmailChanging && !data.password) {
+      toast.error('Password is required to change your email address')
+      return
+    }
+    
     updateMutation.mutate(data)
   }
 
@@ -238,6 +276,8 @@ export default function AdminProfilePage() {
     switch (user?.role) {
       case 'super_admin':
         return { label: 'Super Admin', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' }
+      case 'garage_owner':
+        return { label: 'Garage Owner', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
       case 'garage_admin':
         return { label: 'Garage Admin', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' }
       case 'mechanic':
@@ -318,7 +358,9 @@ export default function AdminProfilePage() {
             <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
-            <span className="text-sm">Failed to update profile. Please try again.</span>
+            <span className="text-sm">
+              {(updateMutation.error as any)?.response?.data?.detail || 'Failed to update profile. Please try again.'}
+            </span>
           </div>
         )}
 
@@ -357,6 +399,29 @@ export default function AdminProfilePage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                Email Address
+              </label>
+              <input
+                {...register('email')}
+                type="email"
+                className={inputClasses('email')}
+                placeholder="email@example.com"
+              />
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-400">{errors.email.message}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-500">This is your login email</p>
+              {currentEmailValue !== originalEmail && (
+                <div className="mt-2 bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                  <p className="text-blue-400 text-xs">
+                    📧 Changing email requires verification. You'll receive a confirmation link at the new address.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">
                 Phone Number
               </label>
               <input
@@ -370,6 +435,45 @@ export default function AdminProfilePage() {
                 <p className="mt-1 text-sm text-red-400">{errors.phone.message}</p>
               )}
             </div>
+
+            {/* Password field - required when changing email */}
+            {currentEmailValue !== originalEmail && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <input
+                    {...register('password')}
+                    type={showPassword ? 'text' : 'password'}
+                    className={inputClasses('password')}
+                    placeholder="Enter your current password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  >
+                    {showPassword ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                {errors.password && (
+                  <p className="mt-1 text-sm text-red-400">{errors.password.message}</p>
+                )}
+                <p className="mt-1 text-xs text-amber-400">
+                  🔒 Password required to confirm email change
+                </p>
+              </div>
+            )}
 
             <button
               type="submit"
@@ -394,8 +498,8 @@ export default function AdminProfilePage() {
         {/* Collapsible Password Change */}
         <CollapsiblePasswordChange />
 
-        {/* Payment Settings - Only for garage admins */}
-        {(user?.role === 'super_admin' || user?.role === 'garage_admin') && (
+        {/* Payment Settings - Only for garage owners/admins */}
+        {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && (
           <div className="border-t border-white/10 pt-5 mt-5">
             <Link
               to="/dashboard/settings/stripe"

@@ -9,7 +9,7 @@ import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
-import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft } from 'lucide-react'
+import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar } from 'lucide-react'
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -817,7 +817,6 @@ function CustomerRepairs() {
 
 export default function CustomerPortalPage() {
   const location = useLocation()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const navLinks = [
     { to: '/portal', label: 'Dashboard', exact: true },
@@ -925,68 +924,11 @@ export default function CustomerPortalPage() {
                 </svg>
               </Link>
             </div>
-
-            {/* Mobile menu button */}
-            <div className="flex items-center md:hidden">
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none"
-                aria-label="Toggle menu"
-              >
-                {mobileMenuOpen ? (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                )}
-              </button>
-            </div>
           </div>
         </div>
-
-        {/* Mobile menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden bg-white/95 backdrop-blur border-t border-gray-200">
-            <div className="px-4 py-3 space-y-2">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`block px-3 py-2 rounded-lg text-base font-medium transition-colors ${
-                    isActive(link.to, link.exact)
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
-              <div className="border-t border-gray-200 pt-3 mt-3">
-                <Link
-                  to="/portal/settings"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-base font-medium transition-colors ${
-                    location.pathname === '/portal/settings'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  Profile Settings
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
       </nav>
 
-      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto">
+      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto pb-20 md:pb-6">
         {/* Breadcrumb - only show on sub-pages */}
         {isOnSubPage && (
           <div className="mb-4 flex items-center gap-2 text-sm">
@@ -1013,6 +955,78 @@ export default function CustomerPortalPage() {
           <Route path="settings" element={<ProfileSettingsPage />} />
         </Routes>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+        <div className="bg-white/95 backdrop-blur border-t border-gray-200 px-2 py-2 flex justify-around">
+          <Link
+            to="/portal"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/portal'
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Home className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Home</span>
+          </Link>
+          <Link
+            to="/portal/services"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/portal/services' || location.pathname.startsWith('/portal/book/')
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Wrench className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Services</span>
+          </Link>
+          <Link
+            to="/portal/appointments"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/portal/appointments'
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Calendar className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Appts</span>
+          </Link>
+          <Link
+            to="/portal/vehicles"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/portal/vehicles'
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Truck className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Vehicles</span>
+          </Link>
+          <Link
+            to="/portal/repairs"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/portal/repairs'
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <History className="w-5 h-5" />
+            <span className="text-[10px] font-medium">History</span>
+          </Link>
+          <Link
+            to="/portal/settings"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/portal/settings'
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <User className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Profile</span>
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }

@@ -8,7 +8,7 @@ interface User {
   first_name: string
   last_name: string
   phone: string | null
-  role: 'super_admin' | 'garage_admin' | 'mechanic' | 'receptionist' | 'customer'
+  role: 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'customer'
   is_active: boolean
   tenant_id: string | null
   customer_id: string | null

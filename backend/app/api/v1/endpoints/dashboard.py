@@ -270,7 +270,7 @@ async def get_dashboard_stats(
 
     # Phase 2: Mechanic workload distribution
     mechanic_workload: List[MechanicWorkload] = []
-    if current_user.role in [UserRole.GARAGE_ADMIN, UserRole.SUPER_ADMIN]:
+    if current_user.role in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
         # Get all mechanics for this tenant with their order counts
         result = await db.execute(
             select(

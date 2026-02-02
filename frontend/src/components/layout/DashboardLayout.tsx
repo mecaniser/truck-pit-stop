@@ -8,19 +8,30 @@ import MyGaragePage from '@/features/garage/MyGaragePage'
 import DashboardHome from '@/features/dashboard/DashboardHome'
 import AdminProfilePage from '@/features/dashboard/AdminProfilePage'
 import StripeSettingsPage from '@/features/dashboard/StripeSettingsPage'
+import PlatformDashboard from '@/features/platform-admin/PlatformDashboard'
+import GaragesPage from '@/features/platform-admin/GaragesPage'
+import GarageAnalyticsPage from '@/features/platform-admin/GarageAnalyticsPage'
+import PlatformAnalyticsPage from '@/features/platform-admin/PlatformAnalyticsPage'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-  const navLinks = [
-    { to: '/dashboard', label: 'Dashboard', exact: true },
-    { to: '/dashboard/customers', label: 'Customers' },
-    { to: '/dashboard/vehicles', label: 'Vehicles' },
-    { to: '/dashboard/repair-orders', label: 'Repair Orders' },
-    { to: '/dashboard/garage', label: 'My Garage' },
-  ]
+  // Different navigation for SUPER_ADMIN (platform management) vs garage staff
+  const navLinks = user?.role === 'super_admin' 
+    ? [
+        { to: '/dashboard', label: 'Dashboard', exact: true },
+        { to: '/dashboard/garages', label: 'Garages' },
+        { to: '/dashboard/analytics', label: 'Analytics' },
+      ]
+    : [
+        { to: '/dashboard', label: 'Dashboard', exact: true },
+        { to: '/dashboard/customers', label: 'Customers' },
+        { to: '/dashboard/vehicles', label: 'Vehicles' },
+        { to: '/dashboard/repair-orders', label: 'Repair Orders' },
+        { to: '/dashboard/garage', label: 'My Garage' },
+      ]
 
   const isActive = (path: string, exact?: boolean) => 
     exact ? location.pathname === path : location.pathname.startsWith(path)
@@ -198,13 +209,27 @@ export default function DashboardLayout() {
           </div>
         )}
         <Routes>
-          <Route path="customers" element={<CustomersPage />} />
-          <Route path="vehicles" element={<VehiclesPage />} />
-          <Route path="repair-orders" element={<RepairOrdersPage />} />
-          <Route path="garage/*" element={<MyGaragePage />} />
-          <Route path="settings" element={<AdminProfilePage />} />
-          <Route path="settings/stripe" element={<StripeSettingsPage />} />
-          <Route path="" element={<DashboardHome />} />
+          {/* Platform Admin Routes (SUPER_ADMIN only) */}
+          {user?.role === 'super_admin' ? (
+            <>
+              <Route path="garages" element={<GaragesPage />} />
+              <Route path="garages/:garageId/analytics" element={<GarageAnalyticsPage />} />
+              <Route path="analytics" element={<PlatformAnalyticsPage />} />
+              <Route path="settings" element={<AdminProfilePage />} />
+              <Route path="" element={<PlatformDashboard />} />
+            </>
+          ) : (
+            /* Garage Staff Routes */
+            <>
+              <Route path="customers" element={<CustomersPage />} />
+              <Route path="vehicles" element={<VehiclesPage />} />
+              <Route path="repair-orders" element={<RepairOrdersPage />} />
+              <Route path="garage/*" element={<MyGaragePage />} />
+              <Route path="settings" element={<AdminProfilePage />} />
+              <Route path="settings/stripe" element={<StripeSettingsPage />} />
+              <Route path="" element={<DashboardHome />} />
+            </>
+          )}
         </Routes>
       </main>
     </div>

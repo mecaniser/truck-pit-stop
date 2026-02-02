@@ -133,7 +133,7 @@ async def update_vehicle(
     vehicle_data: VehicleUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.SUPER_ADMIN, UserRole.GARAGE_ADMIN, UserRole.MECHANIC, UserRole.RECEPTIONIST
+        UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.MECHANIC, UserRole.RECEPTIONIST
     )),
 ):
     """Staff-only full update endpoint"""

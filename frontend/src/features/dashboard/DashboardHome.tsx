@@ -103,7 +103,7 @@ export default function DashboardHome() {
   const [error, setError] = useState<string | null>(null)
 
   const isMechanic = user?.role === 'mechanic'
-  const isManager = user?.role === 'garage_admin' || user?.role === 'super_admin'
+  const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   useEffect(() => {
     fetchStats()
