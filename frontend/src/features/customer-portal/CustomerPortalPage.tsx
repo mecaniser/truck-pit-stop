@@ -325,14 +325,18 @@ function CustomerVehicles() {
   )
 }
 
-// Stripe promise - loaded once
-let stripePromise: ReturnType<typeof loadStripe> | null = null
-const getStripe = async () => {
-  if (!stripePromise) {
+// Stripe promise cache - keyed by account (null for platform, account_id for connected)
+const stripePromiseCache: Map<string | null, ReturnType<typeof loadStripe>> = new Map()
+
+const getStripe = async (stripeAccountId?: string | null) => {
+  const cacheKey = stripeAccountId || null
+  
+  if (!stripePromiseCache.has(cacheKey)) {
     const { data } = await api.get('/payments/config')
-    stripePromise = loadStripe(data.publishable_key)
+    const options = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined
+    stripePromiseCache.set(cacheKey, loadStripe(data.publishable_key, options))
   }
-  return stripePromise
+  return stripePromiseCache.get(cacheKey)!
 }
 
 // Payment form component
@@ -480,12 +484,15 @@ function CustomerRepairs() {
   const handlePayClick = async () => {
     if (!invoice) return
     try {
-      const stripe = await getStripe()
-      setStripeInstance(stripe)
-      
+      // First create the payment intent to get the connected account ID
       const { data } = await api.post('/payments/create-payment-intent', {
         invoice_id: invoice.id,
       })
+      
+      // Load Stripe with the connected account if using Stripe Connect
+      const stripe = await getStripe(data.stripe_account_id)
+      setStripeInstance(stripe)
+      
       setStripeOptions({ 
         clientSecret: data.client_secret,
         appearance: {

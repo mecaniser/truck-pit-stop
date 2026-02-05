@@ -55,6 +55,7 @@ class PaymentIntentResponse(BaseModel):
     client_secret: str
     payment_intent_id: str
     amount: Decimal
+    stripe_account_id: Optional[str] = None  # Connected account ID for Stripe Connect
 
 
 class ConfirmPaymentRequest(BaseModel):
@@ -287,10 +288,16 @@ async def create_payment_intent_for_invoice(
     
     payment_intent = stripe.PaymentIntent.create(**intent_params)
     
+    # Return connected account ID if using Stripe Connect
+    connected_account_id = None
+    if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
+        connected_account_id = tenant.stripe_account_id
+    
     return PaymentIntentResponse(
         client_secret=payment_intent.client_secret,
         payment_intent_id=payment_intent.id,
         amount=invoice.total_amount,
+        stripe_account_id=connected_account_id,
     )
 
 
