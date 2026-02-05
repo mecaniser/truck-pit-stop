@@ -325,9 +325,17 @@ async def confirm_payment(
     if invoice.repair_order.customer_id != current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
+    # Get tenant to check for Stripe Connect
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    
     # Verify payment intent status with Stripe
+    # If using Connect, retrieve from connected account
     try:
-        payment_intent = stripe.PaymentIntent.retrieve(body.payment_intent_id)
+        retrieve_params = {}
+        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
+            retrieve_params["stripe_account"] = tenant.stripe_account_id
+        payment_intent = stripe.PaymentIntent.retrieve(body.payment_intent_id, **retrieve_params)
     except stripe.error.InvalidRequestError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment intent")
     
