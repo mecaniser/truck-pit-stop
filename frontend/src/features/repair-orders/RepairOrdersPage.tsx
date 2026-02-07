@@ -79,6 +79,7 @@ export default function RepairOrdersPage() {
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
+  const [showZelleQrModal, setShowZelleQrModal] = useState(false)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -189,6 +190,15 @@ export default function RepairOrdersPage() {
       return invoices.length > 0 ? invoices[0] : null
     },
     enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
+  })
+
+  const { data: zelleSettings } = useQuery<{ zelle_email: string | null; zelle_phone: string | null; zelle_qr_image: string | null }>({
+    queryKey: ['zelle-settings'],
+    queryFn: async () => {
+      const response = await api.get('/admin/zelle-settings')
+      return response.data
+    },
+    enabled: showZelleQrModal,
   })
 
   const filteredVehicles = useMemo(() => {
@@ -1958,7 +1968,12 @@ export default function RepairOrdersPage() {
                             <button
                               key={method.value}
                               type="button"
-                              onClick={() => setSelectedPaymentMethod(method.value)}
+                              onClick={() => {
+                                setSelectedPaymentMethod(method.value)
+                                if (method.value === 'zelle') {
+                                  setShowZelleQrModal(true)
+                                }
+                              }}
                               className={`py-2 px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 text-sm font-medium ${
                                 selectedPaymentMethod === method.value
                                   ? 'border-green-500 bg-green-50 text-green-700'
@@ -2583,6 +2598,95 @@ export default function RepairOrdersPage() {
                     </svg>
                   )}
                   Delete Invoice
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Zelle QR Code Modal */}
+      {showZelleQrModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                  <span className="text-xl">📱</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Zelle Payment</h3>
+                  <p className="text-sm text-gray-500">Show QR code to customer</p>
+                </div>
+              </div>
+
+              {/* QR Code Display */}
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                {zelleSettings?.zelle_qr_image ? (
+                  <div className="flex flex-col items-center">
+                    <img
+                      src={zelleSettings.zelle_qr_image}
+                      alt="Zelle QR Code"
+                      className="w-48 h-48 object-contain bg-white rounded-lg border"
+                    />
+                    <p className="text-sm text-gray-600 mt-3 text-center">
+                      Customer scans this QR code with their Zelle app
+                    </p>
+                  </div>
+                ) : zelleSettings?.zelle_email || zelleSettings?.zelle_phone ? (
+                  <div className="text-center space-y-2">
+                    <p className="text-sm text-gray-600">Send Zelle payment to:</p>
+                    {zelleSettings.zelle_email && (
+                      <p className="font-medium text-gray-900">{zelleSettings.zelle_email}</p>
+                    )}
+                    {zelleSettings.zelle_phone && (
+                      <p className="font-medium text-gray-900">{zelleSettings.zelle_phone}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 text-sm">
+                      No Zelle QR code or info configured.
+                    </p>
+                    <p className="text-gray-400 text-xs mt-1">
+                      Set up in Garage Settings → Zelle Payments
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Amount Display */}
+              {invoiceForOrder && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-green-800 text-center">
+                    Amount due: <span className="font-bold">${parseFloat(invoiceForOrder.total_amount).toFixed(2)}</span>
+                  </p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowZelleQrModal(false)}
+                  className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowZelleQrModal(false)
+                    if (invoiceForOrder) {
+                      recordManualPaymentMutation.mutate({
+                        invoiceId: invoiceForOrder.id,
+                        method: 'zelle',
+                      })
+                    }
+                  }}
+                  disabled={recordManualPaymentMutation.isPending}
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
+                >
+                  {recordManualPaymentMutation.isPending ? 'Recording...' : 'Payment Received'}
                 </button>
               </div>
             </div>

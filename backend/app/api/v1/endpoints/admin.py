@@ -529,6 +529,11 @@ class ZelleSettingsRequest(BaseModel):
 class ZelleSettingsResponse(BaseModel):
     zelle_email: Optional[str] = None
     zelle_phone: Optional[str] = None
+    zelle_qr_image: Optional[str] = None  # Base64 encoded image
+
+
+class ZelleQrImageRequest(BaseModel):
+    zelle_qr_image: Optional[str] = None  # Base64 encoded image, null to remove
 
 
 class ReminderSettingsRequest(BaseModel):
@@ -582,6 +587,7 @@ async def get_zelle_settings(
     return ZelleSettingsResponse(
         zelle_email=tenant.zelle_email,
         zelle_phone=tenant.zelle_phone,
+        zelle_qr_image=tenant.zelle_qr_image,
     )
 
 
@@ -607,6 +613,47 @@ async def update_zelle_settings(
     return ZelleSettingsResponse(
         zelle_email=tenant.zelle_email,
         zelle_phone=tenant.zelle_phone,
+        zelle_qr_image=tenant.zelle_qr_image,
+    )
+
+
+@router.put("/zelle-qr-image", response_model=ZelleSettingsResponse)
+async def update_zelle_qr_image(
+    body: ZelleQrImageRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Upload or remove Zelle QR code image"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    # Validate base64 if provided
+    if body.zelle_qr_image:
+        # Basic validation - should start with data:image
+        if not body.zelle_qr_image.startswith("data:image"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid image format. Must be a base64 data URL.",
+            )
+        # Limit size (~2MB base64 = ~1.5MB image)
+        if len(body.zelle_qr_image) > 2_000_000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image too large. Maximum size is ~1.5MB.",
+            )
+    
+    tenant.zelle_qr_image = body.zelle_qr_image
+    
+    await db.commit()
+    await db.refresh(tenant)
+    
+    return ZelleSettingsResponse(
+        zelle_email=tenant.zelle_email,
+        zelle_phone=tenant.zelle_phone,
+        zelle_qr_image=tenant.zelle_qr_image,
     )
 
 

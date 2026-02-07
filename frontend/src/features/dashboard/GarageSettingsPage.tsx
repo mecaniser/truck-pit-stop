@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
-import { CheckCircle, AlertCircle, ExternalLink, CreditCard, RefreshCw, QrCode, Save, Bell, BellOff, Percent } from 'lucide-react'
+import { CheckCircle, AlertCircle, ExternalLink, CreditCard, RefreshCw, QrCode, Save, Bell, BellOff, Percent, Upload, Trash2, ImageIcon } from 'lucide-react'
 
 interface ConnectStatus {
   is_connected: boolean
@@ -16,6 +16,7 @@ interface ConnectStatus {
 interface ZelleSettings {
   zelle_email: string | null
   zelle_phone: string | null
+  zelle_qr_image: string | null
 }
 
 interface ReminderSettings {
@@ -36,6 +37,8 @@ export default function GarageSettingsPage() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [zelleEmail, setZelleEmail] = useState('')
   const [zellePhone, setZellePhone] = useState('')
+  const [zelleQrPreview, setZelleQrPreview] = useState<string | null>(null)
+  const [isUploadingQr, setIsUploadingQr] = useState(false)
   
   // Reminder settings state
   const [remindersEnabled, setRemindersEnabled] = useState(true)
@@ -129,6 +132,64 @@ export default function GarageSettingsPage() {
       setZellePhone(zelleSettings.zelle_phone || '')
     }
     setIsEditingZelle(false)
+  }
+
+  const uploadQrMutation = useMutation({
+    mutationFn: async (base64Image: string | null) => {
+      const response = await api.put('/admin/zelle-qr-image', {
+        zelle_qr_image: base64Image,
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success(zelleQrPreview ? 'QR code uploaded' : 'QR code removed')
+      queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
+      setZelleQrPreview(null)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to upload QR code')
+    },
+  })
+
+  const handleQrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+
+    // Validate file size (max 1.5MB)
+    if (file.size > 1.5 * 1024 * 1024) {
+      toast.error('Image too large. Maximum size is 1.5MB')
+      return
+    }
+
+    setIsUploadingQr(true)
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string
+      setZelleQrPreview(base64)
+      setIsUploadingQr(false)
+    }
+    reader.onerror = () => {
+      toast.error('Failed to read file')
+      setIsUploadingQr(false)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleSaveQrImage = () => {
+    if (zelleQrPreview) {
+      uploadQrMutation.mutate(zelleQrPreview)
+    }
+  }
+
+  const handleRemoveQrImage = () => {
+    uploadQrMutation.mutate(null)
+    setZelleQrPreview(null)
   }
 
   const saveRemindersMutation = useMutation({
@@ -401,7 +462,9 @@ export default function GarageSettingsPage() {
               <h2 className="text-lg font-semibold text-gray-900">Zelle Payments</h2>
               {!isEditingZelle && (
                 <p className="text-sm text-gray-600">
-                  {zelleSettings?.zelle_email || zelleSettings?.zelle_phone ? (
+                  {zelleSettings?.zelle_qr_image ? (
+                    'QR code uploaded'
+                  ) : zelleSettings?.zelle_email || zelleSettings?.zelle_phone ? (
                     zelleSettings.zelle_email || zelleSettings.zelle_phone
                   ) : (
                     'Not configured'
@@ -421,38 +484,136 @@ export default function GarageSettingsPage() {
         </div>
 
         {isEditingZelle && (
-          <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+          <div className="mt-4 pt-4 border-t border-gray-200 space-y-4">
+            {/* QR Code Upload Section */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Zelle Email</label>
-              <input
-                type="email"
-                value={zelleEmail}
-                onChange={(e) => setZelleEmail(e.target.value)}
-                placeholder="your-zelle@email.com"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Zelle Phone (optional)</label>
-              <input
-                type="tel"
-                value={zellePhone}
-                onChange={(e) => setZellePhone(e.target.value)}
-                placeholder="(555) 123-4567"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-2">Zelle QR Code</label>
+              
+              {/* Current/Preview QR Image */}
+              {(zelleQrPreview || zelleSettings?.zelle_qr_image) && (
+                <div className="mb-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-start gap-4">
+                    <img
+                      src={zelleQrPreview || zelleSettings?.zelle_qr_image || ''}
+                      alt="Zelle QR Code"
+                      className="w-32 h-32 object-contain bg-white rounded border"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-600 mb-2">
+                        {zelleQrPreview ? 'Preview - click Save to upload' : 'Current QR code'}
+                      </p>
+                      <div className="flex gap-2">
+                        {zelleQrPreview && (
+                          <button
+                            onClick={handleSaveQrImage}
+                            disabled={uploadQrMutation.isPending}
+                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white text-sm font-medium rounded-lg flex items-center gap-1"
+                          >
+                            {uploadQrMutation.isPending ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            ) : (
+                              <>
+                                <Save className="w-3.5 h-3.5" />
+                                Save QR
+                              </>
+                            )}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setZelleQrPreview(null)
+                            if (!zelleQrPreview && zelleSettings?.zelle_qr_image) {
+                              handleRemoveQrImage()
+                            }
+                          }}
+                          disabled={uploadQrMutation.isPending}
+                          className="px-3 py-1.5 border border-red-300 text-red-600 hover:bg-red-50 text-sm font-medium rounded-lg flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {zelleQrPreview ? 'Cancel' : 'Remove'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Upload Button */}
+              {!zelleQrPreview && !zelleSettings?.zelle_qr_image && (
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-colors">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    {isUploadingQr ? (
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-8 h-8 text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium text-purple-600">Click to upload</span> your Zelle QR code
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 1.5MB</p>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrFileChange}
+                    className="hidden"
+                    disabled={isUploadingQr}
+                  />
+                </label>
+              )}
+
+              {/* Change QR button when one exists */}
+              {!zelleQrPreview && zelleSettings?.zelle_qr_image && (
+                <label className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-purple-600 hover:text-purple-700 cursor-pointer">
+                  <Upload className="w-4 h-4" />
+                  Upload new QR code
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrFileChange}
+                    className="hidden"
+                    disabled={isUploadingQr}
+                  />
+                </label>
+              )}
             </div>
 
-            <p className="text-xs text-gray-500">
-              Customers will see your Zelle info to scan and send payment.
-            </p>
+            <div className="border-t border-gray-200 pt-4">
+              <p className="text-xs text-gray-500 mb-3">
+                Or enter your Zelle email/phone (shown as text if no QR uploaded)
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Zelle Email</label>
+                  <input
+                    type="email"
+                    value={zelleEmail}
+                    onChange={(e) => setZelleEmail(e.target.value)}
+                    placeholder="your-zelle@email.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Zelle Phone (optional)</label>
+                  <input
+                    type="tel"
+                    value={zellePhone}
+                    onChange={(e) => setZellePhone(e.target.value)}
+                    placeholder="(555) 123-4567"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 pt-2">
               <button
                 onClick={cancelZelleEdit}
                 className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
               >
-                Cancel
+                Done
               </button>
               <button
                 onClick={() => saveZelleMutation.mutate()}
@@ -464,7 +625,7 @@ export default function GarageSettingsPage() {
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    Save
+                    Save Info
                   </>
                 )}
               </button>

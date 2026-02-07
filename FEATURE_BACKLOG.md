@@ -38,6 +38,31 @@ Features identified from competitor analysis (Fullbay, Easy Truck Shop) that are
 
 ## Medium Priority (Customer Experience)
 
+### Zelle Payment Enhancement
+
+| Feature | Description | Complexity | Value | Status |
+|---------|-------------|------------|-------|--------|
+| QR Code Upload & Display | Garage uploads their Zelle QR image, displayed when staff selects Zelle payment | Low | High | **Implementing** |
+| Walk-in Customer Capture | When recording Zelle payment from unknown customer, staff can create new customer from sender's Zelle email/phone (seen in bank notification) | Low | High | Planned |
+| Customer Source Tracking | Mark customers created from Zelle payments with `source = "zelle"` for later enrichment (add truck details, etc.) | Low | Medium | Planned |
+
+**Walk-in Zelle Customer Flow:**
+1. Walk-in customer gets repair done (no existing customer record, or placeholder)
+2. Customer pays via Zelle → shop receives bank notification showing sender's email/phone
+3. Staff records Zelle payment → prompted to enter sender's Zelle info
+4. New customer created with `source = "zelle"`, linked to repair order
+5. Customer returns later → staff can add truck/trailer details to complete profile
+
+**Implementation Steps:**
+1. ~~Add `zelle_qr_image_url` field to Tenant model (migration)~~ ✓
+2. ~~Update Garage Settings page to allow QR image upload~~ ✓
+3. ~~Display QR image in Zelle payment modal on repair orders~~ ✓
+4. Add `source` field to Customer model (migration) — for "zelle", "walk-in", "portal", etc.
+5. Add quick customer creation form when recording Zelle payment for unknown customer
+6. Show customer source badge on profile, prompt to complete partial records
+
+---
+
 ### 2-Way Texting
 
 | Feature | Description | Competitor | Complexity | Value | Dependencies |
@@ -108,7 +133,7 @@ These features were identified from competitor analysis and have been built:
 
 ### Payment Options (Feb 2026)
 - **Cash payments** - Staff can mark invoices as paid with cash
-- **Zelle payments** - QR code display for Zelle, configurable in garage settings
+- **Zelle payments** - Manual payment recording, email/phone config in garage settings
 - **Check/ACH payments** - Manual payment recording for all methods
 - **Invoice due dates** - Set due date when creating invoice, track overdue
 

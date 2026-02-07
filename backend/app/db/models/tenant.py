@@ -23,9 +23,10 @@ class Tenant(BaseModel):
     stripe_account_id = Column(String(255), unique=True, nullable=True, index=True)
     stripe_onboarding_complete = Column(Boolean, default=False, nullable=False)
     
-    # Zelle payment info (for QR code generation)
+    # Zelle payment info
     zelle_email = Column(String(255), nullable=True)
     zelle_phone = Column(String(20), nullable=True)
+    zelle_qr_image = Column(Text, nullable=True)  # Base64 encoded QR image
     
     # Invoice reminder settings (tenant-controlled)
     invoice_reminders_enabled = Column(Boolean, default=True, nullable=False)
