@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, 
@@ -65,7 +65,7 @@ export default function PendingEnrollmentsPage() {
       const response = await api.post(`/admin/approve-enrollment/${tenantId}`)
       return response.data
     },
-    onSuccess: (_, tenantId) => {
+    onSuccess: () => {
       toast.success('Enrollment approved successfully')
       queryClient.invalidateQueries({ queryKey: ['enrollments'] })
       queryClient.invalidateQueries({ queryKey: ['enrollment-stats'] })

@@ -181,7 +181,7 @@ export default function RepairOrdersPage() {
     enabled: !!(selectedOrder?.id && isDetailOpen),
   })
 
-  const { data: invoiceForOrder } = useQuery<{ id: string; invoice_number: string; total_amount: string } | null>({
+  const { data: invoiceForOrder } = useQuery<{ id: string; invoice_number: string; total_amount: string; due_date: string | null } | null>({
     queryKey: ['invoice-for-order', selectedOrder?.id],
     queryFn: async () => {
       const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`)

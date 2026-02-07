@@ -4,6 +4,7 @@ export type RepairOrderStatus =
   | 'draft'
   | 'quoted'
   | 'approved'
+  | 'declined'
   | 'assigned'
   | 'acknowledged'
   | 'in_progress'

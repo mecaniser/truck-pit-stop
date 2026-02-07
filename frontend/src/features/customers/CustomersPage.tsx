@@ -550,7 +550,7 @@ export default function CustomersPage() {
     }
 
     if (editingCustomer) {
-      updateMutation.mutate({ id: editingCustomer.id, data: payload })
+      updateMutation.mutate({ id: editingCustomer.id, data: payload as any })
     } else {
       createMutation.mutate(payload as any)
     }
