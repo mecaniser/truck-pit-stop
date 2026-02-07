@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -14,6 +14,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.db.models.tenant import Tenant
 from app.services.email_service import send_email
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +23,12 @@ router = APIRouter()
 
 class InvoiceCreate(BaseModel):
     repair_order_id: UUID
+    due_date: Optional[date] = None
+
+
+class InvoiceUpdate(BaseModel):
+    due_date: Optional[date] = None
+    notes: Optional[str] = None
 
 
 class ResendInvoiceRequest(BaseModel):
@@ -35,12 +42,16 @@ class InvoiceResponse(BaseModel):
     invoice_number: str
     status: str
     subtotal: Decimal
+    shop_supplies_amount: Decimal = Decimal("0.00")
+    service_fee_amount: Decimal = Decimal("0.00")
     tax_amount: Decimal
     discount_amount: Decimal
     total_amount: Decimal
     due_date: Optional[datetime]
     paid_at: Optional[datetime]
     notes: Optional[str]
+    last_reminder_sent_at: Optional[datetime] = None
+    reminder_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -119,8 +130,13 @@ async def create_invoice(
         )
     invoice_number = await generate_invoice_number(db, current_user.tenant_id)
     
+    # Get tenant for tax/fee settings
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    
     # Calculate total from parts/labor OR from selected services in internal_notes
     subtotal = order.total_cost
+    labor_total = Decimal("0.00")
     
     # If total_cost is 0, check for services in internal_notes (quote-based orders)
     if subtotal == Decimal("0.00") and order.internal_notes:
@@ -133,20 +149,51 @@ async def create_invoice(
                     Decimal(str(svc.get("base_price", "0")))
                     for svc in selected_services
                 )
+                # For quote-based, assume all is labor for shop supplies calc
+                labor_total = subtotal
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
+    else:
+        # For parts/labor based orders, get labor from repair order
+        labor_total = order.total_labor_cost if order.total_labor_cost else Decimal("0.00")
     
-    total_amount = subtotal
+    # Calculate fees based on tenant settings
+    shop_supplies_rate = Decimal(str(tenant.shop_supplies_rate or 0)) / 100 if tenant else Decimal("0")
+    service_fee_rate = Decimal(str(tenant.service_fee_rate or 0)) / 100 if tenant else Decimal("0")
+    sales_tax_rate = Decimal(str(tenant.sales_tax_rate or 0)) / 100 if tenant else Decimal("0")
+    
+    # Shop supplies: percentage of labor
+    shop_supplies_amount = (labor_total * shop_supplies_rate).quantize(Decimal("0.01"))
+    
+    # Subtotal after shop supplies
+    subtotal_with_supplies = subtotal + shop_supplies_amount
+    
+    # Service fee: percentage of subtotal (after shop supplies)
+    service_fee_amount = (subtotal_with_supplies * service_fee_rate).quantize(Decimal("0.01"))
+    
+    # Taxable amount (subtotal + shop supplies + service fee)
+    taxable_amount = subtotal_with_supplies + service_fee_amount
+    
+    # Sales tax
+    tax_amount = (taxable_amount * sales_tax_rate).quantize(Decimal("0.01"))
+    
+    # Total
+    total_amount = taxable_amount + tax_amount
+    
+    # Default due date to today if not specified
+    due_date = body.due_date if body.due_date else date.today()
     invoice = Invoice(
         tenant_id=current_user.tenant_id,
         repair_order_id=order.id,
         invoice_number=invoice_number,
         status=InvoiceStatus.SENT,
         subtotal=subtotal,
-        tax_amount=Decimal("0.00"),
+        shop_supplies_amount=shop_supplies_amount,
+        service_fee_amount=service_fee_amount,
+        tax_amount=tax_amount,
         discount_amount=Decimal("0.00"),
         total_amount=total_amount,
-        due_date=None,
+        due_date=due_date,
         paid_at=None,
         notes=None,
     )
@@ -265,6 +312,39 @@ async def get_invoice(
         customer_name=customer_name,
         vehicle_info=vehicle_info,
     )
+
+
+@router.patch("/{invoice_id}", response_model=InvoiceResponse)
+async def update_invoice(
+    invoice_id: UUID,
+    body: InvoiceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update invoice due date or notes"""
+    _require_staff(current_user)
+    
+    result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
+    invoice = result.scalar_one_or_none()
+    
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    
+    if current_user.tenant_id != invoice.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify a paid invoice")
+    
+    if body.due_date is not None:
+        invoice.due_date = body.due_date
+    if body.notes is not None:
+        invoice.notes = body.notes
+    
+    await db.commit()
+    await db.refresh(invoice)
+    
+    return InvoiceResponse.model_validate(invoice)
 
 
 @router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)

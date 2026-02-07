@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -31,6 +31,7 @@ interface MechanicJob {
   description: string | null
   services_count: number
   updated_at: string
+  work_started_at: string | null
 }
 
 interface ServiceItem {
@@ -53,6 +54,8 @@ interface MechanicJobDetail {
   services: ServiceItem[]
   created_at: string
   updated_at: string
+  work_started_at: string | null
+  work_completed_at: string | null
 }
 
 interface WorkHistoryItem {
@@ -62,6 +65,7 @@ interface WorkHistoryItem {
   vehicle_info: string
   completed_at: string
   services_count: number
+  actual_hours: number | null
 }
 
 interface MechanicStats {
@@ -100,6 +104,31 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request' | 'profile'
+
+function LiveTimer({ startedAt }: { startedAt: string }) {
+  const calc = useCallback(() => {
+    const secs = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+    if (secs < 0) return '0m 0s'
+    const h = Math.floor(secs / 3600)
+    const m = Math.floor((secs % 3600) / 60)
+    const s = secs % 60
+    return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`
+  }, [startedAt])
+
+  const [display, setDisplay] = useState(calc())
+
+  useEffect(() => {
+    const id = setInterval(() => setDisplay(calc()), 1000)
+    return () => clearInterval(id)
+  }, [calc])
+
+  return (
+    <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-center">
+      <p className="text-xs text-amber-400 uppercase tracking-wide mb-1">Time on job</p>
+      <p className="text-2xl font-mono font-bold text-amber-400">{display}</p>
+    </div>
+  )
+}
 
 // Responsive container - full width on mobile, max 512px on larger screens, centered
 const Container = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
@@ -385,6 +414,13 @@ export default function MechanicPortalPage() {
             </div>
           </div>
 
+          {/* Live Timer */}
+          {jobDetail.status === 'in_progress' && jobDetail.work_started_at && (
+            <div className="px-4">
+              <LiveTimer startedAt={jobDetail.work_started_at} />
+            </div>
+          )}
+
           {/* Services */}
           {jobDetail.services.length > 0 && (
             <div className="px-4 flex-1">
@@ -477,9 +513,14 @@ export default function MechanicPortalPage() {
                     </span>
                   </div>
                   <p className="text-white font-medium">{item.vehicle_info}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {format(new Date(item.completed_at), 'MMM d, yyyy')}
-                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-xs text-gray-500">
+                      {format(new Date(item.completed_at), 'MMM d, yyyy')}
+                    </p>
+                    {item.actual_hours != null && (
+                      <span className="text-xs text-amber-400 font-mono">{item.actual_hours}h worked</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

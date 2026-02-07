@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, ForeignKey, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -9,6 +9,7 @@ from app.db.base import BaseModel
 class RepairOrderStatus(str, enum.Enum):
     DRAFT = "draft"
     QUOTED = "quoted"
+    DECLINED = "declined"           # Customer declined quote, needs revision
     APPROVED = "approved"
     ASSIGNED = "assigned"           # Mechanic assigned, awaiting acknowledgment
     ACKNOWLEDGED = "acknowledged"   # Mechanic confirmed assignment
@@ -50,6 +51,10 @@ class RepairOrder(BaseModel):
     total_parts_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_labor_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    
+    # Per-job time tracking
+    work_started_at = Column(DateTime(timezone=True), nullable=True)
+    work_completed_at = Column(DateTime(timezone=True), nullable=True)
     
     # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)

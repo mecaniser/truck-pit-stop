@@ -94,6 +94,8 @@ class RepairOrderResponse(RepairOrderBase):
     total_cost: Decimal
     created_at: datetime
     updated_at: datetime
+    work_started_at: Optional[datetime] = None
+    work_completed_at: Optional[datetime] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
 
     class Config:
@@ -104,4 +106,9 @@ class RepairOrderDetailResponse(RepairOrderResponse):
     parts_usage: List[PartsUsageResponse] = []
     labor_items: List[LaborResponse] = []
 
+
+class QuickRepairOrderCreate(BaseModel):
+    phone: Optional[str] = None
+    vehicle_description: str
+    complaint: Optional[str] = None
 

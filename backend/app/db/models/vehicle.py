@@ -14,6 +14,7 @@ class Vehicle(BaseModel):
     customer = relationship("Customer", back_populates="vehicles")
     
     vin = Column(String(17), nullable=True, index=True)
+    unit_number = Column(String(50), nullable=True, index=True)  # Fleet/company unit identifier
     make = Column(String(100), nullable=False)
     model = Column(String(100), nullable=False)
     year = Column(Integer, nullable=True)

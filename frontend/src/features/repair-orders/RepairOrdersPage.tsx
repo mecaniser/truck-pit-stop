@@ -76,6 +76,9 @@ export default function RepairOrdersPage() {
   const [showReassignMechanic, setShowReassignMechanic] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
   const [showReviewNotes, setShowReviewNotes] = useState(false)
+  const [invoiceDueDate, setInvoiceDueDate] = useState('')
+  const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -109,6 +112,15 @@ export default function RepairOrdersPage() {
       }
     }
   }, [searchParams, orders, setSearchParams])
+
+  // Handle ?new=true query param to auto-open create modal
+  useEffect(() => {
+    const newParam = searchParams.get('new')
+    if (newParam === 'true') {
+      setIsModalOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   const { data: customers } = useQuery<Customer[]>({
     queryKey: ['customers'],
@@ -228,7 +240,6 @@ export default function RepairOrdersPage() {
   const createVehicleMutation = useMutation({
     mutationFn: async ({ customer_id, data }: { customer_id: string; data: NewVehicleForm }) => {
       const payload = {
-        customer_id,
         make: data.make.trim(),
         model: data.model.trim(),
         year: data.year ? Number(data.year) : null,
@@ -238,7 +249,8 @@ export default function RepairOrdersPage() {
         mileage: data.mileage ? Number(data.mileage) : null,
         notes: null,
       }
-      const response = await api.post('/vehicles', payload)
+      // Use nested endpoint under customer
+      const response = await api.post(`/customers/${customer_id}/vehicles`, payload)
       return response.data as Vehicle
     },
   })
@@ -342,8 +354,11 @@ export default function RepairOrdersPage() {
   })
 
   const createInvoiceMutation = useMutation({
-    mutationFn: async (repairOrderId: string) => {
-      const response = await api.post('/invoices', { repair_order_id: repairOrderId })
+    mutationFn: async ({ repairOrderId, dueDate }: { repairOrderId: string; dueDate?: string }) => {
+      const response = await api.post('/invoices', { 
+        repair_order_id: repairOrderId,
+        due_date: dueDate || null,
+      })
       return response.data
     },
     onSuccess: async () => {
@@ -355,10 +370,36 @@ export default function RepairOrdersPage() {
         // Update local state to reflect new status
         setSelectedOrder(prev => prev ? { ...prev, status: 'invoiced' } : null)
       }
+      setInvoiceDueDate('')
       toast.success('Invoice created and sent to customer')
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to create invoice')
+    },
+  })
+
+  const recordManualPaymentMutation = useMutation({
+    mutationFn: async ({ invoiceId, method, notes }: { invoiceId: string; method: string; notes?: string }) => {
+      const response = await api.post('/payments/record-manual', { 
+        invoice_id: invoiceId,
+        method,
+        notes,
+      })
+      return response.data
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      if (selectedOrder?.id) {
+        queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
+        setSelectedOrder(prev => prev ? { ...prev, status: 'paid' } : null)
+      }
+      setShowInvoicePaymentOptions(false)
+      setSelectedPaymentMethod('')
+      toast.success('Payment recorded successfully')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to record payment')
     },
   })
 
@@ -564,6 +605,7 @@ export default function RepairOrdersPage() {
     const styles: Record<string, { bg: string; text: string; dot: string }> = {
       draft: { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' },
       quoted: { bg: 'bg-blue-100', text: 'text-blue-700', dot: 'bg-blue-500' },
+      declined: { bg: 'bg-red-100', text: 'text-red-700', dot: 'bg-red-500' },
       approved: { bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
       assigned: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
       acknowledged: { bg: 'bg-cyan-100', text: 'text-cyan-700', dot: 'bg-cyan-500' },
@@ -581,6 +623,7 @@ export default function RepairOrdersPage() {
     { value: 'all', label: 'All' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'quoted', label: 'Quoted' },
+    { value: 'declined', label: 'Declined' },
     { value: 'approved', label: 'Approved' },
     { value: 'completed', label: 'Completed' },
     { value: 'paid', label: 'Paid' },
@@ -1381,6 +1424,7 @@ export default function RepairOrdersPage() {
         onClose={closeDetail}
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
+        width="max-w-2xl"
         headerExtra={
           selectedOrder && (() => {
             const status = (orderDetail ?? selectedOrder).status
@@ -1390,7 +1434,7 @@ export default function RepairOrdersPage() {
               ? { dot: 'bg-amber-500' } 
               : getStatusStyle(status)
             return (
-              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${isAwaitingApproval ? 'bg-amber-500/30' : 'bg-white/20'}`}>
+              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${isAwaitingApproval ? 'bg-amber-500/30' : 'bg-white/20'}`}>
                 <span className={`w-2 h-2 rounded-full ${statusStyle.dot}`}></span>
                 {displayStatus}
               </div>
@@ -1808,9 +1852,22 @@ export default function RepairOrdersPage() {
                         <p className="text-sm text-indigo-700">Create invoice to send to customer for payment</p>
                       </div>
                     </div>
+                    <div className="mb-3">
+                      <label className="block text-sm font-medium text-indigo-700 mb-1">Due Date (optional)</label>
+                      <input
+                        type="date"
+                        value={invoiceDueDate}
+                        onChange={(e) => setInvoiceDueDate(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
                     <button
                       type="button"
-                      onClick={() => selectedOrder.id && createInvoiceMutation.mutate(selectedOrder.id)}
+                      onClick={() => selectedOrder.id && createInvoiceMutation.mutate({ 
+                        repairOrderId: selectedOrder.id,
+                        dueDate: invoiceDueDate || undefined,
+                      })}
                       disabled={createInvoiceMutation.isPending}
                       className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
@@ -1846,29 +1903,107 @@ export default function RepairOrdersPage() {
                       </div>
                     </div>
                     
-                    {!showResendInvoice ? (
-                      <div className="flex gap-2">
+                    {invoiceForOrder.due_date && (
+                      <p className="text-xs text-purple-600 mb-2">
+                        Due: {format(new Date(invoiceForOrder.due_date), 'MMM d, yyyy')}
+                      </p>
+                    )}
+                    
+                    {!showResendInvoice && !showInvoicePaymentOptions ? (
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowResendInvoice(true)}
+                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            Resend Invoice
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowDeleteInvoiceConfirm(true)}
+                            disabled={deleteInvoiceMutation.isPending}
+                            className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-colors"
+                            title="Delete invoice"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => setShowResendInvoice(true)}
-                          className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          onClick={() => setShowInvoicePaymentOptions(true)}
+                          className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                           </svg>
-                          Resend Invoice
+                          Record Payment
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setShowDeleteInvoiceConfirm(true)}
-                          disabled={deleteInvoiceMutation.isPending}
-                          className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-colors"
-                          title="Delete invoice"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                      </div>
+                    ) : showInvoicePaymentOptions ? (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-purple-800">Select payment method:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: 'cash', label: 'Cash', icon: '💵' },
+                            { value: 'zelle', label: 'Zelle', icon: '📱' },
+                            { value: 'check', label: 'Check', icon: '📝' },
+                            { value: 'ach', label: 'ACH', icon: '🏦' },
+                          ].map((method) => (
+                            <button
+                              key={method.value}
+                              type="button"
+                              onClick={() => setSelectedPaymentMethod(method.value)}
+                              className={`py-2 px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 text-sm font-medium ${
+                                selectedPaymentMethod === method.value
+                                  ? 'border-green-500 bg-green-50 text-green-700'
+                                  : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                              }`}
+                            >
+                              <span>{method.icon}</span>
+                              {method.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowInvoicePaymentOptions(false)
+                              setSelectedPaymentMethod('')
+                            }}
+                            className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedPaymentMethod && invoiceForOrder) {
+                                recordManualPaymentMutation.mutate({
+                                  invoiceId: invoiceForOrder.id,
+                                  method: selectedPaymentMethod,
+                                })
+                              }
+                            }}
+                            disabled={!selectedPaymentMethod || recordManualPaymentMutation.isPending}
+                            className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            {recordManualPaymentMutation.isPending ? (
+                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                            ) : (
+                              'Mark as Paid'
+                            )}
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -1978,6 +2113,9 @@ export default function RepairOrdersPage() {
                               : 'Unknown customer'}
                           </p>
                           <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
+                          {customerLookup.get(selectedOrder.customer_id)?.phone && (
+                            <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.phone}</p>
+                          )}
                         </div>
                       </div>
                       <div className="border-t border-gray-200 pt-3 text-sm text-gray-700">
@@ -2176,7 +2314,7 @@ export default function RepairOrdersPage() {
                             Quote needs to be updated before sending.
                           </p>
                         )}
-                        {isSent && !isApproved && !quoteNeedsUpdate && (
+                        {isSent && !isApproved && !quoteNeedsUpdate && selectedOrder.status !== 'declined' && (
                           <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                             Waiting for customer approval...
                           </p>
@@ -2185,6 +2323,18 @@ export default function RepairOrdersPage() {
                           <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                             Customer approved! Assign a mechanic to start work.
                           </p>
+                        )}
+                        {/* Declined quote alert */}
+                        {selectedOrder.status === 'declined' && quoteForOrder?.is_declined && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
+                            <p className="text-sm font-medium text-red-700">Customer Declined Quote</p>
+                            {quoteForOrder.decline_notes && (
+                              <p className="text-sm text-red-600">
+                                <span className="font-medium">Reason:</span> {quoteForOrder.decline_notes}
+                              </p>
+                            )}
+                            <p className="text-xs text-red-500">Update the quote and resend to customer.</p>
+                          </div>
                         )}
 
                         {/* Mechanic Assignment - shown inline when approved but no mechanic */}
@@ -2229,8 +2379,8 @@ export default function RepairOrdersPage() {
                           </div>
                         )}
 
-                        {/* Reassign Mechanic - shown when mechanic is already assigned */}
-                        {hasMechanic && mechanics && mechanics.length > 1 && (
+                        {/* Reassign Mechanic - shown when mechanic is already assigned and work not yet done */}
+                        {hasMechanic && mechanics && mechanics.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes(selectedOrder.status) && (
                           <div className="pt-3 border-t border-gray-200">
                             {!showReassignMechanic ? (
                               <button

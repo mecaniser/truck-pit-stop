@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
-import { AlertTriangle, ArrowRight, Mail, MapPin, Pencil, Phone, Plus, Trash2, Truck, X } from 'lucide-react'
+import { AlertTriangle, ArrowRight, DollarSign, Mail, MapPin, Pencil, Phone, Plus, Trash2, Truck, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -22,6 +22,31 @@ interface CustomerFormData {
   billing_zip: string
   billing_country: string
   notes: string
+  auto_approval_threshold: string
+}
+
+interface VehicleFormData {
+  make: string
+  model: string
+  year: string
+  vin: string
+  unit_number: string
+  license_plate: string
+  color: string
+  mileage: string
+  notes: string
+}
+
+const emptyVehicleForm: VehicleFormData = {
+  make: '',
+  model: '',
+  year: '',
+  vin: '',
+  unit_number: '',
+  license_plate: '',
+  color: '',
+  mileage: '',
+  notes: '',
 }
 
 const emptyForm: CustomerFormData = {
@@ -36,6 +61,7 @@ const emptyForm: CustomerFormData = {
   billing_zip: '',
   billing_country: 'USA',
   notes: '',
+  auto_approval_threshold: '',
 }
 
 const US_STATES = [
@@ -156,6 +182,19 @@ export default function CustomersPage() {
   const [isEditingInPanel, setIsEditingInPanel] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
+
+  // Mechanic lookup for vehicle history
+  interface Mechanic {
+    id: string
+    first_name: string
+    last_name: string
+  }
+  
+  // Vehicle form state
+  const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false)
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
+  const [vehicleFormData, setVehicleFormData] = useState<VehicleFormData>(emptyVehicleForm)
+  const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
   
   // Delete confirmation state
   const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
@@ -183,7 +222,7 @@ export default function CustomersPage() {
     queryKey: ['customerVehicles', selectedCustomer?.id],
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
-      const response = await api.get('/vehicles', { params: { customer_id: selectedCustomer.id } })
+      const response = await api.get(`/customers/${selectedCustomer.id}/vehicles`)
       return response.data
     },
     enabled: !!selectedCustomer?.id && isDetailOpen,
@@ -199,6 +238,29 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen,
     staleTime: 0,
   })
+
+  // Fetch mechanics for displaying who worked on the vehicle
+  const { data: mechanics } = useQuery<Mechanic[]>({
+    queryKey: ['mechanics'],
+    queryFn: async () => {
+      const response = await api.get('/mechanics')
+      return response.data
+    },
+    enabled: !!selectedVehicleInPanel,
+  })
+
+  // Filter repair orders for the selected vehicle
+  const vehicleRepairOrders = useMemo(() => {
+    if (!selectedVehicleInPanel || !customerRepairOrders) return []
+    return customerRepairOrders.filter(order => order.vehicle_id === selectedVehicleInPanel.id)
+  }, [selectedVehicleInPanel, customerRepairOrders])
+
+  // Create mechanic lookup map
+  const mechanicLookup = useMemo(() => {
+    const map = new Map<string, Mechanic>()
+    mechanics?.forEach(m => map.set(m.id, m))
+    return map
+  }, [mechanics])
 
   const OPEN_ORDER_STATUSES: RepairOrderStatus[] = [
     'draft',
@@ -259,6 +321,79 @@ export default function CustomersPage() {
     },
   })
 
+  // Vehicle mutations
+  const createVehicleMutation = useMutation({
+    mutationFn: async ({ customerId, data }: { customerId: string; data: VehicleFormData }) => {
+      const payload = {
+        make: data.make,
+        model: data.model,
+        year: data.year ? parseInt(data.year) : null,
+        vin: data.vin || null,
+        unit_number: data.unit_number || null,
+        license_plate: data.license_plate || null,
+        color: data.color || null,
+        mileage: data.mileage ? parseInt(data.mileage) : null,
+        notes: data.notes || null,
+      }
+      const response = await api.post(`/customers/${customerId}/vehicles`, payload)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', selectedCustomer?.id] })
+      closeVehicleModal()
+      toast.success('Vehicle added')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to add vehicle')
+    },
+  })
+
+  const updateVehicleMutation = useMutation({
+    mutationFn: async ({ customerId, vehicleId, data }: { customerId: string; vehicleId: string; data: VehicleFormData }) => {
+      const payload = {
+        make: data.make,
+        model: data.model,
+        year: data.year ? parseInt(data.year) : null,
+        vin: data.vin || null,
+        unit_number: data.unit_number || null,
+        license_plate: data.license_plate || null,
+        color: data.color || null,
+        mileage: data.mileage ? parseInt(data.mileage) : null,
+        notes: data.notes || null,
+      }
+      const response = await api.put(`/customers/${customerId}/vehicles/${vehicleId}`, payload)
+      return response.data
+    },
+    onSuccess: (updatedVehicle: Vehicle) => {
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', selectedCustomer?.id] })
+      if (selectedVehicleInPanel?.id === updatedVehicle.id) {
+        setSelectedVehicleInPanel(updatedVehicle)
+      }
+      closeVehicleModal()
+      toast.success('Vehicle updated')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to update vehicle')
+    },
+  })
+
+  const deleteVehicleMutation = useMutation({
+    mutationFn: async ({ customerId, vehicleId }: { customerId: string; vehicleId: string }) => {
+      await api.delete(`/customers/${customerId}/vehicles/${vehicleId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', selectedCustomer?.id] })
+      setDeleteConfirmVehicle(null)
+      if (selectedVehicleInPanel) {
+        setSelectedVehicleInPanel(null)
+      }
+      toast.success('Vehicle deleted')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to delete vehicle')
+    },
+  })
+
   const resetForm = () => {
     setEditingCustomer(null)
     setFormData(emptyForm)
@@ -284,6 +419,7 @@ export default function CustomersPage() {
       billing_zip: customer.billing_zip || '',
       billing_country: customer.billing_country || 'USA',
       notes: customer.notes || '',
+      auto_approval_threshold: customer.auto_approval_threshold ? String(customer.auto_approval_threshold) : '',
     })
   }
 
@@ -317,6 +453,76 @@ export default function CustomersPage() {
     setDeleteConfirmCustomer(customer)
   }
 
+  // Vehicle form helpers
+  const openAddVehicleModal = () => {
+    setEditingVehicle(null)
+    setVehicleFormData(emptyVehicleForm)
+    setIsVehicleModalOpen(true)
+  }
+
+  const openEditVehicleModal = (vehicle: Vehicle) => {
+    setEditingVehicle(vehicle)
+    setVehicleFormData({
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year?.toString() || '',
+      vin: vehicle.vin || '',
+      unit_number: vehicle.unit_number || '',
+      license_plate: vehicle.license_plate || '',
+      color: vehicle.color || '',
+      mileage: vehicle.mileage?.toString() || '',
+      notes: vehicle.notes || '',
+    })
+    setIsVehicleModalOpen(true)
+  }
+
+  const closeVehicleModal = () => {
+    setIsVehicleModalOpen(false)
+    setEditingVehicle(null)
+    setVehicleFormData(emptyVehicleForm)
+  }
+
+  const handleVehicleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setVehicleFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleVehicleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedCustomer) return
+
+    if (!vehicleFormData.make.trim() || !vehicleFormData.model.trim()) {
+      toast.error('Make and model are required')
+      return
+    }
+
+    if (editingVehicle) {
+      updateVehicleMutation.mutate({
+        customerId: selectedCustomer.id,
+        vehicleId: editingVehicle.id,
+        data: vehicleFormData,
+      })
+    } else {
+      createVehicleMutation.mutate({
+        customerId: selectedCustomer.id,
+        data: vehicleFormData,
+      })
+    }
+  }
+
+  const handleDeleteVehicleClick = (vehicle: Vehicle) => {
+    setDeleteConfirmVehicle(vehicle)
+  }
+
+  const confirmDeleteVehicle = () => {
+    if (deleteConfirmVehicle && selectedCustomer) {
+      deleteVehicleMutation.mutate({
+        customerId: selectedCustomer.id,
+        vehicleId: deleteConfirmVehicle.id,
+      })
+    }
+  }
+
   const cancelPanelEditing = () => {
     setIsEditingInPanel(false)
     resetForm()
@@ -336,10 +542,17 @@ export default function CustomersPage() {
       return
     }
 
+    const payload = {
+      ...formData,
+      auto_approval_threshold: formData.auto_approval_threshold
+        ? parseFloat(formData.auto_approval_threshold)
+        : null,
+    }
+
     if (editingCustomer) {
-      updateMutation.mutate({ id: editingCustomer.id, data: formData })
+      updateMutation.mutate({ id: editingCustomer.id, data: payload })
     } else {
-      createMutation.mutate(formData)
+      createMutation.mutate(payload as any)
     }
   }
 
@@ -630,6 +843,27 @@ export default function CustomersPage() {
         </div>
       </div>
 
+      {/* Auto-Approval Threshold */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Auto-Approve Threshold
+        </label>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+          <input
+            type="number"
+            name="auto_approval_threshold"
+            value={formData.auto_approval_threshold}
+            onChange={handleInputChange}
+            step="0.01"
+            min="0"
+            className="w-full pl-7 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="Leave empty to disable"
+          />
+        </div>
+        <p className="text-xs text-gray-500 mt-1">Quotes at or below this amount will be auto-approved. Leave empty to require manual approval.</p>
+      </div>
+
       {/* Notes */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -666,6 +900,161 @@ export default function CustomersPage() {
             </svg>
           )}
           {editingCustomer ? 'Save Changes' : 'Add Customer'}
+        </button>
+      </div>
+    </form>
+  )
+
+  const renderVehicleForm = () => (
+    <form onSubmit={handleVehicleSubmit} className="p-6 space-y-4">
+      {/* Make & Model */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Make <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            name="make"
+            value={vehicleFormData.make}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="Ford"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Model <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            name="model"
+            value={vehicleFormData.model}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="F-150"
+            required
+          />
+        </div>
+      </div>
+
+      {/* Year & Color */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Year</label>
+          <input
+            type="number"
+            name="year"
+            value={vehicleFormData.year}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="2024"
+            min="1900"
+            max="2100"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+          <input
+            type="text"
+            name="color"
+            value={vehicleFormData.color}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="White"
+          />
+        </div>
+      </div>
+
+      {/* VIN & Unit Number */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+          <input
+            type="text"
+            name="vin"
+            value={vehicleFormData.vin}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
+            placeholder="1FTFW1E50MFA00000"
+            maxLength={17}
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Unit Number</label>
+          <input
+            type="text"
+            name="unit_number"
+            value={vehicleFormData.unit_number}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
+            placeholder="UNIT-001"
+          />
+        </div>
+      </div>
+
+      {/* License Plate & Mileage */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">License Plate</label>
+          <input
+            type="text"
+            name="license_plate"
+            value={vehicleFormData.license_plate}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
+            placeholder="ABC-1234"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Mileage</label>
+          <input
+            type="number"
+            name="mileage"
+            value={vehicleFormData.mileage}
+            onChange={handleVehicleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="50000"
+            min="0"
+          />
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+        <textarea
+          name="notes"
+          value={vehicleFormData.notes}
+          onChange={handleVehicleInputChange}
+          rows={2}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+          placeholder="Any additional notes..."
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+        <button
+          type="button"
+          onClick={closeVehicleModal}
+          className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={createVehicleMutation.isPending || updateVehicleMutation.isPending}
+          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+        >
+          {(createVehicleMutation.isPending || updateVehicleMutation.isPending) && (
+            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+          {editingVehicle ? 'Save Changes' : 'Add Vehicle'}
         </button>
       </div>
     </form>
@@ -1035,6 +1424,16 @@ export default function CustomersPage() {
               </div>
             </div>
 
+            {/* Unit Number */}
+            {selectedVehicleInPanel.unit_number && (
+              <div>
+                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Unit Number</h3>
+                <div className="bg-amber-50 rounded-xl p-4">
+                  <p className="text-amber-800 font-mono font-semibold text-lg">{selectedVehicleInPanel.unit_number}</p>
+                </div>
+              </div>
+            )}
+
             {/* Notes */}
             {selectedVehicleInPanel.notes && (
               <div>
@@ -1044,6 +1443,84 @@ export default function CustomersPage() {
                 </div>
               </div>
             )}
+
+            {/* Repair History */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                Repair History ({vehicleRepairOrders.length})
+              </h3>
+              {vehicleRepairOrders.length === 0 ? (
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <p className="text-gray-500 text-sm">No repair orders for this vehicle yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {vehicleRepairOrders.map((order) => {
+                    const mechanic = order.assigned_mechanic_id ? mechanicLookup.get(order.assigned_mechanic_id) : null
+                    const statusColors: Record<string, string> = {
+                      draft: 'bg-gray-100 text-gray-700',
+                      quoted: 'bg-blue-100 text-blue-700',
+                      declined: 'bg-red-100 text-red-700',
+                      approved: 'bg-cyan-100 text-cyan-700',
+                      assigned: 'bg-amber-100 text-amber-700',
+                      acknowledged: 'bg-amber-100 text-amber-700',
+                      in_progress: 'bg-amber-100 text-amber-700',
+                      pending_review: 'bg-purple-100 text-purple-700',
+                      completed: 'bg-green-100 text-green-700',
+                      invoiced: 'bg-indigo-100 text-indigo-700',
+                      paid: 'bg-green-100 text-green-700',
+                      cancelled: 'bg-gray-100 text-gray-500',
+                    }
+                    return (
+                      <div
+                        key={order.id}
+                        className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors cursor-pointer"
+                        onClick={() => {
+                          // Navigate to repair order
+                          window.location.href = `/dashboard/repair-orders?selected=${order.id}`
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-mono text-sm font-semibold text-gray-900">#{order.order_number}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                            {order.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 line-clamp-1">{order.description || 'No description'}</p>
+                        <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                          <span>{new Date(order.created_at).toLocaleDateString()}</span>
+                          {mechanic && (
+                            <span className="flex items-center gap-1">
+                              <Wrench className="w-3 h-3" />
+                              {mechanic.first_name} {mechanic.last_name}
+                            </span>
+                          )}
+                          <span className="font-semibold text-gray-700">${parseFloat(order.total_cost).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Vehicle Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+              <button
+                onClick={() => handleDeleteVehicleClick(selectedVehicleInPanel)}
+                className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Vehicle
+              </button>
+              <button
+                onClick={() => openEditVehicleModal(selectedVehicleInPanel)}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+              >
+                <Pencil className="w-4 h-4" />
+                Edit Vehicle
+              </button>
+            </div>
           </div>
         ) : isEditingInPanel ? (
                 <div className="p-6 space-y-4">
@@ -1096,6 +1573,24 @@ export default function CustomersPage() {
                     </div>
                   </div>
 
+                  {/* Auto-Approval Threshold */}
+                  {selectedCustomer.auto_approval_threshold && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                          <DollarSign className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-amber-600 font-medium">Auto-Approve Threshold</p>
+                          <p className="text-amber-900 font-bold text-lg">
+                            ${parseFloat(selectedCustomer.auto_approval_threshold).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-amber-600 mt-2">Quotes at or below this amount are approved automatically.</p>
+                    </div>
+                  )}
+
                   {/* Billing Address */}
                   {(selectedCustomer.billing_address_line1 || selectedCustomer.billing_city) && (
                     <div>
@@ -1142,6 +1637,13 @@ export default function CustomersPage() {
                             variant="light"
                           />
                         )}
+                        <button
+                          onClick={openAddVehicleModal}
+                          className="px-3 py-1.5 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add
+                        </button>
                       </div>
                     </div>
                     {customerVehicles && customerVehicles.length > 0 ? (
@@ -1152,7 +1654,7 @@ export default function CustomersPage() {
                               <tr>
                                 <th className="px-3 py-2 text-left font-medium">Vehicle</th>
                                 <th className="px-3 py-2 text-left font-medium">Plate</th>
-                                <th className="px-3 py-2 text-right font-medium">Mileage</th>
+                                <th className="px-3 py-2 text-right font-medium">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -1160,7 +1662,7 @@ export default function CustomersPage() {
                                 <tr 
                                   key={vehicle.id} 
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
-                                  className="hover:bg-gray-100/50 cursor-pointer"
+                                  className="hover:bg-gray-100/50 cursor-pointer group"
                                 >
                                   <td className="px-3 py-2.5 text-gray-900 font-medium">
                                     {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
@@ -1175,8 +1677,29 @@ export default function CustomersPage() {
                                       <span className="text-gray-400">—</span>
                                     )}
                                   </td>
-                                  <td className="px-3 py-2.5 text-right text-gray-600">
-                                    {typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : '—'}
+                                  <td className="px-3 py-2.5 text-right">
+                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          openEditVehicleModal(vehicle)
+                                        }}
+                                        className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                        title="Edit"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handleDeleteVehicleClick(vehicle)
+                                        }}
+                                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                        title="Delete"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -1188,28 +1711,62 @@ export default function CustomersPage() {
                           {customerVehicles.map((vehicle) => (
                             <div 
                               key={vehicle.id} 
-                              onClick={() => setSelectedVehicleInPanel(vehicle)}
-                              className="bg-gray-50 rounded-xl p-4 border border-gray-100 cursor-pointer hover:bg-gray-100 hover:border-gray-200 transition-colors"
+                              className="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 transition-colors group relative"
                             >
-                              <p className="text-sm font-semibold text-gray-900 mb-1">
-                                {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
-                              </p>
-                              {vehicle.license_plate && (
-                                <span className="inline-block text-xs font-medium text-amber-700 bg-amber-100 rounded px-2 py-0.5 mb-2">
-                                  {vehicle.license_plate}
-                                </span>
-                              )}
-                              <div className="text-xs text-gray-500 space-y-0.5 mt-2">
-                                {vehicle.color && <p>{vehicle.color}</p>}
-                                <p>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</p>
+                              <div 
+                                onClick={() => setSelectedVehicleInPanel(vehicle)}
+                                className="cursor-pointer"
+                              >
+                                <p className="text-sm font-semibold text-gray-900 mb-1">
+                                  {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
+                                </p>
+                                {vehicle.license_plate && (
+                                  <span className="inline-block text-xs font-medium text-amber-700 bg-amber-100 rounded px-2 py-0.5 mb-2">
+                                    {vehicle.license_plate}
+                                  </span>
+                                )}
+                                <div className="text-xs text-gray-500 space-y-0.5 mt-2">
+                                  {vehicle.color && <p>{vehicle.color}</p>}
+                                  <p>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</p>
+                                </div>
+                              </div>
+                              <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openEditVehicleModal(vehicle)
+                                  }}
+                                  className="p-1.5 text-gray-500 hover:text-amber-600 bg-white hover:bg-amber-50 rounded shadow-sm transition-colors"
+                                  title="Edit"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteVehicleClick(vehicle)
+                                  }}
+                                  className="p-1.5 text-gray-500 hover:text-red-600 bg-white hover:bg-red-50 rounded shadow-sm transition-colors"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
                           ))}
                         </div>
                       )
                     ) : (
-                      <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-500 border border-gray-100">
-                        No vehicles on file for this customer.
+                      <div className="bg-gray-50 rounded-xl p-6 text-center border border-gray-100">
+                        <Truck className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500 mb-3">No vehicles on file</p>
+                        <button
+                          onClick={openAddVehicleModal}
+                          className="px-4 py-2 text-sm font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors inline-flex items-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add First Vehicle
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1286,6 +1843,102 @@ export default function CustomersPage() {
                     </svg>
                   )}
                   Delete Customer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Vehicle Modal */}
+      {isVehicleModalOpen && selectedCustomer && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            {/* Backdrop */}
+            <div 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={closeVehicleModal}
+            />
+            
+            {/* Modal */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      {editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'}
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      for {selectedCustomer.first_name} {selectedCustomer.last_name}
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeVehicleModal}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Form */}
+              {renderVehicleForm()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Vehicle Confirmation Modal */}
+      {deleteConfirmVehicle && selectedCustomer && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            {/* Backdrop */}
+            <div 
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setDeleteConfirmVehicle(null)}
+            />
+            
+            {/* Modal */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Delete Vehicle</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+              
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete the{' '}
+                <span className="font-semibold">
+                  {deleteConfirmVehicle.year ? `${deleteConfirmVehicle.year} ` : ''}
+                  {deleteConfirmVehicle.make} {deleteConfirmVehicle.model}
+                </span>
+                ? This will also remove any associated repair order history.
+              </p>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setDeleteConfirmVehicle(null)}
+                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteVehicle}
+                  disabled={deleteVehicleMutation.isPending}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {deleteVehicleMutation.isPending && (
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  )}
+                  Delete Vehicle
                 </button>
               </div>
             </div>

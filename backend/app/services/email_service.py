@@ -214,3 +214,197 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         print(f"Error sending email change notification: {e}")
         # Don't fail the request if notification fails
 
+
+async def send_enrollment_received_email(to: str, garage_name: str, owner_name: str):
+    """Send confirmation email to garage owner after enrollment submission"""
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">Application Received!</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #1f2937; margin-top: 0;">Welcome, {owner_name}!</h2>
+            <p style="color: #4b5563; line-height: 1.6;">
+                Thank you for applying to join Truck Pit Stop with <strong>{garage_name}</strong>.
+            </p>
+            <p style="color: #4b5563; line-height: 1.6;">
+                Your application is now under review. Our team will verify your information and get back to you within 1-2 business days.
+            </p>
+            <div style="background: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <p style="color: #1e40af; margin: 0; font-weight: bold;">What happens next?</p>
+                <ul style="color: #1e40af; margin: 10px 0 0 0; padding-left: 20px;">
+                    <li>We'll review your business information</li>
+                    <li>You'll receive an email once approved</li>
+                    <li>Then you can log in and start managing your shop!</li>
+                </ul>
+            </div>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                Questions? Reply to this email and we'll be happy to help.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    try:
+        params = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": to,
+            "subject": f"Application Received - {garage_name} | Truck Pit Stop",
+            "html": html_body,
+        }
+        resend.Emails.send(params)
+    except Exception as e:
+        print(f"Error sending enrollment received email: {e}")
+
+
+async def send_enrollment_approved_email(to: str, garage_name: str, owner_name: str):
+    """Send approval email to garage owner"""
+    login_url = f"{settings.FRONTEND_URL}/login"
+    
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">You're Approved!</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #1f2937; margin-top: 0;">Congratulations, {owner_name}!</h2>
+            <p style="color: #4b5563; line-height: 1.6;">
+                Great news! Your application for <strong>{garage_name}</strong> has been approved.
+            </p>
+            <p style="color: #4b5563; line-height: 1.6;">
+                You can now log in and start managing your truck repair shop with Truck Pit Stop.
+            </p>
+            <div style="margin: 30px 0; text-align: center;">
+                <a href="{login_url}" 
+                   style="background-color: #10b981; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px;">
+                    Log In to Your Dashboard
+                </a>
+            </div>
+            <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                <p style="color: #065f46; margin: 0; font-weight: bold;">Getting Started:</p>
+                <ul style="color: #065f46; margin: 10px 0 0 0; padding-left: 20px;">
+                    <li>Set up your Stripe account to accept payments</li>
+                    <li>Add your team members (mechanics, admins)</li>
+                    <li>Configure your services and pricing</li>
+                    <li>Start taking repair orders!</li>
+                </ul>
+            </div>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                Need help getting started? Check out our documentation or contact support.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    try:
+        params = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": to,
+            "subject": f"Welcome to Truck Pit Stop - {garage_name} Approved!",
+            "html": html_body,
+        }
+        resend.Emails.send(params)
+    except Exception as e:
+        print(f"Error sending enrollment approved email: {e}")
+
+
+async def send_enrollment_rejected_email(to: str, garage_name: str, owner_name: str, reason: str):
+    """Send rejection email to garage owner"""
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+            <h2 style="color: #991b1b; margin: 0 0 10px 0; font-size: 20px;">Application Update</h2>
+        </div>
+        <div style="background: #f9fafb; padding: 25px; border-radius: 8px;">
+            <p style="color: #374151; line-height: 1.6;">
+                Hi {owner_name},
+            </p>
+            <p style="color: #374151; line-height: 1.6;">
+                Thank you for your interest in joining Truck Pit Stop with <strong>{garage_name}</strong>.
+            </p>
+            <p style="color: #374151; line-height: 1.6;">
+                After reviewing your application, we're unable to approve it at this time.
+            </p>
+            <div style="background: white; padding: 15px; border-radius: 6px; margin: 20px 0; border: 1px solid #e5e7eb;">
+                <p style="margin: 0; color: #6b7280; font-size: 14px;">Reason:</p>
+                <p style="margin: 10px 0 0 0; color: #1f2937;">{reason}</p>
+            </div>
+            <p style="color: #374151; line-height: 1.6;">
+                If you believe this was a mistake or have additional information to provide, 
+                please reply to this email and we'll be happy to reconsider.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    try:
+        params = {
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": to,
+            "subject": f"Application Status Update - {garage_name} | Truck Pit Stop",
+            "html": html_body,
+        }
+        resend.Emails.send(params)
+    except Exception as e:
+        print(f"Error sending enrollment rejected email: {e}")
+
+
+async def send_new_enrollment_notification(admin_emails: list, garage_name: str, owner_name: str, owner_email: str):
+    """Send notification to super admins about new enrollment"""
+    admin_url = f"{settings.FRONTEND_URL}/dashboard/pending-enrollments"
+    
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">New Garage Enrollment</h1>
+        </div>
+        <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
+            <p style="color: #4b5563; line-height: 1.6;">
+                A new garage has applied to join Truck Pit Stop:
+            </p>
+            <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e5e7eb;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Garage Name:</td>
+                        <td style="padding: 8px 0; color: #1f2937; font-weight: bold;">{garage_name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Owner:</td>
+                        <td style="padding: 8px 0; color: #1f2937;">{owner_name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Email:</td>
+                        <td style="padding: 8px 0; color: #1f2937;">{owner_email}</td>
+                    </tr>
+                </table>
+            </div>
+            <div style="margin: 30px 0; text-align: center;">
+                <a href="{admin_url}" 
+                   style="background-color: #4f46e5; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px;">
+                    Review Application
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    for email in admin_emails:
+        try:
+            params = {
+                "from": settings.RESEND_FROM_EMAIL,
+                "to": email,
+                "subject": f"New Garage Enrollment: {garage_name}",
+                "html": html_body,
+            }
+            resend.Emails.send(params)
+        except Exception as e:
+            print(f"Error sending enrollment notification to {email}: {e}")
+

@@ -175,6 +175,8 @@ class MechanicJobDetail(BaseModel):
     services: List[ServiceItem] = []
     created_at: datetime
     updated_at: datetime
+    work_started_at: Optional[datetime] = None
+    work_completed_at: Optional[datetime] = None
 
 
 class MechanicJobSummary(BaseModel):
@@ -186,6 +188,7 @@ class MechanicJobSummary(BaseModel):
     description: Optional[str] = None
     services_count: int = 0
     updated_at: datetime
+    work_started_at: Optional[datetime] = None
 
 
 class MechanicHistoryItem(BaseModel):
@@ -196,6 +199,9 @@ class MechanicHistoryItem(BaseModel):
     vehicle_info: str
     services_count: int = 0
     completed_at: datetime
+    work_started_at: Optional[datetime] = None
+    work_completed_at: Optional[datetime] = None
+    actual_hours: Optional[float] = None
 
 
 class MechanicStats(BaseModel):
@@ -428,6 +434,7 @@ async def get_my_jobs(
             description=order.description,
             services_count=services_count,
             updated_at=order.updated_at,
+            work_started_at=getattr(order, 'work_started_at', None),
         ))
     
     return jobs
@@ -470,6 +477,12 @@ async def get_my_history(
             except:
                 pass
         
+        ws = getattr(order, 'work_started_at', None)
+        wc = getattr(order, 'work_completed_at', None)
+        actual_hrs = None
+        if ws and wc:
+            actual_hrs = round((wc - ws).total_seconds() / 3600, 2)
+
         history.append(MechanicHistoryItem(
             id=str(order.id),
             order_number=order.order_number,
@@ -477,6 +490,9 @@ async def get_my_history(
             vehicle_info=vehicle_info,
             services_count=services_count,
             completed_at=order.updated_at,
+            work_started_at=ws,
+            work_completed_at=wc,
+            actual_hours=actual_hrs,
         ))
     
     return history
@@ -532,6 +548,8 @@ async def get_my_job_detail(
         services=services,
         created_at=order.created_at,
         updated_at=order.updated_at,
+        work_started_at=getattr(order, 'work_started_at', None),
+        work_completed_at=getattr(order, 'work_completed_at', None),
     )
 
 

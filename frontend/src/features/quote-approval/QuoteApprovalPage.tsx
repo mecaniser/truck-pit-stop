@@ -109,13 +109,13 @@ export default function QuoteApprovalPage() {
             Thank you, {customer_first_name}! Your quote <strong className="text-white">{quote.quote_number}</strong> has been approved.
           </p>
           <p className="text-gray-500 text-sm mb-6">
-            We'll get started on your repair soon. You'll receive updates via email.
+            We'll get started on your repair soon. You'll receive updates via text.
           </p>
           <Link
-            to="/login"
+            to="/portal"
             className="inline-block px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
           >
-            Go to Customer Portal
+            Go to My Portal
           </Link>
         </div>
       </div>
@@ -143,13 +143,21 @@ export default function QuoteApprovalPage() {
           <p className="text-gray-500 text-sm mb-6">
             We'll review your feedback and may reach out with a revised quote.
           </p>
-          <button
-            onClick={() => approveMutation.mutate()}
-            disabled={approveMutation.isPending}
-            className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
-          >
-            {approveMutation.isPending ? 'Processing...' : 'Changed my mind - Approve Quote'}
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => approveMutation.mutate()}
+              disabled={approveMutation.isPending}
+              className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            >
+              {approveMutation.isPending ? 'Processing...' : 'Changed my mind - Approve Quote'}
+            </button>
+            <Link
+              to="/portal"
+              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors text-center"
+            >
+              Go to My Portal
+            </Link>
+          </div>
         </div>
       </div>
     )

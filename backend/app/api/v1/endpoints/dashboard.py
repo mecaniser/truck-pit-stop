@@ -3,9 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast, Date
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 
+from sqlalchemy.orm import aliased
 from app.core.dependencies import get_db, get_current_active_user
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -32,6 +33,8 @@ class RecentOrder(BaseModel):
     total_cost: str
     created_at: datetime
     updated_at: datetime
+    mechanic_name: Optional[str] = None
+    work_started_at: Optional[datetime] = None
 
 
 class LowStockItem(BaseModel):
@@ -73,6 +76,13 @@ class DashboardStats(BaseModel):
     # Phase 2: Revenue and workload
     revenue: RevenueStats
     mechanic_workload: List[MechanicWorkload]
+    # Alerts: overdue approvals (quoted > 3 days)
+    overdue_approvals: int = 0
+    declined_quotes: int = 0
+    # Work queue lanes
+    orders_needing_action: List[RecentOrder] = []
+    orders_on_floor: List[RecentOrder] = []
+    orders_ready_to_close: List[RecentOrder] = []
 
 
 @router.get("/stats", response_model=DashboardStats)
@@ -97,6 +107,11 @@ async def get_dashboard_stats(
             my_in_progress=0,
             revenue=RevenueStats(today="0.00", this_week="0.00", this_month="0.00", total_paid_orders=0),
             mechanic_workload=[],
+            overdue_approvals=0,
+            declined_quotes=0,
+            orders_needing_action=[],
+            orders_on_floor=[],
+            orders_ready_to_close=[],
         )
 
     # Total customers
@@ -134,6 +149,30 @@ async def get_dashboard_stats(
     active_orders = status_map.get("in_progress", 0)
     awaiting_approval = status_map.get("quoted", 0)
     pending_invoices = status_map.get("completed", 0)
+
+    # Overdue approvals: quoted orders older than 3 days
+    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+    result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.status == RepairOrderStatus.QUOTED,
+                RepairOrder.updated_at < three_days_ago,
+            )
+        )
+    )
+    overdue_approvals = result.scalar() or 0
+
+    # Declined quotes count
+    result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.status == RepairOrderStatus.DECLINED,
+            )
+        )
+    )
+    declined_quotes = result.scalar() or 0
 
     # Low stock items (stock_quantity <= reorder_level)
     result = await db.execute(
@@ -183,6 +222,91 @@ async def get_dashboard_stats(
         )
         for order, customer, vehicle in recent_rows
     ]
+
+    # --- Work Queue Lanes ---
+    Mechanic = aliased(User)
+
+    def _build_order(order, customer, vehicle, mechanic=None):
+        mech_name = None
+        if mechanic and mechanic.first_name:
+            mech_name = f"{mechanic.first_name} {mechanic.last_name}"
+        return RecentOrder(
+            id=str(order.id),
+            order_number=order.order_number,
+            status=order.status.value if hasattr(order.status, "value") else order.status,
+            description=order.description,
+            customer_name=f"{customer.first_name} {customer.last_name}",
+            vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
+            total_cost=str(order.total_cost),
+            created_at=order.created_at,
+            updated_at=order.updated_at,
+            mechanic_name=mech_name,
+            work_started_at=getattr(order, 'work_started_at', None),
+        )
+
+    # Lane 1: Needs Action (draft, pending_review, completed, or overdue quoted)
+    needs_action_statuses = [
+        RepairOrderStatus.DRAFT,
+        RepairOrderStatus.QUOTED,
+        RepairOrderStatus.DECLINED,  # Customer declined, needs revision
+        RepairOrderStatus.PENDING_REVIEW,
+        RepairOrderStatus.COMPLETED,
+    ]
+    result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, Mechanic)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(Mechanic, RepairOrder.assigned_mechanic_id == Mechanic.id)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.status.in_(needs_action_statuses),
+            )
+        )
+        .order_by(RepairOrder.updated_at.asc())  # oldest first = most urgent
+        .limit(10)
+    )
+    orders_needing_action = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
+
+    # Lane 2: On the Floor (approved, assigned, acknowledged, in_progress)
+    on_floor_statuses = [
+        RepairOrderStatus.APPROVED,
+        RepairOrderStatus.ASSIGNED,
+        RepairOrderStatus.ACKNOWLEDGED,
+        RepairOrderStatus.IN_PROGRESS,
+    ]
+    result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, Mechanic)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(Mechanic, RepairOrder.assigned_mechanic_id == Mechanic.id)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.status.in_(on_floor_statuses),
+            )
+        )
+        .order_by(RepairOrder.updated_at.desc())
+        .limit(10)
+    )
+    orders_on_floor = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
+
+    # Lane 3: Ready to Close (invoiced)
+    result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, Mechanic)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(Mechanic, RepairOrder.assigned_mechanic_id == Mechanic.id)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.status == RepairOrderStatus.INVOICED,
+            )
+        )
+        .order_by(RepairOrder.updated_at.desc())
+        .limit(10)
+    )
+    orders_ready_to_close = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
 
     # Mechanic-specific stats
     my_assigned_orders = 0
@@ -320,4 +444,9 @@ async def get_dashboard_stats(
         my_in_progress=my_in_progress,
         revenue=revenue,
         mechanic_workload=mechanic_workload,
+        overdue_approvals=overdue_approvals,
+        declined_quotes=declined_quotes,
+        orders_needing_action=orders_needing_action,
+        orders_on_floor=orders_on_floor,
+        orders_ready_to_close=orders_ready_to_close,
     )

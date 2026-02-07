@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey
+from sqlalchemy import Column, String, Text, ForeignKey, Numeric
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -23,6 +23,9 @@ class Customer(BaseModel):
     billing_country = Column(String(100), nullable=True, default="USA")
     
     notes = Column(Text, nullable=True)
+    
+    # Auto-approve quotes at or below this amount (None = disabled)
+    auto_approval_threshold = Column(Numeric(10, 2), nullable=True, default=None)
     
     # Stripe
     stripe_customer_id = Column(String(255), nullable=True, unique=True)

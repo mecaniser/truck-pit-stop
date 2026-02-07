@@ -6,6 +6,7 @@ from uuid import UUID
 
 class VehicleBase(BaseModel):
     vin: Optional[str] = None
+    unit_number: Optional[str] = None
     make: str
     model: str
     year: Optional[int] = None
@@ -21,6 +22,7 @@ class VehicleCreate(VehicleBase):
 
 class VehicleUpdate(BaseModel):
     vin: Optional[str] = None
+    unit_number: Optional[str] = None
     make: Optional[str] = None
     model: Optional[str] = None
     year: Optional[int] = None

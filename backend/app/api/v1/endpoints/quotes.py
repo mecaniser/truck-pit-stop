@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
@@ -18,6 +18,7 @@ from app.db.models.quote import Quote
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.services.email_service import send_email
+from app.services.twilio_service import send_sms
 
 router = APIRouter()
 
@@ -320,7 +321,7 @@ async def send_quote_to_customer(
     vehicle = order.vehicle
     vehicle_info = ""
     if vehicle:
-        vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}"
+        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip()
         if vehicle.vin:
             vehicle_info += f" (VIN: {vehicle.vin[-6:]})"
     
@@ -368,21 +369,72 @@ async def send_quote_to_customer(
     </html>
     """
     
-    # Mark as sent
+    # Mark as sent and reset declined status if resending
     quote.sent_to_customer = True
     quote.sent_at = datetime.utcnow()
+    if quote.is_declined:
+        quote.is_declined = False
+        quote.decline_notes = None
+        order.status = RepairOrderStatus.QUOTED  # Back to quoted from declined
+    
+    # Auto-approval: if customer has a threshold and quote is within it, approve immediately
+    # Only auto-approve if order is still in a pre-approval state (DRAFT, QUOTED, DECLINED)
+    threshold = getattr(customer, 'auto_approval_threshold', None)
+    auto_approved = False
+    pre_approval_statuses = [RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED, RepairOrderStatus.DECLINED]
+    if threshold is not None and quote.total_amount <= threshold and order.status in pre_approval_statuses:
+        quote.is_approved = True
+        quote.is_declined = False
+        order.status = RepairOrderStatus.APPROVED
+        auto_approved = True
     
     await db.commit()
     await db.refresh(quote)
     
-    await send_email(
-        db=db,
-        tenant_id=str(current_user.tenant_id),
-        to=customer.email,
-        subject=f"Quote {quote.quote_number} Ready for Approval - Truck Pit Stop",
-        body=html_body,
-        template_name="quote_approval",
-    )
+    if auto_approved:
+        # Send auto-approved confirmation instead of approval request
+        await send_email(
+            db=db,
+            tenant_id=str(current_user.tenant_id),
+            to=customer.email,
+            subject=f"Quote {quote.quote_number} Auto-Approved - Truck Pit Stop",
+            body=f"""
+            <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h1 style="color: #d97706;">Truck Pit Stop</h1>
+                <h2 style="color: #16a34a;">Quote Auto-Approved</h2>
+                <p>Hi {customer.first_name},</p>
+                <p>Your repair quote <strong>{quote.quote_number}</strong> for <strong>${quote.total_amount:,.2f}</strong> 
+                has been <strong>automatically approved</strong> per your pre-authorization threshold of ${threshold:,.2f}.</p>
+                {f'<p><strong>Vehicle:</strong> {vehicle_info}</p>' if vehicle_info else ''}
+                <p><strong>Description:</strong> {order.description or 'General Repair'}</p>
+                {services_html}
+                <p style="color: #666; font-size: 14px;">Work will begin shortly. We will notify you when your vehicle is being serviced.</p>
+            </body></html>
+            """,
+            template_name="quote_auto_approved",
+        )
+    else:
+        await send_email(
+            db=db,
+            tenant_id=str(current_user.tenant_id),
+            to=customer.email,
+            subject=f"Quote {quote.quote_number} Ready for Approval - Truck Pit Stop",
+            body=html_body,
+            template_name="quote_approval",
+        )
+    
+    # SMS notification for quote with approval link
+    if customer.phone:
+        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        if auto_approved:
+            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - Truck Pit Stop"
+        else:
+            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - Truck Pit Stop"
+        try:
+            await send_sms(db, str(current_user.tenant_id), customer.phone, sms_body,
+                template_name="quote_sent_sms")
+        except Exception:
+            pass
     
     return QuoteResponse.model_validate(quote)
 
@@ -454,6 +506,7 @@ async def decline_quote(
         )
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
+            .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -483,9 +536,43 @@ async def decline_quote(
     
     quote.is_declined = True
     quote.decline_notes = body.notes
-    order.status = RepairOrderStatus.DRAFT  # Back to draft for revision
+    order.status = RepairOrderStatus.DECLINED  # New status for declined quotes
     await db.commit()
     await db.refresh(quote)
+    
+    # Notify shop managers via SMS (same as token-based decline)
+    customer = order.customer
+    vehicle = order.vehicle
+    vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "vehicle"
+    customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+    
+    # Find managers to notify
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == order.tenant_id,
+                User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
+                User.is_active == True,
+            )
+        )
+    )
+    managers = result.scalars().all()
+    
+    notes_snippet = ""
+    if body.notes:
+        notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
+    
+    for manager in managers:
+        if manager.phone:
+            try:
+                await send_sms(
+                    db, str(order.tenant_id), manager.phone,
+                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - Truck Pit Stop",
+                    template_name="quote_declined_shop"
+                )
+            except Exception:
+                pass
+    
     return QuoteResponse.model_validate(quote)
 
 
@@ -607,6 +694,7 @@ async def decline_quote_by_token(
     
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
+            .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -623,8 +711,42 @@ async def decline_quote_by_token(
     
     quote.is_declined = True
     quote.decline_notes = body.notes
-    order.status = RepairOrderStatus.DRAFT
+    order.status = RepairOrderStatus.DECLINED  # New status instead of DRAFT
     # Keep token valid so customer can change their mind
     await db.commit()
     await db.refresh(quote)
+    
+    # Notify shop managers via SMS
+    customer = order.customer
+    vehicle = order.vehicle
+    vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "vehicle"
+    customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+    
+    # Find managers to notify
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == order.tenant_id,
+                User.role.in_([UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]),
+                User.is_active == True,
+            )
+        )
+    )
+    managers = result.scalars().all()
+    
+    notes_snippet = ""
+    if body.notes:
+        notes_snippet = f' Notes: "{body.notes[:50]}{"..." if len(body.notes) > 50 else ""}"'
+    
+    for manager in managers:
+        if manager.phone:
+            try:
+                await send_sms(
+                    db, str(order.tenant_id), manager.phone,
+                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - Truck Pit Stop",
+                    template_name="quote_declined_shop"
+                )
+            except Exception:
+                pass
+    
     return QuoteResponse.model_validate(quote)

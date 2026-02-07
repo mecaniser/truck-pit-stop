@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
@@ -17,6 +17,7 @@ from app.db.models.labor import Labor
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.services.email_service import send_email
+from app.services.twilio_service import send_sms
 from app.core.config import settings
 from app.schemas.repair_order import (
     RepairOrderCreate,
@@ -28,6 +29,7 @@ from app.schemas.repair_order import (
     LaborCreate,
     LaborUpdate,
     LaborResponse,
+    QuickRepairOrderCreate,
 )
 
 router = APIRouter()
@@ -121,6 +123,119 @@ async def create_repair_order(
     await db.commit()
     await db.refresh(repair_order)
     
+    return RepairOrderResponse.model_validate(repair_order)
+
+
+@router.post("/quick", response_model=RepairOrderResponse, status_code=status.HTTP_201_CREATED)
+async def quick_create_repair_order(
+    data: QuickRepairOrderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    )),
+):
+    """Quick-create a repair order with minimal info. Auto-creates walk-in customer and vehicle."""
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    raw_phone = (data.phone or "").strip()
+    # Normalize phone for consistent storage and lookup
+    phone = raw_phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+    # Find or create customer
+    if phone:
+        # Look for existing customer by phone in this tenant
+        result = await db.execute(
+            select(Customer).where(
+                and_(
+                    Customer.tenant_id == tenant_id,
+                    Customer.phone == phone,
+                )
+            )
+        )
+        customer = result.scalar_one_or_none()
+        if not customer:
+            customer = Customer(
+                tenant_id=tenant_id,
+                first_name="Walk-in",
+                last_name=raw_phone or "Customer",  # Keep original format for display
+                email=f"walkin+{phone}@placeholder.truckpitstop.com",
+                phone=phone,  # Store normalized
+            )
+            db.add(customer)
+            await db.flush()
+    else:
+        # Use or create a generic walk-in customer for this tenant
+        # Use scalars().first() instead of scalar_one_or_none() to handle potential duplicates
+        # from race conditions (no unique constraint on email+tenant_id)
+        result = await db.execute(
+            select(Customer).where(
+                and_(
+                    Customer.tenant_id == tenant_id,
+                    Customer.email == "walkin@placeholder.truckpitstop.com",
+                )
+            ).limit(1)
+        )
+        customer = result.scalars().first()
+        if not customer:
+            customer = Customer(
+                tenant_id=tenant_id,
+                first_name="Walk-in",
+                last_name="Customer",
+                email="walkin@placeholder.truckpitstop.com",
+            )
+            db.add(customer)
+            await db.flush()
+
+    # Parse vehicle_description best-effort: "2019 Peterbilt 579" -> year=2019 make=Peterbilt model=579
+    desc = data.vehicle_description.strip()
+    parts = desc.split(None, 2)
+    year = None
+    make = desc
+    model = "N/A"
+
+    if len(parts) >= 1 and parts[0].isdigit() and len(parts[0]) == 4:
+        year = int(parts[0])
+        if len(parts) >= 3:
+            make = parts[1]
+            model = parts[2]
+        elif len(parts) == 2:
+            make = parts[1]
+            model = "N/A"
+        else:
+            make = "Unknown"
+    elif len(parts) >= 2:
+        make = parts[0]
+        model = " ".join(parts[1:])
+
+    vehicle = Vehicle(
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        make=make,
+        model=model,
+        year=year,
+    )
+    db.add(vehicle)
+    await db.flush()
+
+    order_number = await generate_order_number(db, tenant_id)
+
+    repair_order = RepairOrder(
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=order_number,
+        status=RepairOrderStatus.DRAFT,
+        description=data.complaint or None,
+    )
+    db.add(repair_order)
+    await db.commit()
+    await db.refresh(repair_order)
+
     return RepairOrderResponse.model_validate(repair_order)
 
 
@@ -358,7 +473,7 @@ async def assign_mechanic(
     
     # Send email notification to MECHANIC (not customer - customer notified when work starts)
     vehicle = order.vehicle
-    vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "Vehicle"
+    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
     
     # Parse services from internal_notes
     services_html = ""
@@ -476,6 +591,7 @@ async def start_work(
         )
     
     order.status = RepairOrderStatus.IN_PROGRESS
+    order.work_started_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(order)
     
@@ -483,7 +599,7 @@ async def start_work(
     customer = order.customer
     if customer and customer.email:
         vehicle = order.vehicle
-        vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "your vehicle"
+        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         
         html_body = f"""
         <html>
@@ -523,6 +639,17 @@ async def start_work(
             template_name="work_started",
         )
     
+    # SMS notification
+    if customer and customer.phone:
+        vehicle = order.vehicle
+        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        try:
+            await send_sms(db, str(order.tenant_id), customer.phone,
+                f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - Truck Pit Stop",
+                template_name="work_started_sms")
+        except Exception:
+            pass  # Don't fail the request if SMS fails
+    
     return RepairOrderResponse.model_validate(order)
 
 
@@ -536,7 +663,7 @@ async def complete_work(
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id)
-        .options(selectinload(RepairOrder.vehicle))
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
     
@@ -553,6 +680,7 @@ async def complete_work(
         )
     
     order.status = RepairOrderStatus.PENDING_REVIEW
+    order.work_completed_at = datetime.now(timezone.utc)
     
     # ============ AWARD POINTS ============
     # Points = labor cost (1 point per $1 of labor)
@@ -647,7 +775,7 @@ async def complete_work(
     managers = result.scalars().all()
     
     vehicle = order.vehicle
-    vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "Vehicle"
+    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
     
     for manager in managers:
         if manager.email:
@@ -687,6 +815,18 @@ async def complete_work(
                 body=html_body,
                 template_name="work_pending_review",
             )
+    
+    # SMS to customer: work is done, under review
+    customer = order.customer
+    if customer and customer.phone:
+        vehicle = order.vehicle
+        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        try:
+            await send_sms(db, str(order.tenant_id), customer.phone,
+                f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - Truck Pit Stop",
+                template_name="work_complete_sms")
+        except Exception:
+            pass
     
     return RepairOrderResponse.model_validate(order)
 
@@ -754,7 +894,7 @@ async def approve_completion(
     customer = order.customer
     if customer and customer.email:
         vehicle = order.vehicle
-        vehicle_info = f"{vehicle.year} {vehicle.make} {vehicle.model}" if vehicle else "your vehicle"
+        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         
         html_body = f"""
         <html>
@@ -797,6 +937,17 @@ async def approve_completion(
             body=html_body,
             template_name="work_complete",
         )
+    
+    # SMS: ready for pickup
+    if customer and customer.phone:
+        vehicle = order.vehicle
+        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        try:
+            await send_sms(db, str(order.tenant_id), customer.phone,
+                f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - Truck Pit Stop",
+                template_name="ready_pickup_sms")
+        except Exception:
+            pass
     
     return RepairOrderResponse.model_validate(order)
 

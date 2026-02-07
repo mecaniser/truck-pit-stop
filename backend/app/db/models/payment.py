@@ -11,6 +11,7 @@ class PaymentMethod(str, enum.Enum):
     CASH = "cash"
     CHECK = "check"
     ACH = "ach"
+    ZELLE = "zelle"
     OTHER = "other"
 
 

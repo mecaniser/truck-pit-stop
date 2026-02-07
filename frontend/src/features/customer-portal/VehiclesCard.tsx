@@ -27,6 +27,7 @@ type EditVehicleData = z.infer<typeof editVehicleSchema>
 type AddVehicleData = z.infer<typeof addVehicleSchema>
 
 function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () => void }) {
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
   
   const { register, handleSubmit, formState: { isDirty } } = useForm<EditVehicleData>({
@@ -38,11 +39,12 @@ function EditVehicleForm({ vehicle, onClose }: { vehicle: Vehicle; onClose: () =
 
   const mutation = useMutation({
     mutationFn: async (data: EditVehicleData) => {
-      const response = await api.patch(`/vehicles/${vehicle.id}`, data)
+      // Use nested endpoint under customer
+      const response = await api.put(`/customers/${user?.customer_id}/vehicles/${vehicle.id}`, data)
       return response.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', user?.customer_id] })
       onClose()
     },
   })
@@ -99,14 +101,12 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
 
   const mutation = useMutation({
     mutationFn: async (data: AddVehicleData) => {
-      const response = await api.post('/vehicles', {
-        ...data,
-        customer_id: user?.customer_id,
-      })
+      // Use nested endpoint under customer
+      const response = await api.post(`/customers/${user?.customer_id}/vehicles`, data)
       return response.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', user?.customer_id] })
       onClose()
     },
   })
@@ -189,15 +189,19 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
 }
 
 export default function VehiclesCard() {
+  const { user } = useAuthStore()
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
 
   const { data: vehicles, isLoading } = useQuery<Vehicle[]>({
-    queryKey: ['vehicles'],
+    queryKey: ['customerVehicles', user?.customer_id],
     queryFn: async () => {
-      const response = await api.get('/vehicles')
+      if (!user?.customer_id) return []
+      // Use nested endpoint under customer
+      const response = await api.get(`/customers/${user.customer_id}/vehicles`)
       return response.data
     },
+    enabled: !!user?.customer_id,
   })
 
   return (

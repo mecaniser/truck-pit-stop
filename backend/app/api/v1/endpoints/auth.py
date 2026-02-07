@@ -1,7 +1,7 @@
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.core.security import (
@@ -37,9 +37,14 @@ from app.schemas.auth import (
     ResetPasswordResponse,
 )
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional
+from typing import Optional, List
 import secrets
-from app.services.email_service import send_password_reset_email
+import re
+from app.services.email_service import (
+    send_password_reset_email,
+    send_enrollment_received_email,
+    send_new_enrollment_notification,
+)
 
 router = APIRouter()
 
@@ -94,10 +99,49 @@ async def register(
             detail="Email already registered",
         )
     
-    # Check if there's an existing Customer record with this email
-    # This links the new User account to the Customer created by staff
-    result = await db.execute(select(Customer).where(Customer.email == user_data.email))
+    # Resolve tenant_slug first if provided (needed for scoped customer lookup)
+    target_tenant_id = None
+    if user_data.tenant_slug:
+        result = await db.execute(select(Tenant).where(Tenant.slug == user_data.tenant_slug))
+        tenant = result.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tenant not found",
+            )
+        target_tenant_id = tenant.id
+    
+    # Check if there's an existing Customer record with this email or phone
+    # This links the new User account to the Customer created by staff (including walk-ins)
+    existing_customer = None
+    
+    # First try email match (scoped to target tenant if specified)
+    if target_tenant_id:
+        result = await db.execute(
+            select(Customer).where(
+                and_(Customer.email == user_data.email, Customer.tenant_id == target_tenant_id)
+            )
+        )
+    else:
+        result = await db.execute(select(Customer).where(Customer.email == user_data.email))
     existing_customer = result.scalar_one_or_none()
+    
+    # If no email match and phone provided, try phone match (for walk-ins with placeholder emails)
+    # MUST be scoped to target tenant to avoid cross-tenant linking
+    if not existing_customer and user_data.phone and target_tenant_id:
+        normalized_phone = user_data.phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        result = await db.execute(
+            select(Customer).where(
+                and_(Customer.phone == normalized_phone, Customer.tenant_id == target_tenant_id)
+            )
+        )
+        existing_customer = result.scalar_one_or_none()
+        
+        # If found by phone within the target tenant, update placeholder email to real email
+        if existing_customer and "@placeholder" in (existing_customer.email or ""):
+            existing_customer.email = user_data.email
+            existing_customer.first_name = user_data.first_name
+            existing_customer.last_name = user_data.last_name
     
     customer_id = None
     tenant_id = None
@@ -106,16 +150,8 @@ async def register(
         # Link to existing customer - inherit their tenant
         customer_id = existing_customer.id
         tenant_id = existing_customer.tenant_id
-    elif user_data.tenant_slug:
-        # No existing customer, but tenant slug provided
-        result = await db.execute(select(Tenant).where(Tenant.slug == user_data.tenant_slug))
-        tenant = result.scalar_one_or_none()
-        if not tenant:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Tenant not found",
-            )
-        tenant_id = tenant.id
+    elif target_tenant_id:
+        tenant_id = target_tenant_id
     
     # Create user linked to existing customer (if any)
     user = User(
@@ -679,4 +715,145 @@ async def verify_email_change(
     return EmailVerificationResponse(
         message=f"Email successfully changed from {old_email} to {new_email}",
         email=new_email
+    )
+
+
+# ============================================================================
+# Garage Enrollment
+# ============================================================================
+
+class GarageEnrollmentRequest(BaseModel):
+    # Garage info
+    garage_name: str = Field(..., min_length=2, max_length=255)
+    slug: str = Field(..., min_length=2, max_length=100, pattern=r'^[a-z0-9-]+$')
+    address: str = Field(..., min_length=5, max_length=500)
+    phone: str = Field(..., min_length=10, max_length=20)
+    email: EmailStr  # Garage contact email
+    website: Optional[str] = Field(None, max_length=255)
+    business_license: Optional[str] = Field(None, max_length=100)
+    ein: Optional[str] = Field(None, max_length=20)  # XX-XXXXXXX format
+    
+    # Owner info
+    owner_email: EmailStr
+    owner_first_name: str = Field(..., min_length=1, max_length=100)
+    owner_last_name: str = Field(..., min_length=1, max_length=100)
+    owner_phone: str = Field(..., min_length=10, max_length=20)
+    owner_password: str = Field(..., min_length=8)
+
+
+class GarageEnrollmentResponse(BaseModel):
+    message: str
+    garage_name: str
+    status: str = "pending"
+
+
+@router.post("/enroll-garage", response_model=GarageEnrollmentResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/hour")  # Rate limit: 5 enrollments per hour per IP
+async def enroll_garage(
+    request: Request,
+    enrollment_data: GarageEnrollmentRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public endpoint for garage owners to apply for platform enrollment.
+    Creates a tenant and owner user with pending status.
+    """
+    # Validate EIN format if provided (XX-XXXXXXX)
+    if enrollment_data.ein:
+        ein_pattern = r'^\d{2}-\d{7}$'
+        if not re.match(ein_pattern, enrollment_data.ein):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="EIN must be in format XX-XXXXXXX (e.g., 12-3456789)",
+            )
+    
+    # Check if slug is already taken
+    result = await db.execute(select(Tenant).where(Tenant.slug == enrollment_data.slug))
+    existing_tenant = result.scalar_one_or_none()
+    if existing_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This garage URL slug is already taken. Please choose another.",
+        )
+    
+    # Check if owner email is already registered
+    result = await db.execute(select(User).where(User.email == enrollment_data.owner_email))
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This email is already registered. Please log in or use a different email.",
+        )
+    
+    # Create tenant with pending status
+    tenant = Tenant(
+        name=enrollment_data.garage_name,
+        slug=enrollment_data.slug,
+        address=enrollment_data.address,
+        phone=enrollment_data.phone,
+        email=enrollment_data.email,
+        website=enrollment_data.website,
+        business_license=enrollment_data.business_license,
+        ein=enrollment_data.ein,
+        is_active=False,  # Not active until approved
+        enrollment_status="pending",
+        applied_at=datetime.now(timezone.utc),
+    )
+    
+    db.add(tenant)
+    await db.flush()  # Get tenant ID
+    
+    # Create owner user with inactive status
+    owner = User(
+        email=enrollment_data.owner_email,
+        hashed_password=get_password_hash(enrollment_data.owner_password),
+        first_name=enrollment_data.owner_first_name,
+        last_name=enrollment_data.owner_last_name,
+        phone=enrollment_data.owner_phone,
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=False,  # Not active until approved
+        is_verified=False,
+    )
+    
+    db.add(owner)
+    await db.flush()
+    
+    # Link owner to tenant
+    tenant.owner_id = owner.id
+    
+    await db.commit()
+    
+    # Send confirmation email to applicant
+    owner_name = f"{enrollment_data.owner_first_name} {enrollment_data.owner_last_name}"
+    try:
+        await send_enrollment_received_email(
+            to=enrollment_data.owner_email,
+            garage_name=enrollment_data.garage_name,
+            owner_name=owner_name,
+        )
+    except Exception as e:
+        print(f"Error sending enrollment confirmation: {e}")
+    
+    # Notify super admins
+    result = await db.execute(
+        select(User.email).where(User.role == UserRole.SUPER_ADMIN, User.is_active == True)
+    )
+    admin_emails = [row[0] for row in result.all()]
+    
+    if admin_emails:
+        try:
+            await send_new_enrollment_notification(
+                admin_emails=admin_emails,
+                garage_name=enrollment_data.garage_name,
+                owner_name=owner_name,
+                owner_email=enrollment_data.owner_email,
+            )
+        except Exception as e:
+            print(f"Error sending admin notification: {e}")
+    
+    return GarageEnrollmentResponse(
+        message="Your application has been submitted successfully. We'll review it and get back to you within 1-2 business days.",
+        garage_name=enrollment_data.garage_name,
+        status="pending",
     )

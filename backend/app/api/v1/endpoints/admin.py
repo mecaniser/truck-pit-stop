@@ -511,3 +511,470 @@ async def get_tenant_stats(
             "revenue_growth": round(((this_month_revenue - last_month_revenue) / last_month_revenue * 100), 2) if last_month_revenue > 0 else 0,
         }
     }
+
+
+# ============================================================================
+# Garage Owner Settings (Zelle, etc.)
+# ============================================================================
+
+from pydantic import BaseModel
+from typing import Optional
+
+
+class ZelleSettingsRequest(BaseModel):
+    zelle_email: Optional[str] = None
+    zelle_phone: Optional[str] = None
+
+
+class ZelleSettingsResponse(BaseModel):
+    zelle_email: Optional[str] = None
+    zelle_phone: Optional[str] = None
+
+
+class ReminderSettingsRequest(BaseModel):
+    invoice_reminders_enabled: bool
+    reminder_frequency_days: int  # 1-14 days
+    max_invoice_reminders: int    # 1-10 reminders
+
+
+class ReminderSettingsResponse(BaseModel):
+    invoice_reminders_enabled: bool
+    reminder_frequency_days: int
+    max_invoice_reminders: int
+
+
+class TaxFeeSettingsRequest(BaseModel):
+    sales_tax_rate: float  # Percentage, e.g., 8.25 for 8.25%
+    shop_supplies_rate: float  # Percentage of labor
+    service_fee_rate: float  # Percentage of subtotal
+
+
+class TaxFeeSettingsResponse(BaseModel):
+    sales_tax_rate: float
+    shop_supplies_rate: float
+    service_fee_rate: float
+
+
+def require_garage_owner():
+    """Dependency to ensure only garage owner/admin can access"""
+    async def role_checker(current_user: User = Depends(get_current_active_user)):
+        if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Garage owner/admin access required",
+            )
+        return current_user
+    return role_checker
+
+
+@router.get("/zelle-settings", response_model=ZelleSettingsResponse)
+async def get_zelle_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Get Zelle payment settings for the garage"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    return ZelleSettingsResponse(
+        zelle_email=tenant.zelle_email,
+        zelle_phone=tenant.zelle_phone,
+    )
+
+
+@router.put("/zelle-settings", response_model=ZelleSettingsResponse)
+async def update_zelle_settings(
+    body: ZelleSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Update Zelle payment settings for the garage"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    tenant.zelle_email = body.zelle_email
+    tenant.zelle_phone = body.zelle_phone
+    
+    await db.commit()
+    await db.refresh(tenant)
+    
+    return ZelleSettingsResponse(
+        zelle_email=tenant.zelle_email,
+        zelle_phone=tenant.zelle_phone,
+    )
+
+
+# ============================================================================
+# Invoice Reminder Settings
+# ============================================================================
+
+@router.get("/reminder-settings", response_model=ReminderSettingsResponse)
+async def get_reminder_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Get invoice reminder settings for the garage"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    return ReminderSettingsResponse(
+        invoice_reminders_enabled=tenant.invoice_reminders_enabled,
+        reminder_frequency_days=tenant.reminder_frequency_days,
+        max_invoice_reminders=tenant.max_invoice_reminders,
+    )
+
+
+@router.put("/reminder-settings", response_model=ReminderSettingsResponse)
+async def update_reminder_settings(
+    body: ReminderSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Update invoice reminder settings for the garage"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    # Validate ranges
+    if not 1 <= body.reminder_frequency_days <= 14:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reminder_frequency_days must be between 1 and 14"
+        )
+    if not 1 <= body.max_invoice_reminders <= 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="max_invoice_reminders must be between 1 and 10"
+        )
+    
+    tenant.invoice_reminders_enabled = body.invoice_reminders_enabled
+    tenant.reminder_frequency_days = body.reminder_frequency_days
+    tenant.max_invoice_reminders = body.max_invoice_reminders
+    
+    await db.commit()
+    await db.refresh(tenant)
+    
+    return ReminderSettingsResponse(
+        invoice_reminders_enabled=tenant.invoice_reminders_enabled,
+        reminder_frequency_days=tenant.reminder_frequency_days,
+        max_invoice_reminders=tenant.max_invoice_reminders,
+    )
+
+
+# ============================================================================
+# Manual Task Triggers (for testing/admin)
+# ============================================================================
+
+@router.post("/trigger-invoice-reminders")
+async def trigger_invoice_reminders(
+    current_user: User = Depends(require_garage_owner()),
+):
+    """
+    Manually trigger invoice reminder processing for this tenant only.
+    
+    Note: The scheduled Celery task processes all tenants. This endpoint
+    is tenant-scoped for garage owners to manually trigger reminders
+    for their own customers only.
+    """
+    from app.tasks.invoice_reminders import _process_invoice_reminders
+    
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    
+    try:
+        # Pass tenant_id to scope reminders to this tenant only
+        count = await _process_invoice_reminders(tenant_id=str(current_user.tenant_id))
+        return {"status": "success", "reminders_sent": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Tax & Fee Settings
+# ============================================================================
+
+@router.get("/tax-fee-settings", response_model=TaxFeeSettingsResponse)
+async def get_tax_fee_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Get tax and fee settings for the garage"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    return TaxFeeSettingsResponse(
+        sales_tax_rate=float(tenant.sales_tax_rate or 0),
+        shop_supplies_rate=float(tenant.shop_supplies_rate or 0),
+        service_fee_rate=float(tenant.service_fee_rate or 0),
+    )
+
+
+@router.put("/tax-fee-settings", response_model=TaxFeeSettingsResponse)
+async def update_tax_fee_settings(
+    body: TaxFeeSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Update tax and fee settings for the garage"""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    
+    # Validate ranges (0-99.999% to fit Numeric(5,3) column)
+    if not 0 <= body.sales_tax_rate <= 99.999:
+        raise HTTPException(status_code=400, detail="sales_tax_rate must be between 0 and 99.999")
+    if not 0 <= body.shop_supplies_rate <= 99.999:
+        raise HTTPException(status_code=400, detail="shop_supplies_rate must be between 0 and 99.999")
+    if not 0 <= body.service_fee_rate <= 99.999:
+        raise HTTPException(status_code=400, detail="service_fee_rate must be between 0 and 99.999")
+    
+    tenant.sales_tax_rate = body.sales_tax_rate
+    tenant.shop_supplies_rate = body.shop_supplies_rate
+    tenant.service_fee_rate = body.service_fee_rate
+    
+    await db.commit()
+    await db.refresh(tenant)
+    
+    return TaxFeeSettingsResponse(
+        sales_tax_rate=float(tenant.sales_tax_rate),
+        shop_supplies_rate=float(tenant.shop_supplies_rate),
+        service_fee_rate=float(tenant.service_fee_rate),
+    )
+
+
+# ============================================================================
+# Garage Enrollment Management (Super Admin)
+# ============================================================================
+
+from datetime import datetime, timezone
+
+
+class EnrollmentResponse(BaseModel):
+    id: str
+    garage_name: str
+    slug: str
+    address: Optional[str]
+    phone: Optional[str]
+    email: Optional[str]
+    website: Optional[str]
+    business_license: Optional[str]
+    ein: Optional[str]
+    enrollment_status: str
+    applied_at: Optional[datetime]
+    approved_at: Optional[datetime]
+    rejection_reason: Optional[str]
+    # Owner info
+    owner_id: Optional[str]
+    owner_email: Optional[str]
+    owner_name: Optional[str]
+    owner_phone: Optional[str]
+
+
+class RejectEnrollmentRequest(BaseModel):
+    reason: str
+
+
+@router.get("/pending-enrollments", response_model=List[EnrollmentResponse])
+async def list_pending_enrollments(
+    status_filter: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """
+    List garage enrollment applications.
+    Only accessible by SUPER_ADMIN.
+    """
+    query = select(Tenant)
+    
+    if status_filter:
+        query = query.where(Tenant.enrollment_status == status_filter)
+    else:
+        # Default: show pending enrollments
+        query = query.where(Tenant.enrollment_status == "pending")
+    
+    query = query.order_by(Tenant.applied_at.desc())
+    result = await db.execute(query)
+    tenants = result.scalars().all()
+    
+    response_data = []
+    for tenant in tenants:
+        enrollment = EnrollmentResponse(
+            id=str(tenant.id),
+            garage_name=tenant.name,
+            slug=tenant.slug,
+            address=tenant.address,
+            phone=tenant.phone,
+            email=tenant.email,
+            website=tenant.website,
+            business_license=tenant.business_license,
+            ein=tenant.ein,
+            enrollment_status=tenant.enrollment_status,
+            applied_at=tenant.applied_at,
+            approved_at=tenant.approved_at,
+            rejection_reason=tenant.rejection_reason,
+            owner_id=str(tenant.owner_id) if tenant.owner_id else None,
+            owner_email=None,
+            owner_name=None,
+            owner_phone=None,
+        )
+        
+        # Get owner details
+        if tenant.owner_id:
+            owner_result = await db.execute(
+                select(User).where(User.id == tenant.owner_id)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                enrollment.owner_email = owner.email
+                enrollment.owner_name = f"{owner.first_name} {owner.last_name}"
+                enrollment.owner_phone = owner.phone
+        
+        response_data.append(enrollment)
+    
+    return response_data
+
+
+@router.get("/enrollment-stats")
+async def get_enrollment_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """Get enrollment statistics"""
+    # Count by status
+    pending_result = await db.execute(
+        select(func.count(Tenant.id)).where(Tenant.enrollment_status == "pending")
+    )
+    pending_count = pending_result.scalar() or 0
+    
+    approved_result = await db.execute(
+        select(func.count(Tenant.id)).where(Tenant.enrollment_status == "approved")
+    )
+    approved_count = approved_result.scalar() or 0
+    
+    rejected_result = await db.execute(
+        select(func.count(Tenant.id)).where(Tenant.enrollment_status == "rejected")
+    )
+    rejected_count = rejected_result.scalar() or 0
+    
+    return {
+        "pending": pending_count,
+        "approved": approved_count,
+        "rejected": rejected_count,
+        "total": pending_count + approved_count + rejected_count,
+    }
+
+
+@router.post("/approve-enrollment/{tenant_id}")
+async def approve_enrollment(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """
+    Approve a garage enrollment application.
+    Activates the tenant and owner user account.
+    """
+    from app.services.email_service import send_enrollment_approved_email
+    
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enrollment not found")
+    
+    if tenant.enrollment_status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot approve enrollment with status '{tenant.enrollment_status}'",
+        )
+    
+    # Activate tenant
+    tenant.enrollment_status = "approved"
+    tenant.is_active = True
+    tenant.approved_at = datetime.now(timezone.utc)
+    tenant.approved_by_id = current_user.id
+    
+    # Activate owner user
+    if tenant.owner_id:
+        owner_result = await db.execute(select(User).where(User.id == tenant.owner_id))
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            owner.is_active = True
+            
+            # Send approval email
+            try:
+                await send_enrollment_approved_email(
+                    to=owner.email,
+                    garage_name=tenant.name,
+                    owner_name=f"{owner.first_name} {owner.last_name}",
+                )
+            except Exception as e:
+                print(f"Error sending approval email: {e}")
+    
+    await db.commit()
+    
+    return {"status": "success", "message": f"Enrollment for '{tenant.name}' has been approved"}
+
+
+@router.post("/reject-enrollment/{tenant_id}")
+async def reject_enrollment(
+    tenant_id: UUID,
+    body: RejectEnrollmentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """
+    Reject a garage enrollment application.
+    """
+    from app.services.email_service import send_enrollment_rejected_email
+    
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Enrollment not found")
+    
+    if tenant.enrollment_status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot reject enrollment with status '{tenant.enrollment_status}'",
+        )
+    
+    # Update status
+    tenant.enrollment_status = "rejected"
+    tenant.rejection_reason = body.reason
+    
+    # Send rejection email
+    if tenant.owner_id:
+        owner_result = await db.execute(select(User).where(User.id == tenant.owner_id))
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            try:
+                await send_enrollment_rejected_email(
+                    to=owner.email,
+                    garage_name=tenant.name,
+                    owner_name=f"{owner.first_name} {owner.last_name}",
+                    reason=body.reason,
+                )
+            except Exception as e:
+                print(f"Error sending rejection email: {e}")
+    
+    await db.commit()
+    
+    return {"status": "success", "message": f"Enrollment for '{tenant.name}' has been rejected"}

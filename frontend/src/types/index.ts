@@ -40,6 +40,7 @@ export interface Customer {
   billing_zip: string | null
   billing_country: string
   notes: string | null
+  auto_approval_threshold: string | null
   created_at: string
   updated_at: string
 }
@@ -49,6 +50,7 @@ export interface Vehicle {
   tenant_id: string
   customer_id: string
   vin: string | null
+  unit_number: string | null
   make: string
   model: string
   year: number | null
@@ -118,6 +120,7 @@ export interface Quote {
   expires_at: string | null
   is_approved: boolean
   is_declined: boolean
+  decline_notes: string | null
   sent_to_customer: boolean
   sent_at: string | null
   created_at: string

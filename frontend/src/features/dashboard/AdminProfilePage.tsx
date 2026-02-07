@@ -498,22 +498,23 @@ export default function AdminProfilePage() {
         {/* Collapsible Password Change */}
         <CollapsiblePasswordChange />
 
-        {/* Payment Settings - Only for garage owners/admins */}
+        {/* Garage Settings - Only for garage owners/admins */}
         {(user?.role === 'garage_owner' || user?.role === 'garage_admin') && (
           <div className="border-t border-white/10 pt-5 mt-5">
             <Link
-              to="/dashboard/settings/stripe"
+              to="/dashboard/garage-settings"
               className="w-full flex items-center justify-between p-3 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-colors group"
             >
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-indigo-500/20">
                   <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-white">Payment Settings</h3>
-                  <p className="text-xs text-gray-400">Connect Stripe to receive customer payments</p>
+                  <h3 className="text-sm font-medium text-white">Garage Settings</h3>
+                  <p className="text-xs text-gray-400">Payments, notifications, and preferences</p>
                 </div>
               </div>
               <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">

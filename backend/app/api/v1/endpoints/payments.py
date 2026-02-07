@@ -1,6 +1,6 @@
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -61,6 +61,18 @@ class PaymentIntentResponse(BaseModel):
 class ConfirmPaymentRequest(BaseModel):
     invoice_id: UUID
     payment_intent_id: str
+
+
+class ManualPaymentRequest(BaseModel):
+    invoice_id: UUID
+    method: str  # 'cash', 'zelle', 'check', 'ach', 'other'
+    notes: Optional[str] = None
+
+
+class ZelleInfoResponse(BaseModel):
+    zelle_email: Optional[str] = None
+    zelle_phone: Optional[str] = None
+    garage_name: str
 
 
 @router.get("/config", response_model=ConfigResponse)
@@ -351,7 +363,7 @@ async def confirm_payment(
     
     # Update invoice status
     invoice.status = InvoiceStatus.PAID
-    invoice.paid_at = datetime.utcnow()
+    invoice.paid_at = datetime.now(timezone.utc)
     
     # Update repair order status
     invoice.repair_order.status = RepairOrderStatus.PAID
@@ -372,3 +384,103 @@ async def confirm_payment(
     await db.commit()
     
     return {"status": "success", "message": "Payment confirmed"}
+
+
+@router.post("/record-manual")
+async def record_manual_payment(
+    body: ManualPaymentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Record a manual payment (cash, zelle, check, etc.) - staff only"""
+    # Only garage staff can record manual payments
+    if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Staff access required")
+    
+    # Validate payment method
+    method_map = {
+        'cash': PaymentMethodEnum.CASH,
+        'zelle': PaymentMethodEnum.ZELLE,
+        'check': PaymentMethodEnum.CHECK,
+        'ach': PaymentMethodEnum.ACH,
+        'other': PaymentMethodEnum.OTHER,
+    }
+    if body.method not in method_map:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid payment method: {body.method}")
+    
+    # Get invoice
+    result = await db.execute(
+        select(Invoice)
+        .options(selectinload(Invoice.repair_order))
+        .where(Invoice.id == body.invoice_id, Invoice.tenant_id == current_user.tenant_id)
+    )
+    invoice = result.scalar_one_or_none()
+    
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
+    
+    # Update invoice status
+    invoice.status = InvoiceStatus.PAID
+    invoice.paid_at = datetime.now(timezone.utc)
+    
+    # Update repair order status
+    invoice.repair_order.status = RepairOrderStatus.PAID
+    
+    # Create payment record
+    payment_number = await generate_payment_number(db, invoice.tenant_id)
+    payment = Payment(
+        tenant_id=invoice.tenant_id,
+        invoice_id=invoice.id,
+        payment_number=payment_number,
+        amount=invoice.total_amount,
+        method=method_map[body.method],
+        status=PaymentStatus.COMPLETED,
+        notes=body.notes,
+    )
+    db.add(payment)
+    
+    await db.commit()
+    
+    return {"status": "success", "message": f"Payment recorded as {body.method}"}
+
+
+@router.get("/zelle-info/{invoice_id}", response_model=ZelleInfoResponse)
+async def get_zelle_info(
+    invoice_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get Zelle payment info for an invoice's garage"""
+    # Get invoice to find tenant
+    result = await db.execute(
+        select(Invoice)
+        .options(selectinload(Invoice.repair_order))
+        .where(Invoice.id == invoice_id)
+    )
+    invoice = result.scalar_one_or_none()
+    
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    
+    # Verify access - customer must own invoice or be staff
+    if current_user.role == UserRole.CUSTOMER:
+        if invoice.repair_order.customer_id != current_user.customer_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    elif current_user.tenant_id != invoice.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    # Get tenant Zelle info
+    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = result.scalar_one_or_none()
+    
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Garage not found")
+    
+    return ZelleInfoResponse(
+        zelle_email=tenant.zelle_email,
+        zelle_phone=tenant.zelle_phone,
+        garage_name=tenant.name,
+    )

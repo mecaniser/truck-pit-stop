@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -32,6 +32,8 @@ class Invoice(BaseModel):
     )
     
     subtotal = Column(Numeric(10, 2), nullable=False)
+    shop_supplies_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
+    service_fee_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     tax_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_amount = Column(Numeric(10, 2), nullable=False)
@@ -39,6 +41,10 @@ class Invoice(BaseModel):
     due_date = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    
+    # Reminder tracking for overdue invoices
+    last_reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
+    reminder_count = Column(Integer, default=0, nullable=False)
     
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan")
 
