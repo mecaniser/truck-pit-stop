@@ -15,6 +15,7 @@ const loginSchema = z.object({
     .string()
     .min(1, 'Password is required')
     .min(6, 'Password must be at least 6 characters'),
+  remember_me: z.boolean().default(false),
 })
 
 type LoginFormData = z.infer<typeof loginSchema>
@@ -40,6 +41,7 @@ export default function LoginPage() {
     defaultValues: {
       email: defaultEmail,
       password: defaultPassword,
+      remember_me: false,
     },
   })
 
@@ -210,6 +212,14 @@ export default function LoginPage() {
           </div>
 
           <div className="flex items-center justify-between text-sm">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                {...register('remember_me')}
+                type="checkbox"
+                className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500 cursor-pointer"
+              />
+              <span className="text-gray-700">Remember me</span>
+            </label>
             <Link
               to="/forgot-password"
               className="font-medium text-amber-700 hover:text-amber-800"

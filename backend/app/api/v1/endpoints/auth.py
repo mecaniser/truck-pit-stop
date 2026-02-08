@@ -52,7 +52,7 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
-def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+def set_auth_cookies(response: Response, access_token: str, refresh_token: str, remember_me: bool = False):
     """Set httpOnly cookies for tokens."""
     # Access token cookie (shorter lived)
     response.set_cookie(
@@ -65,13 +65,14 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
         path="/",
     )
     # Refresh token cookie (longer lived)
+    refresh_days = settings.REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER if remember_me else settings.REFRESH_TOKEN_EXPIRE_DAYS
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
         secure=settings.COOKIE_SECURE,
         samesite=settings.COOKIE_SAMESITE,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=refresh_days * 24 * 60 * 60,
         path="/api/v1/auth",  # Only sent to auth endpoints
     )
 
@@ -212,10 +213,10 @@ async def login(
     token_version = await get_token_version(str(user.id))
     
     access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version)
-    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version)
+    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version, remember_me=credentials.remember_me)
     
     # Set httpOnly cookies
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, remember_me=credentials.remember_me)
     
     return {
         "access_token": access_token,
@@ -286,11 +287,14 @@ async def refresh_token_endpoint(
         if expiry > 0:
             await blacklist_token(jti, expiry)
     
+    # Preserve remember_me preference from original token
+    remember_me = payload.get("rem", False)
+    
     access_token = create_access_token(data={"sub": str(user.id)}, token_version=current_version)
-    new_refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=current_version)
+    new_refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=current_version, remember_me=remember_me)
     
     # Set httpOnly cookies
-    set_auth_cookies(response, access_token, new_refresh_token)
+    set_auth_cookies(response, access_token, new_refresh_token, remember_me=remember_me)
     
     return {
         "access_token": access_token,

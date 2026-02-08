@@ -36,14 +36,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, t
     return encoded_jwt
 
 
-def create_refresh_token(data: dict, token_version: int = 0) -> str:
+def create_refresh_token(data: dict, token_version: int = 0, remember_me: bool = False) -> str:
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    days = settings.REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER if remember_me else settings.REFRESH_TOKEN_EXPIRE_DAYS
+    expire = datetime.utcnow() + timedelta(days=days)
     to_encode.update({
         "exp": expire,
         "type": "refresh",
         "jti": str(uuid.uuid4()),
         "ver": token_version,
+        "rem": remember_me,  # Preserve remember_me preference for token refresh
     })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
