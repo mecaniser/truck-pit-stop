@@ -35,8 +35,6 @@ export default function GarageSettingsPage() {
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [isRedirecting, setIsRedirecting] = useState(false)
-  const [zelleEmail, setZelleEmail] = useState('')
-  const [zellePhone, setZellePhone] = useState('')
   const [zelleQrPreview, setZelleQrPreview] = useState<string | null>(null)
   const [isUploadingQr, setIsUploadingQr] = useState(false)
   
@@ -86,13 +84,6 @@ export default function GarageSettingsPage() {
   })
 
   useEffect(() => {
-    if (zelleSettings) {
-      setZelleEmail(zelleSettings.zelle_email || '')
-      setZellePhone(zelleSettings.zelle_phone || '')
-    }
-  }, [zelleSettings])
-
-  useEffect(() => {
     if (reminderSettings) {
       setRemindersEnabled(reminderSettings.invoice_reminders_enabled)
       setReminderFrequency(reminderSettings.reminder_frequency_days)
@@ -107,32 +98,6 @@ export default function GarageSettingsPage() {
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
     }
   }, [taxFeeSettings])
-
-  const saveZelleMutation = useMutation({
-    mutationFn: async () => {
-      const response = await api.put('/admin/zelle-settings', {
-        zelle_email: zelleEmail || null,
-        zelle_phone: zellePhone || null,
-      })
-      return response.data
-    },
-    onSuccess: () => {
-      toast.success('Zelle settings saved')
-      queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
-      setIsEditingZelle(false)
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to save Zelle settings')
-    },
-  })
-
-  const cancelZelleEdit = () => {
-    if (zelleSettings) {
-      setZelleEmail(zelleSettings.zelle_email || '')
-      setZellePhone(zelleSettings.zelle_phone || '')
-    }
-    setIsEditingZelle(false)
-  }
 
   const uploadQrMutation = useMutation({
     mutationFn: async (base64Image: string | null) => {
@@ -582,7 +547,7 @@ export default function GarageSettingsPage() {
 
             <div className="flex justify-end pt-2">
               <button
-                onClick={cancelZelleEdit}
+                onClick={() => setIsEditingZelle(false)}
                 className="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
               >
                 Done

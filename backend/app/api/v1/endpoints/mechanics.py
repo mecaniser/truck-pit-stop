@@ -202,6 +202,7 @@ class MechanicHistoryItem(BaseModel):
     work_started_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
     actual_hours: Optional[float] = None
+    points_earned: int = 0
 
 
 class MechanicStats(BaseModel):
@@ -464,6 +465,20 @@ async def get_my_history(
     )
     orders = result.scalars().all()
     
+    # Get points earned for each order
+    order_ids = [order.id for order in orders]
+    points_result = await db.execute(
+        select(MechanicPoints.repair_order_id, MechanicPoints.points)
+        .where(
+            and_(
+                MechanicPoints.mechanic_id == current_user.id,
+                MechanicPoints.repair_order_id.in_(order_ids),
+                MechanicPoints.transaction_type == PointsTransactionType.EARNED,
+            )
+        )
+    )
+    points_by_order = {row.repair_order_id: row.points for row in points_result.all()}
+    
     history = []
     for order in orders:
         vehicle = order.vehicle
@@ -493,6 +508,7 @@ async def get_my_history(
             work_started_at=ws,
             work_completed_at=wc,
             actual_hours=actual_hrs,
+            points_earned=points_by_order.get(order.id, 0),
         ))
     
     return history

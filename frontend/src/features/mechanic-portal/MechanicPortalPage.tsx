@@ -66,6 +66,7 @@ interface WorkHistoryItem {
   completed_at: string
   services_count: number
   actual_hours: number | null
+  points_earned: number
 }
 
 interface MechanicStats {
@@ -101,6 +102,9 @@ const STATUS_LABELS: Record<string, string> = {
   acknowledged: 'Ready to Start',
   in_progress: 'Working',
   pending_review: 'Done - Awaiting Review',
+  completed: 'Completed',
+  invoiced: 'Completed',
+  paid: 'Completed',
 }
 
 type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request' | 'profile'
@@ -143,6 +147,7 @@ export default function MechanicPortalPage() {
   const { user, logout, setUser } = useAuthStore()
   const queryClient = useQueryClient()
   const [view, setView] = useState<ViewType>('list')
+  const [previousView, setPreviousView] = useState<ViewType>('list')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   
   // Request form state
@@ -326,14 +331,15 @@ export default function MechanicPortalPage() {
     logout()
   }
 
-  const openJob = (jobId: string) => {
+  const openJob = (jobId: string, fromView: ViewType = 'list') => {
     setSelectedJobId(jobId)
+    setPreviousView(fromView)
     setView('detail')
   }
 
   const goBack = () => {
     setSelectedJobId(null)
-    setView('list')
+    setView(previousView)
   }
 
   const isPending = acknowledgeMutation.isPending || startWorkMutation.isPending || completeWorkMutation.isPending
@@ -477,6 +483,18 @@ export default function MechanicPortalPage() {
                 <p className="text-orange-300 font-medium text-lg">Waiting for manager approval</p>
               </div>
             )}
+
+            {['completed', 'invoiced', 'paid'].includes(jobDetail.status) && (
+              <div className="bg-green-500/20 border border-green-500/50 rounded-2xl p-5 text-center">
+                <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
+                <p className="text-green-300 font-medium text-lg">Job Completed</p>
+                {jobDetail.work_completed_at && (
+                  <p className="text-green-400/70 text-sm mt-1">
+                    {format(new Date(jobDetail.work_completed_at), 'MMM d, yyyy')}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           {/* Spacer for bottom nav */}
           <div className="h-20" />
@@ -505,11 +523,15 @@ export default function MechanicPortalPage() {
           ) : history && history.length > 0 ? (
             <div className="space-y-3">
               {history.map((item) => (
-                <div key={item.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                <button
+                  key={item.id}
+                  onClick={() => openJob(item.id, 'history')}
+                  className="w-full text-left bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-gray-600 transition-colors"
+                >
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-mono text-sm text-gray-500">{item.order_number}</span>
                     <span className="text-xs text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full">
-                      +10 pts
+                      +{item.points_earned.toLocaleString()} pts
                     </span>
                   </div>
                   <p className="text-white font-medium">{item.vehicle_info}</p>
@@ -521,7 +543,7 @@ export default function MechanicPortalPage() {
                       <span className="text-xs text-amber-400 font-mono">{item.actual_hours}h worked</span>
                     )}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -1342,7 +1364,7 @@ export default function MechanicPortalPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full">
-                            +10 pts
+                            +{item.points_earned.toLocaleString()} pts
                           </span>
                           <CheckCircle className="w-4 h-4 text-green-400" />
                         </div>

@@ -683,8 +683,25 @@ async def complete_work(
     order.work_completed_at = datetime.now(timezone.utc)
     
     # ============ AWARD POINTS ============
-    # Points = labor cost (1 point per $1 of labor)
+    # Points = job value (1 point per $1)
+    # Use service prices from internal_notes if available, else total_labor_cost
     labor_value = float(order.total_labor_cost or 0)
+    
+    # Check for services in internal_notes (quote-based orders with service menu prices)
+    if order.internal_notes:
+        try:
+            import json
+            notes_data = json.loads(order.internal_notes)
+            selected_services = notes_data.get("selected_services", [])
+            if selected_services:
+                service_total = sum(
+                    float(svc.get("base_price", 0))
+                    for svc in selected_services
+                )
+                if service_total > labor_value:
+                    labor_value = service_total
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
     
     # Get or create balance record
     result = await db.execute(

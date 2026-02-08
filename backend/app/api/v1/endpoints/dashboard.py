@@ -14,8 +14,30 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory
 from app.db.models.payment import Payment, PaymentStatus
+import json
 
 router = APIRouter()
+
+
+def get_effective_total(order: RepairOrder) -> Decimal:
+    """Get effective total cost - uses service prices from internal_notes if available, else backend total"""
+    # Check for services in internal_notes (quote-based orders)
+    if order.internal_notes:
+        try:
+            notes_data = json.loads(order.internal_notes)
+            selected_services = notes_data.get("selected_services", [])
+            if selected_services:
+                service_total = sum(
+                    Decimal(str(svc.get("base_price", "0")))
+                    for svc in selected_services
+                )
+                if service_total > 0:
+                    return service_total
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    
+    # Fall back to backend total
+    return order.total_cost or Decimal("0")
 
 
 class StatusCount(BaseModel):
@@ -216,7 +238,7 @@ async def get_dashboard_stats(
             description=order.description,
             customer_name=f"{customer.first_name} {customer.last_name}",
             vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
-            total_cost=str(order.total_cost),
+            total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,
         )
@@ -237,7 +259,7 @@ async def get_dashboard_stats(
             description=order.description,
             customer_name=f"{customer.first_name} {customer.last_name}",
             vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
-            total_cost=str(order.total_cost),
+            total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,
             mechanic_name=mech_name,
