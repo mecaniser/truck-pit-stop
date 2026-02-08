@@ -647,7 +647,7 @@ export default function MechanicsPage() {
 
       {isAdding && (
         <div
-          className={`fixed inset-0 z-50 transition ${isAdding ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          className={`fixed inset-0 z-[60] transition ${isAdding ? 'pointer-events-auto' : 'pointer-events-none'}`}
           aria-hidden={!isAdding}
         >
           <div

@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck } from 'lucide-react'
 import CustomersPage from '@/features/customers/CustomersPage'
 import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
 import MyGaragePage from '@/features/garage/MyGaragePage'
@@ -16,21 +16,20 @@ import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollments
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
   const navLinks = user?.role === 'super_admin' 
     ? [
-        { to: '/dashboard', label: 'Dashboard', exact: true },
-        { to: '/dashboard/garages', label: 'Garages' },
-        { to: '/dashboard/pending-enrollments', label: 'Enrollments' },
-        { to: '/dashboard/analytics', label: 'Analytics' },
+        { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
+        { to: '/dashboard/garages', label: 'Garages', mobileLabel: 'Garages', icon: LayoutGrid },
+        { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', icon: UserCheck },
+        { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', icon: BarChart3 },
       ]
     : [
-        { to: '/dashboard', label: 'Dashboard', exact: true },
-        { to: '/dashboard/customers', label: 'Customers' },
-        { to: '/dashboard/repair-orders', label: 'Repair Orders' },
-        { to: '/dashboard/garage', label: 'My Garage' },
+        { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
+        { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
+        { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
+        { to: '/dashboard/garage', label: 'My Garage', mobileLabel: 'Garage', icon: Building2 },
       ]
 
   const isActive = (path: string, exact?: boolean) => 
@@ -131,64 +130,8 @@ export default function DashboardLayout() {
               </Link>
             </div>
 
-            {/* Mobile menu button */}
-            <div className="flex items-center md:hidden">
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none"
-                aria-label="Toggle menu"
-              >
-                {mobileMenuOpen ? (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                )}
-              </button>
-            </div>
           </div>
         </div>
-
-        {/* Mobile menu */}
-        {mobileMenuOpen && (
-          <div className="md:hidden bg-white/95 backdrop-blur border-t border-gray-200">
-            <div className="px-4 py-3 space-y-2">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`block px-3 py-2 rounded-lg text-base font-medium transition-colors ${
-                    isActive(link.to, link.exact)
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
-              <div className="border-t border-gray-200 pt-3 mt-3">
-                <Link
-                  to="/dashboard/settings"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-base font-medium transition-colors ${
-                    location.pathname === '/dashboard/settings'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Profile Settings
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
       </nav>
 
       <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto">
@@ -232,6 +175,43 @@ export default function DashboardLayout() {
           )}
         </Routes>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+        <div className="bg-white/95 backdrop-blur border-t border-gray-200 px-2 py-2 flex justify-around">
+          {navLinks.map((link) => {
+            const Icon = link.icon
+            return (
+              <Link
+                key={link.to}
+                to={link.to}
+                className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+                  isActive(link.to, link.exact)
+                    ? 'text-amber-600'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="text-[10px] font-medium">{link.mobileLabel}</span>
+              </Link>
+            )
+          })}
+          <Link
+            to="/dashboard/settings"
+            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
+              location.pathname === '/dashboard/settings'
+                ? 'text-amber-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <User className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Profile</span>
+          </Link>
+        </div>
+      </div>
+
+      {/* Spacer for bottom nav on mobile */}
+      <div className="h-16 md:hidden" />
     </div>
   )
 }

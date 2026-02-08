@@ -364,7 +364,7 @@ export default function ServicesManagementPage() {
       {/* Slide-out Add/Edit Form */}
       {formOpen && (
         <div
-          className={`fixed inset-0 z-50 transition ${formOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          className={`fixed inset-0 z-[60] transition ${formOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
           aria-hidden={!formOpen}
         >
           <div

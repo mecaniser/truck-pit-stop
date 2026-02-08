@@ -2633,23 +2633,13 @@ export default function RepairOrdersPage() {
                       Customer scans this QR code with their Zelle app
                     </p>
                   </div>
-                ) : zelleSettings?.zelle_email || zelleSettings?.zelle_phone ? (
-                  <div className="text-center space-y-2">
-                    <p className="text-sm text-gray-600">Send Zelle payment to:</p>
-                    {zelleSettings.zelle_email && (
-                      <p className="font-medium text-gray-900">{zelleSettings.zelle_email}</p>
-                    )}
-                    {zelleSettings.zelle_phone && (
-                      <p className="font-medium text-gray-900">{zelleSettings.zelle_phone}</p>
-                    )}
-                  </div>
                 ) : (
                   <div className="text-center py-4">
                     <p className="text-gray-500 text-sm">
-                      No Zelle QR code or info configured.
+                      No Zelle QR code uploaded.
                     </p>
                     <p className="text-gray-400 text-xs mt-1">
-                      Set up in Garage Settings → Zelle Payments
+                      Upload in Garage Settings → Zelle Payments
                     </p>
                   </div>
                 )}

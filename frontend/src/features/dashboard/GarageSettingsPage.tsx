@@ -580,54 +580,12 @@ export default function GarageSettingsPage() {
               )}
             </div>
 
-            <div className="border-t border-gray-200 pt-4">
-              <p className="text-xs text-gray-500 mb-3">
-                Or enter your Zelle email/phone (shown as text if no QR uploaded)
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Zelle Email</label>
-                  <input
-                    type="email"
-                    value={zelleEmail}
-                    onChange={(e) => setZelleEmail(e.target.value)}
-                    placeholder="your-zelle@email.com"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Zelle Phone (optional)</label>
-                  <input
-                    type="tel"
-                    value={zellePhone}
-                    onChange={(e) => setZellePhone(e.target.value)}
-                    placeholder="(555) 123-4567"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
+            <div className="flex justify-end pt-2">
               <button
                 onClick={cancelZelleEdit}
-                className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50"
               >
                 Done
-              </button>
-              <button
-                onClick={() => saveZelleMutation.mutate()}
-                disabled={saveZelleMutation.isPending}
-                className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-medium rounded-lg flex items-center justify-center gap-2"
-              >
-                {saveZelleMutation.isPending ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    Save Info
-                  </>
-                )}
               </button>
             </div>
           </div>
