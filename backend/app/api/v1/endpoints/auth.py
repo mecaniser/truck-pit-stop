@@ -45,6 +45,7 @@ from app.services.email_service import (
     send_enrollment_received_email,
     send_new_enrollment_notification,
 )
+from app.core.password_policy import validate_password
 
 router = APIRouter()
 
@@ -59,7 +60,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str, 
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=settings.COOKIE_SECURE,
+        secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
@@ -70,7 +71,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str, 
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=settings.COOKIE_SECURE,
+        secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=refresh_days * 24 * 60 * 60,
         path="/api/v1/auth",  # Only sent to auth endpoints
@@ -91,6 +92,9 @@ async def register(
     user_data: UserRegister,
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate password complexity
+    validate_password(user_data.password)
+    
     # Check if user exists
     result = await db.execute(select(User).where(User.email == user_data.email))
     existing_user = result.scalar_one_or_none()
@@ -525,6 +529,9 @@ async def change_password(
     current_user: User = Depends(get_current_active_user),
 ):
     """Change current user's password and invalidate all existing tokens."""
+    # Validate new password complexity
+    validate_password(password_data.new_password)
+    
     # Verify current password
     if not verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(
@@ -587,6 +594,9 @@ async def reset_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Reset password using token from email."""
+    # Validate new password complexity
+    validate_password(reset_request.new_password)
+    
     # Get email from token
     email = await get_email_from_reset_token(reset_request.token)
     
@@ -762,6 +772,9 @@ async def enroll_garage(
     Public endpoint for garage owners to apply for platform enrollment.
     Creates a tenant and owner user with pending status.
     """
+    # Validate password complexity
+    validate_password(enrollment_data.owner_password)
+    
     # Validate EIN format if provided (XX-XXXXXXX)
     if enrollment_data.ein:
         ein_pattern = r'^\d{2}-\d{7}$'

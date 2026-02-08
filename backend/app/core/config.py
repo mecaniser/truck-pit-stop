@@ -1,8 +1,12 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 
 
 class Settings(BaseSettings):
+    # Environment
+    ENVIRONMENT: str = "development"  # "development", "staging", "production"
+    
     # Database
     DATABASE_URL: str
     
@@ -16,10 +20,22 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER: int = 30  # "Remember me" duration
     
+    @field_validator('SECRET_KEY')
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters for security")
+        return v
+    
     # Cookie settings
     COOKIE_SECURE: bool = False  # Set True in production (requires HTTPS)
     COOKIE_DOMAIN: str = ""  # Leave empty for localhost
     COOKIE_SAMESITE: str = "lax"  # "strict", "lax", or "none"
+    
+    @property
+    def COOKIE_SECURE_EFFECTIVE(self) -> bool:
+        """Force secure cookies in production environment"""
+        return self.ENVIRONMENT == "production" or self.COOKIE_SECURE
     
     # Stripe
     STRIPE_SECRET_KEY: str = ""

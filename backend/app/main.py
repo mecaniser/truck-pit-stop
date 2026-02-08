@@ -11,6 +11,9 @@ from app.api.v1.router import api_router
 from app.db.session import engine
 from app.core.redis import close_redis
 from sqlalchemy import text
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Rate limiter setup
 limiter = Limiter(key_func=get_remote_address)
@@ -29,9 +32,24 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses"""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if settings.COOKIE_SECURE_EFFECTIVE:  # Only add HSTS in production (HTTPS)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 
 app.include_router(api_router, prefix="/api/v1")
 
@@ -56,10 +74,10 @@ async def db_health_check():
         return {
             "status": "ok",
             "database": "connected",
-            "database_url": settings.DATABASE_URL.split("@")[-1].split("/")[0] if "@" in settings.DATABASE_URL else "configured"
         }
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database connection failed: {str(e)}")
+        logger.error(f"Database health check failed: {e}")
+        raise HTTPException(status_code=503, detail="Database connection unavailable")
 
 # Serve frontend static files
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"

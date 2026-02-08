@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.security import get_password_hash
+from app.core.password_policy import validate_password
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -82,6 +83,9 @@ async def create_tenant(
     Create a new tenant/garage with an owner account.
     Only accessible by SUPER_ADMIN.
     """
+    # Validate owner password complexity
+    validate_password(tenant_data.owner_password)
+    
     # Check if slug already exists
     result = await db.execute(
         select(Tenant).where(Tenant.slug == tenant_data.slug)
@@ -103,6 +107,7 @@ async def create_tenant(
         )
     
     # Create tenant first (without owner_id)
+    # Admin-created tenants are pre-approved and active
     tenant = Tenant(
         id=uuid4(),
         name=tenant_data.name,
@@ -111,6 +116,7 @@ async def create_tenant(
         phone=tenant_data.phone,
         email=tenant_data.email,
         is_active=True,
+        enrollment_status="approved",  # Admin-created = pre-approved
     )
     db.add(tenant)
     await db.flush()

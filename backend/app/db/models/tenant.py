@@ -39,7 +39,7 @@ class Tenant(BaseModel):
     service_fee_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of total
     
     # Enrollment fields
-    enrollment_status = Column(String(20), default="approved", nullable=False)  # pending, approved, rejected
+    enrollment_status = Column(String(20), default="pending", nullable=False)  # pending, approved, rejected
     business_license = Column(String(100), nullable=True)
     ein = Column(String(20), nullable=True)  # Employer Identification Number
     website = Column(String(255), nullable=True)

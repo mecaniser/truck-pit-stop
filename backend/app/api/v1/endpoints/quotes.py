@@ -3,12 +3,14 @@ import secrets
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.config import settings
@@ -21,6 +23,9 @@ from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 
 router = APIRouter()
+
+# Rate limiter for magic link endpoints
+limiter = Limiter(key_func=get_remote_address)
 
 
 class QuoteCreate(BaseModel):
@@ -579,7 +584,9 @@ async def decline_quote(
 # ============ Magic Link Endpoints (no auth required) ============
 
 @router.get("/token/{token}", response_model=QuoteDetailResponse)
+@limiter.limit("10/minute")  # Rate limit to prevent token brute force
 async def get_quote_by_token(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
@@ -632,7 +639,9 @@ async def get_quote_by_token(
 
 
 @router.post("/token/{token}/approve", response_model=QuoteResponse)
+@limiter.limit("5/minute")  # Rate limit approve actions
 async def approve_quote_by_token(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db),
 ):
@@ -676,7 +685,9 @@ async def approve_quote_by_token(
 
 
 @router.post("/token/{token}/decline", response_model=QuoteResponse)
+@limiter.limit("5/minute")  # Rate limit decline actions
 async def decline_quote_by_token(
+    request: Request,
     token: str,
     body: DeclineQuoteRequest,
     db: AsyncSession = Depends(get_db),

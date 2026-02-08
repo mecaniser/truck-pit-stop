@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import uuid
 from jose import JWTError, jwt
@@ -16,16 +16,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(
         password.encode('utf-8'),
-        bcrypt.gensalt()
+        bcrypt.gensalt(rounds=12)  # Explicit rounds for security
     ).decode('utf-8')
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, token_version: int = 0) -> str:
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({
         "exp": expire,
@@ -39,7 +39,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, t
 def create_refresh_token(data: dict, token_version: int = 0, remember_me: bool = False) -> str:
     to_encode = data.copy()
     days = settings.REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER if remember_me else settings.REFRESH_TOKEN_EXPIRE_DAYS
-    expire = datetime.utcnow() + timedelta(days=days)
+    expire = datetime.now(timezone.utc) + timedelta(days=days)
     to_encode.update({
         "exp": expire,
         "type": "refresh",
@@ -64,8 +64,8 @@ def get_token_expiry_seconds(token: str) -> int:
     payload = decode_token(token)
     if not payload or "exp" not in payload:
         return 0
-    exp = datetime.fromtimestamp(payload["exp"])
-    remaining = (exp - datetime.utcnow()).total_seconds()
+    exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+    remaining = (exp - datetime.now(timezone.utc)).total_seconds()
     return max(0, int(remaining))
 
 

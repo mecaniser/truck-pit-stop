@@ -10,6 +10,7 @@ import json
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.security import get_password_hash
+from app.core.password_policy import validate_password
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
@@ -110,6 +111,9 @@ async def create_mechanic(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
+    # Validate password complexity
+    validate_password(mechanic_data.password)
+    
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -149,7 +153,6 @@ class MechanicWorkItem(BaseModel):
     id: str
     order_number: str
     status: str
-    customer_name: str
     vehicle_info: str
     updated_at: str
 
@@ -611,7 +614,6 @@ async def get_mechanic_work(
                 id=str(order.id),
                 order_number=order.order_number,
                 status=order.status.value if hasattr(order.status, "value") else str(order.status),
-                customer_name=f"{customer.first_name} {customer.last_name}",
                 vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
                 updated_at=order.updated_at.isoformat(),
             )
@@ -665,6 +667,7 @@ async def update_mechanic(
     if mechanic_update.address is not None:
         mechanic.address = mechanic_update.address or None
     if mechanic_update.password:
+        validate_password(mechanic_update.password)
         mechanic.hashed_password = get_password_hash(mechanic_update.password)
 
     db.add(mechanic)
@@ -700,6 +703,9 @@ async def update_mechanic_password(
     if not mechanic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mechanic not found")
 
+    # Validate password complexity
+    validate_password(password_update.new_password)
+    
     mechanic.hashed_password = get_password_hash(password_update.new_password)
     db.add(mechanic)
     await db.commit()
