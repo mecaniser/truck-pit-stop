@@ -226,6 +226,8 @@ export interface Invoice {
   invoice_number: string
   status: InvoiceStatus
   subtotal: string
+  shop_supplies_amount: string
+  service_fee_amount: string
   tax_amount: string
   discount_amount: string
   total_amount: string
