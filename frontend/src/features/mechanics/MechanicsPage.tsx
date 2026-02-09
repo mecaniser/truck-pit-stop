@@ -912,46 +912,66 @@ export default function MechanicsPage() {
                       {selectedWorkItem?.vehicle_info || 'Vehicle'}
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs uppercase text-gray-500">Total Parts</p>
-                      <p className="font-semibold text-gray-800">${orderDetail.total_parts_cost}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase text-gray-500">Total Labor</p>
-                      <p className="font-semibold text-gray-800">${orderDetail.total_labor_cost}</p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-xs uppercase text-gray-500">Total</p>
-                      <p className="font-semibold text-gray-900 text-lg">${orderDetail.total_cost}</p>
-                    </div>
-                  </div>
-                  {orderDetail.internal_notes && (() => {
+                  {(() => {
                     const services = parseServiceNotes(orderDetail.internal_notes)
-                    if (services && services.length > 0) {
-                      return (
-                        <div>
-                          <p className="font-semibold text-gray-800 mb-2">Services</p>
-                          <div className="space-y-2">
-                            {services.map((svc, idx) => (
-                              <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                                <div className="flex items-center gap-2">
-                                  <Wrench className="w-4 h-4 text-gray-400" />
-                                  <span className="text-gray-700">{svc.name}</span>
-                                </div>
-                                <span className="font-medium text-gray-900">${parseFloat(svc.base_price || '0').toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    }
-                    // Regular text note (not JSON)
+                    const hasServices = services && services.length > 0
+                    const serviceTotal = services?.reduce(
+                      (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                      0
+                    ) || 0
+                    const backendTotal = parseFloat(orderDetail.total_cost) || 0
+                    const displayTotal = hasServices ? serviceTotal : backendTotal
+
                     return (
-                      <div>
-                        <p className="font-semibold text-gray-800">Internal Notes</p>
-                        <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
-                      </div>
+                      <>
+                        {hasServices ? (
+                          // Service-based order - show services with total
+                          <div>
+                            <p className="font-semibold text-gray-800 mb-2">Services</p>
+                            <div className="space-y-2">
+                              {services.map((svc, idx) => (
+                                <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                  <div className="flex items-center gap-2">
+                                    <Wrench className="w-4 h-4 text-gray-400" />
+                                    <span className="text-gray-700">{svc.name}</span>
+                                  </div>
+                                  <span className="font-medium text-gray-900">${parseFloat(svc.base_price || '0').toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <div className="flex justify-between items-center">
+                                <p className="text-xs uppercase text-gray-500">Total</p>
+                                <p className="font-semibold text-gray-900 text-lg">${displayTotal.toFixed(2)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          // Parts/labor based order - show breakdown
+                          <>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <p className="text-xs uppercase text-gray-500">Total Parts</p>
+                                <p className="font-semibold text-gray-800">${orderDetail.total_parts_cost}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs uppercase text-gray-500">Total Labor</p>
+                                <p className="font-semibold text-gray-800">${orderDetail.total_labor_cost}</p>
+                              </div>
+                              <div className="col-span-2">
+                                <p className="text-xs uppercase text-gray-500">Total</p>
+                                <p className="font-semibold text-gray-900 text-lg">${orderDetail.total_cost}</p>
+                              </div>
+                            </div>
+                            {orderDetail.internal_notes && (
+                              <div>
+                                <p className="font-semibold text-gray-800">Internal Notes</p>
+                                <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </>
                     )
                   })()}
                 </>
