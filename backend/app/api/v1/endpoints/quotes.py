@@ -86,11 +86,15 @@ def _require_staff(current_user: User) -> None:
 
 
 async def generate_quote_number(db: AsyncSession, tenant_id: UUID) -> str:
-    result = await db.execute(
-        select(func.count(Quote.id)).where(Quote.tenant_id == tenant_id)
+    """Generate unique quote number using MAX approach."""
+    from app.core.unique_id import generate_unique_number
+    return await generate_unique_number(
+        db=db,
+        model_class=Quote,
+        number_column=Quote.quote_number,
+        tenant_id=tenant_id,
+        prefix="Q-",
     )
-    count = result.scalar() or 0
-    return f"Q-{str(tenant_id).replace('-', '').upper()[:8]}-{count + 1:06d}"
 
 
 @router.post("", response_model=QuoteResponse, status_code=status.HTTP_201_CREATED)
@@ -133,7 +137,6 @@ async def create_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A quote already exists for this repair order",
         )
-    quote_number = await generate_quote_number(db, current_user.tenant_id)
     
     # Calculate total: service prices (from internal_notes) are all-in (include parts + labor)
     # If services selected, total = service total only (parts are for inventory tracking, not added)
@@ -151,19 +154,31 @@ async def create_quote(
     # If services selected, use service total; otherwise use backend total
     total_amount = service_total if service_total > 0 else order.total_cost
     
-    quote = Quote(
-        tenant_id=current_user.tenant_id,
-        repair_order_id=order.id,
-        quote_number=quote_number,
-        total_amount=total_amount,
-        notes=body.notes,
-        expires_at=body.expires_at,
-        is_approved=False,
+    # Use retry wrapper to handle rare race conditions on quote number
+    from app.core.unique_id import create_with_retry
+    
+    async def create_quote_with_number(quote_number: str) -> Quote:
+        quote = Quote(
+            tenant_id=current_user.tenant_id,
+            repair_order_id=order.id,
+            quote_number=quote_number,
+            total_amount=total_amount,
+            notes=body.notes,
+            expires_at=body.expires_at,
+            is_approved=False,
+        )
+        db.add(quote)
+        order.status = RepairOrderStatus.QUOTED
+        await db.commit()
+        await db.refresh(quote)
+        return quote
+    
+    quote = await create_with_retry(
+        db=db,
+        create_fn=create_quote_with_number,
+        generate_number_fn=lambda: generate_quote_number(db, current_user.tenant_id),
+        entity_name="quote",
     )
-    db.add(quote)
-    order.status = RepairOrderStatus.QUOTED
-    await db.commit()
-    await db.refresh(quote)
     return QuoteResponse.model_validate(quote)
 
 

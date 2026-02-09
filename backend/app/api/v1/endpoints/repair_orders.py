@@ -55,35 +55,15 @@ def require_role(*allowed_roles: UserRole):
 
 
 async def generate_order_number(db: AsyncSession, tenant_id: UUID) -> str:
-    """
-    Generate unique order number.
-    
-    Uses MAX of existing order numbers to avoid collisions from:
-    - Soft-deleted orders still in DB
-    - Race conditions between concurrent requests
-    """
-    tenant_prefix = f"RO-{str(tenant_id).replace('-', '').upper()[:8]}-"
-    
-    # Get the highest existing order number for this tenant
-    result = await db.execute(
-        select(func.max(RepairOrder.order_number))
-        .where(RepairOrder.tenant_id == tenant_id)
-        .where(RepairOrder.order_number.like(f"{tenant_prefix}%"))
+    """Generate unique order number using MAX approach."""
+    from app.core.unique_id import generate_unique_number
+    return await generate_unique_number(
+        db=db,
+        model_class=RepairOrder,
+        number_column=RepairOrder.order_number,
+        tenant_id=tenant_id,
+        prefix="RO-",
     )
-    max_order = result.scalar()
-    
-    if max_order:
-        # Extract the numeric suffix and increment
-        try:
-            current_num = int(max_order.split("-")[-1])
-            next_num = current_num + 1
-        except (ValueError, IndexError):
-            # Fallback if parsing fails
-            next_num = 1
-    else:
-        next_num = 1
-    
-    return f"{tenant_prefix}{next_num:06d}"
 
 
 @router.post("", response_model=RepairOrderResponse, status_code=status.HTTP_201_CREATED)
@@ -136,19 +116,27 @@ async def create_repair_order(
             detail="Vehicle not found or does not belong to customer",
         )
     
-    # Generate order number
-    order_number = await generate_order_number(db, current_user.tenant_id)
+    # Use retry wrapper to handle rare race conditions on order number
+    from app.core.unique_id import create_with_retry
     
-    repair_order = RepairOrder(
-        tenant_id=current_user.tenant_id,
-        order_number=order_number,
-        status=RepairOrderStatus.DRAFT,
-        **order_data.model_dump(),
+    async def create_order_with_number(order_number: str) -> RepairOrder:
+        repair_order = RepairOrder(
+            tenant_id=current_user.tenant_id,
+            order_number=order_number,
+            status=RepairOrderStatus.DRAFT,
+            **order_data.model_dump(),
+        )
+        db.add(repair_order)
+        await db.commit()
+        await db.refresh(repair_order)
+        return repair_order
+    
+    repair_order = await create_with_retry(
+        db=db,
+        create_fn=create_order_with_number,
+        generate_number_fn=lambda: generate_order_number(db, current_user.tenant_id),
+        entity_name="repair_order",
     )
-    
-    db.add(repair_order)
-    await db.commit()
-    await db.refresh(repair_order)
     
     return RepairOrderResponse.model_validate(repair_order)
 
@@ -250,19 +238,29 @@ async def quick_create_repair_order(
         db.add(vehicle)
         await db.flush()
 
-        order_number = await generate_order_number(db, tenant_id)
-
-        repair_order = RepairOrder(
-            tenant_id=tenant_id,
-            customer_id=customer.id,
-            vehicle_id=vehicle.id,
-            order_number=order_number,
-            status=RepairOrderStatus.DRAFT,
-            description=data.complaint or None,
+        # Use retry wrapper to handle rare race conditions on order number
+        from app.core.unique_id import create_with_retry
+        
+        async def create_order_with_number(order_number: str) -> RepairOrder:
+            repair_order = RepairOrder(
+                tenant_id=tenant_id,
+                customer_id=customer.id,
+                vehicle_id=vehicle.id,
+                order_number=order_number,
+                status=RepairOrderStatus.DRAFT,
+                description=data.complaint or None,
+            )
+            db.add(repair_order)
+            await db.commit()
+            await db.refresh(repair_order)
+            return repair_order
+        
+        repair_order = await create_with_retry(
+            db=db,
+            create_fn=create_order_with_number,
+            generate_number_fn=lambda: generate_order_number(db, tenant_id),
+            entity_name="repair_order",
         )
-        db.add(repair_order)
-        await db.commit()
-        await db.refresh(repair_order)
 
         return RepairOrderResponse.model_validate(repair_order)
     except HTTPException:

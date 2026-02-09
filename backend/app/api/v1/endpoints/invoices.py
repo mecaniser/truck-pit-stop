@@ -80,11 +80,15 @@ def _require_staff(current_user: User) -> None:
 
 
 async def generate_invoice_number(db: AsyncSession, tenant_id: UUID) -> str:
-    result = await db.execute(
-        select(func.count(Invoice.id)).where(Invoice.tenant_id == tenant_id)
+    """Generate unique invoice number using MAX approach."""
+    from app.core.unique_id import generate_unique_number
+    return await generate_unique_number(
+        db=db,
+        model_class=Invoice,
+        number_column=Invoice.invoice_number,
+        tenant_id=tenant_id,
+        prefix="INV-",
     )
-    count = result.scalar() or 0
-    return f"INV-{str(tenant_id).replace('-', '').upper()[:8]}-{count + 1:06d}"
 
 
 @router.post("", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
@@ -129,7 +133,6 @@ async def create_invoice(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An invoice already exists for this repair order",
         )
-    invoice_number = await generate_invoice_number(db, current_user.tenant_id)
     
     # Get tenant for tax/fee settings
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -183,26 +186,39 @@ async def create_invoice(
     
     # Default due date to today if not specified
     due_date = body.due_date if body.due_date else date.today()
-    invoice = Invoice(
-        tenant_id=current_user.tenant_id,
-        repair_order_id=order.id,
-        invoice_number=invoice_number,
-        status=InvoiceStatus.SENT,
-        subtotal=subtotal,
-        shop_supplies_amount=shop_supplies_amount,
-        service_fee_amount=service_fee_amount,
-        tax_amount=tax_amount,
-        discount_amount=Decimal("0.00"),
-        total_amount=total_amount,
-        due_date=due_date,
-        paid_at=None,
-        notes=None,
+    
+    # Use retry wrapper to handle rare race conditions on invoice number
+    from app.core.unique_id import create_with_retry
+    
+    async def create_invoice_with_number(invoice_number: str) -> Invoice:
+        invoice = Invoice(
+            tenant_id=current_user.tenant_id,
+            repair_order_id=order.id,
+            invoice_number=invoice_number,
+            status=InvoiceStatus.SENT,
+            subtotal=subtotal,
+            shop_supplies_amount=shop_supplies_amount,
+            service_fee_amount=service_fee_amount,
+            tax_amount=tax_amount,
+            discount_amount=Decimal("0.00"),
+            total_amount=total_amount,
+            due_date=due_date,
+            paid_at=None,
+            notes=None,
+        )
+        db.add(invoice)
+        order.status = RepairOrderStatus.INVOICED
+        await db.commit()
+        await db.refresh(invoice)
+        await db.refresh(order)
+        return invoice
+    
+    invoice = await create_with_retry(
+        db=db,
+        create_fn=create_invoice_with_number,
+        generate_number_fn=lambda: generate_invoice_number(db, current_user.tenant_id),
+        entity_name="invoice",
     )
-    db.add(invoice)
-    order.status = RepairOrderStatus.INVOICED
-    await db.commit()
-    await db.refresh(invoice)
-    await db.refresh(order)
     
     # Broadcast WebSocket updates
     await broadcast_invoice_created(
