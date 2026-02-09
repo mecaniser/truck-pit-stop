@@ -1,3 +1,4 @@
+import traceback
 from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
@@ -19,6 +20,7 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.schemas.repair_order import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -31,6 +33,8 @@ from app.schemas.repair_order import (
     LaborResponse,
     QuickRepairOrderCreate,
 )
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -138,105 +142,122 @@ async def quick_create_repair_order(
     )),
 ):
     """Quick-create a repair order with minimal info. Auto-creates walk-in customer and vehicle."""
-    tenant_id = current_user.tenant_id
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    try:
+        tenant_id = current_user.tenant_id
+        if not tenant_id:
+            raise HTTPException(status_code=400, detail="User must be associated with a tenant")
 
-    raw_phone = (data.phone or "").strip()
-    # Normalize phone for consistent storage and lookup
-    phone = raw_phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        raw_phone = (data.phone or "").strip()
+        # Normalize phone for consistent storage and lookup
+        phone = raw_phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
 
-    # Find or create customer
-    if phone:
-        # Look for existing customer by phone in this tenant
-        result = await db.execute(
-            select(Customer).where(
-                and_(
-                    Customer.tenant_id == tenant_id,
-                    Customer.phone == phone,
+        # Find or create customer
+        if phone:
+            # Look for existing customer by phone in this tenant
+            result = await db.execute(
+                select(Customer).where(
+                    and_(
+                        Customer.tenant_id == tenant_id,
+                        Customer.phone == phone,
+                    )
                 )
             )
-        )
-        customer = result.scalar_one_or_none()
-        if not customer:
-            customer = Customer(
-                tenant_id=tenant_id,
-                first_name="Walk-in",
-                last_name=raw_phone or "Customer",  # Keep original format for display
-                email=f"walkin+{phone}@placeholder.truckpitstop.com",
-                phone=phone,  # Store normalized
-            )
-            db.add(customer)
-            await db.flush()
-    else:
-        # Use or create a generic walk-in customer for this tenant
-        # Use scalars().first() instead of scalar_one_or_none() to handle potential duplicates
-        # from race conditions (no unique constraint on email+tenant_id)
-        result = await db.execute(
-            select(Customer).where(
-                and_(
-                    Customer.tenant_id == tenant_id,
-                    Customer.email == "walkin@placeholder.truckpitstop.com",
+            customer = result.scalar_one_or_none()
+            if not customer:
+                customer = Customer(
+                    tenant_id=tenant_id,
+                    first_name="Walk-in",
+                    last_name=raw_phone or "Customer",  # Keep original format for display
+                    email=f"walkin+{phone}@placeholder.truckpitstop.com",
+                    phone=phone,  # Store normalized
                 )
-            ).limit(1)
-        )
-        customer = result.scalars().first()
-        if not customer:
-            customer = Customer(
-                tenant_id=tenant_id,
-                first_name="Walk-in",
-                last_name="Customer",
-                email="walkin@placeholder.truckpitstop.com",
-            )
-            db.add(customer)
-            await db.flush()
-
-    # Parse vehicle_description best-effort: "2019 Peterbilt 579" -> year=2019 make=Peterbilt model=579
-    desc = data.vehicle_description.strip() if data.vehicle_description else ""
-    parts = desc.split(None, 2) if desc else []
-    year = None
-    make = desc if desc else "Unknown"
-    model = "N/A"
-
-    if len(parts) >= 1 and parts[0].isdigit() and len(parts[0]) == 4:
-        year = int(parts[0])
-        if len(parts) >= 3:
-            make = parts[1]
-            model = parts[2]
-        elif len(parts) == 2:
-            make = parts[1]
-            model = "N/A"
+                db.add(customer)
+                await db.flush()
         else:
-            make = "Unknown"
-    elif len(parts) >= 2:
-        make = parts[0]
-        model = " ".join(parts[1:])
+            # Use or create a generic walk-in customer for this tenant
+            # Use scalars().first() instead of scalar_one_or_none() to handle potential duplicates
+            # from race conditions (no unique constraint on email+tenant_id)
+            result = await db.execute(
+                select(Customer).where(
+                    and_(
+                        Customer.tenant_id == tenant_id,
+                        Customer.email == "walkin@placeholder.truckpitstop.com",
+                    )
+                ).limit(1)
+            )
+            customer = result.scalars().first()
+            if not customer:
+                customer = Customer(
+                    tenant_id=tenant_id,
+                    first_name="Walk-in",
+                    last_name="Customer",
+                    email="walkin@placeholder.truckpitstop.com",
+                )
+                db.add(customer)
+                await db.flush()
 
-    vehicle = Vehicle(
-        tenant_id=tenant_id,
-        customer_id=customer.id,
-        make=make,
-        model=model,
-        year=year,
-    )
-    db.add(vehicle)
-    await db.flush()
+        # Parse vehicle_description best-effort: "2019 Peterbilt 579" -> year=2019 make=Peterbilt model=579
+        desc = data.vehicle_description.strip() if data.vehicle_description else ""
+        parts = desc.split(None, 2) if desc else []
+        year = None
+        make = desc if desc else "Unknown"
+        model = "N/A"
 
-    order_number = await generate_order_number(db, tenant_id)
+        if len(parts) >= 1 and parts[0].isdigit() and len(parts[0]) == 4:
+            year = int(parts[0])
+            if len(parts) >= 3:
+                make = parts[1]
+                model = parts[2]
+            elif len(parts) == 2:
+                make = parts[1]
+                model = "N/A"
+            else:
+                make = "Unknown"
+        elif len(parts) >= 2:
+            make = parts[0]
+            model = " ".join(parts[1:])
 
-    repair_order = RepairOrder(
-        tenant_id=tenant_id,
-        customer_id=customer.id,
-        vehicle_id=vehicle.id,
-        order_number=order_number,
-        status=RepairOrderStatus.DRAFT,
-        description=data.complaint or None,
-    )
-    db.add(repair_order)
-    await db.commit()
-    await db.refresh(repair_order)
+        vehicle = Vehicle(
+            tenant_id=tenant_id,
+            customer_id=customer.id,
+            make=make,
+            model=model,
+            year=year,
+        )
+        db.add(vehicle)
+        await db.flush()
 
-    return RepairOrderResponse.model_validate(repair_order)
+        order_number = await generate_order_number(db, tenant_id)
+
+        repair_order = RepairOrder(
+            tenant_id=tenant_id,
+            customer_id=customer.id,
+            vehicle_id=vehicle.id,
+            order_number=order_number,
+            status=RepairOrderStatus.DRAFT,
+            description=data.complaint or None,
+        )
+        db.add(repair_order)
+        await db.commit()
+        await db.refresh(repair_order)
+
+        return RepairOrderResponse.model_validate(repair_order)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "quick_order_failed",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            traceback=traceback.format_exc(),
+            phone=data.phone,
+            vehicle_description=data.vehicle_description,
+            complaint=data.complaint,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create order: {type(e).__name__}: {str(e)}"
+        )
 
 
 @router.get("", response_model=List[RepairOrderResponse])
