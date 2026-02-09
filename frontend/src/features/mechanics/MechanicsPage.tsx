@@ -460,7 +460,10 @@ export default function MechanicsPage() {
                       <td className="px-4 py-3 text-right">
                         <button
                           type="button"
-                          onClick={() => setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))}
+                          onClick={() => {
+                            setIsDetailOpen(false)
+                            setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))
+                          }}
                           className="text-sm font-medium hover:opacity-80"
                           style={{ color: accentColors[400] }}
                         >
@@ -586,7 +589,10 @@ export default function MechanicsPage() {
                     <div className="flex gap-2 mt-4 pt-3 border-t border-white/10">
                       <button
                         type="button"
-                        onClick={() => setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))}
+                        onClick={() => {
+                          setIsDetailOpen(false)
+                          setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))
+                        }}
                         className="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition"
                         style={{ 
                           color: accentColors[400], 
@@ -919,15 +925,18 @@ export default function MechanicsPage() {
                       (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                       0
                     ) || 0
-                    const backendTotal = parseFloat(orderDetail.total_cost) || 0
-                    const displayTotal = hasServices ? serviceTotal : backendTotal
+                    const backendParts = parseFloat(orderDetail.total_parts_cost) || 0
+                    const backendLabor = parseFloat(orderDetail.total_labor_cost) || 0
+                    // Services = Labor, Parts = separate
+                    const laborVal = hasServices ? serviceTotal : backendLabor
+                    const totalVal = backendParts + laborVal
 
                     return (
                       <>
-                        {hasServices ? (
-                          // Service-based order - show services with total
+                        {/* Services (Labor) section */}
+                        {hasServices && (
                           <div>
-                            <p className="font-semibold text-gray-800 mb-2">Services</p>
+                            <p className="font-semibold text-gray-800 mb-2">Services (Labor)</p>
                             <div className="space-y-2">
                               {services.map((svc, idx) => (
                                 <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
@@ -939,37 +948,29 @@ export default function MechanicsPage() {
                                 </div>
                               ))}
                             </div>
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <div className="flex justify-between items-center">
-                                <p className="text-xs uppercase text-gray-500">Total</p>
-                                <p className="font-semibold text-gray-900 text-lg">${displayTotal.toFixed(2)}</p>
-                              </div>
-                            </div>
                           </div>
-                        ) : (
-                          // Parts/labor based order - show breakdown
-                          <>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div>
-                                <p className="text-xs uppercase text-gray-500">Total Parts</p>
-                                <p className="font-semibold text-gray-800">${orderDetail.total_parts_cost}</p>
-                              </div>
-                              <div>
-                                <p className="text-xs uppercase text-gray-500">Total Labor</p>
-                                <p className="font-semibold text-gray-800">${orderDetail.total_labor_cost}</p>
-                              </div>
-                              <div className="col-span-2">
-                                <p className="text-xs uppercase text-gray-500">Total</p>
-                                <p className="font-semibold text-gray-900 text-lg">${orderDetail.total_cost}</p>
-                              </div>
-                            </div>
-                            {orderDetail.internal_notes && (
-                              <div>
-                                <p className="font-semibold text-gray-800">Internal Notes</p>
-                                <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
-                              </div>
-                            )}
-                          </>
+                        )}
+                        {/* Cost breakdown - always show parts + labor/services + total */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs uppercase text-gray-500">Parts</p>
+                            <p className="font-semibold text-blue-700">${backendParts.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase text-gray-500">{hasServices ? 'Services' : 'Labor'}</p>
+                            <p className="font-semibold text-amber-700">${laborVal.toFixed(2)}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-xs uppercase text-gray-500">Total</p>
+                            <p className="font-semibold text-gray-900 text-lg">${totalVal.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        {/* Show internal notes if not JSON services */}
+                        {!hasServices && orderDetail.internal_notes && (
+                          <div>
+                            <p className="font-semibold text-gray-800">Internal Notes</p>
+                            <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
+                          </div>
                         )}
                       </>
                     )

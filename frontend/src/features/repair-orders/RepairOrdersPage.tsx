@@ -1619,12 +1619,7 @@ export default function RepairOrdersPage() {
                   return (
                     <>
                       <div>
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                          {hasSelectedServices ? 'Parts used' : 'Parts'}
-                        </h3>
-                        {hasSelectedServices && (
-                          <p className="text-xs text-gray-500 mb-3">For inventory tracking — cost included in service price</p>
-                        )}
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Parts</h3>
                         <div className="bg-gray-50 rounded-xl p-4">
                           {partsUsage.length > 0 && (
                             <div className="space-y-2 mb-3">
@@ -1635,9 +1630,7 @@ export default function RepairOrdersPage() {
                                     <span className="text-gray-500 text-xs">({pu.inventory_sku}) × {pu.quantity}</span>
                                   </div>
                                   <div className="flex items-center gap-2 shrink-0">
-                                    {!hasSelectedServices && (
-                                      <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
-                                    )}
+                                    <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
                                     {canEditLineItems && (
                                       <button
                                         type="button"
@@ -1694,110 +1687,129 @@ export default function RepairOrdersPage() {
                           )}
                         </div>
                       </div>
-                      {/* Only show Labor section if no services selected (services include labor cost) */}
-                      {!hasSelectedServices && (
-                        <div>
-                          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Labor</h3>
-                          <div className="bg-gray-50 rounded-xl p-4">
-                            {laborItems.length > 0 && (
-                              <div className="space-y-2 mb-3">
-                                {laborItems.map((li) => (
-                                  <div key={li.id} className="flex items-center justify-between text-sm text-gray-800">
-                                    <div>
-                                      {li.description ? (
-                                        <><span className="font-medium">{li.description}</span><span className="text-gray-500 ml-2">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span></>
-                                      ) : (
-                                        <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
-                                      {canEditLineItems && (
-                                        <button
-                                          type="button"
-                                          onClick={() => selectedOrder?.id && removeLaborMutation.mutate({ orderId: selectedOrder.id, laborId: li.id })}
-                                          className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                          aria-label="Remove labor"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      )}
-                                    </div>
+                      {/* Labor/Services section */}
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                          {hasSelectedServices ? 'Services (Labor)' : 'Labor'}
+                        </h3>
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          {/* Show services if selected */}
+                          {hasSelectedServices && (() => {
+                            const services = parseServiceNotes(selectedOrder?.internal_notes) || []
+                            return (
+                              <div className="space-y-2">
+                                {services.map((svc, idx) => (
+                                  <div key={idx} className="flex items-center justify-between text-sm text-gray-800">
+                                    <span className="font-medium">{svc.name}</span>
+                                    <span className="font-semibold">${parseFloat(svc.base_price || '0').toFixed(2)}</span>
                                   </div>
                                 ))}
                               </div>
-                            )}
-                            {canEditLineItems && (
-                              <div className="flex flex-col gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Description (optional)"
-                                  value={addLaborDescription}
-                                  onChange={(e) => setAddLaborDescription(e.target.value)}
-                                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                                />
-                                <div className="flex flex-wrap items-center gap-2">
+                            )
+                          })()}
+                          {/* Show manual labor items if no services */}
+                          {!hasSelectedServices && (
+                            <>
+                              {laborItems.length > 0 && (
+                                <div className="space-y-2 mb-3">
+                                  {laborItems.map((li) => (
+                                    <div key={li.id} className="flex items-center justify-between text-sm text-gray-800">
+                                      <div>
+                                        {li.description ? (
+                                          <><span className="font-medium">{li.description}</span><span className="text-gray-500 ml-2">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span></>
+                                        ) : (
+                                          <span className="text-gray-600">{parseFloat(li.hours)}h × ${parseFloat(li.hourly_rate).toFixed(2)}</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-semibold">${parseFloat(li.total_cost).toFixed(2)}</span>
+                                        {canEditLineItems && (
+                                          <button
+                                            type="button"
+                                            onClick={() => selectedOrder?.id && removeLaborMutation.mutate({ orderId: selectedOrder.id, laborId: li.id })}
+                                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                            aria-label="Remove labor"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {canEditLineItems && (
+                                <div className="flex flex-col gap-2">
                                   <input
-                                    type="number"
-                                    step={0.25}
-                                    min={0}
-                                    placeholder="Hours"
-                                    value={addLaborHours}
-                                    onChange={(e) => setAddLaborHours(e.target.value)}
-                                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                    type="text"
+                                    placeholder="Description (optional)"
+                                    value={addLaborDescription}
+                                    onChange={(e) => setAddLaborDescription(e.target.value)}
+                                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
                                   />
-                                  <span className="text-gray-500 text-sm">×</span>
-                                  {isEditingLaborRate ? (
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <input
                                       type="number"
-                                      step={0.01}
+                                      step={0.25}
                                       min={0}
-                                      autoFocus
-                                      value={addLaborRate}
-                                      onChange={(e) => setAddLaborRate(e.target.value)}
-                                      onBlur={() => setIsEditingLaborRate(false)}
-                                      onKeyDown={(e) => e.key === 'Enter' && setIsEditingLaborRate(false)}
+                                      placeholder="Hours"
+                                      value={addLaborHours}
+                                      onChange={(e) => setAddLaborHours(e.target.value)}
                                       className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
                                     />
-                                  ) : (
+                                    <span className="text-gray-500 text-sm">×</span>
+                                    {isEditingLaborRate ? (
+                                      <input
+                                        type="number"
+                                        step={0.01}
+                                        min={0}
+                                        autoFocus
+                                        value={addLaborRate}
+                                        onChange={(e) => setAddLaborRate(e.target.value)}
+                                        onBlur={() => setIsEditingLaborRate(false)}
+                                        onKeyDown={(e) => e.key === 'Enter' && setIsEditingLaborRate(false)}
+                                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                      />
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsEditingLaborRate(true)}
+                                        className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
+                                      >
+                                        <span className="font-medium">${addLaborRate}/hr</span>
+                                        <Pencil className="w-3 h-3 text-gray-400" />
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
-                                      onClick={() => setIsEditingLaborRate(true)}
-                                      className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
+                                      disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
+                                      onClick={() => {
+                                        if (!selectedOrder?.id) return
+                                        const hours = parseFloat(addLaborHours)
+                                        const rate = parseFloat(addLaborRate)
+                                        if (Number.isNaN(hours) || Number.isNaN(rate) || hours <= 0 || rate < 0) return
+                                        addLaborMutation.mutate({
+                                          orderId: selectedOrder.id,
+                                          description: addLaborDescription.trim() || '',
+                                          hours,
+                                          hourly_rate: rate,
+                                        })
+                                        setAddLaborDescription('')
+                                        setAddLaborHours('')
+                                        setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
+                                        setIsEditingLaborRate(false)
+                                      }}
+                                      className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                                     >
-                                      <span className="font-medium">${addLaborRate}/hr</span>
-                                      <Pencil className="w-3 h-3 text-gray-400" />
+                                      Add
                                     </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
-                                    onClick={() => {
-                                      if (!selectedOrder?.id) return
-                                      const hours = parseFloat(addLaborHours)
-                                      const rate = parseFloat(addLaborRate)
-                                      if (Number.isNaN(hours) || Number.isNaN(rate) || hours <= 0 || rate < 0) return
-                                      addLaborMutation.mutate({
-                                        orderId: selectedOrder.id,
-                                        description: addLaborDescription.trim() || '',
-                                        hours,
-                                        hourly_rate: rate,
-                                      })
-                                      setAddLaborDescription('')
-                                      setAddLaborHours('')
-                                      setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
-                                      setIsEditingLaborRate(false)
-                                    }}
-                                    className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
-                                  >
-                                    Add
-                                  </button>
+                                  </div>
                                 </div>
-                              </div>
-                            )}
-                          </div>
+                              )}
+                            </>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </>
                   )
                 })()}
@@ -2199,34 +2211,26 @@ export default function RepairOrdersPage() {
                     0
                   ) || 0
                   
-                  // If services selected: service price is all-in (includes parts + labor)
-                  // Parts are for inventory tracking only, not added to total
-                  // If no services: parts + labor from backend
-                  const partsVal = hasServices ? 0 : backendParts
+                  // Services = Labor (service prices are labor costs)
+                  // Parts = Separate (always from backend, priced individually)
+                  // Total = Services/Labor + Parts
+                  const partsVal = backendParts
                   const laborVal = hasServices ? serviceTotal : backendLabor
-                  const totalVal = hasServices ? serviceTotal : (backendParts + backendLabor)
+                  const totalVal = partsVal + laborVal
                   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
 
                   return (
                     <div className="bg-gray-50 rounded-xl p-4">
-                      {hasServices ? (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                          <span className="text-gray-500">Service total</span>
-                          <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
-                          <span className="text-xs text-gray-400">(includes parts & labor)</span>
-                        </div>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                          <span className="text-gray-500">Parts</span>
-                          <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
-                          <span className="text-gray-400">·</span>
-                          <span className="text-gray-500">Labor</span>
-                          <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
-                          <span className="text-gray-400">·</span>
-                          <span className="text-gray-500">Total</span>
-                          <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <span className="text-gray-500">Parts</span>
+                        <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
+                        <span className="text-gray-400">·</span>
+                        <span className="text-gray-500">{hasServices ? 'Services' : 'Labor'}</span>
+                        <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
+                        <span className="text-gray-400">·</span>
+                        <span className="text-gray-500">Total</span>
+                        <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
+                      </div>
                     </div>
                   )
                 })()}
