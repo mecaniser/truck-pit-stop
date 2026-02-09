@@ -184,7 +184,7 @@ export default function DashboardHome() {
   // Auto-refresh state
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const REFRESH_INTERVAL = 60 * 1000 // 1 minute when active
 
   const isMechanic = user?.role === 'mechanic'

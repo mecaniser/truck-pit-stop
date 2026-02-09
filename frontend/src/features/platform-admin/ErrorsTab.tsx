@@ -76,7 +76,7 @@ export default function ErrorsTab() {
 
   // Detail modal
   const [selectedError, setSelectedError] = useState<ErrorDetail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+  const [_detailLoading, setDetailLoading] = useState(false)
   const [resolveNotes, setResolveNotes] = useState('')
 
   // Fetch error types for filter dropdown

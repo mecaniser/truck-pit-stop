@@ -9,8 +9,8 @@ import api from '../../lib/api'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
 import { 
-  User, Lock, Settings, CreditCard, Bell, Percent, QrCode, LogOut,
-  CheckCircle, AlertCircle, ExternalLink, RefreshCw, Save, Upload, Trash2, ImageIcon, Palette, Check, RotateCcw, Type
+  User, Lock, CreditCard, Bell, Percent, QrCode,
+  CheckCircle, AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -510,7 +510,7 @@ function PaymentsSection() {
 function ZelleSection() {
   const queryClient = useQueryClient()
   const [zelleQrPreview, setZelleQrPreview] = useState<string | null>(null)
-  const [isUploadingQr, setIsUploadingQr] = useState(false)
+  const [_isUploadingQr, setIsUploadingQr] = useState(false)
 
   const { data: zelleSettings } = useQuery<ZelleSettings>({
     queryKey: ['zelle-settings'],

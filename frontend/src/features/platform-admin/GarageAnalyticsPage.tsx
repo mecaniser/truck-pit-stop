@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { 
-  TrendingUp, TrendingDown, Users, DollarSign, 
+  Users, DollarSign, 
   ShoppingCart, Target, Activity, ArrowLeft, Building2 
 } from 'lucide-react'
 import api from '../../lib/api'
