@@ -169,8 +169,7 @@ async def create_quote(
         )
         db.add(quote)
         order.status = RepairOrderStatus.QUOTED
-        await db.commit()
-        await db.refresh(quote)
+        # Don't commit here - create_with_retry uses savepoints and handles commit
         return quote
     
     quote = await create_with_retry(
@@ -179,6 +178,7 @@ async def create_quote(
         generate_number_fn=lambda: generate_quote_number(db, current_user.tenant_id),
         entity_name="quote",
     )
+    await db.refresh(quote)
     return QuoteResponse.model_validate(quote)
 
 

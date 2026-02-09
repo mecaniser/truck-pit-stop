@@ -127,8 +127,7 @@ async def create_repair_order(
             **order_data.model_dump(),
         )
         db.add(repair_order)
-        await db.commit()
-        await db.refresh(repair_order)
+        # Don't commit here - create_with_retry uses savepoints and handles commit
         return repair_order
     
     repair_order = await create_with_retry(
@@ -137,6 +136,7 @@ async def create_repair_order(
         generate_number_fn=lambda: generate_order_number(db, current_user.tenant_id),
         entity_name="repair_order",
     )
+    await db.refresh(repair_order)
     
     return RepairOrderResponse.model_validate(repair_order)
 
@@ -251,8 +251,7 @@ async def quick_create_repair_order(
                 description=data.complaint or None,
             )
             db.add(repair_order)
-            await db.commit()
-            await db.refresh(repair_order)
+            # Don't commit here - create_with_retry uses savepoints and handles commit
             return repair_order
         
         repair_order = await create_with_retry(
@@ -261,6 +260,7 @@ async def quick_create_repair_order(
             generate_number_fn=lambda: generate_order_number(db, tenant_id),
             entity_name="repair_order",
         )
+        await db.refresh(repair_order)
 
         return RepairOrderResponse.model_validate(repair_order)
     except HTTPException:

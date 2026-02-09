@@ -78,12 +78,15 @@ async def create_with_retry(
     Create an entity with a unique number, retrying on collision.
     
     This handles the rare race condition where two concurrent requests
-    generate the same number. On IntegrityError, it rolls back and
-    retries with a new number.
+    generate the same number. Uses savepoints (nested transactions) so
+    that on IntegrityError, only the failed insert is rolled back - not
+    any prior work in the same transaction (e.g., customer/vehicle creation
+    in quick_create_repair_order).
     
     Args:
         db: Database session
-        create_fn: Async function that creates the entity given a number
+        create_fn: Async function that creates the entity given a number.
+                   Should NOT call db.commit() - the savepoint handles it.
         generate_number_fn: Async function that generates the next number
         entity_name: Name for logging (e.g., "quote", "invoice")
         max_retries: Maximum retry attempts (default 3)
@@ -99,7 +102,13 @@ async def create_with_retry(
     for attempt in range(max_retries):
         try:
             number = await generate_number_fn()
-            result = await create_fn(number)
+            
+            # Use a savepoint so we only rollback this attempt, not the whole transaction
+            async with db.begin_nested():
+                result = await create_fn(number)
+            
+            # Commit the outer transaction after successful nested transaction
+            await db.commit()
             
             if attempt > 0:
                 logger.info(
@@ -116,7 +125,7 @@ async def create_with_retry(
             
             # Only retry if it's a unique constraint violation on the number
             if "unique" in error_str.lower() and "number" in error_str.lower():
-                await db.rollback()
+                # Savepoint automatically rolled back, no need for explicit rollback
                 logger.warning(
                     f"{entity_name}_number_collision",
                     attempt=attempt + 1,

@@ -208,9 +208,7 @@ async def create_invoice(
         )
         db.add(invoice)
         order.status = RepairOrderStatus.INVOICED
-        await db.commit()
-        await db.refresh(invoice)
-        await db.refresh(order)
+        # Don't commit here - create_with_retry uses savepoints and handles commit
         return invoice
     
     invoice = await create_with_retry(
@@ -219,6 +217,8 @@ async def create_invoice(
         generate_number_fn=lambda: generate_invoice_number(db, current_user.tenant_id),
         entity_name="invoice",
     )
+    await db.refresh(invoice)
+    await db.refresh(order)
     
     # Broadcast WebSocket updates
     await broadcast_invoice_created(
