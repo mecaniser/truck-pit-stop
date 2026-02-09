@@ -17,6 +17,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
 from app.services.email_service import send_email
 from sqlalchemy.orm import selectinload
+from app.core.websocket import broadcast_invoice_created, broadcast_repair_order_update
 
 router = APIRouter()
 
@@ -201,6 +202,25 @@ async def create_invoice(
     order.status = RepairOrderStatus.INVOICED
     await db.commit()
     await db.refresh(invoice)
+    await db.refresh(order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_invoice_created(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        invoice_id=str(invoice.id),
+        invoice_number=invoice.invoice_number,
+        order_id=str(order.id),
+        total_amount=str(invoice.total_amount),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
     
     # Send invoice email to customer
     customer = order.customer
@@ -208,6 +228,17 @@ async def create_invoice(
     if customer and customer.email:
         vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
         portal_url = f"{settings.FRONTEND_URL}/portal"
+        
+        # Build fee breakdown lines
+        fee_lines = []
+        fee_lines.append(f'<p style="margin: 0 0 5px 0;">Subtotal: ${invoice.subtotal:.2f}</p>')
+        if invoice.shop_supplies_amount > 0:
+            fee_lines.append(f'<p style="margin: 0 0 5px 0;">Shop Supplies: ${invoice.shop_supplies_amount:.2f}</p>')
+        if invoice.service_fee_amount > 0:
+            fee_lines.append(f'<p style="margin: 0 0 5px 0;">Service Fee: ${invoice.service_fee_amount:.2f}</p>')
+        if invoice.tax_amount > 0:
+            fee_lines.append(f'<p style="margin: 0 0 5px 0;">Tax: ${invoice.tax_amount:.2f}</p>')
+        fee_breakdown = "\n                ".join(fee_lines)
         
         email_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -218,7 +249,10 @@ async def create_invoice(
             <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
                 <p style="margin: 0 0 10px 0;"><strong>Invoice #:</strong> {invoice.invoice_number}</p>
                 <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
-                <p style="margin: 0; font-size: 24px; color: #1f2937;"><strong>Total: ${invoice.total_amount:.2f}</strong></p>
+                <div style="border-top: 1px solid #e5e7eb; margin: 15px 0; padding-top: 15px;">
+                {fee_breakdown}
+                </div>
+                <p style="margin: 15px 0 0 0; font-size: 24px; color: #1f2937; border-top: 1px solid #e5e7eb; padding-top: 15px;"><strong>Total: ${invoice.total_amount:.2f}</strong></p>
             </div>
             
             <p>You can view and pay your invoice through your customer portal:</p>

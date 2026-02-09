@@ -21,6 +21,7 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
+from app.core.websocket import broadcast_quote_event, broadcast_repair_order_update, WSEventType
 
 router = APIRouter()
 
@@ -489,6 +490,26 @@ async def approve_quote(
     order.status = RepairOrderStatus.APPROVED
     await db.commit()
     await db.refresh(quote)
+    await db.refresh(order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_quote_event(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        quote_id=str(quote.id),
+        quote_number=quote.quote_number,
+        event_type=WSEventType.QUOTE_APPROVED,
+        order_id=str(order.id),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    
     return QuoteResponse.model_validate(quote)
 
 
@@ -544,6 +565,25 @@ async def decline_quote(
     order.status = RepairOrderStatus.DECLINED  # New status for declined quotes
     await db.commit()
     await db.refresh(quote)
+    await db.refresh(order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_quote_event(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        quote_id=str(quote.id),
+        quote_number=quote.quote_number,
+        event_type=WSEventType.QUOTE_DECLINED,
+        order_id=str(order.id),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
     
     # Notify shop managers via SMS (same as token-based decline)
     customer = order.customer
@@ -681,6 +721,26 @@ async def approve_quote_by_token(
     # Keep token valid so customer can view their approved quote status
     await db.commit()
     await db.refresh(quote)
+    await db.refresh(order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_quote_event(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        quote_id=str(quote.id),
+        quote_number=quote.quote_number,
+        event_type=WSEventType.QUOTE_APPROVED,
+        order_id=str(order.id),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    
     return QuoteResponse.model_validate(quote)
 
 
@@ -726,6 +786,25 @@ async def decline_quote_by_token(
     # Keep token valid so customer can change their mind
     await db.commit()
     await db.refresh(quote)
+    await db.refresh(order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_quote_event(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        quote_id=str(quote.id),
+        quote_number=quote.quote_number,
+        event_type=WSEventType.QUOTE_DECLINED,
+        order_id=str(order.id),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
     
     # Notify shop managers via SMS
     customer = order.customer

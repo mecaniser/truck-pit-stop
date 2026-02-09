@@ -21,6 +21,7 @@ from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.websocket import broadcast_repair_order_update
 from app.schemas.repair_order import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -515,6 +516,16 @@ async def assign_mechanic(
     await db.commit()
     await db.refresh(order)
     
+    # Broadcast WebSocket update
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    
     # Send email notification to MECHANIC (not customer - customer notified when work starts)
     vehicle = order.vehicle
     vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
@@ -605,6 +616,16 @@ async def acknowledge_job(
     await db.commit()
     await db.refresh(order)
     
+    # Broadcast WebSocket update
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    
     return RepairOrderResponse.model_validate(order)
 
 
@@ -638,6 +659,16 @@ async def start_work(
     order.work_started_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(order)
+    
+    # Broadcast WebSocket update
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
     
     # Notify customer that work has started
     customer = order.customer
@@ -823,6 +854,16 @@ async def complete_work(
     await db.commit()
     await db.refresh(order)
     
+    # Broadcast WebSocket update
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    
     # Notify managers that work is ready for review
     result = await db.execute(
         select(User).where(
@@ -950,6 +991,16 @@ async def approve_completion(
     
     await db.commit()
     await db.refresh(order)
+    
+    # Broadcast WebSocket update
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
     
     # Notify customer that work is complete
     customer = order.customer

@@ -18,6 +18,7 @@ from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
 from app.db.models.tenant import Tenant
+from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
 
 logger = get_logger(__name__)
 
@@ -445,6 +446,24 @@ async def confirm_payment(
     db.add(payment)
     
     await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(invoice.repair_order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_payment_received(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        invoice_id=str(invoice.id),
+        order_id=str(invoice.repair_order_id),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        order_id=str(invoice.repair_order_id),
+        order_number=invoice.repair_order.order_number,
+        status=invoice.repair_order.status.value,
+        updated_at=invoice.repair_order.updated_at.isoformat() if invoice.repair_order.updated_at else None,
+    )
     
     # Record successful payment metric
     record_payment(status="success", payment_method="stripe", tenant_id=str(invoice.tenant_id))
@@ -515,6 +534,24 @@ async def record_manual_payment(
     db.add(payment)
     
     await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(invoice.repair_order)
+    
+    # Broadcast WebSocket updates
+    await broadcast_payment_received(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        invoice_id=str(invoice.id),
+        order_id=str(invoice.repair_order_id),
+    )
+    await broadcast_repair_order_update(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        order_id=str(invoice.repair_order_id),
+        order_number=invoice.repair_order.order_number,
+        status=invoice.repair_order.status.value,
+        updated_at=invoice.repair_order.updated_at.isoformat() if invoice.repair_order.updated_at else None,
+    )
     
     # Record successful payment metric
     record_payment(status="success", payment_method=body.method, tenant_id=str(invoice.tenant_id))
