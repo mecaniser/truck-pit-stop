@@ -69,6 +69,7 @@ interface TaxFeeSettings {
   sales_tax_rate: number
   shop_supplies_rate: number
   service_fee_rate: number
+  labor_rate: number
 }
 
 // ============ SECTION COMPONENTS ============
@@ -727,7 +728,11 @@ function FeesSection() {
   const [salesTaxRate, setSalesTaxRate] = useState('')
   const [shopSuppliesRate, setShopSuppliesRate] = useState('')
   const [serviceFeeRate, setServiceFeeRate] = useState('')
-  const [isEditing, setIsEditing] = useState(false)
+  const [laborRate, setLaborRate] = useState('')
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [password, setPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
 
   const { data: taxFeeSettings } = useQuery<TaxFeeSettings>({
     queryKey: ['tax-fee-settings'],
@@ -742,8 +747,39 @@ function FeesSection() {
       setSalesTaxRate(taxFeeSettings.sales_tax_rate?.toString() || '')
       setShopSuppliesRate(taxFeeSettings.shop_supplies_rate?.toString() || '')
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
+      setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
     }
   }, [taxFeeSettings])
+
+  // Check if any values have changed from original
+  const hasChanges = taxFeeSettings && (
+    salesTaxRate !== (taxFeeSettings.sales_tax_rate?.toString() || '') ||
+    shopSuppliesRate !== (taxFeeSettings.shop_supplies_rate?.toString() || '') ||
+    serviceFeeRate !== (taxFeeSettings.service_fee_rate?.toString() || '') ||
+    laborRate !== (taxFeeSettings.labor_rate?.toString() || '100')
+  )
+
+  const handleUnlock = async () => {
+    if (!password) {
+      setPasswordError('Password is required')
+      return
+    }
+    setIsVerifying(true)
+    setPasswordError('')
+    try {
+      const response = await api.post('/auth/verify-password', { password })
+      if (response.data.valid) {
+        setIsUnlocked(true)
+        setPassword('')
+      } else {
+        setPasswordError('Incorrect password')
+      }
+    } catch {
+      setPasswordError('Failed to verify password')
+    } finally {
+      setIsVerifying(false)
+    }
+  }
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -751,13 +787,14 @@ function FeesSection() {
         sales_tax_rate: parseFloat(salesTaxRate) || 0,
         shop_supplies_rate: parseFloat(shopSuppliesRate) || 0,
         service_fee_rate: parseFloat(serviceFeeRate) || 0,
+        labor_rate: laborRate === '' ? 100 : parseFloat(laborRate),
       })
       return response.data
     },
     onSuccess: () => {
       toast.success('Tax & fee settings saved')
       queryClient.invalidateQueries({ queryKey: ['tax-fee-settings'] })
-      setIsEditing(false)
+      setIsUnlocked(false)
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to save settings')
@@ -769,15 +806,15 @@ function FeesSection() {
       setSalesTaxRate(taxFeeSettings.sales_tax_rate?.toString() || '')
       setShopSuppliesRate(taxFeeSettings.shop_supplies_rate?.toString() || '')
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
+      setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
     }
-    setIsEditing(false)
+    setIsUnlocked(false)
   }
 
   const handleRateChange = (setter: (val: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     if (value === '' || /^\d*\.?\d*$/.test(value)) {
       setter(value)
-      setIsEditing(true)
     }
   }
 
@@ -788,59 +825,117 @@ function FeesSection() {
         <p className="text-sm text-gray-400">Configure default rates applied to invoices.</p>
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Sales Tax Rate (%)</label>
-          <div className="relative w-40">
-            <input
-              type="text"
-              value={salesTaxRate}
-              onChange={handleRateChange(setSalesTaxRate)}
-              placeholder="0"
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
-            />
-            <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+        {/* Inline display when locked */}
+        {!isUnlocked ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <span className="text-gray-400">Tax: <span className="text-white font-medium">{taxFeeSettings?.sales_tax_rate || 0}%</span></span>
+              <span className="text-gray-400">Supplies: <span className="text-white font-medium">{taxFeeSettings?.shop_supplies_rate || 0}%</span></span>
+              <span className="text-gray-400">Service: <span className="text-white font-medium">{taxFeeSettings?.service_fee_rate || 0}%</span></span>
+              <span className="text-gray-400">Labor: <span className="text-gray-500">••••</span></span>
+            </div>
+            
+            <div className="border-t border-white/10 pt-4">
+              <p className="text-xs text-gray-500 mb-3">Enter your password to edit these settings</p>
+              <div className="flex gap-3 items-start">
+                <div className="flex-1 max-w-xs">
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                    placeholder="Enter password"
+                    className={`w-full px-3 py-2 bg-white/10 border rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                      passwordError ? 'border-red-500' : 'border-white/20'
+                    }`}
+                  />
+                  {passwordError && <p className="text-xs text-red-400 mt-1">{passwordError}</p>}
+                </div>
+                <button
+                  onClick={handleUnlock}
+                  disabled={isVerifying}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {isVerifying ? (
+                    <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Verifying</>
+                  ) : (
+                    <><Lock className="w-4 h-4" /> Unlock</>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Shop Supplies Rate (%)</label>
-          <div className="relative w-40">
-            <input
-              type="text"
-              value={shopSuppliesRate}
-              onChange={handleRateChange(setShopSuppliesRate)}
-              placeholder="0"
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
-            />
-            <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Service Fee Rate (%)</label>
-          <div className="relative w-40">
-            <input
-              type="text"
-              value={serviceFeeRate}
-              onChange={handleRateChange(setServiceFeeRate)}
-              placeholder="0"
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
-            />
-            <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          </div>
-        </div>
+        ) : (
+          /* Edit mode when unlocked */
+          <div className="space-y-4">
+            {/* Inline inputs on desktop, stacked on mobile */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Sales Tax (%)</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={salesTaxRate}
+                    onChange={handleRateChange(setSalesTaxRate)}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
+                  />
+                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Supplies (%)</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={shopSuppliesRate}
+                    onChange={handleRateChange(setShopSuppliesRate)}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
+                  />
+                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Service Fee (%)</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={serviceFeeRate}
+                    onChange={handleRateChange(setServiceFeeRate)}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
+                  />
+                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1">Labor Rate ($/hr)</label>
+                <input
+                  type="text"
+                  value={laborRate}
+                  onChange={handleRateChange(setLaborRate)}
+                  placeholder="100"
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            </div>
 
-        {isEditing && (
-          <div className="flex gap-3 pt-4 border-t border-white/10">
-            <button onClick={cancelEdit} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors">
-              Cancel
-            </button>
-            <button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
-            </button>
+            <div className="flex gap-3 pt-4 border-t border-white/10">
+              <button onClick={cancelEdit} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors">
+                Cancel
+              </button>
+              {hasChanges && (
+                <button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
