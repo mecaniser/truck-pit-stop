@@ -10,11 +10,25 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
-import { Eye, EyeOff, Calendar, DollarSign, Check, X } from 'lucide-react'
+import { Eye, EyeOff, Calendar, DollarSign, Check, X, Wrench } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import ViewToggle from '@/components/ViewToggle'
 import SearchAddBar from '@/components/SearchAddBar'
 import { useViewPreference } from '@/hooks/useViewPreference'
+
+// Parse selected services from internal_notes JSON
+const parseServiceNotes = (notes?: string | null) => {
+  if (!notes) return null
+  try {
+    const parsed = JSON.parse(notes)
+    if (Array.isArray(parsed?.selected_services)) {
+      return parsed.selected_services as { id: string; name: string; base_price: string }[]
+    }
+  } catch {
+    // Not JSON or invalid format - return null (it's a regular note)
+  }
+  return null
+}
 
 const mechanicSchema = z.object({
   first_name: z.string().min(1, 'First name is required'),
@@ -520,68 +534,60 @@ export default function MechanicsPage() {
                 const assigned = mechanic.assigned_count || 0
                 const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
                 return (
-                  <div key={mechanic.id} className="bg-white/10 border border-white/15 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs uppercase text-gray-400">{mechanic.email}</p>
-                        <h3 className="text-lg font-semibold text-white">{mechanic.first_name} {mechanic.last_name}</h3>
-                        <p className="text-xs text-gray-400">{mechanic.phone || 'No phone'}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusBadge(mechanic.is_active)}`}>
-                          {mechanic.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                        {(mechanic.pending_requests || 0) > 0 && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            {mechanic.pending_requests} request{mechanic.pending_requests !== 1 ? 's' : ''}
+                  <div key={mechanic.id} className="bg-white/10 border border-white/15 rounded-xl p-4 flex flex-col">
+                    {/* Card content - grows to fill space */}
+                    <div className="flex-1 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs uppercase text-gray-400">{mechanic.email}</p>
+                          <h3 className="text-lg font-semibold text-white">{mechanic.first_name} {mechanic.last_name}</h3>
+                          <p className="text-xs text-gray-400">{mechanic.phone || 'No phone'}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${statusBadge(mechanic.is_active)}`}>
+                            {mechanic.is_active ? 'Active' : 'Inactive'}
                           </span>
-                        )}
+                          {(mechanic.pending_requests || 0) > 0 && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              {mechanic.pending_requests} request{mechanic.pending_requests !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Points Display */}
+                      <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-amber-400">⭐</span>
+                          <span className="text-sm text-gray-300">Points</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-lg font-bold text-amber-400">{(mechanic.available_points || 0).toLocaleString()}</span>
+                          <span className="text-xs text-gray-500 ml-1">available</span>
+                        </div>
+                      </div>
+                      {(mechanic.streak_days || 0) > 0 && (
+                        <div className="flex items-center gap-1 text-xs text-orange-400">
+                          <span>🔥</span>
+                          <span>{mechanic.streak_days} day streak</span>
+                        </div>
+                      )}
+                      
+                      <div className="text-sm text-gray-200">In progress: {inProgress}/{assigned || '—'}</div>
+                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full" style={{ backgroundColor: accentColors[500], width: `${load}%` }} />
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Work: {assigned} assigned
                       </div>
                     </div>
                     
-                    {/* Points Display */}
-                    <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-amber-400">⭐</span>
-                        <span className="text-sm text-gray-300">Points</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-lg font-bold text-amber-400">{(mechanic.available_points || 0).toLocaleString()}</span>
-                        <span className="text-xs text-gray-500 ml-1">available</span>
-                      </div>
-                    </div>
-                    {(mechanic.streak_days || 0) > 0 && (
-                      <div className="flex items-center gap-1 text-xs text-orange-400">
-                        <span>🔥</span>
-                        <span>{mechanic.streak_days} day streak</span>
-                      </div>
-                    )}
-                    
-                    <div className="text-sm text-gray-200">In progress: {inProgress}/{assigned || '—'}</div>
-                    <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                      <div className="h-full" style={{ backgroundColor: accentColors[500], width: `${load}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-gray-400 flex-wrap gap-2">
-                      <span>Work: {assigned} assigned</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingMechanic(mechanic)}
-                          className="font-semibold text-white hover:opacity-80"
-                          style={{ color: accentColors[400] }}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
+                    {/* Action buttons - always at bottom */}
+                    <div className="flex gap-2 mt-4 pt-3 border-t border-white/10">
                       <button
                         type="button"
-                        onClick={() => {
-                          setExpandedMechanicId(mechanic.id)
-                          setIsDetailOpen(false)
-                        }}
-                        className="px-3 py-2 text-sm font-medium rounded-lg transition"
+                        onClick={() => setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))}
+                        className="flex-1 px-3 py-2 text-sm font-medium rounded-lg transition"
                         style={{ 
                           color: accentColors[400], 
                           backgroundColor: `${accentColors[500]}1a`,
@@ -589,14 +595,14 @@ export default function MechanicsPage() {
                           borderColor: `${accentColors[400]}66`
                         }}
                       >
-                        View work
+                        {expandedMechanicId === mechanic.id ? 'Hide work' : 'View work'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))}
-                        className="px-3 py-2 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition"
+                        onClick={() => setEditingMechanic(mechanic)}
+                        className="flex-1 px-3 py-2 text-sm font-medium text-white bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition"
                       >
-                        {expandedMechanicId === mechanic.id ? 'Hide' : 'Select'}
+                        Edit
                       </button>
                     </div>
                   </div>
@@ -920,12 +926,34 @@ export default function MechanicsPage() {
                       <p className="font-semibold text-gray-900 text-lg">${orderDetail.total_cost}</p>
                     </div>
                   </div>
-                  {orderDetail.internal_notes && (
-                    <div>
-                      <p className="font-semibold text-gray-800">Internal Notes</p>
-                      <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
-                    </div>
-                  )}
+                  {orderDetail.internal_notes && (() => {
+                    const services = parseServiceNotes(orderDetail.internal_notes)
+                    if (services && services.length > 0) {
+                      return (
+                        <div>
+                          <p className="font-semibold text-gray-800 mb-2">Services</p>
+                          <div className="space-y-2">
+                            {services.map((svc, idx) => (
+                              <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                                <div className="flex items-center gap-2">
+                                  <Wrench className="w-4 h-4 text-gray-400" />
+                                  <span className="text-gray-700">{svc.name}</span>
+                                </div>
+                                <span className="font-medium text-gray-900">${parseFloat(svc.base_price || '0').toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    }
+                    // Regular text note (not JSON)
+                    return (
+                      <div>
+                        <p className="font-semibold text-gray-800">Internal Notes</p>
+                        <p className="text-gray-600 mt-1">{orderDetail.internal_notes}</p>
+                      </div>
+                    )
+                  })()}
                 </>
               ) : (
                 <>
