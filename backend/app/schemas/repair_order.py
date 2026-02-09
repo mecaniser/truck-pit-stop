@@ -109,6 +109,6 @@ class RepairOrderDetailResponse(RepairOrderResponse):
 
 class QuickRepairOrderCreate(BaseModel):
     phone: Optional[str] = None
-    vehicle_description: str
+    vehicle_description: Optional[str] = None
     complaint: Optional[str] = None
 
