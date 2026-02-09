@@ -240,19 +240,17 @@ export default function DashboardHome() {
   }
 
   const validateQuickForm = () => {
-    const errors: { phone?: string; truck?: string; complaint?: string } = {}
+    const errors: { phone?: string; complaint?: string } = {}
     // Phone required - strip formatting to check digits
     const phoneDigits = quickPhone.replace(/\D/g, '')
     if (!phoneDigits || phoneDigits.length < 10) {
       errors.phone = 'Valid phone number required'
     }
-    // Truck required - backend uses this to parse vehicle make/model
-    if (!quickTruck.trim()) {
-      errors.truck = 'Vehicle description is required'
-    }
+    // Complaint/description required
     if (!quickComplaint.trim()) {
       errors.complaint = 'Description is required'
     }
+    // Truck/vehicle is optional - backend defaults to "Unknown"
     setQuickErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -267,7 +265,7 @@ export default function DashboardHome() {
     try {
       const response = await api.post('/repair-orders/quick', {
         phone: quickPhone.trim() || null,
-        vehicle_description: quickTruck.trim(),
+        vehicle_description: quickTruck.trim() || null,
         complaint: quickComplaint.trim() || null,
       })
       const order = response.data
