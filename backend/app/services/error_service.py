@@ -75,8 +75,8 @@ async def log_error(
         error_log = ErrorLog(
             error_type=error_type,
             message=message[:10000] if message else "No message",  # Truncate very long messages
-            error_category=category,
-            severity=severity,
+            error_category=category.value if hasattr(category, 'value') else category,
+            severity=severity.value if hasattr(severity, 'value') else severity,
             correlation_id=correlation_id,
             endpoint=endpoint,
             method=method,
@@ -169,10 +169,10 @@ async def get_errors(
         filters.append(ErrorLog.error_type == error_type)
     
     if category:
-        filters.append(ErrorLog.error_category == category)
+        filters.append(ErrorLog.error_category == category.value)
     
     if severity:
-        filters.append(ErrorLog.severity == severity)
+        filters.append(ErrorLog.severity == severity.value)
     
     if endpoint:
         filters.append(ErrorLog.endpoint.ilike(f"%{endpoint}%"))
@@ -321,7 +321,7 @@ async def get_error_stats(
         .where(base_filter)
         .group_by(ErrorLog.error_category)
     )
-    by_category = {str(row[0].value) if row[0] else "unknown": row[1] for row in category_result.all()}
+    by_category = {str(row[0]) if row[0] else "unknown": row[1] for row in category_result.all()}
     
     # By severity
     severity_result = await db.execute(
@@ -329,7 +329,7 @@ async def get_error_stats(
         .where(base_filter)
         .group_by(ErrorLog.severity)
     )
-    by_severity = {str(row[0].value) if row[0] else "unknown": row[1] for row in severity_result.all()}
+    by_severity = {str(row[0]) if row[0] else "unknown": row[1] for row in severity_result.all()}
     
     # Top error types
     type_result = await db.execute(
@@ -355,7 +355,7 @@ async def get_error_stats(
     critical_result = await db.execute(
         select(func.count(ErrorLog.id)).where(
             base_filter,
-            ErrorLog.severity == ErrorSeverity.CRITICAL
+            ErrorLog.severity == ErrorSeverity.CRITICAL.value
         )
     )
     critical_count = critical_result.scalar() or 0
