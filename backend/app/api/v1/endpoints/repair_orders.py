@@ -506,9 +506,10 @@ async def assign_mechanic(
     if not mechanic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mechanic not found")
     
-    # Assign mechanic and update status (only on first assignment)
+    # Assign mechanic and update status
     order.assigned_mechanic_id = body.mechanic_id
-    if not is_reassignment:
+    # Set status to ASSIGNED if still APPROVED (handles edge cases where previous assignment didn't update status)
+    if order.status == RepairOrderStatus.APPROVED:
         order.status = RepairOrderStatus.ASSIGNED
     
     await db.commit()

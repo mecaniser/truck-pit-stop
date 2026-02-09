@@ -522,6 +522,24 @@ class PasswordChangeResponse(BaseModel):
     tokens_invalidated: bool = True
 
 
+class VerifyPasswordRequest(BaseModel):
+    password: str
+
+
+class VerifyPasswordResponse(BaseModel):
+    valid: bool
+
+
+@router.post("/verify-password", response_model=VerifyPasswordResponse)
+async def verify_user_password(
+    request: VerifyPasswordRequest,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Verify current user's password without changing anything."""
+    is_valid = verify_password(request.password, current_user.hashed_password)
+    return VerifyPasswordResponse(valid=is_valid)
+
+
 @router.post("/change-password", response_model=PasswordChangeResponse)
 async def change_password(
     password_data: PasswordChange,

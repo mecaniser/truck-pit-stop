@@ -425,6 +425,8 @@ function CustomerRepairs() {
   const [showPayment, setShowPayment] = useState(false)
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
   const [stripeInstance, setStripeInstance] = useState<Awaited<ReturnType<typeof loadStripe>> | null>(null)
+  const [declineNotes, setDeclineNotes] = useState('')
+  const [showDeclineForm, setShowDeclineForm] = useState(false)
   
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
@@ -460,6 +462,16 @@ function CustomerRepairs() {
     enabled: !!selectedOrder && ['invoiced', 'paid'].includes(selectedOrder.status),
   })
 
+  // Fetch quote for selected order if it's quoted
+  const { data: selectedQuote } = useQuery<Quote | null>({
+    queryKey: ['quote', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/quotes?repair_order_id=${selectedOrder?.id}`)
+      return response.data as Quote | null
+    },
+    enabled: !!selectedOrder && selectedOrder.status === 'quoted',
+  })
+
   const quotedOrders = orders?.filter((o) => o.status === 'quoted') ?? []
   const quoteQueries = useQueries({
     queries: quotedOrders.map((order) => ({
@@ -480,6 +492,21 @@ function CustomerRepairs() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['quote'] })
+      toast.success('Quote approved! Work will begin soon.')
+      setSelectedOrder(null)
+    },
+  })
+
+  const declineQuoteMutation = useMutation({
+    mutationFn: async ({ quoteId, notes }: { quoteId: string; notes?: string }) => {
+      const response = await api.post(`/quotes/${quoteId}/decline`, { notes })
+      return response.data as Quote
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['quote'] })
+      toast.success('Quote declined. The shop will contact you about revisions.')
+      setSelectedOrder(null)
     },
   })
 
@@ -588,12 +615,20 @@ function CustomerRepairs() {
 
         {/* Order Details */}
         <div className="bg-white/5 rounded-xl border border-white/10 p-4 sm:p-6">
-          {selectedOrder.description && (
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-400 mb-1">Description</h3>
-              <p className="text-white">{selectedOrder.description}</p>
-            </div>
-          )}
+          {/* Customer Concerns - extract from description (after the — separator) */}
+          {(() => {
+            const desc = selectedOrder.description || ''
+            // Description format: "Service A • Service B — Customer concerns text"
+            const separatorIdx = desc.indexOf(' — ')
+            const customerConcerns = separatorIdx !== -1 ? desc.slice(separatorIdx + 3).trim() : (services.length === 0 ? desc : '')
+            
+            return customerConcerns ? (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-400 mb-1">Customer Concerns</h3>
+                <p className="text-white">{customerConcerns}</p>
+              </div>
+            ) : null
+          })()}
 
           {services.length > 0 && (
             <div className="mb-4">
@@ -611,6 +646,14 @@ function CustomerRepairs() {
             </div>
           )}
 
+          {/* Shop Comments */}
+          {selectedOrder.customer_notes && (
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-400 mb-1">Shop Comments</h3>
+              <p className="text-white">{selectedOrder.customer_notes}</p>
+            </div>
+          )}
+
           <div className="border-t border-white/10 pt-4 mt-4">
             <div className="flex justify-between items-center text-lg">
               <span className="font-medium text-white">Total</span>
@@ -618,6 +661,87 @@ function CustomerRepairs() {
             </div>
           </div>
         </div>
+
+        {/* Quote Approval Section */}
+        {selectedOrder.status === 'quoted' && selectedQuote && !selectedQuote.is_approved && (
+          <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4 sm:p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <FileText className="w-6 h-6 text-amber-400" />
+              <div>
+                <h3 className="font-semibold text-white">Quote #{selectedQuote.quote_number}</h3>
+                <p className="text-sm text-gray-400">Awaiting your approval</p>
+              </div>
+            </div>
+
+            <div className="bg-white/5 rounded-lg p-4 mb-4">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Quote Total</span>
+                <span className="font-bold text-xl text-white">${parseFloat(selectedQuote.total_amount).toFixed(2)}</span>
+              </div>
+              {selectedQuote.valid_until && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Valid until {format(new Date(selectedQuote.valid_until), 'MMMM d, yyyy')}
+                </p>
+              )}
+            </div>
+
+            {!showDeclineForm ? (
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => approveQuoteMutation.mutate(selectedQuote.id)}
+                  disabled={approveQuoteMutation.isPending}
+                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  {approveQuoteMutation.isPending ? 'Approving...' : 'Approve Quote'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDeclineForm(true)}
+                  className="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-medium rounded-lg transition-colors"
+                >
+                  Request Changes
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-gray-400">Let us know what changes you'd like:</p>
+                <textarea
+                  value={declineNotes}
+                  onChange={(e) => setDeclineNotes(e.target.value)}
+                  placeholder="e.g., Can we skip the brake fluid flush? Or is there a cheaper option for..."
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                  rows={3}
+                />
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      declineQuoteMutation.mutate({ quoteId: selectedQuote.id, notes: declineNotes })
+                      setDeclineNotes('')
+                      setShowDeclineForm(false)
+                    }}
+                    disabled={declineQuoteMutation.isPending}
+                    className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors"
+                  >
+                    {declineQuoteMutation.isPending ? 'Sending...' : 'Send Request'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDeclineForm(false)
+                      setDeclineNotes('')
+                    }}
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Invoice & Payment Section */}
         {selectedOrder.status === 'invoiced' && invoice && (
@@ -745,31 +869,35 @@ function CustomerRepairs() {
               const quoteData = quoteQueries[idx]?.data as Quote | null | undefined
               const quoteLoading = quoteQueries[idx]?.isLoading
               return (
-                <div key={order.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <span className="font-medium text-white">{order.order_number}</span>
-                    <span className="text-gray-400 ml-2">— {order.description || 'Repair'}</span>
-                    {quoteData && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Quote #{quoteData.quote_number} · ${parseFloat(quoteData.total_amount).toFixed(2)}
-                      </p>
-                    )}
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => setSelectedOrder(order)}
+                  className="w-full bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:bg-white/10 hover:border-amber-500/50 transition-colors text-left"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <span className="font-medium text-white">{order.order_number}</span>
+                      <span className="text-gray-400 ml-2">— {order.description || 'Repair'}</span>
+                      {quoteData && (
+                        <p className="text-sm text-gray-400 mt-1">
+                          Quote #{quoteData.quote_number} · ${parseFloat(quoteData.total_amount).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {quoteLoading ? (
+                        <span className="text-gray-500 text-sm">Loading...</span>
+                      ) : quoteData && !quoteData.is_approved ? (
+                        <span className="px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg">
+                          Review & Approve →
+                        </span>
+                      ) : quoteData?.is_approved ? (
+                        <span className="text-green-400 text-sm font-medium">Approved</span>
+                      ) : null}
+                    </div>
                   </div>
-                  {quoteLoading ? (
-                    <span className="text-gray-500 text-sm">Loading quote...</span>
-                  ) : quoteData && !quoteData.is_approved ? (
-                    <button
-                      type="button"
-                      onClick={() => approveQuoteMutation.mutate(quoteData.id)}
-                      disabled={approveQuoteMutation.isPending}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-500 text-white text-sm font-medium rounded-lg"
-                    >
-                      {approveQuoteMutation.isPending ? 'Approving...' : 'Approve quote'}
-                    </button>
-                  ) : quoteData?.is_approved ? (
-                    <span className="text-green-400 text-sm font-medium">Approved</span>
-                  ) : null}
-                </div>
+                </button>
               )
             })}
           </div>

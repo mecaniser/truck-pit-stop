@@ -630,12 +630,14 @@ class TaxFeeSettingsRequest(BaseModel):
     sales_tax_rate: float  # Percentage, e.g., 8.25 for 8.25%
     shop_supplies_rate: float  # Percentage of labor
     service_fee_rate: float  # Percentage of subtotal
+    labor_rate: float  # Default hourly rate
 
 
 class TaxFeeSettingsResponse(BaseModel):
     sales_tax_rate: float
     shop_supplies_rate: float
     service_fee_rate: float
+    labor_rate: float
 
 
 def require_garage_owner():
@@ -845,6 +847,7 @@ async def get_tax_fee_settings(
         sales_tax_rate=float(tenant.sales_tax_rate or 0),
         shop_supplies_rate=float(tenant.shop_supplies_rate or 0),
         service_fee_rate=float(tenant.service_fee_rate or 0),
+        labor_rate=float(tenant.labor_rate if tenant.labor_rate is not None else 100),
     )
 
 
@@ -868,10 +871,13 @@ async def update_tax_fee_settings(
         raise HTTPException(status_code=400, detail="shop_supplies_rate must be between 0 and 99.999")
     if not 0 <= body.service_fee_rate <= 99.999:
         raise HTTPException(status_code=400, detail="service_fee_rate must be between 0 and 99.999")
+    if not 0 <= body.labor_rate <= 9999.99:
+        raise HTTPException(status_code=400, detail="labor_rate must be between 0 and 9999.99")
     
     tenant.sales_tax_rate = body.sales_tax_rate
     tenant.shop_supplies_rate = body.shop_supplies_rate
     tenant.service_fee_rate = body.service_fee_rate
+    tenant.labor_rate = body.labor_rate
     
     await db.commit()
     await db.refresh(tenant)
@@ -880,6 +886,7 @@ async def update_tax_fee_settings(
         sales_tax_rate=float(tenant.sales_tax_rate),
         shop_supplies_rate=float(tenant.shop_supplies_rate),
         service_fee_rate=float(tenant.service_fee_rate),
+        labor_rate=float(tenant.labor_rate),
     )
 
 

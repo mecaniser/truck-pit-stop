@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -69,6 +69,7 @@ export default function RepairOrdersPage() {
   const [addLaborDescription, setAddLaborDescription] = useState('')
   const [addLaborHours, setAddLaborHours] = useState('')
   const [addLaborRate, setAddLaborRate] = useState('100')
+  const laborRateInitialized = useRef(false)
   const [isEditingLaborRate, setIsEditingLaborRate] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -202,6 +203,22 @@ export default function RepairOrdersPage() {
     },
     enabled: showZelleQrModal,
   })
+
+  const { data: taxFeeSettings } = useQuery<{ labor_rate: number }>({
+    queryKey: ['tax-fee-settings'],
+    queryFn: async () => {
+      const response = await api.get('/admin/tax-fee-settings')
+      return response.data
+    },
+  })
+
+  // Set default labor rate from tenant settings (only on initial load)
+  useEffect(() => {
+    if (taxFeeSettings?.labor_rate !== undefined && !laborRateInitialized.current) {
+      setAddLaborRate(taxFeeSettings.labor_rate.toString())
+      laborRateInitialized.current = true
+    }
+  }, [taxFeeSettings])
 
   const filteredVehicles = useMemo(() => {
     if (!vehicles) return []
@@ -1768,7 +1785,7 @@ export default function RepairOrdersPage() {
                                       })
                                       setAddLaborDescription('')
                                       setAddLaborHours('')
-                                      setAddLaborRate('100')
+                                      setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
                                       setIsEditingLaborRate(false)
                                     }}
                                     className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"

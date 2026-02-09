@@ -37,6 +37,7 @@ class Tenant(BaseModel):
     sales_tax_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # e.g., 8.25% = 8.250
     shop_supplies_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of labor
     service_fee_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of total
+    labor_rate = Column(Numeric(10, 2), default=Decimal("100.00"), nullable=False)  # Default hourly rate
     
     # Enrollment fields
     enrollment_status = Column(String(20), default="pending", nullable=False)  # pending, approved, rejected

@@ -402,6 +402,7 @@ async def get_my_jobs(
         select(RepairOrder)
         .where(
             and_(
+                RepairOrder.tenant_id == current_user.tenant_id,
                 RepairOrder.assigned_mechanic_id == current_user.id,
                 RepairOrder.status.in_([
                     RepairOrderStatus.ASSIGNED,
@@ -454,6 +455,7 @@ async def get_my_history(
         select(RepairOrder)
         .where(
             and_(
+                RepairOrder.tenant_id == current_user.tenant_id,
                 RepairOrder.assigned_mechanic_id == current_user.id,
                 RepairOrder.status.in_([
                     RepairOrderStatus.COMPLETED,
