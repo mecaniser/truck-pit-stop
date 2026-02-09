@@ -3,7 +3,7 @@ Error Log Model for persistent error tracking.
 
 Stores application errors with full context for debugging and monitoring.
 """
-from sqlalchemy import Column, String, Integer, Boolean, Text, ForeignKey, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, String, Integer, Boolean, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -33,17 +33,8 @@ class ErrorLog(BaseModel):
     
     # Error classification
     error_type = Column(String(255), index=True, nullable=False)  # e.g., "StripeCardError", "ValidationError"
-    error_category = Column(
-        SQLEnum(ErrorCategory, values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-        default=ErrorCategory.UNHANDLED,
-        index=True
-    )
-    severity = Column(
-        SQLEnum(ErrorSeverity, values_callable=lambda e: [m.value for m in e]),
-        nullable=False,
-        default=ErrorSeverity.ERROR
-    )
+    error_category = Column(String(50), nullable=False, default=ErrorCategory.UNHANDLED.value, index=True)
+    severity = Column(String(20), nullable=False, default=ErrorSeverity.ERROR.value)
     
     # Request context
     endpoint = Column(String(500), index=True, nullable=True)
