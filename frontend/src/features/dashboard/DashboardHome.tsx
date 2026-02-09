@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   AlertTriangle,
   ChevronRight,
@@ -13,11 +13,13 @@ import {
   X,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useWebSocket } from '../../hooks/useWebSocket'
 import AlertsBanner from '../../components/AlertsBanner'
 
 interface StatusCount {
@@ -168,9 +170,7 @@ export default function DashboardHome() {
   const { user } = useAuthStore()
   const { accentColors } = useTheme()
   const navigate = useNavigate()
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   // Quick order form
   const [showQuickForm, setShowQuickForm] = useState(false)
@@ -180,63 +180,28 @@ export default function DashboardHome() {
   const [quickSubmitting, setQuickSubmitting] = useState(false)
   const [quickErrors, setQuickErrors] = useState<{ phone?: string; truck?: string; complaint?: string }>({})
   const [quickTouched, setQuickTouched] = useState(false)
-  
-  // Auto-refresh state
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const REFRESH_INTERVAL = 60 * 1000 // 1 minute when active
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
-
-  // Auto-refresh with visibility awareness
-  useEffect(() => {
-    fetchStats()
-    
-    const startPolling = () => {
-      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
-      refreshIntervalRef.current = setInterval(() => {
-        if (!document.hidden) {
-          fetchStats(true) // silent refresh
-        }
-      }, REFRESH_INTERVAL)
-    }
-    
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        // Tab became visible - refresh immediately and restart polling
-        fetchStats(true)
-        startPolling()
-      }
-    }
-    
-    startPolling()
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    
-    return () => {
-      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [])
-
-  const fetchStats = async (silent = false) => {
-    if (silent) setIsRefreshing(true)
-    try {
+  
+  // Connect to WebSocket for real-time updates (replaces polling)
+  useWebSocket({ showToasts: true })
+  
+  // Dashboard stats query (WebSocket invalidates this on updates)
+  const { data: stats, isLoading: loading, error: queryError, isFetching: isRefreshing, dataUpdatedAt } = useQuery<DashboardStats>({
+    queryKey: ['dashboard-stats'],
+    queryFn: async () => {
       const response = await api.get('/dashboard/stats')
-      setStats(response.data)
-      setLastUpdated(new Date())
-    } catch (err) {
-      if (!silent) setError('Failed to load dashboard stats')
-      console.error(err)
-    } finally {
-      setLoading(false)
-      setIsRefreshing(false)
-    }
-  }
+      return response.data
+    },
+    refetchOnWindowFocus: true, // Refresh when tab becomes visible
+  })
+  
+  const error = queryError ? 'Failed to load dashboard stats' : null
+  const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
-    fetchStats(true)
+    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
   }
 
   const validateQuickForm = () => {
@@ -280,7 +245,7 @@ export default function DashboardHome() {
       setQuickErrors({})
       setQuickTouched(false)
       setShowQuickForm(false)
-      fetchStats()
+      handleManualRefresh()
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to create order')
     } finally {
@@ -300,7 +265,7 @@ export default function DashboardHome() {
     return (
       <div className="text-center py-12">
         <p className="text-red-400">{error}</p>
-        <button onClick={() => fetchStats()} className="mt-4 hover:opacity-80" style={{ color: accentColors[500] }}>
+        <button onClick={handleManualRefresh} className="mt-4 hover:opacity-80" style={{ color: accentColors[500] }}>
           Try again
         </button>
       </div>

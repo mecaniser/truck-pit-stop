@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useWebSocket } from '../../hooks/useWebSocket'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { 
@@ -107,7 +108,7 @@ const STATUS_LABELS: Record<string, string> = {
   assigned: 'New Job',
   acknowledged: 'Ready to Start',
   in_progress: 'Working',
-  pending_review: 'Done - Awaiting Review',
+  pending_review: 'Pending Review',
   completed: 'Completed',
   invoiced: 'Completed',
   paid: 'Completed',
@@ -153,6 +154,10 @@ export default function MechanicPortalPage() {
   const { user, logout, setUser } = useAuthStore()
   const { accentColors, accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
   const queryClient = useQueryClient()
+  
+  // Connect to WebSocket for real-time updates
+  useWebSocket({ showToasts: true })
+  
   const [view, setView] = useState<ViewType>('list')
   const [previousView, setPreviousView] = useState<ViewType>('list')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
@@ -186,7 +191,7 @@ export default function MechanicPortalPage() {
       const response = await api.get('/mechanics/my-jobs')
       return response.data
     },
-    refetchInterval: 30000,
+    refetchOnWindowFocus: true, // WebSocket handles real-time updates
   })
 
   // Stats
@@ -1515,7 +1520,7 @@ export default function MechanicPortalPage() {
                       <p className="text-xs text-gray-500">{job.order_number}</p>
                     </div>
                     <span className="text-xs text-orange-400 bg-orange-500/20 px-2 py-1 rounded-full shrink-0">
-                      Pending
+                      Pending Review
                     </span>
                   </div>
                 ))}

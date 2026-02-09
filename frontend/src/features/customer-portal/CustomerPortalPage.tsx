@@ -14,6 +14,7 @@ import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useWebSocket } from '../../hooks/useWebSocket'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -678,9 +679,9 @@ function CustomerRepairs() {
                 <span className="text-gray-400">Quote Total</span>
                 <span className="font-bold text-xl text-white">${parseFloat(selectedQuote.total_amount).toFixed(2)}</span>
               </div>
-              {selectedQuote.valid_until && (
+              {selectedQuote.expires_at && (
                 <p className="text-xs text-gray-500 mt-2">
-                  Valid until {format(new Date(selectedQuote.valid_until), 'MMMM d, yyyy')}
+                  Valid until {format(new Date(selectedQuote.expires_at), 'MMMM d, yyyy')}
                 </p>
               )}
             </div>
@@ -759,6 +760,18 @@ function CustomerRepairs() {
                 <span className="text-gray-400">Subtotal</span>
                 <span className="text-white">${parseFloat(invoice.subtotal).toFixed(2)}</span>
               </div>
+              {parseFloat(invoice.shop_supplies_amount || '0') > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Shop Supplies</span>
+                  <span className="text-white">${parseFloat(invoice.shop_supplies_amount).toFixed(2)}</span>
+                </div>
+              )}
+              {parseFloat(invoice.service_fee_amount || '0') > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Service Fee</span>
+                  <span className="text-white">${parseFloat(invoice.service_fee_amount).toFixed(2)}</span>
+                </div>
+              )}
               {parseFloat(invoice.tax_amount) > 0 && (
                 <div className="flex justify-between mb-2">
                   <span className="text-gray-400">Tax</span>
@@ -955,6 +968,9 @@ function CustomerRepairs() {
 export default function CustomerPortalPage() {
   const location = useLocation()
   const { accentColors } = useTheme()
+  
+  // Connect to WebSocket for real-time updates
+  useWebSocket({ showToasts: true })
 
   const navLinks = [
     { to: '/portal', label: 'Dashboard', exact: true },

@@ -15,6 +15,7 @@ import BaseSelect from '../../components/BaseSelect'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useWebSocket } from '../../hooks/useWebSocket'
 
 interface NewCustomerForm {
   first_name: string
@@ -35,6 +36,9 @@ interface NewVehicleForm {
 export default function RepairOrdersPage() {
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
+  
+  // Connect to WebSocket for real-time updates
+  useWebSocket({ showToasts: true })
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -1501,7 +1505,7 @@ export default function RepairOrdersPage() {
                   </div>
                   <button
                     type="button"
-                    disabled={cancelRepairOrderMutation.isPending || deleteRepairOrderMutation.isPending || selectedOrder.status === 'cancelled'}
+                    disabled={cancelRepairOrderMutation.isPending || deleteRepairOrderMutation.isPending || (orderDetail ?? selectedOrder).status === 'cancelled'}
                     onClick={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
                     className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
@@ -1531,7 +1535,7 @@ export default function RepairOrdersPage() {
                     (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                     0
                   )
-                  const canEditServices = ['draft', 'quoted'].includes(selectedOrder.status)
+                  const canEditServices = ['draft', 'quoted'].includes((orderDetail ?? selectedOrder).status)
                   const availableServices = services?.filter(
                     (s) => !detailServices.some((ds) => ds.id === s.id)
                   ) || []
@@ -1816,7 +1820,7 @@ export default function RepairOrdersPage() {
 
 
                 {/* Approve Completion Button for pending_review status */}
-                {selectedOrder.status === 'pending_review' && (
+                {(orderDetail ?? selectedOrder).status === 'pending_review' && (
                   <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
@@ -1884,7 +1888,7 @@ export default function RepairOrdersPage() {
                 )}
 
                 {/* Create Invoice Button for completed orders */}
-                {selectedOrder.status === 'completed' && (
+                {(orderDetail ?? selectedOrder).status === 'completed' && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
@@ -1932,7 +1936,7 @@ export default function RepairOrdersPage() {
                 )}
 
                 {/* Invoice section for invoiced orders */}
-                {selectedOrder.status === 'invoiced' && invoiceForOrder && (
+                {(orderDetail ?? selectedOrder).status === 'invoiced' && invoiceForOrder && (
                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
@@ -2111,7 +2115,7 @@ export default function RepairOrdersPage() {
                 )}
 
                 {/* Paid confirmation for paid orders */}
-                {selectedOrder.status === 'paid' && invoiceForOrder && (
+                {(orderDetail ?? selectedOrder).status === 'paid' && invoiceForOrder && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -2356,7 +2360,7 @@ export default function RepairOrdersPage() {
                             Quote needs to be updated before sending.
                           </p>
                         )}
-                        {isSent && !isApproved && !quoteNeedsUpdate && selectedOrder.status !== 'declined' && (
+                        {isSent && !isApproved && !quoteNeedsUpdate && (orderDetail ?? selectedOrder).status !== 'declined' && (
                           <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                             Waiting for customer approval...
                           </p>
@@ -2367,7 +2371,7 @@ export default function RepairOrdersPage() {
                           </p>
                         )}
                         {/* Declined quote alert */}
-                        {selectedOrder.status === 'declined' && quoteForOrder?.is_declined && (
+                        {(orderDetail ?? selectedOrder).status === 'declined' && quoteForOrder?.is_declined && (
                           <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
                             <p className="text-sm font-medium text-red-700">Customer Declined Quote</p>
                             {quoteForOrder.decline_notes && (
@@ -2398,7 +2402,7 @@ export default function RepairOrdersPage() {
                                     type="button"
                                     onClick={() =>
                                       selectedOrder.id &&
-                                      assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: selectedOrder.status })
+                                      assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
                                     }
                                     disabled={assignMechanicMutation.isPending}
                                     className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
@@ -2422,7 +2426,7 @@ export default function RepairOrdersPage() {
                         )}
 
                         {/* Reassign Mechanic - shown when mechanic is already assigned and work not yet done */}
-                        {hasMechanic && mechanics && mechanics.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes(selectedOrder.status) && (
+                        {hasMechanic && mechanics && mechanics.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) && (
                           <div className="pt-3 border-t border-gray-200">
                             {!showReassignMechanic ? (
                               <button
@@ -2463,7 +2467,7 @@ export default function RepairOrdersPage() {
                                         type="button"
                                         onClick={() => {
                                           if (selectedOrder.id) {
-                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: selectedOrder.status })
+                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
                                             setShowReassignMechanic(false)
                                           }
                                         }}
