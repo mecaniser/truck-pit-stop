@@ -54,13 +54,35 @@ def require_role(*allowed_roles: UserRole):
 
 
 async def generate_order_number(db: AsyncSession, tenant_id: UUID) -> str:
-    """Generate unique order number"""
-    # Get count of orders for this tenant
+    """
+    Generate unique order number.
+    
+    Uses MAX of existing order numbers to avoid collisions from:
+    - Soft-deleted orders still in DB
+    - Race conditions between concurrent requests
+    """
+    tenant_prefix = f"RO-{str(tenant_id).replace('-', '').upper()[:8]}-"
+    
+    # Get the highest existing order number for this tenant
     result = await db.execute(
-        select(func.count(RepairOrder.id)).where(RepairOrder.tenant_id == tenant_id)
+        select(func.max(RepairOrder.order_number))
+        .where(RepairOrder.tenant_id == tenant_id)
+        .where(RepairOrder.order_number.like(f"{tenant_prefix}%"))
     )
-    count = result.scalar() or 0
-    return f"RO-{str(tenant_id).replace('-', '').upper()[:8]}-{count + 1:06d}"
+    max_order = result.scalar()
+    
+    if max_order:
+        # Extract the numeric suffix and increment
+        try:
+            current_num = int(max_order.split("-")[-1])
+            next_num = current_num + 1
+        except (ValueError, IndexError):
+            # Fallback if parsing fails
+            next_num = 1
+    else:
+        next_num = 1
+    
+    return f"{tenant_prefix}{next_num:06d}"
 
 
 @router.post("", response_model=RepairOrderResponse, status_code=status.HTTP_201_CREATED)
