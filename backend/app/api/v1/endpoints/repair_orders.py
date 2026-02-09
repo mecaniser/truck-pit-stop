@@ -192,10 +192,10 @@ async def quick_create_repair_order(
             await db.flush()
 
     # Parse vehicle_description best-effort: "2019 Peterbilt 579" -> year=2019 make=Peterbilt model=579
-    desc = data.vehicle_description.strip()
-    parts = desc.split(None, 2)
+    desc = data.vehicle_description.strip() if data.vehicle_description else ""
+    parts = desc.split(None, 2) if desc else []
     year = None
-    make = desc
+    make = desc if desc else "Unknown"
     model = "N/A"
 
     if len(parts) >= 1 and parts[0].isdigit() and len(parts[0]) == 4:
