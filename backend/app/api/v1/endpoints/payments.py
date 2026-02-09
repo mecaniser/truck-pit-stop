@@ -10,12 +10,16 @@ from decimal import Decimal
 import stripe
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.logging import get_logger
+from app.core.metrics import record_payment, record_payment_error
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
 from app.db.models.tenant import Tenant
+
+logger = get_logger(__name__)
 
 
 async def generate_payment_number(db: AsyncSession, tenant_id: UUID) -> str:
@@ -101,22 +105,28 @@ async def create_setup_intent(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     
     # Create or retrieve Stripe customer
-    if not customer.stripe_customer_id:
-        stripe_customer = stripe.Customer.create(
-            email=customer.email,
-            name=f"{customer.first_name} {customer.last_name}",
-            metadata={"customer_id": str(customer.id)},
+    try:
+        if not customer.stripe_customer_id:
+            stripe_customer = stripe.Customer.create(
+                email=customer.email,
+                name=f"{customer.first_name} {customer.last_name}",
+                metadata={"customer_id": str(customer.id)},
+            )
+            customer.stripe_customer_id = stripe_customer.id
+            await db.commit()
+            logger.info("stripe_customer_created", customer_id=str(customer.id), stripe_customer_id=stripe_customer.id)
+        
+        # Create SetupIntent
+        setup_intent = stripe.SetupIntent.create(
+            customer=customer.stripe_customer_id,
+            payment_method_types=["card"],
         )
-        customer.stripe_customer_id = stripe_customer.id
-        await db.commit()
-    
-    # Create SetupIntent
-    setup_intent = stripe.SetupIntent.create(
-        customer=customer.stripe_customer_id,
-        payment_method_types=["card"],
-    )
-    
-    return SetupIntentResponse(client_secret=setup_intent.client_secret)
+        
+        return SetupIntentResponse(client_secret=setup_intent.client_secret)
+    except stripe.error.StripeError as e:
+        logger.error("stripe_setup_intent_failed", customer_id=str(customer.id), error=str(e))
+        record_payment_error(error_type=type(e).__name__, provider="stripe")
+        raise  # Re-raise to be handled by global exception handler
 
 
 @router.get("/methods", response_model=List[PaymentMethodResponse])
@@ -135,27 +145,32 @@ async def list_payment_methods(
     if not customer or not customer.stripe_customer_id:
         return []
     
-    # Get payment methods from Stripe
-    payment_methods = stripe.PaymentMethod.list(
-        customer=customer.stripe_customer_id,
-        type="card",
-    )
-    
-    # Get default payment method
-    stripe_customer = stripe.Customer.retrieve(customer.stripe_customer_id)
-    default_pm_id = stripe_customer.invoice_settings.default_payment_method
-    
-    return [
-        PaymentMethodResponse(
-            id=pm.id,
-            brand=pm.card.brand,
-            last4=pm.card.last4,
-            exp_month=pm.card.exp_month,
-            exp_year=pm.card.exp_year,
-            is_default=pm.id == default_pm_id,
+    try:
+        # Get payment methods from Stripe
+        payment_methods = stripe.PaymentMethod.list(
+            customer=customer.stripe_customer_id,
+            type="card",
         )
-        for pm in payment_methods.data
-    ]
+        
+        # Get default payment method
+        stripe_customer = stripe.Customer.retrieve(customer.stripe_customer_id)
+        default_pm_id = stripe_customer.invoice_settings.default_payment_method
+        
+        return [
+            PaymentMethodResponse(
+                id=pm.id,
+                brand=pm.card.brand,
+                last4=pm.card.last4,
+                exp_month=pm.card.exp_month,
+                exp_year=pm.card.exp_year,
+                is_default=pm.id == default_pm_id,
+            )
+            for pm in payment_methods.data
+        ]
+    except stripe.error.StripeError as e:
+        logger.error("stripe_list_payment_methods_failed", customer_id=str(customer.id), error=str(e))
+        record_payment_error(error_type=type(e).__name__, provider="stripe")
+        raise
 
 
 @router.delete("/methods/{payment_method_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -182,8 +197,14 @@ async def delete_payment_method(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your payment method")
         
         stripe.PaymentMethod.detach(payment_method_id)
-    except stripe.error.InvalidRequestError:
+        logger.info("payment_method_deleted", customer_id=str(customer.id), payment_method_id=payment_method_id)
+    except stripe.error.InvalidRequestError as e:
+        logger.warning("stripe_delete_payment_method_failed", payment_method_id=payment_method_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment method not found")
+    except stripe.error.StripeError as e:
+        logger.error("stripe_delete_payment_method_error", payment_method_id=payment_method_id, error=str(e))
+        record_payment_error(error_type=type(e).__name__, provider="stripe")
+        raise
 
 
 @router.post("/methods/{payment_method_id}/default", status_code=status.HTTP_204_NO_CONTENT)
@@ -212,8 +233,14 @@ async def set_default_payment_method(
             customer.stripe_customer_id,
             invoice_settings={"default_payment_method": payment_method_id},
         )
-    except stripe.error.InvalidRequestError:
+        logger.info("default_payment_method_set", customer_id=str(customer.id), payment_method_id=payment_method_id)
+    except stripe.error.InvalidRequestError as e:
+        logger.warning("stripe_set_default_failed", payment_method_id=payment_method_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment method not found")
+    except stripe.error.StripeError as e:
+        logger.error("stripe_set_default_error", payment_method_id=payment_method_id, error=str(e))
+        record_payment_error(error_type=type(e).__name__, provider="stripe")
+        raise
 
 
 @router.post("/create-payment-intent", response_model=PaymentIntentResponse)
@@ -257,60 +284,80 @@ async def create_payment_intent_for_invoice(
     
     # Create or get Stripe customer
     stripe_customer_id = None
-    if customer:
-        if not customer.stripe_customer_id:
-            stripe_customer = stripe.Customer.create(
-                email=customer.email,
-                name=f"{customer.first_name} {customer.last_name}",
-                metadata={"customer_id": str(customer.id)},
-            )
-            customer.stripe_customer_id = stripe_customer.id
-            await db.commit()
-        stripe_customer_id = customer.stripe_customer_id
-    
-    # Get tenant for Stripe Connect routing
-    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-    tenant = result.scalar_one_or_none()
-    
-    # Create PaymentIntent
-    amount_cents = int(invoice.total_amount * 100)
-    intent_params = {
-        "amount": amount_cents,
-        "currency": "usd",
-        "metadata": {
-            "invoice_id": str(invoice.id),
-            "invoice_number": invoice.invoice_number,
-            "tenant_id": str(invoice.tenant_id),
-        },
-        "automatic_payment_methods": {"enabled": True},
-    }
-    
-    # Route to connected account if tenant has Stripe Connect set up
-    if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-        intent_params["stripe_account"] = tenant.stripe_account_id
-        # Calculate platform fee
-        platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
-        if platform_fee > 0:
-            intent_params["application_fee_amount"] = platform_fee
-        # For connected accounts, customer must be on the connected account
-        # So we don't pass the platform's customer ID
-    elif stripe_customer_id:
-        # Fallback to platform account (no Connect)
-        intent_params["customer"] = stripe_customer_id
-    
-    payment_intent = stripe.PaymentIntent.create(**intent_params)
-    
-    # Return connected account ID if using Stripe Connect
-    connected_account_id = None
-    if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-        connected_account_id = tenant.stripe_account_id
-    
-    return PaymentIntentResponse(
-        client_secret=payment_intent.client_secret,
-        payment_intent_id=payment_intent.id,
-        amount=invoice.total_amount,
-        stripe_account_id=connected_account_id,
-    )
+    try:
+        if customer:
+            if not customer.stripe_customer_id:
+                stripe_customer = stripe.Customer.create(
+                    email=customer.email,
+                    name=f"{customer.first_name} {customer.last_name}",
+                    metadata={"customer_id": str(customer.id)},
+                )
+                customer.stripe_customer_id = stripe_customer.id
+                await db.commit()
+                logger.info("stripe_customer_created", customer_id=str(customer.id), stripe_customer_id=stripe_customer.id)
+            stripe_customer_id = customer.stripe_customer_id
+        
+        # Get tenant for Stripe Connect routing
+        result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+        tenant = result.scalar_one_or_none()
+        
+        # Create PaymentIntent
+        amount_cents = int(invoice.total_amount * 100)
+        intent_params = {
+            "amount": amount_cents,
+            "currency": "usd",
+            "metadata": {
+                "invoice_id": str(invoice.id),
+                "invoice_number": invoice.invoice_number,
+                "tenant_id": str(invoice.tenant_id),
+            },
+            "automatic_payment_methods": {"enabled": True},
+        }
+        
+        # Route to connected account if tenant has Stripe Connect set up
+        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
+            intent_params["stripe_account"] = tenant.stripe_account_id
+            # Calculate platform fee
+            platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
+            if platform_fee > 0:
+                intent_params["application_fee_amount"] = platform_fee
+            # For connected accounts, customer must be on the connected account
+            # So we don't pass the platform's customer ID
+        elif stripe_customer_id:
+            # Fallback to platform account (no Connect)
+            intent_params["customer"] = stripe_customer_id
+        
+        payment_intent = stripe.PaymentIntent.create(**intent_params)
+        
+        logger.info(
+            "payment_intent_created",
+            invoice_id=str(invoice.id),
+            payment_intent_id=payment_intent.id,
+            amount=float(invoice.total_amount),
+            connected_account=tenant.stripe_account_id if tenant and tenant.stripe_account_id else None,
+        )
+        
+        # Return connected account ID if using Stripe Connect
+        connected_account_id = None
+        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
+            connected_account_id = tenant.stripe_account_id
+        
+        return PaymentIntentResponse(
+            client_secret=payment_intent.client_secret,
+            payment_intent_id=payment_intent.id,
+            amount=invoice.total_amount,
+            stripe_account_id=connected_account_id,
+        )
+    except stripe.error.StripeError as e:
+        logger.error(
+            "stripe_create_payment_intent_failed",
+            invoice_id=str(invoice.id),
+            amount=float(invoice.total_amount),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        record_payment_error(error_type=type(e).__name__, provider="stripe")
+        raise
 
 
 @router.post("/confirm-payment")
@@ -348,10 +395,21 @@ async def confirm_payment(
         if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
             retrieve_params["stripe_account"] = tenant.stripe_account_id
         payment_intent = stripe.PaymentIntent.retrieve(body.payment_intent_id, **retrieve_params)
-    except stripe.error.InvalidRequestError:
+    except stripe.error.InvalidRequestError as e:
+        logger.warning("stripe_retrieve_payment_intent_failed", payment_intent_id=body.payment_intent_id, error=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment intent")
+    except stripe.error.StripeError as e:
+        logger.error("stripe_retrieve_payment_intent_error", payment_intent_id=body.payment_intent_id, error=str(e))
+        record_payment_error(error_type=type(e).__name__, provider="stripe")
+        raise
     
     if payment_intent.status != "succeeded":
+        logger.warning(
+            "payment_not_succeeded",
+            invoice_id=str(invoice.id),
+            payment_intent_id=body.payment_intent_id,
+            status=payment_intent.status,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Payment not successful. Status: {payment_intent.status}",
@@ -359,6 +417,11 @@ async def confirm_payment(
     
     # Verify this payment intent is for this invoice
     if payment_intent.metadata.get("invoice_id") != str(invoice.id):
+        logger.warning(
+            "payment_intent_mismatch",
+            invoice_id=str(invoice.id),
+            payment_intent_invoice_id=payment_intent.metadata.get("invoice_id"),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment intent mismatch")
     
     # Update invoice status
@@ -382,6 +445,15 @@ async def confirm_payment(
     db.add(payment)
     
     await db.commit()
+    
+    # Record successful payment metric
+    record_payment(status="success", payment_method="stripe", tenant_id=str(invoice.tenant_id))
+    logger.info(
+        "payment_confirmed",
+        invoice_id=str(invoice.id),
+        payment_intent_id=body.payment_intent_id,
+        amount=float(invoice.total_amount),
+    )
     
     return {"status": "success", "message": "Payment confirmed"}
 
@@ -443,6 +515,15 @@ async def record_manual_payment(
     db.add(payment)
     
     await db.commit()
+    
+    # Record successful payment metric
+    record_payment(status="success", payment_method=body.method, tenant_id=str(invoice.tenant_id))
+    logger.info(
+        "manual_payment_recorded",
+        invoice_id=str(invoice.id),
+        method=body.method,
+        amount=float(invoice.total_amount),
+    )
     
     return {"status": "success", "message": f"Payment recorded as {body.method}"}
 

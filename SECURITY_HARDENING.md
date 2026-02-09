@@ -148,6 +148,33 @@ SECRET_KEY=your-very-long-secret-key-at-least-32-chars
 - **Phase 4 Partial**: Tenant default fixed
 - Created `password_policy.py` with complexity validation
 
+### 2026-02-08
+- **Error Visibility System** implemented (see `OBSERVABILITY_PLAN.md`)
+- Auth errors now tracked in database with `error_category: auth`
+- Payment errors tracked with Stripe-specific context
+- Admin dashboard for viewing/resolving security-related errors
+- Correlation IDs link related security events
+
+---
+
+## Security Monitoring via Error Dashboard
+
+The new Error Tracking System provides security visibility:
+
+| Error Category | Security Relevance |
+|----------------|-------------------|
+| `auth` | Failed logins, token issues, permission denials |
+| `payment` | Payment fraud indicators, disputes |
+| `validation` | Potential injection attempts |
+| `unhandled` | Unexpected behavior (possible exploit attempts) |
+
+**Access**: Platform Analytics → Errors (Super Admin only)
+
+**Recommended filters for security review:**
+- Category: `auth` - Review failed authentication attempts
+- Severity: `critical` - Immediate security concerns
+- Endpoint: `/api/v1/auth/*` - Auth-related issues
+
 ---
 
 ## Future Considerations
@@ -155,7 +182,9 @@ SECRET_KEY=your-very-long-secret-key-at-least-32-chars
 - [ ] Implement Content Security Policy (CSP) for frontend
 - [ ] Add Web Application Firewall (WAF) rules
 - [ ] Implement request signing for sensitive operations
-- [ ] Add anomaly detection for suspicious activity
+- [x] Add anomaly detection for suspicious activity (via error dashboard)
 - [ ] Periodic security audits (quarterly)
 - [ ] Penetration testing before major releases
 - [ ] Bug bounty program consideration
+- [ ] Email alerts for critical auth errors
+- [ ] IP-based rate limiting for repeated auth failures

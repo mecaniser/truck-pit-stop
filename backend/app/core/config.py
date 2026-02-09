@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = "development"  # "development", "staging", "production"
     
+    # Observability
+    LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    LOG_FORMAT: str = "console"  # "json" for production, "console" for dev
+    METRICS_ENABLED: bool = True  # Enable /metrics endpoint
+    
     # Database
     DATABASE_URL: str
     
