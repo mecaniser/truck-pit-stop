@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { 
-  Building2, Users, DollarSign, Activity, 
-  TrendingUp, ShoppingCart, CheckCircle, XCircle 
+  Building2, Users, DollarSign,
+  TrendingUp, CheckCircle, XCircle,
+  BarChart3, Gauge, AlertTriangle
 } from 'lucide-react'
 import api from '../../lib/api'
+import PerformanceTab from './PerformanceTab'
+import ErrorsTab from './ErrorsTab'
+import { GlassNoirCard, GlassNoirHeader, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
+import { SegmentedControl, StatScrollRow, CollapsibleStats, InlineStats } from '../../components/ui/MobileStats'
+
+type TabType = 'business' | 'performance' | 'errors'
 
 interface PlatformStats {
   tenants: {
@@ -13,13 +20,6 @@ interface PlatformStats {
   }
   users: {
     by_role: Record<string, number>
-    total: number
-  }
-  customers: {
-    total: number
-  }
-  repair_orders: {
-    by_status: Record<string, number>
     total: number
   }
   revenue: {
@@ -36,6 +36,7 @@ interface TenantSummary {
 }
 
 export default function PlatformAnalyticsPage() {
+  const [activeTab, setActiveTab] = useState<TabType>('business')
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [tenants, setTenants] = useState<TenantSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -80,16 +81,16 @@ export default function PlatformAnalyticsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
       </div>
     )
   }
 
   if (error || !stats) {
     return (
-      <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-6">
+      <GlassNoirCard className="border-red-500/30">
         <p className="text-red-400">{error || 'No data available'}</p>
-      </div>
+      </GlassNoirCard>
     )
   }
 
@@ -101,211 +102,162 @@ export default function PlatformAnalyticsPage() {
     ? stats.revenue.total / stats.tenants.active
     : 0
 
-  const avgCustomersPerGarage = stats.tenants.active > 0
-    ? Math.round(stats.customers.total / stats.tenants.active)
-    : 0
-
-  const avgOrdersPerGarage = stats.tenants.active > 0
-    ? Math.round(stats.repair_orders.total / stats.tenants.active)
-    : 0
-
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white mb-2">Platform Analytics</h1>
-        <p className="text-gray-400">Overview of your entire platform</p>
-      </div>
+      <GlassNoirHeader
+        title="Platform Analytics"
+        subtitle="Overview of your entire platform"
+        icon={<BarChart3 className="w-6 h-6 text-gold-400" />}
+      />
 
-      {/* Top Level Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="p-3 bg-blue-500/10 rounded-lg">
-              <Building2 className="w-6 h-6 text-blue-400" />
+      {/* Tab Navigation - Segmented Control */}
+      <SegmentedControl
+        value={activeTab}
+        onChange={(v) => setActiveTab(v as TabType)}
+        options={[
+          { id: 'business', label: 'Business', shortLabel: 'Biz', icon: <BarChart3 className="w-4 h-4" />, color: 'gold' },
+          { id: 'performance', label: 'Performance', shortLabel: 'Perf', icon: <Gauge className="w-4 h-4" />, color: 'blue' },
+          { id: 'errors', label: 'Errors', shortLabel: 'Err', icon: <AlertTriangle className="w-4 h-4" />, color: 'red' },
+        ]}
+      />
+
+      {/* Performance Tab Content */}
+      {activeTab === 'performance' && <PerformanceTab />}
+
+      {/* Errors Tab Content */}
+      {activeTab === 'errors' && <ErrorsTab />}
+
+      {/* Business Tab Content */}
+      {activeTab === 'business' && (
+        <>
+          {/* Platform-Level Stats Only */}
+          <StatScrollRow
+            stats={[
+              { label: 'Garages', value: stats.tenants.total, icon: <Building2 className="w-4 h-4" />, sublabel: `${activeRate}% active`, color: 'gold' },
+              { label: 'Users', value: stats.users.total, icon: <Users className="w-4 h-4" />, sublabel: `${stats.users.by_role.garage_owner || 0} owners` },
+              { label: 'Revenue', value: formatCurrency(stats.revenue.total), icon: <DollarSign className="w-4 h-4" />, sublabel: 'All garages', color: 'green' },
+            ]}
+          />
+
+          {/* User Distribution */}
+          <GlassNoirCard>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">User Distribution</h2>
+              <Users className="w-5 h-5 text-gold-400" />
             </div>
-            <div className="text-right">
-              <div className="text-green-400 text-sm">{activeRate}% active</div>
-            </div>
-          </div>
-          <p className="text-gray-400 text-sm">Total Garages</p>
-          <p className="text-3xl font-bold text-white mt-1">{stats.tenants.total}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            {stats.tenants.active} active, {stats.tenants.inactive} inactive
-          </p>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="p-3 bg-green-500/10 rounded-lg w-fit mb-4">
-            <DollarSign className="w-6 h-6 text-green-400" />
-          </div>
-          <p className="text-gray-400 text-sm">Total Revenue</p>
-          <p className="text-3xl font-bold text-white mt-1">
-            {formatCurrency(stats.revenue.total)}
-          </p>
-          <p className="text-gray-500 text-xs mt-2">
-            Avg: {formatCurrency(avgRevenuePerGarage)}/garage
-          </p>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="p-3 bg-purple-500/10 rounded-lg w-fit mb-4">
-            <Users className="w-6 h-6 text-purple-400" />
-          </div>
-          <p className="text-gray-400 text-sm">Total Customers</p>
-          <p className="text-3xl font-bold text-white mt-1">{stats.customers.total}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            Avg: {avgCustomersPerGarage}/garage
-          </p>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="p-3 bg-amber-500/10 rounded-lg w-fit mb-4">
-            <ShoppingCart className="w-6 h-6 text-amber-400" />
-          </div>
-          <p className="text-gray-400 text-sm">Total Orders</p>
-          <p className="text-3xl font-bold text-white mt-1">{stats.repair_orders.total}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            Avg: {avgOrdersPerGarage}/garage
-          </p>
-        </div>
-      </div>
-
-      {/* Platform-wide Metrics Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* User Distribution */}
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">User Distribution</h2>
-            <Users className="w-5 h-5 text-gray-400" />
-          </div>
-          <div className="space-y-3">
-            {Object.entries(stats.users.by_role)
-              .sort((a, b) => b[1] - a[1])
-              .map(([role, count]) => {
-                const percentage = (count / stats.users.total * 100).toFixed(1)
-                return (
-                  <div key={role}>
-                    <div className="flex items-center justify-between text-sm mb-1">
-                      <span className="text-gray-300 capitalize">{role.replace('_', ' ')}</span>
-                      <span className="text-white font-semibold">{count} ({percentage}%)</span>
+            <div className="space-y-3">
+              {Object.entries(stats.users.by_role)
+                .sort((a, b) => b[1] - a[1])
+                .map(([role, count]) => {
+                  const percentage = (count / stats.users.total * 100).toFixed(1)
+                  return (
+                    <div key={role}>
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="text-gray-300 capitalize">{role.replace('_', ' ')}</span>
+                        <span className="text-white font-semibold">{count} ({percentage}%)</span>
+                      </div>
+                      <div className="w-full bg-noir-700 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-gold-600 to-gold-400 h-2 rounded-full transition-all"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div 
-                        className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all"
-                        style={{ width: `${percentage}%` }}
-                      />
+                  )
+                })}
+            </div>
+            <div className="mt-4 pt-4 border-t border-gold-500/10">
+              <div className="text-sm text-gray-400">
+                Total Users: <span className="text-white font-semibold">{stats.users.total}</span>
+              </div>
+            </div>
+          </GlassNoirCard>
+
+          {/* Garage List - Links to per-garage analytics */}
+          <GlassNoirCard>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">Garages</h2>
+              <div className="text-sm text-gray-400">
+                {stats.tenants.active} active of {stats.tenants.total} total
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              {tenants.map((tenant) => (
+                <a
+                  key={tenant.id}
+                  href={`/dashboard/garages/${tenant.id}/analytics`}
+                  className="flex items-center justify-between p-3 sm:p-4 bg-gold-500/5 hover:bg-gold-500/10 border border-gold-500/10 hover:border-gold-500/20 rounded-lg transition-all group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`p-2 rounded-lg border flex-shrink-0 ${tenant.is_active ? 'bg-gold-500/10 border-gold-500/20' : 'bg-gray-500/10 border-gray-500/20'}`}>
+                      <Building2 className={`w-4 h-4 sm:w-5 sm:h-5 ${tenant.is_active ? 'text-gold-400' : 'text-gray-400'}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-white font-medium group-hover:text-gold-400 transition-colors truncate">
+                        {tenant.name}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate">
+                        {tenant.owner_email} • {formatDate(tenant.created_at)}
+                      </div>
                     </div>
                   </div>
-                )
-              })}
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-700/50">
-            <div className="text-sm text-gray-400">
-              Total Users: <span className="text-white font-semibold">{stats.users.total}</span>
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    {tenant.is_active ? (
+                      <GlassNoirBadge variant="success">
+                        <span className="flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" />
+                          <span className="hidden sm:inline">Active</span>
+                        </span>
+                      </GlassNoirBadge>
+                    ) : (
+                      <GlassNoirBadge variant="warning">
+                        <span className="flex items-center gap-1">
+                          <XCircle className="w-3 h-3" />
+                          <span className="hidden sm:inline">Inactive</span>
+                        </span>
+                      </GlassNoirBadge>
+                    )}
+                    <TrendingUp className="w-4 h-4 text-gray-400 group-hover:text-gold-400 transition-colors" />
+                  </div>
+                </a>
+              ))}
             </div>
-          </div>
-        </div>
 
-        {/* Order Status Distribution */}
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Order Status</h2>
-            <Activity className="w-5 h-5 text-gray-400" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {Object.entries(stats.repair_orders.by_status).map(([status, count]) => {
-              const percentage = (count / stats.repair_orders.total * 100).toFixed(0)
-              return (
-                <div key={status} className="bg-gray-700/30 rounded-lg p-3">
-                  <div className="text-xs text-gray-400 capitalize mb-1">
-                    {status.replace('_', ' ')}
-                  </div>
-                  <div className="text-xl font-bold text-white">{count}</div>
-                  <div className="text-xs text-gray-500">{percentage}%</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
+            {tenants.length === 0 && (
+              <div className="text-center py-8 text-gray-400">
+                No garages yet.
+              </div>
+            )}
+          </GlassNoirCard>
 
-      {/* Garage List with Quick Stats */}
-      <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Garages Overview</h2>
-          <div className="text-sm text-gray-400">
-            {stats.tenants.active} active of {stats.tenants.total} total
-          </div>
-        </div>
-        
-        <div className="space-y-2">
-          {tenants.map((tenant) => (
-            <a
-              key={tenant.id}
-              href={`/dashboard/garages/${tenant.id}/analytics`}
-              className="flex items-center justify-between p-4 bg-gray-700/30 hover:bg-gray-700/50 rounded-lg transition-colors group"
-            >
-              <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${tenant.is_active ? 'bg-green-500/10' : 'bg-gray-500/10'}`}>
-                  <Building2 className={`w-5 h-5 ${tenant.is_active ? 'text-green-400' : 'text-gray-400'}`} />
-                </div>
-                <div>
-                  <div className="text-white font-medium group-hover:text-amber-400 transition-colors">
-                    {tenant.name}
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {tenant.owner_email} • Joined {formatDate(tenant.created_at)}
-                  </div>
+          {/* Platform Health */}
+          <CollapsibleStats
+            title="Health"
+            summary={
+              <InlineStats items={[
+                { label: 'Active', value: `${activeRate}%`, color: parseFloat(activeRate) >= 80 ? 'text-green-400' : 'text-yellow-400' },
+                { label: 'Avg Rev', value: formatCurrency(avgRevenuePerGarage) },
+              ]} />
+            }
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+              <div className="bg-white/5 rounded-lg p-3">
+                <div className="text-gray-400 mb-1">Active Rate</div>
+                <div className="text-xl font-bold text-white">{activeRate}%</div>
+                <div className={`text-xs ${parseFloat(activeRate) >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {parseFloat(activeRate) >= 80 ? 'Healthy' : 'Needs attention'}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {tenant.is_active ? (
-                  <span className="flex items-center gap-1 px-2 py-1 bg-green-500/10 text-green-400 rounded text-xs">
-                    <CheckCircle className="w-3 h-3" />
-                    Active
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 px-2 py-1 bg-gray-500/10 text-gray-400 rounded text-xs">
-                    <XCircle className="w-3 h-3" />
-                    Inactive
-                  </span>
-                )}
-                <TrendingUp className="w-4 h-4 text-gray-400 group-hover:text-amber-400 transition-colors" />
+              <div className="bg-white/5 rounded-lg p-3">
+                <div className="text-gray-400 mb-1">Avg Revenue/Garage</div>
+                <div className="text-xl font-bold text-white">{formatCurrency(avgRevenuePerGarage)}</div>
               </div>
-            </a>
-          ))}
-        </div>
-
-        {tenants.length === 0 && (
-          <div className="text-center py-8 text-gray-400">
-            No garages yet. Create your first garage to get started!
-          </div>
-        )}
-      </div>
-
-      {/* Platform Health Indicators */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-          <div className="text-sm text-gray-400 mb-1">Active Rate</div>
-          <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-bold text-white">{activeRate}%</div>
-            <div className={`text-sm ${parseFloat(activeRate) >= 80 ? 'text-green-400' : 'text-yellow-400'}`}>
-              {parseFloat(activeRate) >= 80 ? 'Healthy' : 'Monitor'}
             </div>
-          </div>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-          <div className="text-sm text-gray-400 mb-1">Avg Revenue/Garage</div>
-          <div className="text-2xl font-bold text-white">{formatCurrency(avgRevenuePerGarage)}</div>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
-          <div className="text-sm text-gray-400 mb-1">Total Platform Users</div>
-          <div className="text-2xl font-bold text-white">{stats.users.total.toLocaleString()}</div>
-        </div>
-      </div>
+          </CollapsibleStats>
+        </>
+      )}
     </div>
   )
 }

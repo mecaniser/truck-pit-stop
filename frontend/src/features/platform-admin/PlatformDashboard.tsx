@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Building2, Users, TrendingUp, Activity } from 'lucide-react'
+import { Building2, Users, TrendingUp, Crown, DollarSign, Wrench, UserCog, ChevronRight } from 'lucide-react'
 import api from '../../lib/api'
+import { GlassNoirCard, GlassNoirHeader } from '../../components/ui/GlassNoirCard'
+import { StatScrollRow, CollapsibleStats, InlineStats } from '../../components/ui/MobileStats'
 
 interface PlatformStats {
   tenants: {
@@ -12,31 +14,43 @@ interface PlatformStats {
     by_role: Record<string, number>
     total: number
   }
-  customers: {
-    total: number
-  }
-  repair_orders: {
-    by_status: Record<string, number>
-    total: number
-  }
   revenue: {
     total: number
   }
 }
 
+interface TenantSummary {
+  id: string
+  name: string
+  is_active: boolean
+  owner_email: string | null
+  users: {
+    owners: number
+    admins: number
+    mechanics: number
+    total: number
+  }
+  customers: number
+}
+
 export default function PlatformDashboard() {
   const [stats, setStats] = useState<PlatformStats | null>(null)
+  const [tenants, setTenants] = useState<TenantSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchStats()
+    fetchData()
   }, [])
 
-  const fetchStats = async () => {
+  const fetchData = async () => {
     try {
-      const response = await api.get('/admin/platform/stats')
-      setStats(response.data)
+      const [statsRes, tenantsRes] = await Promise.all([
+        api.get('/admin/platform/stats'),
+        api.get('/admin/tenants/summary'),
+      ])
+      setStats(statsRes.data)
+      setTenants(tenantsRes.data)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load platform stats')
       console.error(err)
@@ -48,150 +62,127 @@ export default function PlatformDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-6">
+      <GlassNoirCard className="border-red-500/30">
         <p className="text-red-400">{error}</p>
-      </div>
+      </GlassNoirCard>
     )
   }
 
   if (!stats) return null
 
-  const statCards = [
-    {
-      title: 'Total Garages',
-      value: stats.tenants.total,
-      subtitle: `${stats.tenants.active} active`,
-      icon: Building2,
-      color: 'text-blue-400',
-      bgColor: 'bg-blue-500/10',
-    },
-    {
-      title: 'Total Users',
-      value: stats.users.total,
-      subtitle: `${stats.users.by_role.garage_owner || 0} owners`,
-      icon: Users,
-      color: 'text-green-400',
-      bgColor: 'bg-green-500/10',
-    },
-    {
-      title: 'Repair Orders',
-      value: stats.repair_orders.total,
-      subtitle: `${stats.repair_orders.by_status.in_progress || 0} in progress`,
-      icon: Activity,
-      color: 'text-amber-400',
-      bgColor: 'bg-amber-500/10',
-    },
-    {
-      title: 'Total Revenue',
-      value: `$${(stats.revenue.total / 1000).toFixed(1)}k`,
-      subtitle: 'All time',
-      icon: TrendingUp,
-      color: 'text-emerald-400',
-      bgColor: 'bg-emerald-500/10',
-    },
-  ]
+  const formatCurrency = (amount: number) => {
+    if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`
+    if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}k`
+    return `$${amount}`
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white mb-2">Platform Overview</h1>
-        <p className="text-gray-400">Monitor your SaaS platform performance</p>
-      </div>
+      <GlassNoirHeader 
+        title="Platform Overview"
+        subtitle="Monitor your SaaS platform"
+        icon={<Crown className="w-6 h-6 text-gold-400" />}
+      />
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((stat) => (
-          <div
-            key={stat.title}
-            className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-gray-400 text-sm font-medium">{stat.title}</p>
-                <p className="text-3xl font-bold text-white mt-2">{stat.value}</p>
-                <p className="text-gray-500 text-sm mt-1">{stat.subtitle}</p>
-              </div>
-              <div className={`${stat.bgColor} ${stat.color} p-3 rounded-lg`}>
-                <stat.icon className="w-6 h-6" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Platform-Level Stats Only */}
+      <StatScrollRow
+        stats={[
+          { label: 'Garages', value: stats.tenants.total, icon: <Building2 className="w-4 h-4" />, sublabel: `${stats.tenants.active} active`, color: 'gold' },
+          { label: 'Revenue', value: formatCurrency(stats.revenue.total), icon: <DollarSign className="w-4 h-4" />, sublabel: 'All garages', color: 'green' },
+        ]}
+      />
 
-      {/* User Breakdown */}
-      <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">User Breakdown</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {Object.entries(stats.users.by_role).map(([role, count]) => (
-            <div key={role} className="text-center">
-              <div className="text-2xl font-bold text-white">{count}</div>
-              <div className="text-sm text-gray-400 capitalize">
-                {role.replace('_', ' ')}
+      {/* Garages with Per-Garage User Breakdown */}
+      <CollapsibleStats
+        title="Garages"
+        summary={
+          <InlineStats items={[
+            { label: 'Total', value: stats.tenants.total },
+            { label: 'Active', value: stats.tenants.active, color: 'text-green-400' },
+          ]} />
+        }
+        defaultExpanded={true}
+      >
+        <div className="space-y-2">
+          {tenants.map((tenant) => (
+            <a
+              key={tenant.id}
+              href={`/dashboard/garages/${tenant.id}/analytics`}
+              className="flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-gold-500/30 rounded-lg transition-all group"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`p-2 rounded-lg ${tenant.is_active ? 'bg-gold-500/10' : 'bg-gray-500/10'}`}>
+                  <Building2 className={`w-4 h-4 ${tenant.is_active ? 'text-gold-400' : 'text-gray-500'}`} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-white font-medium truncate group-hover:text-gold-400 transition-colors">
+                    {tenant.name}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <Wrench className="w-3 h-3" />
+                      {tenant.users.mechanics}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <UserCog className="w-3 h-3" />
+                      {tenant.users.admins + tenant.users.owners}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      {tenant.customers}
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
+              <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-gold-400 flex-shrink-0" />
+            </a>
           ))}
+          {tenants.length === 0 && (
+            <div className="text-center py-4 text-gray-500 text-sm">No garages yet</div>
+          )}
         </div>
-      </div>
-
-      {/* Repair Orders Status */}
-      <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Repair Orders by Status</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          {Object.entries(stats.repair_orders.by_status).map(([status, count]) => (
-            <div key={status} className="text-center">
-              <div className="text-2xl font-bold text-white">{count}</div>
-              <div className="text-sm text-gray-400 capitalize">
-                {status.replace('_', ' ')}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      </CollapsibleStats>
 
       {/* Quick Actions */}
-      <div className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-lg p-6">
-        <h2 className="text-xl font-bold text-white mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <GlassNoirCard>
+        <h2 className="text-lg font-bold text-white mb-3">Quick Actions</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <a
             href="/dashboard/garages"
-            className="flex items-center gap-3 p-4 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded-lg transition-colors"
+            className="flex items-center gap-3 p-3 bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 rounded-lg transition-all"
           >
-            <Building2 className="w-6 h-6 text-blue-400" />
-            <div>
-              <div className="font-semibold text-white">View All Garages</div>
-              <div className="text-sm text-gray-400">Manage your customers</div>
+            <Building2 className="w-5 h-5 text-gold-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium text-white text-sm">All Garages</div>
             </div>
           </a>
           <a
             href="/dashboard/analytics"
-            className="flex items-center gap-3 p-4 bg-green-500/10 hover:bg-green-500/20 border border-green-500/30 rounded-lg transition-colors"
+            className="flex items-center gap-3 p-3 bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 rounded-lg transition-all"
           >
-            <TrendingUp className="w-6 h-6 text-green-400" />
-            <div>
-              <div className="font-semibold text-white">Platform Analytics</div>
-              <div className="text-sm text-gray-400">Detailed metrics</div>
+            <TrendingUp className="w-5 h-5 text-gold-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium text-white text-sm">Analytics</div>
             </div>
           </a>
-          <button
-            onClick={() => alert('Onboarding feature coming soon!')}
-            className="flex items-center gap-3 p-4 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors"
+          <a
+            href="/dashboard/pending-enrollments"
+            className="flex items-center gap-3 p-3 bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 rounded-lg transition-all"
           >
-            <Users className="w-6 h-6 text-amber-400" />
-            <div>
-              <div className="font-semibold text-white">Onboard New Garage</div>
-              <div className="text-sm text-gray-400">Add customer</div>
+            <Users className="w-5 h-5 text-gold-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium text-white text-sm">Enrollments</div>
             </div>
-          </button>
+          </a>
         </div>
-      </div>
+      </GlassNoirCard>
     </div>
   )
 }
