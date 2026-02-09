@@ -292,8 +292,8 @@ export default function AdminProfilePage() {
   const roleBadge = getRoleBadge()
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+    <div className="space-y-6 w-full max-w-[1200px] mx-auto">
+      <div className="bg-white/5 rounded-xl p-6 lg:p-8 border border-white/10">
         {/* Header with avatar, name, email, role, status */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">

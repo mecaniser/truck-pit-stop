@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
+import { ThemeProvider } from './contexts/ThemeContext'
 import LandingPage from './features/landing/LandingPage'
 import LoginPage from './features/auth/LoginPage'
 import RegisterPage from './features/auth/RegisterPage'
@@ -61,6 +62,7 @@ function MechanicRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
+    <ThemeProvider>
     <BrowserRouter>
       <Toaster
         position="top-right"
@@ -125,6 +127,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
       </Routes>
     </BrowserRouter>
+    </ThemeProvider>
   )
 }
 

@@ -1,12 +1,12 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown } from 'lucide-react'
+import { useTheme } from '../../contexts/ThemeContext'
 import CustomersPage from '@/features/customers/CustomersPage'
 import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
 import MyGaragePage from '@/features/garage/MyGaragePage'
 import DashboardHome from '@/features/dashboard/DashboardHome'
-import AdminProfilePage from '@/features/dashboard/AdminProfilePage'
-import GarageSettingsPage from '@/features/dashboard/GarageSettingsPage'
+import UnifiedSettingsPage from '@/features/dashboard/UnifiedSettingsPage'
 import PlatformDashboard from '@/features/platform-admin/PlatformDashboard'
 import GaragesPage from '@/features/platform-admin/GaragesPage'
 import GarageAnalyticsPage from '@/features/platform-admin/GarageAnalyticsPage'
@@ -16,6 +16,10 @@ import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollments
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
+  const { accentColors } = useTheme()
+  
+  // Get the hex color for the current accent
+  const accentHex = accentColors[500]
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
   const navLinks = user?.role === 'super_admin' 
@@ -43,18 +47,27 @@ export default function DashboardLayout() {
     return current?.label || ''
   }
 
+  const isSuperAdmin = user?.role === 'super_admin'
+
+  // Garage users get BlueNoir theme
+  const isGarageUser = !isSuperAdmin
+
   return (
-    <div className="min-h-screen">
-      <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-50">
+    <div className={`min-h-screen ${isGarageUser ? 'bg-blueNoir-900' : ''}`}>
+      <nav className={`sticky top-0 z-50 ${
+        isSuperAdmin 
+          ? 'bg-noir-900/95 backdrop-blur-xl border-b border-gold-500/20 shadow-lg shadow-gold-500/5' 
+          : 'bg-blueNoir-800/95 backdrop-blur-xl border-b border-white/10 shadow-lg'
+      }`}>
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
-            <div className="flex items-center">
-              <Link to="/dashboard" className="relative text-lg sm:text-xl font-bold text-slate-800 py-1">
+            <div className="flex items-center gap-3">
+              <Link to="/dashboard" className="relative text-lg sm:text-xl font-bold py-1 text-white">
                 <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 32" preserveAspectRatio="none" fill="none">
                   <style>{`
-                    @keyframes checker { 0%, 100% { fill: #1e293b } 50% { fill: #f59e0b } }
-                    @keyframes checkerAlt { 0%, 100% { fill: #f59e0b } 50% { fill: #1e293b } }
+                    @keyframes checker { 0%, 100% { fill: ${isSuperAdmin ? '#B8860B' : accentHex} } 50% { fill: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } }
+                    @keyframes checkerAlt { 0%, 100% { fill: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } 50% { fill: ${isSuperAdmin ? '#B8860B' : accentHex} } }
                     .t1 { animation: checker 2.5s ease-in-out infinite }
                     .t2 { animation: checkerAlt 2.5s ease-in-out infinite }
                     .b1 { animation: checker 2.5s ease-in-out infinite; animation-delay: -0.8s }
@@ -71,6 +84,12 @@ export default function DashboardLayout() {
                 </svg>
                 <span className="relative px-1">Truck Pit Stop</span>
               </Link>
+              {isSuperAdmin && (
+                <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gold-500/10 border border-gold-500/30 rounded-full text-gold-400 text-xs font-medium">
+                  <Crown className="w-3 h-3" />
+                  Platform Admin
+                </span>
+              )}
             </div>
 
             {/* Desktop nav */}
@@ -81,9 +100,14 @@ export default function DashboardLayout() {
                   to={link.to}
                   className={`text-sm font-medium transition-colors ${
                     isActive(link.to, link.exact)
-                      ? 'text-amber-600 border-b-2 border-amber-500'
-                      : 'text-gray-600 hover:text-amber-600'
+                      ? isSuperAdmin 
+                        ? 'text-gold-400 border-b-2 border-gold-500'
+                        : 'border-b-2'
+                      : isSuperAdmin
+                        ? 'text-gray-400 hover:text-gold-400'
+                        : 'text-gray-400 hover:text-white'
                   }`}
+                  style={!isSuperAdmin && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
                 >
                   {link.label}
                 </Link>
@@ -92,15 +116,20 @@ export default function DashboardLayout() {
                 to="/dashboard/settings"
                 className={`relative p-2.5 rounded-full transition-colors ${
                   location.pathname === '/dashboard/settings'
-                    ? 'bg-amber-100 text-amber-600'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                    ? isSuperAdmin
+                      ? 'bg-gold-500/20 text-gold-400'
+                      : 'bg-white/10'
+                    : isSuperAdmin
+                      ? 'text-gray-400 hover:bg-gold-500/10 hover:text-gold-400'
+                      : 'text-gray-400 hover:bg-white/10 hover:text-white'
                 }`}
+                style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
                 title={`${user?.first_name} ${user?.last_name}`}
               >
                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
                   <style>{`
-                    @keyframes ps1 { 0%, 100% { stroke: #1e293b } 50% { stroke: #f59e0b } }
-                    @keyframes ps2 { 0%, 100% { stroke: #f59e0b } 50% { stroke: #1e293b } }
+                    @keyframes ps1 { 0%, 100% { stroke: ${isSuperAdmin ? '#B8860B' : accentHex} } 50% { stroke: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } }
+                    @keyframes ps2 { 0%, 100% { stroke: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } 50% { stroke: ${isSuperAdmin ? '#B8860B' : accentHex} } }
                     .ps1 { animation: ps1 2.5s ease-in-out infinite }
                     .ps2 { animation: ps2 2.5s ease-in-out infinite }
                   `}</style>
@@ -134,13 +163,13 @@ export default function DashboardLayout() {
         </div>
       </nav>
 
-      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto">
+      <main className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col" style={{ minHeight: 'calc(100vh - 4rem)' }}>
         {/* Breadcrumb - only show on sub-pages */}
         {isOnSubPage && (
           <div className="mb-4 flex items-center gap-2 text-sm">
             <Link 
               to="/dashboard" 
-              className="text-gray-400 hover:text-amber-500 transition-colors flex items-center gap-1"
+              className="transition-colors flex items-center gap-1 text-gray-400 hover:text-white"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -148,7 +177,12 @@ export default function DashboardLayout() {
               Dashboard
             </Link>
             <span className="text-gray-600">/</span>
-            <span className="text-white font-medium">{getCurrentPageLabel()}</span>
+            <span 
+              className="font-medium"
+              style={{ color: isSuperAdmin ? '#D4A84B' : accentHex }}
+            >
+              {getCurrentPageLabel()}
+            </span>
           </div>
         )}
         <Routes>
@@ -159,7 +193,7 @@ export default function DashboardLayout() {
               <Route path="garages/:garageId/analytics" element={<GarageAnalyticsPage />} />
               <Route path="pending-enrollments" element={<PendingEnrollmentsPage />} />
               <Route path="analytics" element={<PlatformAnalyticsPage />} />
-              <Route path="settings" element={<AdminProfilePage />} />
+              <Route path="settings" element={<UnifiedSettingsPage />} />
               <Route path="" element={<PlatformDashboard />} />
             </>
           ) : (
@@ -168,8 +202,7 @@ export default function DashboardLayout() {
               <Route path="customers" element={<CustomersPage />} />
               <Route path="repair-orders" element={<RepairOrdersPage />} />
               <Route path="garage/*" element={<MyGaragePage />} />
-              <Route path="settings" element={<AdminProfilePage />} />
-              <Route path="garage-settings" element={<GarageSettingsPage />} />
+              <Route path="settings" element={<UnifiedSettingsPage />} />
               <Route path="" element={<DashboardHome />} />
             </>
           )}
@@ -178,18 +211,24 @@ export default function DashboardLayout() {
 
       {/* Mobile Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
-        <div className="bg-white/95 backdrop-blur border-t border-gray-200 px-2 py-2 flex justify-around">
+        <div className={`px-2 py-2 flex justify-around ${
+          isSuperAdmin 
+            ? 'bg-noir-900/95 backdrop-blur-xl border-t border-gold-500/20' 
+            : 'bg-blueNoir-800/95 backdrop-blur-xl border-t border-white/10'
+        }`}>
           {navLinks.map((link) => {
             const Icon = link.icon
+            const isLinkActive = isActive(link.to, link.exact)
             return (
               <Link
                 key={link.to}
                 to={link.to}
                 className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-                  isActive(link.to, link.exact)
-                    ? 'text-amber-600'
-                    : 'text-gray-500 hover:text-gray-700'
+                  isLinkActive
+                    ? isSuperAdmin ? 'text-gold-400' : ''
+                    : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                 }`}
+                style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
               >
                 <Icon className="w-5 h-5" />
                 <span className="text-[10px] font-medium">{link.mobileLabel}</span>
@@ -200,9 +239,10 @@ export default function DashboardLayout() {
             to="/dashboard/settings"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
               location.pathname === '/dashboard/settings'
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+                ? isSuperAdmin ? 'text-gold-400' : ''
+                : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
             }`}
+            style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
           >
             <User className="w-5 h-5" />
             <span className="text-[10px] font-medium">Profile</span>

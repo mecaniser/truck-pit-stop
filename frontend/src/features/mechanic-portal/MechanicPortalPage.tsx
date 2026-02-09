@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
+import { useTheme } from '../../contexts/ThemeContext'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { 
@@ -20,8 +21,13 @@ import {
   DollarSign,
   User,
   Eye,
-  EyeOff
+  EyeOff,
+  LogOut,
+  Palette,
+  Check,
+  RotateCcw
 } from 'lucide-react'
+import { ACCENT_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
 
 interface MechanicJob {
   id: string
@@ -145,6 +151,7 @@ const Container = ({ children, className = '' }: { children: React.ReactNode; cl
 
 export default function MechanicPortalPage() {
   const { user, logout, setUser } = useAuthStore()
+  const { accentColors, accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
   const queryClient = useQueryClient()
   const [view, setView] = useState<ViewType>('list')
   const [previousView, setPreviousView] = useState<ViewType>('list')
@@ -221,22 +228,18 @@ export default function MechanicPortalPage() {
   })
 
   // Mutations
-  const acknowledgeMutation = useMutation({
-    mutationFn: (orderId: string) => api.post(`/repair-orders/${orderId}/acknowledge`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
-      queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
-      toast.success('Job accepted!')
+  // Combined: Accept + Start in one action (skips acknowledge if already acknowledged)
+  const acceptAndStartMutation = useMutation({
+    mutationFn: async ({ orderId, currentStatus }: { orderId: string; currentStatus: string }) => {
+      if (currentStatus === 'assigned') {
+        await api.post(`/repair-orders/${orderId}/acknowledge`)
+      }
+      await api.post(`/repair-orders/${orderId}/start-work`)
     },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
-  })
-
-  const startWorkMutation = useMutation({
-    mutationFn: (orderId: string) => api.post(`/repair-orders/${orderId}/start-work`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
-      toast.success('Work started!')
+      toast.success('Job accepted & started!')
     },
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
   })
@@ -342,7 +345,7 @@ export default function MechanicPortalPage() {
     setView(previousView)
   }
 
-  const isPending = acknowledgeMutation.isPending || startWorkMutation.isPending || completeWorkMutation.isPending
+  const isPending = acceptAndStartMutation.isPending || completeWorkMutation.isPending
 
   // Bottom Navigation Component - defined here so it's available in all views
   const BottomNav = () => {
@@ -352,28 +355,32 @@ export default function MechanicPortalPage() {
         <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-around">
           <button
             onClick={() => setView('list')}
-            className={`flex flex-col items-center gap-1 ${currentView === 'list' || currentView === 'detail' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`flex flex-col items-center gap-1 ${currentView !== 'list' && currentView !== 'detail' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            style={(currentView === 'list' || currentView === 'detail') ? { color: accentColors[500] } : undefined}
           >
             <Wrench className="w-6 h-6" />
             <span className="text-xs">Jobs</span>
           </button>
           <button
             onClick={() => setView('history')}
-            className={`flex flex-col items-center gap-1 ${currentView === 'history' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`flex flex-col items-center gap-1 ${currentView !== 'history' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            style={currentView === 'history' ? { color: accentColors[500] } : undefined}
           >
             <History className="w-6 h-6" />
             <span className="text-xs">History</span>
           </button>
           <button
             onClick={() => setView('stats')}
-            className={`flex flex-col items-center gap-1 ${currentView === 'stats' || currentView === 'request' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`flex flex-col items-center gap-1 ${currentView !== 'stats' && currentView !== 'request' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            style={(currentView === 'stats' || currentView === 'request') ? { color: accentColors[500] } : undefined}
           >
             <Trophy className="w-6 h-6" />
             <span className="text-xs">Rewards</span>
           </button>
           <button
             onClick={() => setView('profile')}
-            className={`flex flex-col items-center gap-1 ${currentView === 'profile' ? 'text-amber-400' : 'text-gray-500 hover:text-gray-300'}`}
+            className={`flex flex-col items-center gap-1 ${currentView !== 'profile' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            style={currentView === 'profile' ? { color: accentColors[500] } : undefined}
           >
             <User className="w-6 h-6" />
             <span className="text-xs">Profile</span>
@@ -444,25 +451,14 @@ export default function MechanicPortalPage() {
 
           {/* BIG ACTION BUTTON */}
           <div className="p-4 mt-auto">
-            {jobDetail.status === 'assigned' && (
+            {(jobDetail.status === 'assigned' || jobDetail.status === 'acknowledged') && (
               <button
-                onClick={() => acknowledgeMutation.mutate(jobDetail.id)}
-                disabled={isPending}
-                className="w-full py-5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25"
-              >
-                {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
-                ACCEPT JOB
-              </button>
-            )}
-
-            {jobDetail.status === 'acknowledged' && (
-              <button
-                onClick={() => startWorkMutation.mutate(jobDetail.id)}
+                onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
                 disabled={isPending}
                 className="w-full py-5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-500/25"
               >
                 {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
-                START WORK
+                ACCEPT & START
               </button>
             )}
 
@@ -1257,6 +1253,61 @@ export default function MechanicPortalPage() {
               </div>
             )}
           </div>
+
+          {/* Appearance Settings */}
+          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-purple-400" />
+                <h2 className="text-white font-semibold">Appearance</h2>
+              </div>
+              <button
+                onClick={resetToDefaults}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+            
+            {/* Accent Color */}
+            <div className="mb-4">
+              <label className="text-xs text-gray-400 block mb-2">Accent Color</label>
+              <div className="flex gap-2">
+                {ACCENT_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => setAccent(option.id)}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                      accent === option.id ? 'ring-2 ring-offset-2 ring-offset-gray-800 ring-white scale-110' : ''
+                    }`}
+                    style={{ backgroundColor: option.colors[500] }}
+                  >
+                    {accent === option.id && <Check className="w-4 h-4 text-white" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Font Size */}
+            <div>
+              <label className="text-xs text-gray-400 block mb-2">Font Size</label>
+              <div className="flex gap-2">
+                {FONT_SIZE_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    onClick={() => setFontSize(option.id)}
+                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                      fontSize === option.id
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
         {/* Spacer for bottom nav */}
         <div className="h-20" />
@@ -1281,16 +1332,18 @@ export default function MechanicPortalPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setView('stats')}
-              className="flex items-center gap-1.5 bg-amber-500/20 hover:bg-amber-500/30 px-3 py-1.5 rounded-full transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors"
+              style={{ backgroundColor: accentColors[500] + '30' }}
             >
-              <Star className="w-4 h-4 text-amber-400" />
-              <span className="text-amber-400 font-bold">{stats?.available_points || 0}</span>
+              <Star className="w-4 h-4" style={{ color: accentColors[400] }} />
+              <span className="font-bold" style={{ color: accentColors[400] }}>{stats?.available_points || 0}</span>
             </button>
             <button
               onClick={handleLogout}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+              className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg"
+              title="Logout"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -1349,7 +1402,8 @@ export default function MechanicPortalPage() {
                   <h3 className="text-sm text-gray-400 font-medium">Recent Completed</h3>
                   <button
                     onClick={() => setView('history')}
-                    className="text-xs text-amber-400 hover:text-amber-300"
+                    className="text-xs hover:opacity-80"
+                    style={{ color: accentColors[400] }}
                   >
                     View All →
                   </button>

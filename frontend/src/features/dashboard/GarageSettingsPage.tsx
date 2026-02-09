@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
-import { CheckCircle, AlertCircle, ExternalLink, CreditCard, RefreshCw, QrCode, Save, Bell, BellOff, Percent, Upload, Trash2, ImageIcon } from 'lucide-react'
+import { CheckCircle, AlertCircle, ExternalLink, CreditCard, RefreshCw, QrCode, Save, Bell, BellOff, Percent, Upload, Trash2, ImageIcon, ArrowLeft } from 'lucide-react'
 
 interface ConnectStatus {
   is_connected: boolean
@@ -32,6 +32,7 @@ interface TaxFeeSettings {
 }
 
 export default function GarageSettingsPage() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const [isRedirecting, setIsRedirecting] = useState(false)
@@ -306,7 +307,16 @@ export default function GarageSettingsPage() {
   const statusDisplay = getStatusDisplay()
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
+    <div className="space-y-6 max-w-[1200px] mx-auto">
+      {/* Back Navigation */}
+      <button
+        onClick={() => navigate('/dashboard/settings')}
+        className="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        <span className="text-sm">Back to Profile</span>
+      </button>
+
       <div>
         <h1 className="text-2xl font-bold text-white">Garage Settings</h1>
         <p className="text-gray-400 mt-1">Configure your garage's payment and notification preferences</p>
