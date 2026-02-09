@@ -1,6 +1,21 @@
+/* Google Fonts for theme options - must be first */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Theme CSS Custom Properties - defaults set here, overridden by ThemeContext */
+:root {
+  /* Font settings */
+  --theme-font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --theme-font-scale: 1;
+  
+  /* Accent color (default: cyan) */
+  --accent-400: #22D3EE;
+  --accent-500: #06B6D4;
+  --accent-600: #0891B2;
+}
 
 * {
   margin: 0;
@@ -10,7 +25,8 @@
 
 html, body {
   min-height: 100vh;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--theme-font-family);
+  font-size: calc(16px * var(--theme-font-scale));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #1e3a5f 100%);

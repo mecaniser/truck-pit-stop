@@ -1,4 +1,5 @@
 import { Plus } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
 
 type SearchAddBarProps = {
   value: string
@@ -25,6 +26,8 @@ export default function SearchAddBar({
   showAddButton = true,
   addDisabled = false,
 }: SearchAddBarProps) {
+  const { accentColors } = useTheme()
+  
   return (
     <div className={`flex items-center gap-2 sm:gap-3 flex-nowrap ${className}`}>
       <div className={`relative flex-1 min-w-0 ${inputWidthClass}`}>
@@ -33,7 +36,8 @@ export default function SearchAddBar({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full pl-10 pr-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          className="w-full pl-10 pr-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2"
+          style={{ ['--tw-ring-color' as string]: accentColors[500] }}
         />
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
@@ -50,7 +54,8 @@ export default function SearchAddBar({
             type="button"
             onClick={onAdd}
             disabled={addDisabled}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 transition-colors disabled:opacity-70"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-70"
+            style={{ backgroundColor: accentColors[600] }}
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">{addLabel}</span>

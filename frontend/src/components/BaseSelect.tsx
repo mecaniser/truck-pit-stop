@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { ChevronDown } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
 
 export interface BaseSelectOption {
   value: string
@@ -30,6 +31,7 @@ export default function BaseSelect({
   onAddNew,
   disabled = false,
 }: BaseSelectProps) {
+  const { accentColors } = useTheme()
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -91,9 +93,10 @@ export default function BaseSelect({
           type="button"
           onClick={() => !disabled && setIsOpen(true)}
           disabled={disabled}
-          className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white text-left text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors flex items-center justify-between ${
+          className={`w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-white text-left text-gray-900 focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
+          style={{ ['--tw-ring-color' as string]: accentColors[500] }}
         >
           <span className="block truncate">{selected ? selected.label : placeholder}</span>
           <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
@@ -107,7 +110,8 @@ export default function BaseSelect({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={selected ? selected.label : placeholder}
-          className="w-full px-4 py-2.5 border border-amber-500 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
+          className="w-full px-4 py-2.5 border rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 transition-colors"
+          style={{ borderColor: accentColors[500], ['--tw-ring-color' as string]: accentColors[500] }}
         />
       )}
 
@@ -123,9 +127,10 @@ export default function BaseSelect({
                 e.stopPropagation()
                 handleSelect(opt.value)
               }}
-              className={`w-full text-left px-4 py-2 text-sm hover:bg-amber-50 hover:text-amber-700 transition-colors ${
-                opt.value === value ? 'bg-amber-50 text-amber-700' : 'text-gray-900'
+              className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                opt.value === value ? 'text-gray-900' : 'text-gray-900 hover:bg-gray-50'
               }`}
+              style={opt.value === value ? { backgroundColor: `${accentColors[500]}1a`, color: accentColors[600] } : undefined}
             >
               <div className="flex flex-col">
                 <span className="font-medium">{opt.label}</span>
@@ -142,7 +147,8 @@ export default function BaseSelect({
                 e.stopPropagation()
                 handleSelect('add_new')
               }}
-              className="w-full text-left px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 hover:text-amber-800 transition-colors"
+              className="w-full text-left px-4 py-2 text-sm font-medium transition-colors hover:opacity-80"
+              style={{ color: accentColors[600] }}
             >
               {addNewLabel}
             </button>
