@@ -2,7 +2,7 @@
 
 This document tracks all security implementations, audit findings, and remediation status for the TruckPitStop platform.
 
-**Last Updated:** 2026-02-07  
+**Last Updated:** 2026-02-09  
 **Audit Date:** 2026-02-07
 
 ---
@@ -17,6 +17,9 @@ This document tracks all security implementations, audit findings, and remediati
 | bcrypt Password Hashing | ✅ | `backend/app/core/security.py` |
 | httpOnly Cookies | ✅ | `backend/app/api/v1/endpoints/auth.py` |
 | Rate Limiting (auth endpoints) | ✅ | `/register`, `/login`, `/forgot-password`, `/reset-password` |
+| WebSocket JWT Authentication | ✅ | `backend/app/api/v1/endpoints/websocket.py` |
+| WebSocket Rate Limiting | ✅ | `backend/app/core/websocket.py` (10 conn/min) |
+| WebSocket Connection Limits | ✅ | `backend/app/core/websocket.py` (3 per user) |
 | Email Change Verification | ✅ | See `SECURITY_SUMMARY.md` |
 | Multi-tenant Isolation | ✅ | `tenant_id` checks in endpoints |
 | Role-based Access Control | ✅ | `get_current_active_user` dependency |
@@ -155,6 +158,15 @@ SECRET_KEY=your-very-long-secret-key-at-least-32-chars
 - Admin dashboard for viewing/resolving security-related errors
 - Correlation IDs link related security events
 
+### 2026-02-09
+- **WebSocket Security Hardening** implemented
+- JWT authentication required for WebSocket connections
+- Token blacklist/version checking applied to WebSocket auth
+- Per-user connection limit (max 3) prevents resource exhaustion
+- Connection rate limiting (max 10 attempts per minute) prevents abuse
+- `/ws/stats` endpoint now requires admin authentication
+- Oldest connections auto-closed when limit reached (graceful handling)
+
 ---
 
 ## Security Monitoring via Error Dashboard
@@ -174,6 +186,53 @@ The new Error Tracking System provides security visibility:
 - Category: `auth` - Review failed authentication attempts
 - Severity: `critical` - Immediate security concerns
 - Endpoint: `/api/v1/auth/*` - Auth-related issues
+
+---
+
+## WebSocket Security
+
+WebSocket connections require special security considerations since they maintain long-lived connections.
+
+### Authentication Flow
+
+```
+1. Client requests WebSocket connection with JWT in query param
+2. Server validates JWT (signature, expiry, blacklist, version)
+3. Server checks user exists and is active
+4. Server applies rate limiting (10 attempts/minute)
+5. Server checks connection limit (max 3 per user)
+6. If limit exceeded, oldest connection is gracefully closed
+7. Connection accepted and added to appropriate pool
+```
+
+### Security Controls
+
+| Control | Implementation | Purpose |
+|---------|---------------|---------|
+| JWT Validation | `validate_websocket_token()` | Authenticate before accepting |
+| Token Blacklist Check | `is_token_blacklisted()` | Honor logout/revocation |
+| Token Version Check | `get_token_version()` | Support mass invalidation |
+| Rate Limiting | 10 connections/minute/user | Prevent connection spam |
+| Connection Limit | 3 connections/user | Prevent resource exhaustion |
+| Tenant Isolation | Separate connection pools | Data segregation |
+| Stats Endpoint Auth | Admin-only access | Protect operational data |
+
+### Known Limitations
+
+| Issue | Risk | Mitigation |
+|-------|------|------------|
+| Token in URL | May appear in logs | Use short-lived tokens, secure logging |
+| No message-level auth | N/A | Server only sends, doesn't accept commands |
+| Single-server only | Horizontal scaling | Future: Redis pub/sub for multi-instance |
+
+### Custom Close Codes
+
+| Code | Meaning |
+|------|---------|
+| 4001 | Invalid or expired token |
+| 4002 | No tenant/customer association |
+| 4008 | Connection replaced (limit reached) |
+| 4029 | Rate limit exceeded |
 
 ---
 
