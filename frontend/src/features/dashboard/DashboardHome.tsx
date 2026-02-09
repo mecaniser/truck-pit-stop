@@ -1,17 +1,23 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   AlertTriangle,
   ChevronRight,
   DollarSign,
   Phone,
+  Plus,
+  RefreshCw,
   Send,
   Truck,
   Wrench,
+  Zap,
+  X,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
+import { formatUSPhone } from '@/utils/phone'
 import { useAuthStore } from '../../stores/authStore'
+import { useTheme } from '../../contexts/ThemeContext'
 import AlertsBanner from '../../components/AlertsBanner'
 
 interface StatusCount {
@@ -114,7 +120,7 @@ function useElapsedTime(startedAt: string | null) {
   return elapsed
 }
 
-function OrderCard({ order, onClick }: { order: RecentOrder; onClick: () => void }) {
+function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClick: () => void; accentColor: string }) {
   const elapsed = useElapsedTime(
     order.status === 'in_progress' ? order.work_started_at : null,
   )
@@ -134,14 +140,14 @@ function OrderCard({ order, onClick }: { order: RecentOrder; onClick: () => void
               {order.status.replace(/_/g, ' ')}
             </span>
             {elapsed && (
-              <span className="text-xs text-amber-400 font-mono">{elapsed}</span>
+              <span className="text-xs font-mono" style={{ color: accentColor }}>{elapsed}</span>
             )}
           </div>
           <p className="text-gray-400 text-xs truncate mt-1">
             {order.customer_name} &bull; {order.vehicle_info}
           </p>
           {order.mechanic_name && (
-            <p className="text-amber-400/70 text-xs mt-0.5">&rarr; {order.mechanic_name}</p>
+            <p className="text-xs mt-0.5" style={{ color: accentColor, opacity: 0.7 }}>&rarr; {order.mechanic_name}</p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -151,7 +157,7 @@ function OrderCard({ order, onClick }: { order: RecentOrder; onClick: () => void
             </div>
             <div className="text-xs text-gray-500">{timeAgo(order.updated_at)}</div>
           </div>
-          <ChevronRight className="w-4 h-4 text-gray-500 group-hover:text-amber-400 transition-colors" />
+          <ChevronRight className="w-4 h-4 text-gray-500 group-hover:opacity-100 transition-colors" style={{ color: accentColor }} />
         </div>
       </div>
     </button>
@@ -160,40 +166,101 @@ function OrderCard({ order, onClick }: { order: RecentOrder; onClick: () => void
 
 export default function DashboardHome() {
   const { user } = useAuthStore()
+  const { accentColors } = useTheme()
   const navigate = useNavigate()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   // Quick order form
+  const [showQuickForm, setShowQuickForm] = useState(false)
   const [quickPhone, setQuickPhone] = useState('')
   const [quickTruck, setQuickTruck] = useState('')
   const [quickComplaint, setQuickComplaint] = useState('')
   const [quickSubmitting, setQuickSubmitting] = useState(false)
+  const [quickErrors, setQuickErrors] = useState<{ phone?: string; truck?: string; complaint?: string }>({})
+  const [quickTouched, setQuickTouched] = useState(false)
+  
+  // Auto-refresh state
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const REFRESH_INTERVAL = 60 * 1000 // 1 minute when active
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
+  // Auto-refresh with visibility awareness
   useEffect(() => {
     fetchStats()
+    
+    const startPolling = () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
+      refreshIntervalRef.current = setInterval(() => {
+        if (!document.hidden) {
+          fetchStats(true) // silent refresh
+        }
+      }, REFRESH_INTERVAL)
+    }
+    
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Tab became visible - refresh immediately and restart polling
+        fetchStats(true)
+        startPolling()
+      }
+    }
+    
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
-  const fetchStats = async () => {
+  const fetchStats = async (silent = false) => {
+    if (silent) setIsRefreshing(true)
     try {
       const response = await api.get('/dashboard/stats')
       setStats(response.data)
+      setLastUpdated(new Date())
     } catch (err) {
-      setError('Failed to load dashboard stats')
+      if (!silent) setError('Failed to load dashboard stats')
       console.error(err)
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
+  }
+  
+  const handleManualRefresh = () => {
+    fetchStats(true)
+  }
+
+  const validateQuickForm = () => {
+    const errors: { phone?: string; truck?: string; complaint?: string } = {}
+    // Phone required - strip formatting to check digits
+    const phoneDigits = quickPhone.replace(/\D/g, '')
+    if (!phoneDigits || phoneDigits.length < 10) {
+      errors.phone = 'Valid phone number required'
+    }
+    // Truck required - backend uses this to parse vehicle make/model
+    if (!quickTruck.trim()) {
+      errors.truck = 'Vehicle description is required'
+    }
+    if (!quickComplaint.trim()) {
+      errors.complaint = 'Description is required'
+    }
+    setQuickErrors(errors)
+    return Object.keys(errors).length === 0
   }
 
   const handleQuickOrder = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!quickTruck.trim()) {
-      toast.error('Truck description is required')
+    setQuickTouched(true)
+    if (!validateQuickForm()) {
       return
     }
     setQuickSubmitting(true)
@@ -212,6 +279,9 @@ export default function DashboardHome() {
       setQuickPhone('')
       setQuickTruck('')
       setQuickComplaint('')
+      setQuickErrors({})
+      setQuickTouched(false)
+      setShowQuickForm(false)
       fetchStats()
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Failed to create order')
@@ -223,7 +293,7 @@ export default function DashboardHome() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: accentColors[500] }}></div>
       </div>
     )
   }
@@ -232,17 +302,29 @@ export default function DashboardHome() {
     return (
       <div className="text-center py-12">
         <p className="text-red-400">{error}</p>
-        <button onClick={fetchStats} className="mt-4 text-amber-500 hover:text-amber-400">
+        <button onClick={() => fetchStats()} className="mt-4 hover:opacity-80" style={{ color: accentColors[500] }}>
           Try again
         </button>
       </div>
     )
   }
 
+  // Format "last updated" time
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return ''
+    const now = new Date()
+    const diffSecs = Math.floor((now.getTime() - lastUpdated.getTime()) / 1000)
+    if (diffSecs < 10) return 'just now'
+    if (diffSecs < 60) return `${diffSecs}s ago`
+    const diffMins = Math.floor(diffSecs / 60)
+    if (diffMins < 60) return `${diffMins}m ago`
+    return lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-5 flex-1 min-h-0">
       {/* Header */}
-      <div>
+      <div className="flex-shrink-0">
         <h1 className="text-2xl sm:text-3xl font-bold text-white">
           {isMechanic ? 'My Workbench' : 'Garage Cockpit'}
         </h1>
@@ -253,57 +335,154 @@ export default function DashboardHome() {
         </p>
       </div>
 
-      {/* Quick Order Bar (managers only) */}
+      {/* Action Buttons (managers only) */}
       {isManager && (
-        <form
-          onSubmit={handleQuickOrder}
-          className="bg-gradient-to-r from-amber-500/10 to-amber-600/5 border border-amber-500/20 rounded-xl p-3 sm:p-4"
-        >
-          <div className="flex items-center gap-2 mb-3">
-            <Wrench className="w-4 h-4 text-amber-400" />
-            <span className="text-sm font-semibold text-amber-400">Quick Order</span>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-shrink-0 sm:w-40">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <input
-                type="tel"
-                value={quickPhone}
-                onChange={(e) => setQuickPhone(e.target.value)}
-                placeholder="Phone"
-                className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30"
-              />
-            </div>
-            <div className="relative flex-shrink-0 sm:w-52">
-              <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <input
-                type="text"
-                value={quickTruck}
-                onChange={(e) => setQuickTruck(e.target.value)}
-                placeholder="Truck (e.g. 2019 Peterbilt 579)"
-                required
-                className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30"
-              />
-            </div>
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={quickComplaint}
-                onChange={(e) => setQuickComplaint(e.target.value)}
-                placeholder="Complaint (e.g. engine overheating)"
-                className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/30"
-              />
-            </div>
+        <div className="space-y-3">
+          {/* Two CTA Buttons - Right aligned */}
+          <div className="flex justify-end gap-3">
             <button
-              type="submit"
-              disabled={quickSubmitting}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors shrink-0"
+              onClick={() => setShowQuickForm(!showQuickForm)}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 font-semibold rounded-xl transition-colors text-white"
+              style={{ 
+                backgroundColor: showQuickForm ? accentColors[600] : accentColors[500],
+                boxShadow: `0 10px 15px -3px ${accentColors[500]}33`
+              }}
             >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">Create</span>
+              <Zap className="w-4 h-4" />
+              <span>Lightning Order</span>
+            </button>
+            <button
+              onClick={() => navigate('/dashboard/repair-orders?new=true')}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-xl transition-colors border border-white/10"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Full Order</span>
             </button>
           </div>
-        </form>
+
+          {/* Quick Order Form (collapsible) */}
+          {showQuickForm && (
+            <form
+              onSubmit={handleQuickOrder}
+              className="rounded-xl p-3 sm:p-4 animate-in slide-in-from-top-2 duration-200"
+              style={{ 
+                background: `linear-gradient(to right, ${accentColors[500]}1a, ${accentColors[600]}0d)`,
+                borderWidth: 1,
+                borderColor: `${accentColors[500]}33`
+              }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4" style={{ color: accentColors[400] }} />
+                  <span className="text-sm font-semibold" style={{ color: accentColors[400] }}>Lightning Order</span>
+                  <span className="text-xs text-gray-500">— Walk-in / Phone call</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQuickForm(false)}
+                  className="p-1 text-gray-500 hover:text-white rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-start gap-2">
+                {/* Phone - Required */}
+                <div className="flex-shrink-0 sm:w-40">
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      type="tel"
+                      value={quickPhone}
+                      onChange={(e) => {
+                        setQuickPhone(formatUSPhone(e.target.value))
+                        if (quickTouched) {
+                          const digits = e.target.value.replace(/\D/g, '')
+                          setQuickErrors((prev) => ({
+                            ...prev,
+                            phone: digits.length >= 10 ? undefined : 'Valid phone required',
+                          }))
+                        }
+                      }}
+                      placeholder="(555) 123-4567"
+                      className={`w-full pl-9 pr-3 py-2 bg-white/5 border rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                        quickTouched && quickErrors.phone
+                          ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
+                          : 'border-white/10'
+                      }`}
+                      style={!(quickTouched && quickErrors.phone) ? { 
+                        ['--tw-ring-color' as string]: `${accentColors[500]}4d`
+                      } : undefined}
+                    />
+                  </div>
+                  {quickTouched && quickErrors.phone && (
+                    <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      {quickErrors.phone}
+                    </p>
+                  )}
+                </div>
+                {/* Description - Required */}
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={quickComplaint}
+                    onChange={(e) => {
+                      setQuickComplaint(e.target.value)
+                      if (quickTouched) {
+                        setQuickErrors((prev) => ({
+                          ...prev,
+                          complaint: e.target.value.trim() ? undefined : 'Description required',
+                        }))
+                      }
+                    }}
+                    placeholder="Issue (e.g. engine overheating) *"
+                    className={`w-full px-3 py-2 bg-white/5 border rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                      quickTouched && quickErrors.complaint
+                        ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
+                        : 'border-white/10'
+                    }`}
+                  />
+                  {quickTouched && quickErrors.complaint && (
+                    <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      {quickErrors.complaint}
+                    </p>
+                  )}
+                </div>
+                {/* Truck - Optional */}
+                <div className="flex-shrink-0 sm:w-48">
+                  <div className="relative">
+                    <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <input
+                      type="text"
+                      value={quickTruck}
+                      onChange={(e) => setQuickTruck(e.target.value)}
+                      placeholder="Truck (optional)"
+                      className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={quickSubmitting}
+                  className="px-4 py-2 h-[38px] disabled:opacity-50 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors shrink-0 self-start"
+                  style={{ backgroundColor: accentColors[500] }}
+                >
+                  {quickSubmitting ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  <span className="hidden sm:inline">Create</span>
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       )}
 
       {/* Alerts Banner (managers only, conditional) */}
@@ -315,11 +494,30 @@ export default function DashboardHome() {
         />
       )}
 
-      {/* Work Queue Swimlanes */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Swimlanes Section - Expands to fill space */}
+      <div className="flex-1 flex flex-col gap-3 min-h-0">
+        {/* Swimlanes Header with Live Indicator */}
+        <div className="flex items-center justify-between flex-shrink-0">
+          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+            Work Queue
+          </h2>
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="flex items-center gap-2 px-2 py-1 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+            title="Refresh dashboard"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <span>{formatLastUpdated() || 'Refresh'}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          </button>
+        </div>
+
+        {/* Work Queue Swimlanes */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
         {/* Lane 1: Needs Action */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[200px]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-400" />
               <h3 className="text-sm font-semibold text-white">Needs Action</h3>
@@ -328,7 +526,7 @@ export default function DashboardHome() {
               {stats?.orders_needing_action?.length || 0}
             </span>
           </div>
-          <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
+          <div className="p-3 space-y-2 overflow-y-auto flex-1">
             {!stats?.orders_needing_action?.length ? (
               <p className="text-gray-500 text-sm text-center py-6">All clear</p>
             ) : (
@@ -336,6 +534,7 @@ export default function DashboardHome() {
                 <OrderCard
                   key={order.id}
                   order={order}
+                  accentColor={accentColors[400]}
                   onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
                 />
               ))
@@ -344,17 +543,17 @@ export default function DashboardHome() {
         </div>
 
         {/* Lane 2: On the Floor */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[200px]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
-              <Wrench className="w-4 h-4 text-amber-400" />
+              <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
               <h3 className="text-sm font-semibold text-white">On the Floor</h3>
             </div>
-            <span className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
               {stats?.orders_on_floor?.length || 0}
             </span>
           </div>
-          <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
+          <div className="p-3 space-y-2 overflow-y-auto flex-1">
             {!stats?.orders_on_floor?.length ? (
               <p className="text-gray-500 text-sm text-center py-6">No active work</p>
             ) : (
@@ -362,6 +561,7 @@ export default function DashboardHome() {
                 <OrderCard
                   key={order.id}
                   order={order}
+                  accentColor={accentColors[400]}
                   onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
                 />
               ))
@@ -370,8 +570,8 @@ export default function DashboardHome() {
         </div>
 
         {/* Lane 3: Ready to Close */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[200px]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-emerald-400" />
               <h3 className="text-sm font-semibold text-white">Ready to Close</h3>
@@ -380,7 +580,7 @@ export default function DashboardHome() {
               {stats?.orders_ready_to_close?.length || 0}
             </span>
           </div>
-          <div className="p-3 space-y-2 max-h-[400px] overflow-y-auto">
+          <div className="p-3 space-y-2 overflow-y-auto flex-1">
             {!stats?.orders_ready_to_close?.length ? (
               <p className="text-gray-500 text-sm text-center py-6">Nothing pending</p>
             ) : (
@@ -388,6 +588,7 @@ export default function DashboardHome() {
                 <OrderCard
                   key={order.id}
                   order={order}
+                  accentColor={accentColors[400]}
                   onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
                 />
               ))
@@ -395,10 +596,11 @@ export default function DashboardHome() {
           </div>
         </div>
       </div>
+      </div>
 
       {/* Bottom Bar: Revenue + Team Workload (managers only) */}
       {isManager && (
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
           {/* Revenue - Compact row */}
           <div className="flex-1 bg-white/5 rounded-xl p-4 border border-white/10">
             <div className="flex items-center gap-6 flex-wrap">
@@ -438,11 +640,14 @@ export default function DashboardHome() {
                       className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg border border-white/10"
                       title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                     >
-                      <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 text-xs font-medium">
+                      <div 
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium"
+                        style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
+                      >
                         {m.mechanic_name.charAt(0).toUpperCase()}
                       </div>
                       <span className="text-xs text-white">{m.mechanic_name.split(' ')[0]}</span>
-                      <span className="text-xs text-amber-400 font-medium">
+                      <span className="text-xs font-medium" style={{ color: accentColors[400] }}>
                         {m.in_progress_count}/{m.assigned_count}
                       </span>
                     </div>

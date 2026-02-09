@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, 
-  Calendar, FileText, Globe, Clock, AlertTriangle, Loader2 
+  Calendar, FileText, Globe, Clock, AlertTriangle, Loader2, UserCheck 
 } from 'lucide-react'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
+import { GlassNoirCard, GlassNoirHeader, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
+import { SegmentedControl } from '../../components/ui/MobileStats'
 
 interface Enrollment {
   id: string
@@ -115,107 +117,66 @@ export default function PendingEnrollmentsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-6">
+      <GlassNoirCard className="border-red-500/30">
         <p className="text-red-400">Failed to load enrollments</p>
-      </div>
+      </GlassNoirCard>
     )
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white mb-2">Garage Enrollments</h1>
-          <p className="text-gray-400">Review and approve new garage applications</p>
-        </div>
-      </div>
+      <GlassNoirHeader
+        title="Garage Enrollments"
+        subtitle="Review and approve new garage applications"
+        icon={<UserCheck className="w-6 h-6 text-gold-400" />}
+      />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <button
-          onClick={() => setStatusFilter('pending')}
-          className={`bg-gray-800/50 border rounded-lg p-4 text-left transition-colors ${
-            statusFilter === 'pending' ? 'border-amber-500' : 'border-gray-700/50 hover:border-gray-600'
-          }`}
-        >
-          <div className="flex items-center gap-2 text-gray-400 text-sm">
-            <Clock className="w-4 h-4" />
-            Pending
-          </div>
-          <div className="text-2xl font-bold text-amber-400 mt-1">{stats?.pending || 0}</div>
-        </button>
-        <button
-          onClick={() => setStatusFilter('approved')}
-          className={`bg-gray-800/50 border rounded-lg p-4 text-left transition-colors ${
-            statusFilter === 'approved' ? 'border-green-500' : 'border-gray-700/50 hover:border-gray-600'
-          }`}
-        >
-          <div className="flex items-center gap-2 text-gray-400 text-sm">
-            <CheckCircle className="w-4 h-4" />
-            Approved
-          </div>
-          <div className="text-2xl font-bold text-green-400 mt-1">{stats?.approved || 0}</div>
-        </button>
-        <button
-          onClick={() => setStatusFilter('rejected')}
-          className={`bg-gray-800/50 border rounded-lg p-4 text-left transition-colors ${
-            statusFilter === 'rejected' ? 'border-red-500' : 'border-gray-700/50 hover:border-gray-600'
-          }`}
-        >
-          <div className="flex items-center gap-2 text-gray-400 text-sm">
-            <XCircle className="w-4 h-4" />
-            Rejected
-          </div>
-          <div className="text-2xl font-bold text-red-400 mt-1">{stats?.rejected || 0}</div>
-        </button>
-        <button
-          onClick={() => setStatusFilter('')}
-          className={`bg-gray-800/50 border rounded-lg p-4 text-left transition-colors ${
-            statusFilter === '' ? 'border-blue-500' : 'border-gray-700/50 hover:border-gray-600'
-          }`}
-        >
-          <div className="text-gray-400 text-sm">Total</div>
-          <div className="text-2xl font-bold text-white mt-1">{stats?.total || 0}</div>
-        </button>
-      </div>
+      {/* Filter - Segmented Control */}
+      <SegmentedControl
+        value={statusFilter}
+        onChange={setStatusFilter}
+        options={[
+          { id: 'pending', label: 'Pending', shortLabel: 'Pending', count: stats?.pending || 0, icon: <Clock className="w-4 h-4" />, color: 'gold' },
+          { id: 'approved', label: 'Approved', shortLabel: 'OK', count: stats?.approved || 0, icon: <CheckCircle className="w-4 h-4" />, color: 'green' },
+          { id: 'rejected', label: 'Rejected', shortLabel: 'No', count: stats?.rejected || 0, icon: <XCircle className="w-4 h-4" />, color: 'red' },
+          { id: '', label: 'All', shortLabel: 'All', count: stats?.total || 0, color: 'default' },
+        ]}
+      />
 
       {/* Enrollments List */}
       <div className="space-y-4">
         {enrollments.length === 0 ? (
-          <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-12 text-center">
+          <GlassNoirCard className="text-center py-12">
             <Building2 className="w-12 h-12 text-gray-600 mx-auto mb-4" />
             <p className="text-gray-400">
               {statusFilter === 'pending' 
                 ? 'No pending enrollments' 
                 : `No ${statusFilter || ''} enrollments found`}
             </p>
-          </div>
+          </GlassNoirCard>
         ) : (
           enrollments.map((enrollment) => (
-            <div
-              key={enrollment.id}
-              className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6 hover:border-gray-600/50 transition-colors"
-            >
+            <GlassNoirCard key={enrollment.id} hover>
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-lg ${
+                  <div className={`p-3 rounded-lg border ${
                     enrollment.enrollment_status === 'pending' 
-                      ? 'bg-amber-500/10' 
+                      ? 'bg-gold-500/10 border-gold-500/20' 
                       : enrollment.enrollment_status === 'approved'
-                      ? 'bg-green-500/10'
-                      : 'bg-red-500/10'
+                      ? 'bg-green-500/10 border-green-500/20'
+                      : 'bg-red-500/10 border-red-500/20'
                   }`}>
                     <Building2 className={`w-6 h-6 ${
                       enrollment.enrollment_status === 'pending' 
-                        ? 'text-amber-400' 
+                        ? 'text-gold-400' 
                         : enrollment.enrollment_status === 'approved'
                         ? 'text-green-400'
                         : 'text-red-400'
@@ -228,22 +189,28 @@ export default function PendingEnrollmentsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {enrollment.enrollment_status === 'pending' && (
-                    <span className="flex items-center gap-1 px-3 py-1 bg-amber-500/10 text-amber-400 rounded-full text-sm">
-                      <Clock className="w-4 h-4" />
-                      Pending Review
-                    </span>
+                    <GlassNoirBadge variant="gold">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        Pending Review
+                      </span>
+                    </GlassNoirBadge>
                   )}
                   {enrollment.enrollment_status === 'approved' && (
-                    <span className="flex items-center gap-1 px-3 py-1 bg-green-500/10 text-green-400 rounded-full text-sm">
-                      <CheckCircle className="w-4 h-4" />
-                      Approved
-                    </span>
+                    <GlassNoirBadge variant="success">
+                      <span className="flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" />
+                        Approved
+                      </span>
+                    </GlassNoirBadge>
                   )}
                   {enrollment.enrollment_status === 'rejected' && (
-                    <span className="flex items-center gap-1 px-3 py-1 bg-red-500/10 text-red-400 rounded-full text-sm">
-                      <XCircle className="w-4 h-4" />
-                      Rejected
-                    </span>
+                    <GlassNoirBadge variant="error">
+                      <span className="flex items-center gap-1">
+                        <XCircle className="w-3 h-3" />
+                        Rejected
+                      </span>
+                    </GlassNoirBadge>
                   )}
                 </div>
               </div>
@@ -251,7 +218,7 @@ export default function PendingEnrollmentsPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Garage Info */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Garage Info</h4>
+                  <h4 className="text-sm font-semibold text-gold-400/80 uppercase tracking-wide">Garage Info</h4>
                   {enrollment.address && (
                     <div className="flex items-start gap-2 text-sm">
                       <MapPin className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -267,7 +234,7 @@ export default function PendingEnrollmentsPage() {
                   {enrollment.email && (
                     <div className="flex items-center gap-2 text-sm">
                       <Mail className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <a href={`mailto:${enrollment.email}`} className="text-blue-400 hover:text-blue-300">
+                      <a href={`mailto:${enrollment.email}`} className="text-gold-400 hover:text-gold-300">
                         {enrollment.email}
                       </a>
                     </div>
@@ -275,7 +242,7 @@ export default function PendingEnrollmentsPage() {
                   {enrollment.website && (
                     <div className="flex items-center gap-2 text-sm">
                       <Globe className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <a href={enrollment.website} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                      <a href={enrollment.website} target="_blank" rel="noopener noreferrer" className="text-gold-400 hover:text-gold-300">
                         {enrollment.website}
                       </a>
                     </div>
@@ -284,7 +251,7 @@ export default function PendingEnrollmentsPage() {
 
                 {/* Business Details */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Business Details</h4>
+                  <h4 className="text-sm font-semibold text-gold-400/80 uppercase tracking-wide">Business Details</h4>
                   {enrollment.business_license ? (
                     <div className="flex items-center gap-2 text-sm">
                       <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -315,7 +282,7 @@ export default function PendingEnrollmentsPage() {
 
                 {/* Owner Info */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Owner</h4>
+                  <h4 className="text-sm font-semibold text-gold-400/80 uppercase tracking-wide">Owner</h4>
                   {enrollment.owner_name && (
                     <div className="flex items-center gap-2 text-sm">
                       <User className="w-4 h-4 text-gray-500 flex-shrink-0" />
@@ -325,7 +292,7 @@ export default function PendingEnrollmentsPage() {
                   {enrollment.owner_email && (
                     <div className="flex items-center gap-2 text-sm">
                       <Mail className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <a href={`mailto:${enrollment.owner_email}`} className="text-blue-400 hover:text-blue-300">
+                      <a href={`mailto:${enrollment.owner_email}`} className="text-gold-400 hover:text-gold-300">
                         {enrollment.owner_email}
                       </a>
                     </div>
@@ -354,7 +321,7 @@ export default function PendingEnrollmentsPage() {
 
               {/* Rejection Form */}
               {rejectingId === enrollment.id && (
-                <div className="mt-4 p-4 bg-gray-900/50 border border-gray-700 rounded-lg">
+                <div className="mt-4 p-4 bg-noir-800/50 border border-gold-500/20 rounded-lg">
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Reason for rejection <span className="text-red-400">*</span>
                   </label>
@@ -362,7 +329,7 @@ export default function PendingEnrollmentsPage() {
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     placeholder="Please provide a reason for rejecting this application..."
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-gold-500 focus:border-gold-500"
                     rows={3}
                   />
                   <div className="flex gap-2 mt-3">
@@ -371,7 +338,7 @@ export default function PendingEnrollmentsPage() {
                         setRejectingId(null)
                         setRejectReason('')
                       }}
-                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors"
+                      className="px-4 py-2 bg-gold-500/10 hover:bg-gold-500/20 text-gold-400 border border-gold-500/30 rounded-lg text-sm transition-colors"
                     >
                       Cancel
                     </button>
@@ -389,7 +356,7 @@ export default function PendingEnrollmentsPage() {
 
               {/* Actions */}
               {enrollment.enrollment_status === 'pending' && rejectingId !== enrollment.id && (
-                <div className="mt-6 pt-4 border-t border-gray-700/50 flex gap-2">
+                <div className="mt-6 pt-4 border-t border-gold-500/10 flex gap-2">
                   <button
                     onClick={() => approveMutation.mutate(enrollment.id)}
                     disabled={approveMutation.isPending}
@@ -411,13 +378,13 @@ export default function PendingEnrollmentsPage() {
 
               {/* Approved info */}
               {enrollment.enrollment_status === 'approved' && enrollment.approved_at && (
-                <div className="mt-4 pt-4 border-t border-gray-700/50">
+                <div className="mt-4 pt-4 border-t border-gold-500/10">
                   <p className="text-sm text-gray-400">
                     Approved on {formatDate(enrollment.approved_at)}
                   </p>
                 </div>
               )}
-            </div>
+            </GlassNoirCard>
           ))
         )}
       </div>

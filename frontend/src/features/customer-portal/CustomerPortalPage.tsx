@@ -13,6 +13,7 @@ import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowL
 import { loadStripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
+import { useTheme } from '../../contexts/ThemeContext'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -164,7 +165,7 @@ function CustomerDashboard() {
         <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">My Vehicles</h2>
-            <Link to="/portal/vehicles" className="text-sm text-amber-500 hover:text-amber-400">
+            <Link to="/portal/vehicles" className="text-sm hover:opacity-80" style={{ color: 'var(--accent-500)' }}>
               View All
             </Link>
           </div>
@@ -206,7 +207,7 @@ function CustomerDashboard() {
         <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">Recent Repairs</h2>
-            <Link to="/portal/repairs" className="text-sm text-amber-500 hover:text-amber-400">
+            <Link to="/portal/repairs" className="text-sm hover:opacity-80" style={{ color: 'var(--accent-500)' }}>
               View All
             </Link>
           </div>
@@ -825,6 +826,7 @@ function CustomerRepairs() {
 
 export default function CustomerPortalPage() {
   const location = useLocation()
+  const { accentColors } = useTheme()
 
   const navLinks = [
     { to: '/portal', label: 'Dashboard', exact: true },
@@ -856,8 +858,8 @@ export default function CustomerPortalPage() {
               <Link to="/portal" className="relative text-lg sm:text-xl font-bold text-slate-800 py-1">
                 <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 32" preserveAspectRatio="none" fill="none">
                   <style>{`
-                    @keyframes checker { 0%, 100% { fill: #1e293b } 50% { fill: #f59e0b } }
-                    @keyframes checkerAlt { 0%, 100% { fill: #f59e0b } 50% { fill: #1e293b } }
+                    @keyframes checker { 0%, 100% { fill: #1e293b } 50% { fill: ${accentColors[500]} } }
+                    @keyframes checkerAlt { 0%, 100% { fill: ${accentColors[500]} } 50% { fill: #1e293b } }
                     .t1 { animation: checker 2.5s ease-in-out infinite }
                     .t2 { animation: checkerAlt 2.5s ease-in-out infinite }
                     .b1 { animation: checker 2.5s ease-in-out infinite; animation-delay: -0.8s }
@@ -884,9 +886,10 @@ export default function CustomerPortalPage() {
                   to={link.to}
                   className={`text-sm font-medium transition-colors ${
                     isActive(link.to, link.exact)
-                      ? 'text-amber-600 border-b-2 border-amber-500'
-                      : 'text-gray-600 hover:text-amber-600'
+                      ? 'border-b-2'
+                      : 'text-gray-600 hover:opacity-80'
                   }`}
+                  style={isActive(link.to, link.exact) ? { color: accentColors[500], borderColor: accentColors[500] } : { color: undefined }}
                 >
                   {link.label}
                 </Link>
@@ -895,15 +898,16 @@ export default function CustomerPortalPage() {
                 to="/portal/settings"
                 className={`relative p-2.5 rounded-full transition-colors ${
                   location.pathname === '/portal/settings'
-                    ? 'bg-amber-100 text-amber-600'
+                    ? 'bg-gray-100'
                     : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
                 }`}
+                style={location.pathname === '/portal/settings' ? { color: accentColors[500] } : undefined}
                 title="Profile Settings"
               >
                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
                   <style>{`
-                    @keyframes ps1 { 0%, 100% { stroke: #1e293b } 50% { stroke: #f59e0b } }
-                    @keyframes ps2 { 0%, 100% { stroke: #f59e0b } 50% { stroke: #1e293b } }
+                    @keyframes ps1 { 0%, 100% { stroke: #1e293b } 50% { stroke: ${accentColors[500]} } }
+                    @keyframes ps2 { 0%, 100% { stroke: ${accentColors[500]} } 50% { stroke: #1e293b } }
                     .ps1 { animation: ps1 2.5s ease-in-out infinite }
                     .ps2 { animation: ps2 2.5s ease-in-out infinite }
                   `}</style>
@@ -942,7 +946,7 @@ export default function CustomerPortalPage() {
           <div className="mb-4 flex items-center gap-2 text-sm">
             <Link 
               to="/portal" 
-              className="text-gray-400 hover:text-amber-500 transition-colors flex items-center gap-1"
+              className="text-gray-400 hover:opacity-80 transition-colors flex items-center gap-1"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -950,7 +954,7 @@ export default function CustomerPortalPage() {
               Dashboard
             </Link>
             <span className="text-gray-600">/</span>
-            <span className="text-white font-medium">{getCurrentPageLabel()}</span>
+            <span className="font-medium" style={{ color: accentColors[500] }}>{getCurrentPageLabel()}</span>
           </div>
         )}
         <Routes>
@@ -970,10 +974,9 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/portal'
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+              location.pathname !== '/portal' ? 'text-gray-500 hover:text-gray-700' : ''
             }`}
+            style={location.pathname === '/portal' ? { color: accentColors[500] } : undefined}
           >
             <Home className="w-5 h-5" />
             <span className="text-[10px] font-medium">Home</span>
@@ -981,10 +984,11 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal/services"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/portal/services' || location.pathname.startsWith('/portal/book/')
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+              !(location.pathname === '/portal/services' || location.pathname.startsWith('/portal/book/'))
+                ? 'text-gray-500 hover:text-gray-700'
+                : ''
             }`}
+            style={(location.pathname === '/portal/services' || location.pathname.startsWith('/portal/book/')) ? { color: accentColors[500] } : undefined}
           >
             <Wrench className="w-5 h-5" />
             <span className="text-[10px] font-medium">Services</span>
@@ -992,10 +996,9 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal/appointments"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/portal/appointments'
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+              location.pathname !== '/portal/appointments' ? 'text-gray-500 hover:text-gray-700' : ''
             }`}
+            style={location.pathname === '/portal/appointments' ? { color: accentColors[500] } : undefined}
           >
             <Calendar className="w-5 h-5" />
             <span className="text-[10px] font-medium">Appts</span>
@@ -1003,10 +1006,9 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal/vehicles"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/portal/vehicles'
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+              location.pathname !== '/portal/vehicles' ? 'text-gray-500 hover:text-gray-700' : ''
             }`}
+            style={location.pathname === '/portal/vehicles' ? { color: accentColors[500] } : undefined}
           >
             <Truck className="w-5 h-5" />
             <span className="text-[10px] font-medium">Vehicles</span>
@@ -1014,10 +1016,9 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal/repairs"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/portal/repairs'
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+              location.pathname !== '/portal/repairs' ? 'text-gray-500 hover:text-gray-700' : ''
             }`}
+            style={location.pathname === '/portal/repairs' ? { color: accentColors[500] } : undefined}
           >
             <History className="w-5 h-5" />
             <span className="text-[10px] font-medium">History</span>
@@ -1025,10 +1026,9 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal/settings"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/portal/settings'
-                ? 'text-amber-600'
-                : 'text-gray-500 hover:text-gray-700'
+              location.pathname !== '/portal/settings' ? 'text-gray-500 hover:text-gray-700' : ''
             }`}
+            style={location.pathname === '/portal/settings' ? { color: accentColors[500] } : undefined}
           >
             <User className="w-5 h-5" />
             <span className="text-[10px] font-medium">Profile</span>

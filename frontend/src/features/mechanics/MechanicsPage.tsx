@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { User, MechanicWorkItem, RepairOrderStatus, RepairOrder } from '@/types'
 import { useAuthStore } from '@/stores/authStore'
+import { useTheme } from '@/contexts/ThemeContext'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
@@ -58,6 +59,7 @@ const formatStatus = (status?: RepairOrderStatus | string | null) =>
 export default function MechanicsPage() {
   const queryClient = useQueryClient()
   const { user } = useAuthStore()
+  const { accentColors } = useTheme()
   const [isAdding, setIsAdding] = useState(false)
   const [expandedMechanicId, setExpandedMechanicId] = useState<string | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
@@ -427,7 +429,8 @@ export default function MechanicsPage() {
                           <button
                             type="button"
                             onClick={() => setEditingMechanic(mechanic)}
-                            className="text-xs font-semibold text-amber-200 hover:text-white text-left"
+                            className="text-xs font-semibold hover:text-white text-left"
+                            style={{ color: accentColors[400] }}
                           >
                             Edit
                           </button>
@@ -444,7 +447,8 @@ export default function MechanicsPage() {
                         <button
                           type="button"
                           onClick={() => setExpandedMechanicId((prev) => (prev === mechanic.id ? null : mechanic.id))}
-                          className="text-sm font-medium text-amber-300 hover:text-amber-200"
+                          className="text-sm font-medium hover:opacity-80"
+                          style={{ color: accentColors[400] }}
                         >
                           {expandedMechanicId === mechanic.id ? 'Hide work' : 'View work'}
                         </button>
@@ -489,8 +493,7 @@ export default function MechanicsPage() {
                                           {formatStatus(item.status)}
                                         </span>
                                       </div>
-                                      <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
-                                      <p className="text-xs text-gray-400">{item.vehicle_info}</p>
+                                      <p className="text-xs text-gray-300 mt-1">{item.vehicle_info}</p>
                                       <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
                                     </button>
                                   )
@@ -556,7 +559,7 @@ export default function MechanicsPage() {
                     
                     <div className="text-sm text-gray-200">In progress: {inProgress}/{assigned || '—'}</div>
                     <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                      <div className="h-full bg-amber-500" style={{ width: `${load}%` }} />
+                      <div className="h-full" style={{ backgroundColor: accentColors[500], width: `${load}%` }} />
                     </div>
                     <div className="flex items-center justify-between text-xs text-gray-400 flex-wrap gap-2">
                       <span>Work: {assigned} assigned</span>
@@ -564,7 +567,8 @@ export default function MechanicsPage() {
                         <button
                           type="button"
                           onClick={() => setEditingMechanic(mechanic)}
-                          className="font-semibold text-white hover:text-amber-200"
+                          className="font-semibold text-white hover:opacity-80"
+                          style={{ color: accentColors[400] }}
                         >
                           Edit
                         </button>
@@ -577,7 +581,13 @@ export default function MechanicsPage() {
                           setExpandedMechanicId(mechanic.id)
                           setIsDetailOpen(false)
                         }}
-                        className="px-3 py-2 text-sm font-medium text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-lg hover:bg-amber-500/20 transition"
+                        className="px-3 py-2 text-sm font-medium rounded-lg transition"
+                        style={{ 
+                          color: accentColors[400], 
+                          backgroundColor: `${accentColors[500]}1a`,
+                          borderWidth: 1,
+                          borderColor: `${accentColors[400]}66`
+                        }}
                       >
                         View work
                       </button>
@@ -631,8 +641,7 @@ export default function MechanicsPage() {
                               {formatStatus(item.status)}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-300 mt-1">{item.customer_name}</p>
-                          <p className="text-xs text-gray-400">{item.vehicle_info}</p>
+                          <p className="text-xs text-gray-300 mt-1">{item.vehicle_info}</p>
                           <p className="text-[11px] text-gray-500 mt-2">Updated: {new Date(item.updated_at).toLocaleString()}</p>
                         </button>
                       )
@@ -841,7 +850,8 @@ export default function MechanicsPage() {
                 <button
                   type="submit"
                   disabled={createMechanicMutation.isPending || updateMechanicMutation.isPending}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-70"
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-70"
+                  style={{ backgroundColor: accentColors[600] }}
                 >
                   {(createMechanicMutation.isPending || updateMechanicMutation.isPending) && (
                     <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -891,12 +901,6 @@ export default function MechanicsPage() {
                     <p className="text-gray-600 mt-1">{orderDetail.description || 'No description'}</p>
                   </div>
                   <div>
-                    <p className="font-semibold text-gray-800">Customer</p>
-                    <p className="text-gray-600 mt-1">
-                      {selectedWorkItem?.customer_name || 'Customer'}
-                    </p>
-                  </div>
-                  <div>
                     <p className="font-semibold text-gray-800">Vehicle</p>
                     <p className="text-gray-600 mt-1">
                       {selectedWorkItem?.vehicle_info || 'Vehicle'}
@@ -930,12 +934,6 @@ export default function MechanicsPage() {
                     <span className="px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 capitalize">
                       {formatStatus(selectedWorkItem?.status) || 'Unknown'}
                     </span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-800">Customer</p>
-                    <p className="text-gray-600 mt-1">
-                      {selectedWorkItem?.customer_name || 'Customer'}
-                    </p>
                   </div>
                   <div>
                     <p className="font-semibold text-gray-800">Vehicle</p>

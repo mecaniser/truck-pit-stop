@@ -14,6 +14,7 @@ import { formatUSPhone } from '@/utils/phone'
 import BaseSelect from '../../components/BaseSelect'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
+import { useTheme } from '../../contexts/ThemeContext'
 
 interface NewCustomerForm {
   first_name: string
@@ -32,6 +33,7 @@ interface NewVehicleForm {
 }
 
 export default function RepairOrdersPage() {
+  const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -792,7 +794,8 @@ export default function RepairOrdersPage() {
         <h1 className="text-xl sm:text-2xl font-bold text-white">Repair Orders</h1>
         <button 
           onClick={openModal}
-          className="mt-3 sm:mt-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
+          className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"
+          style={{ backgroundColor: accentColors[500] }}
         >
           + New Repair Order
         </button>
@@ -827,9 +830,10 @@ export default function RepairOrdersPage() {
                   onClick={() => setStatusFilter(option.value)}
                   className={`h-10 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                     statusFilter === option.value
-                      ? 'bg-amber-500 text-white'
+                      ? 'text-white'
                       : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
                   }`}
+                  style={statusFilter === option.value ? { backgroundColor: accentColors[500] } : undefined}
                 >
                   {option.label}
                 </button>
@@ -917,7 +921,8 @@ export default function RepairOrdersPage() {
                               e.stopPropagation()
                               openDetail(order)
                             }}
-                            className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                            className="text-sm font-medium hover:opacity-80"
+                            style={{ color: accentColors[400] }}
                           >
                             View
                           </button>
@@ -1408,7 +1413,8 @@ export default function RepairOrdersPage() {
                       createCustomerMutation.isPending ||
                       createVehicleMutation.isPending
                     }
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                    className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                    style={{ backgroundColor: accentColors[500] }}
                   >
                     {(isSubmitting ||
                       createRepairOrderMutation.isPending ||

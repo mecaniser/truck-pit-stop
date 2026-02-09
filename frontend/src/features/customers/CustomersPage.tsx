@@ -9,6 +9,7 @@ import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
+import { useTheme } from '../../contexts/ThemeContext'
 
 interface CustomerFormData {
   first_name: string
@@ -168,6 +169,7 @@ const MEXICO_STATES = [
 ]
 
 export default function CustomersPage() {
+  const { accentColors } = useTheme()
   const [searchQuery, setSearchQuery] = useState('')
   const [searchType, setSearchType] = useState<'all' | 'name' | 'email' | 'phone'>('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -891,7 +893,8 @@ export default function CustomersPage() {
         <button
           type="submit"
           disabled={createMutation.isPending || updateMutation.isPending}
-          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          style={{ backgroundColor: accentColors[500] }}
         >
           {(createMutation.isPending || updateMutation.isPending) && (
             <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -1046,7 +1049,8 @@ export default function CustomersPage() {
         <button
           type="submit"
           disabled={createVehicleMutation.isPending || updateVehicleMutation.isPending}
-          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          style={{ backgroundColor: accentColors[500] }}
         >
           {(createVehicleMutation.isPending || updateVehicleMutation.isPending) && (
             <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
@@ -1093,7 +1097,8 @@ export default function CustomersPage() {
         <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
         <button 
           onClick={openCreateModal}
-          className="mt-3 sm:mt-0 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
+          className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"
+          style={{ backgroundColor: accentColors[500] }}
         >
           + Add Customer
         </button>
@@ -1132,9 +1137,10 @@ export default function CustomersPage() {
                 onClick={() => setSearchType(filter.value as typeof searchType)}
                 className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   searchType === filter.value
-                    ? 'bg-amber-500 text-white'
+                    ? 'text-white'
                     : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
                 }`}
+                style={searchType === filter.value ? { backgroundColor: accentColors[500] } : undefined}
               >
                 {filter.label}
               </button>
@@ -1178,7 +1184,7 @@ export default function CustomersPage() {
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-amber-500 flex items-center justify-center flex-shrink-0">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: accentColors[500] }}>
                             <span className="text-white font-bold text-xs">
                               {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                             </span>
@@ -1199,7 +1205,8 @@ export default function CustomersPage() {
                             e.stopPropagation()
                             openDetailPanel(customer)
                           }}
-                          className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                          className="text-sm font-medium hover:opacity-80"
+                          style={{ color: accentColors[400] }}
                         >
                           View
                         </button>
@@ -1219,7 +1226,7 @@ export default function CustomersPage() {
                   className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
                 >
                   <div>
-                    <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center mb-3">
+                    <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: accentColors[500] }}>
                       <span className="text-white font-bold text-lg">
                         {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                       </span>

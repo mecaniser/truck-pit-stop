@@ -132,7 +132,6 @@ export interface MechanicWorkItem {
   id: string
   order_number: string
   status: RepairOrderStatus
-  customer_name: string
   vehicle_info: string
   updated_at: string
 }
