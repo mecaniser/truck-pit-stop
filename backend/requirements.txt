@@ -20,6 +20,7 @@ python-dotenv==1.0.0
 pillow==10.1.0
 reportlab==4.0.7
 slowapi==0.1.9
+cloudinary>=1.40.0
 
 # Observability
 structlog>=24.1.0

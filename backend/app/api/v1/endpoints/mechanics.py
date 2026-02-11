@@ -11,16 +11,21 @@ import json
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
+from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
+from app.db.models.work_photo import WorkPhoto
 from app.schemas.auth import UserResponse
 from app.schemas.mechanic import MechanicCreate
 from app.schemas.mechanic_update import MechanicUpdate
+from app.services.cloudinary_service import upload_work_photo, is_cloudinary_configured
 from pydantic import BaseModel, Field
+
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -1013,3 +1018,217 @@ async def process_pto_request(
         created_at=pto_request.created_at,
         processed_at=pto_request.processed_at,
     )
+
+
+# ============ WORK PHOTOS ============
+
+class WorkPhotoUpload(BaseModel):
+    image: str = Field(..., description="Base64 encoded image data")
+    caption: Optional[str] = Field(None, max_length=500, description="Optional caption/note")
+
+
+class WorkPhotoResponse(BaseModel):
+    id: str
+    image_url: str
+    caption: Optional[str]
+    uploaded_at: datetime
+    mechanic_name: str
+
+
+@router.post("/my-jobs/{job_id}/photos", response_model=WorkPhotoResponse)
+async def upload_job_photo(
+    job_id: UUID,
+    body: WorkPhotoUpload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Upload a work photo for a job.
+    Only allowed for jobs assigned to the current mechanic in active statuses.
+    """
+    if current_user.role != UserRole.MECHANIC:
+        raise HTTPException(status_code=403, detail="Only mechanics can upload work photos")
+    
+    if not is_cloudinary_configured():
+        raise HTTPException(status_code=503, detail="Photo upload service not configured")
+    
+    # Verify job belongs to this mechanic and is in active status
+    result = await db.execute(
+        select(RepairOrder).where(
+            and_(
+                RepairOrder.id == job_id,
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.status.in_([
+                    RepairOrderStatus.ASSIGNED,
+                    RepairOrderStatus.ACKNOWLEDGED,
+                    RepairOrderStatus.IN_PROGRESS,
+                ]),
+            )
+        )
+    )
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        raise HTTPException(
+            status_code=404, 
+            detail="Job not found or not in active status"
+        )
+    
+    try:
+        # Upload to Cloudinary
+        image_url = await upload_work_photo(
+            base64_image=body.image,
+            repair_order_id=str(job_id),
+            mechanic_id=str(current_user.id),
+        )
+        
+        # Save to database
+        photo = WorkPhoto(
+            repair_order_id=job_id,
+            mechanic_id=current_user.id,
+            image_url=image_url,
+            caption=body.caption,
+        )
+        db.add(photo)
+        await db.commit()
+        await db.refresh(photo)
+        
+        logger.info(
+            "Work photo uploaded",
+            photo_id=str(photo.id),
+            repair_order_id=str(job_id),
+            mechanic_id=str(current_user.id),
+        )
+        
+        return WorkPhotoResponse(
+            id=str(photo.id),
+            image_url=photo.image_url,
+            caption=photo.caption,
+            uploaded_at=photo.uploaded_at,
+            mechanic_name=f"{current_user.first_name} {current_user.last_name}",
+        )
+        
+    except Exception as e:
+        logger.error("Failed to upload work photo", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to upload photo")
+
+
+@router.get("/my-jobs/{job_id}/photos", response_model=List[WorkPhotoResponse])
+async def list_job_photos(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(UserRole.MECHANIC, UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+    ),
+):
+    """
+    List all photos for a job.
+    Mechanics can see photos for their assigned jobs.
+    Managers can see photos for any job in their tenant.
+    """
+    # Build query based on role
+    if current_user.role == UserRole.MECHANIC:
+        # Mechanic can only see their own assigned jobs within their tenant.
+        result = await db.execute(
+            select(RepairOrder).where(
+                and_(
+                    RepairOrder.id == job_id,
+                    RepairOrder.assigned_mechanic_id == current_user.id,
+                    RepairOrder.tenant_id == current_user.tenant_id,
+                )
+            )
+        )
+    elif current_user.role in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        # Manager can see any job in their tenant
+        result = await db.execute(
+            select(RepairOrder).where(
+                and_(
+                    RepairOrder.id == job_id,
+                    RepairOrder.tenant_id == current_user.tenant_id,
+                )
+            )
+        )
+    else:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Get photos with mechanic info
+    result = await db.execute(
+        select(WorkPhoto, User)
+        .outerjoin(User, WorkPhoto.mechanic_id == User.id)
+        .where(WorkPhoto.repair_order_id == job_id)
+        .order_by(WorkPhoto.uploaded_at.desc())
+    )
+    rows = result.all()
+    
+    return [
+        WorkPhotoResponse(
+            id=str(photo.id),
+            image_url=photo.image_url,
+            caption=photo.caption,
+            uploaded_at=photo.uploaded_at,
+            mechanic_name=f"{mechanic.first_name} {mechanic.last_name}" if mechanic else "Unknown",
+        )
+        for photo, mechanic in rows
+    ]
+
+
+@router.delete("/my-jobs/{job_id}/photos/{photo_id}")
+async def delete_job_photo(
+    job_id: UUID,
+    photo_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(UserRole.MECHANIC, UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+    ),
+):
+    """
+    Delete a work photo.
+    Mechanics can delete their own photos.
+    Managers can delete any photo in their tenant.
+    """
+    # Get the photo
+    result = await db.execute(
+        select(WorkPhoto, RepairOrder)
+        .join(RepairOrder, WorkPhoto.repair_order_id == RepairOrder.id)
+        .where(
+            and_(
+                WorkPhoto.id == photo_id,
+                WorkPhoto.repair_order_id == job_id,
+            )
+        )
+    )
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    photo, order = row
+    
+    # Check permissions
+    if current_user.role == UserRole.MECHANIC:
+        if order.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail="Photo not in your tenant")
+        if photo.mechanic_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Can only delete your own photos")
+    elif current_user.role in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        if order.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=403, detail="Photo not in your tenant")
+    else:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    # Delete from database (Cloudinary cleanup can be done async/later)
+    await db.delete(photo)
+    await db.commit()
+    
+    logger.info(
+        "Work photo deleted",
+        photo_id=str(photo_id),
+        repair_order_id=str(job_id),
+        deleted_by=str(current_user.id),
+    )
+    
+    return {"status": "deleted"}

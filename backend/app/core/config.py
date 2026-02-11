@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "noreply@truckpitstop.com"
     
+    # Cloudinary (for work photos)
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+    
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     CORS_ORIGINS_STR: str = "http://localhost:5173"

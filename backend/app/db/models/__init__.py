@@ -15,6 +15,7 @@ from app.db.models.appointment import Appointment, AppointmentStatus
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
+from app.db.models.work_photo import WorkPhoto
 
 __all__ = [
     "Tenant",
@@ -42,6 +43,7 @@ __all__ = [
     "ErrorLog",
     "ErrorCategory",
     "ErrorSeverity",
+    "WorkPhoto",
 ]
 
 
