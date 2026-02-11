@@ -2,9 +2,10 @@ from typing import List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
@@ -73,32 +74,35 @@ async def create_customer(
 async def list_customers(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     if current_user.role == UserRole.CUSTOMER:
         # Customers can only see their own profile
         if not current_user.customer_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         result = await db.execute(
             select(Customer).where(Customer.id == current_user.customer_id)
         )
         customer = result.scalar_one_or_none()
-        return [CustomerResponse.model_validate(customer)] if customer else []
+        customers = [CustomerResponse.model_validate(customer)] if customer else []
+        total = len(customers)
+        response_items = customers[skip : skip + limit] if paginated else customers
+        return paginated_or_list(response_items, total, skip, limit, paginated)
     
     # Staff can see all customers in their tenant
     if not current_user.tenant_id:
-        return []
+        return paginated_or_list([], 0, skip, limit, paginated)
     
-    result = await db.execute(
-        select(Customer)
-        .where(Customer.tenant_id == current_user.tenant_id)
-        .offset(skip)
-        .limit(limit)
+    total_result = await db.execute(
+        select(func.count(Customer.id)).where(Customer.tenant_id == current_user.tenant_id)
     )
+    total = total_result.scalar() or 0
+    result = await db.execute(select(Customer).where(Customer.tenant_id == current_user.tenant_id).offset(skip).limit(limit))
     customers = result.scalars().all()
-    
-    return [CustomerResponse.model_validate(c) for c in customers]
+    items = [CustomerResponse.model_validate(c) for c in customers]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
@@ -180,6 +184,9 @@ async def update_customer(
 @router.get("/{customer_id}/vehicles", response_model=List[VehicleResponse])
 async def list_customer_vehicles(
     customer_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -208,12 +215,18 @@ async def list_customer_vehicles(
         )
     
     # Get vehicles
-    result = await db.execute(
-        select(Vehicle).where(Vehicle.customer_id == customer_id)
+    total_result = await db.execute(select(func.count(Vehicle.id)).where(Vehicle.customer_id == customer_id))
+    total = total_result.scalar() or 0
+    query = (
+        select(Vehicle)
+        .where(Vehicle.customer_id == customer_id)
+        .offset(skip)
+        .limit(limit)
     )
+    result = await db.execute(query)
     vehicles = result.scalars().all()
-    
-    return [VehicleResponse.model_validate(v) for v in vehicles]
+    items = [VehicleResponse.model_validate(v) for v in vehicles]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.post("/{customer_id}/vehicles", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)

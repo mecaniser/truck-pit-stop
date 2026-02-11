@@ -1,11 +1,12 @@
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.supplier import Supplier
 
@@ -53,6 +54,9 @@ def require_admin():
 
 @router.get("", response_model=List[SupplierResponse])
 async def list_suppliers(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -60,9 +64,19 @@ async def list_suppliers(
     if current_user.tenant_id:
         query = query.where(Supplier.tenant_id == current_user.tenant_id)
 
-    result = await db.execute(query.order_by(Supplier.name))
+    count_query = select(func.count(Supplier.id)).where(Supplier.deleted_at.is_(None))
+    if current_user.tenant_id:
+        count_query = count_query.where(Supplier.tenant_id == current_user.tenant_id)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    paged_query = query.order_by(Supplier.name)
+    if paginated:
+        paged_query = paged_query.offset(skip).limit(limit)
+    result = await db.execute(paged_query)
     suppliers = result.scalars().all()
-    return [SupplierResponse.model_validate(s) for s in suppliers]
+    items = [SupplierResponse.model_validate(s) for s in suppliers]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.post("", response_model=SupplierResponse, status_code=status.HTTP_201_CREATED)

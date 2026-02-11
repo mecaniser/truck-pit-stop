@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.config import settings
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -284,26 +285,40 @@ async def create_invoice(
 async def list_invoices(
     status_filter: Optional[str] = Query(None),
     repair_order_id: Optional[UUID] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     query = select(Invoice).join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+    count_query = select(func.count(Invoice.id)).join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(RepairOrder.customer_id == current_user.customer_id)
+        count_query = count_query.where(RepairOrder.customer_id == current_user.customer_id)
     else:
         if not current_user.tenant_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(Invoice.tenant_id == current_user.tenant_id)
+        count_query = count_query.where(Invoice.tenant_id == current_user.tenant_id)
     if status_filter:
         query = query.where(Invoice.status == status_filter)
+        count_query = count_query.where(Invoice.status == status_filter)
     if repair_order_id:
         query = query.where(Invoice.repair_order_id == repair_order_id)
-    query = query.order_by(Invoice.created_at.desc())
+        count_query = count_query.where(Invoice.repair_order_id == repair_order_id)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    query = query.order_by(Invoice.created_at.desc()).offset(skip).limit(limit)
+
     result = await db.execute(query)
     invoices = result.scalars().all()
-    return [InvoiceResponse.model_validate(inv) for inv in invoices]
+    items = [InvoiceResponse.model_validate(inv) for inv in invoices]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceDetailResponse)

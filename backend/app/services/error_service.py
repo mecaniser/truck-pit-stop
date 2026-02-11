@@ -230,17 +230,28 @@ async def get_error_by_id(db: AsyncSession, error_id: UUID) -> Optional[ErrorLog
 async def get_errors_by_correlation_id(
     db: AsyncSession,
     correlation_id: str,
-) -> list[ErrorLog]:
-    """Find all errors with the same correlation ID."""
+    skip: int = 0,
+    limit: int = 100,
+) -> tuple[list[ErrorLog], int]:
+    """Find errors by correlation ID with pagination."""
+    where_clause = and_(
+        ErrorLog.correlation_id == correlation_id,
+        ErrorLog.deleted_at.is_(None),
+    )
+
+    total_result = await db.execute(
+        select(func.count(ErrorLog.id)).where(where_clause)
+    )
+    total = total_result.scalar() or 0
+
     result = await db.execute(
         select(ErrorLog)
-        .where(
-            ErrorLog.correlation_id == correlation_id,
-            ErrorLog.deleted_at.is_(None)
-        )
+        .where(where_clause)
         .order_by(ErrorLog.created_at)
+        .offset(skip)
+        .limit(limit)
     )
-    return list(result.scalars().all())
+    return list(result.scalars().all()), total
 
 
 async def resolve_error(

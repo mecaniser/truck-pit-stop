@@ -9,6 +9,7 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
@@ -288,31 +289,40 @@ async def list_repair_orders(
     status: Optional[RepairOrderStatus] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     query = select(RepairOrder)
+    count_query = select(func.count(RepairOrder.id))
     
     if current_user.role == UserRole.CUSTOMER:
         # Customers can only see their own repair orders
         if not current_user.customer_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(RepairOrder.customer_id == current_user.customer_id)
+        count_query = count_query.where(RepairOrder.customer_id == current_user.customer_id)
     else:
         # Staff can filter by customer/vehicle/status or see all in tenant
         if not current_user.tenant_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(RepairOrder.tenant_id == current_user.tenant_id)
+        count_query = count_query.where(RepairOrder.tenant_id == current_user.tenant_id)
         if customer_id:
             query = query.where(RepairOrder.customer_id == customer_id)
+            count_query = count_query.where(RepairOrder.customer_id == customer_id)
     
     if vehicle_id:
         query = query.where(RepairOrder.vehicle_id == vehicle_id)
+        count_query = count_query.where(RepairOrder.vehicle_id == vehicle_id)
     if status:
         query = query.where(RepairOrder.status == status)
+        count_query = count_query.where(RepairOrder.status == status)
     
-    query = query.offset(skip).limit(limit).order_by(RepairOrder.created_at.desc())
-    result = await db.execute(query)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query.offset(skip).limit(limit).order_by(RepairOrder.created_at.desc()))
     orders = result.scalars().all()
     
     # Get quote_sent status for all orders
@@ -326,13 +336,14 @@ async def list_repair_orders(
     else:
         quote_sent_map = {}
     
-    return [
+    items = [
         RepairOrderResponse(
             **RepairOrderResponse.model_validate(o).model_dump(exclude={'quote_sent'}),
             quote_sent=quote_sent_map.get(o.id),
         )
         for o in orders
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.get("/{order_id}/detail", response_model=RepairOrderDetailResponse)
@@ -1256,20 +1267,37 @@ async def add_parts_to_repair_order(
 @router.get("/{order_id}/parts", response_model=List[PartsUsageResponse])
 async def list_repair_order_parts(
     order_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder)
-        .where(RepairOrder.id == order_id)
-        .options(selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item))
+        select(RepairOrder).where(RepairOrder.id == order_id)
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
+
+    total_result = await db.execute(
+        select(func.count(PartsUsage.id)).where(PartsUsage.repair_order_id == order_id)
+    )
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        select(PartsUsage)
+        .where(PartsUsage.repair_order_id == order_id)
+        .options(selectinload(PartsUsage.inventory_item))
+        .order_by(PartsUsage.created_at.asc())
+        .offset(skip)
+        .limit(limit)
+    )
+    parts_usage = result.scalars().all()
+
     out = []
-    for pu in order.parts_usage:
+    for pu in parts_usage:
         inv = pu.inventory_item
         out.append(
             PartsUsageResponse(
@@ -1284,7 +1312,7 @@ async def list_repair_order_parts(
                 created_at=pu.created_at,
             )
         )
-    return out
+    return paginated_or_list(out, total, skip, limit, paginated)
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1375,17 +1403,35 @@ async def add_labor_to_repair_order(
 @router.get("/{order_id}/labor", response_model=List[LaborResponse])
 async def list_repair_order_labor(
     order_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id).options(selectinload(RepairOrder.labor_items))
+        select(RepairOrder).where(RepairOrder.id == order_id)
     )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
-    return [LaborResponse.model_validate(li) for li in order.labor_items]
+
+    total_result = await db.execute(
+        select(func.count(Labor.id)).where(Labor.repair_order_id == order_id)
+    )
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        select(Labor)
+        .where(Labor.repair_order_id == order_id)
+        .order_by(Labor.created_at.asc())
+        .offset(skip)
+        .limit(limit)
+    )
+    labor_items = result.scalars().all()
+    items = [LaborResponse.model_validate(li) for li in labor_items]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.put("/{order_id}/labor/{labor_id}", response_model=LaborResponse)

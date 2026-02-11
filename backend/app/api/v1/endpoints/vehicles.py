@@ -2,8 +2,9 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
@@ -71,6 +72,7 @@ async def list_vehicles(
     customer_id: Optional[UUID] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -79,21 +81,34 @@ async def list_vehicles(
     if current_user.role == UserRole.CUSTOMER:
         # Customers can only see their own vehicles
         if not current_user.customer_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(Vehicle.customer_id == current_user.customer_id)
     else:
         # Staff can filter by customer or see all in tenant
         if not current_user.tenant_id:
-            return []
+            return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(Vehicle.tenant_id == current_user.tenant_id)
         if customer_id:
             query = query.where(Vehicle.customer_id == customer_id)
     
-    query = query.offset(skip).limit(limit)
-    result = await db.execute(query)
+    count_query = select(func.count(Vehicle.id))
+    if current_user.role == UserRole.CUSTOMER:
+        if not current_user.customer_id:
+            return paginated_or_list([], 0, skip, limit, paginated)
+        count_query = count_query.where(Vehicle.customer_id == current_user.customer_id)
+    else:
+        if not current_user.tenant_id:
+            return paginated_or_list([], 0, skip, limit, paginated)
+        count_query = count_query.where(Vehicle.tenant_id == current_user.tenant_id)
+        if customer_id:
+            count_query = count_query.where(Vehicle.customer_id == customer_id)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+    result = await db.execute(query.offset(skip).limit(limit))
     vehicles = result.scalars().all()
-    
-    return [VehicleResponse.model_validate(v) for v in vehicles]
+    items = [VehicleResponse.model_validate(v) for v in vehicles]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)
@@ -202,4 +217,3 @@ async def customer_update_vehicle(
     await db.refresh(vehicle)
     
     return VehicleResponse.model_validate(vehicle)
-

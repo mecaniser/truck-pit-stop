@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
 from app.db.models.user import User, UserRole
@@ -39,6 +40,7 @@ def require_super_admin():
 async def list_all_tenants(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     active_only: bool = Query(False, description="Filter to active tenants only"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_super_admin()),
@@ -52,6 +54,13 @@ async def list_all_tenants(
     if active_only:
         query = query.where(Tenant.is_active == True)
     
+    count_query = select(func.count(Tenant.id))
+    if active_only:
+        count_query = count_query.where(Tenant.is_active == True)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     tenants = result.scalars().all()
@@ -74,7 +83,7 @@ async def list_all_tenants(
         
         response_data.append(tenant_data)
     
-    return response_data
+    return paginated_or_list(response_data, total, skip, limit, paginated)
 
 
 @router.get("/tenants/summary")
@@ -925,6 +934,9 @@ class RejectEnrollmentRequest(BaseModel):
 @router.get("/pending-enrollments", response_model=List[EnrollmentResponse])
 async def list_pending_enrollments(
     status_filter: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_super_admin()),
 ):
@@ -933,14 +945,20 @@ async def list_pending_enrollments(
     Only accessible by SUPER_ADMIN.
     """
     query = select(Tenant)
+    count_query = select(func.count(Tenant.id))
     
     if status_filter:
         query = query.where(Tenant.enrollment_status == status_filter)
+        count_query = count_query.where(Tenant.enrollment_status == status_filter)
     else:
         # Default: show pending enrollments
         query = query.where(Tenant.enrollment_status == "pending")
+        count_query = count_query.where(Tenant.enrollment_status == "pending")
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
     
-    query = query.order_by(Tenant.applied_at.desc())
+    query = query.order_by(Tenant.applied_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     tenants = result.scalars().all()
     
@@ -979,7 +997,7 @@ async def list_pending_enrollments(
         
         response_data.append(enrollment)
     
-    return response_data
+    return paginated_or_list(response_data, total, skip, limit, paginated)
 
 
 @router.get("/enrollment-stats")
@@ -1322,6 +1340,9 @@ async def get_error_detail(
 @router.get("/errors/correlation/{correlation_id}", response_model=List[ErrorLogResponse])
 async def get_errors_by_correlation(
     correlation_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_super_admin()),
 ):
@@ -1329,9 +1350,14 @@ async def get_errors_by_correlation(
     Find all errors with the same correlation ID (from the same request).
     Only accessible by SUPER_ADMIN.
     """
-    errors = await error_service.get_errors_by_correlation_id(db, correlation_id)
+    errors, total = await error_service.get_errors_by_correlation_id(
+        db,
+        correlation_id=correlation_id,
+        skip=skip,
+        limit=limit,
+    )
     
-    return [
+    items = [
         ErrorLogResponse(
             id=e.id,
             correlation_id=e.correlation_id,
@@ -1352,6 +1378,7 @@ async def get_errors_by_correlation(
         )
         for e in errors
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.patch("/errors/{error_id}/resolve")

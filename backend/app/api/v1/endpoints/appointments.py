@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
@@ -228,39 +229,51 @@ async def list_appointments(
     status_filter: Optional[AppointmentStatus] = Query(None),
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """List appointments (filtered by user role)"""
-    
+
+    filters = []
+
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id:
-            return []
-        query = select(Appointment, Service).join(Service).where(
-            Appointment.customer_id == current_user.customer_id
-        )
+            return paginated_or_list([], 0, skip, limit, paginated)
+        filters.append(Appointment.customer_id == current_user.customer_id)
     else:
         if not current_user.tenant_id:
-            return []
-        query = select(Appointment, Service).join(Service).where(
-            Appointment.tenant_id == current_user.tenant_id
-        )
-    
+            return paginated_or_list([], 0, skip, limit, paginated)
+        filters.append(Appointment.tenant_id == current_user.tenant_id)
+
     if status_filter:
-        query = query.where(Appointment.status == status_filter)
-    
+        filters.append(Appointment.status == status_filter)
+
     if from_date:
-        query = query.where(func.date(Appointment.scheduled_at) >= from_date)
-    
+        filters.append(func.date(Appointment.scheduled_at) >= from_date)
+
     if to_date:
-        query = query.where(func.date(Appointment.scheduled_at) <= to_date)
-    
-    query = query.order_by(Appointment.scheduled_at.desc())
-    
+        filters.append(func.date(Appointment.scheduled_at) <= to_date)
+
+    count_query = select(func.count(Appointment.id)).where(*filters)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    query = (
+        select(Appointment, Service)
+        .join(Service)
+        .where(*filters)
+        .order_by(Appointment.scheduled_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+
     result = await db.execute(query)
     rows = result.all()
-    
-    return [
+
+    items = [
         AppointmentResponse(
             id=str(apt.id),
             confirmation_number=apt.confirmation_number,
@@ -278,6 +291,7 @@ async def list_appointments(
         )
         for apt, svc in rows
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)

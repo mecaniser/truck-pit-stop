@@ -2,11 +2,12 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.service import Service, ServiceCategory
 
@@ -115,6 +116,9 @@ async def create_category(
 
 @router.get("/categories", response_model=List[ServiceCategoryResponse])
 async def list_categories(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -128,16 +132,22 @@ async def list_categories(
             tenant_id = customer.tenant_id
     
     if not tenant_id:
-        return []
+        return paginated_or_list([], 0, skip, limit, paginated)
     
-    result = await db.execute(
-        select(ServiceCategory)
-        .where(and_(ServiceCategory.tenant_id == tenant_id, ServiceCategory.is_active == True))
-        .order_by(ServiceCategory.sort_order, ServiceCategory.name)
+    base_query = select(ServiceCategory).where(
+        and_(ServiceCategory.tenant_id == tenant_id, ServiceCategory.is_active == True)
     )
+    total_result = await db.execute(
+        select(func.count(ServiceCategory.id)).where(
+            and_(ServiceCategory.tenant_id == tenant_id, ServiceCategory.is_active == True)
+        )
+    )
+    total = total_result.scalar() or 0
+    query = base_query.order_by(ServiceCategory.sort_order, ServiceCategory.name).offset(skip).limit(limit)
+    result = await db.execute(query)
     categories = result.scalars().all()
     
-    return [
+    items = [
         ServiceCategoryResponse(
             id=str(c.id),
             name=c.name,
@@ -148,6 +158,7 @@ async def list_categories(
         )
         for c in categories
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 # --- Services ---
@@ -187,6 +198,9 @@ async def create_service(
 async def list_services(
     category_id: Optional[UUID] = Query(None),
     active_only: bool = Query(True),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -199,22 +213,28 @@ async def list_services(
             tenant_id = customer.tenant_id
     
     if not tenant_id:
-        return []
+        return paginated_or_list([], 0, skip, limit, paginated)
     
     query = select(Service).where(Service.tenant_id == tenant_id)
+    count_query = select(func.count(Service.id)).where(Service.tenant_id == tenant_id)
     
     if active_only:
         query = query.where(Service.is_active == True)
+        count_query = count_query.where(Service.is_active == True)
     
     if category_id:
         query = query.where(Service.category_id == category_id)
+        count_query = count_query.where(Service.category_id == category_id)
     
-    query = query.order_by(Service.sort_order, Service.name)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    query = query.order_by(Service.sort_order, Service.name).offset(skip).limit(limit)
     
     result = await db.execute(query)
     services = result.scalars().all()
     
-    return [
+    items = [
         ServiceResponse(
             id=str(s.id),
             category_id=str(s.category_id) if s.category_id else None,
@@ -229,6 +249,7 @@ async def list_services(
         )
         for s in services
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.get("/{service_id}", response_model=ServiceResponse)

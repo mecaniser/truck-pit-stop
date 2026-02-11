@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, timedelta, date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, cast, Date
 from sqlalchemy.orm import selectinload
@@ -9,12 +9,12 @@ from uuid import UUID
 import json
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
 from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
-from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
@@ -56,12 +56,25 @@ class MechanicWithPoints(BaseModel):
 
 @router.get("", response_model=List[MechanicWithPoints])
 async def list_mechanics(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """List mechanics with their points info for dashboard"""
     if not current_user.tenant_id:
-        return []
+        return paginated_or_list([], 0, skip, limit, paginated)
+
+    total_result = await db.execute(
+        select(func.count(User.id)).where(
+            and_(
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRole.MECHANIC,
+            )
+        )
+    )
+    total = total_result.scalar() or 0
 
     result = await db.execute(
         select(User).where(
@@ -69,31 +82,49 @@ async def list_mechanics(
                 User.tenant_id == current_user.tenant_id,
                 User.role == UserRole.MECHANIC,
             )
-        )
+        ).order_by(User.created_at.desc()).offset(skip).limit(limit)
     )
     mechanics = result.scalars().all()
     
-    mechanics_with_points = []
-    for mechanic in mechanics:
-        # Get points balance
-        result = await db.execute(
+    mechanic_ids = [mechanic.id for mechanic in mechanics]
+
+    balances_by_mechanic: dict[UUID, MechanicPointsBalance] = {}
+    pending_counts_by_mechanic: dict[UUID, int] = {}
+
+    if mechanic_ids:
+        balance_result = await db.execute(
             select(MechanicPointsBalance).where(
-                MechanicPointsBalance.mechanic_id == mechanic.id
-            )
-        )
-        balance = result.scalar_one_or_none()
-        
-        # Get pending requests count
-        result = await db.execute(
-            select(func.count(PTORequest.id)).where(
                 and_(
-                    PTORequest.mechanic_id == mechanic.id,
-                    PTORequest.status == PTORequestStatus.PENDING,
+                    MechanicPointsBalance.tenant_id == current_user.tenant_id,
+                    MechanicPointsBalance.mechanic_id.in_(mechanic_ids),
                 )
             )
         )
-        pending_count = result.scalar() or 0
-        
+        balances_by_mechanic = {
+            balance.mechanic_id: balance for balance in balance_result.scalars().all()
+        }
+
+        pending_result = await db.execute(
+            select(PTORequest.mechanic_id, func.count(PTORequest.id))
+            .where(
+                and_(
+                    PTORequest.tenant_id == current_user.tenant_id,
+                    PTORequest.mechanic_id.in_(mechanic_ids),
+                    PTORequest.status == PTORequestStatus.PENDING,
+                )
+            )
+            .group_by(PTORequest.mechanic_id)
+        )
+        pending_counts_by_mechanic = {
+            mechanic_id: int(count)
+            for mechanic_id, count in pending_result.all()
+        }
+
+    mechanics_with_points = []
+    for mechanic in mechanics:
+        balance = balances_by_mechanic.get(mechanic.id)
+        pending_count = pending_counts_by_mechanic.get(mechanic.id, 0)
+
         mechanics_with_points.append(MechanicWithPoints(
             id=str(mechanic.id),
             email=mechanic.email,
@@ -107,7 +138,7 @@ async def list_mechanics(
             pending_requests=pending_count,
         ))
     
-    return mechanics_with_points
+    return paginated_or_list(mechanics_with_points, total, skip, limit, paginated)
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -399,13 +430,28 @@ async def redeem_points(
 
 @router.get("/my-jobs", response_model=List[MechanicJobSummary])
 async def get_my_jobs(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Get all jobs assigned to the current mechanic"""
-    result = await db.execute(
-        select(RepairOrder)
-        .where(
+    base_query = select(RepairOrder).where(
+        and_(
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.assigned_mechanic_id == current_user.id,
+            RepairOrder.status.in_([
+                RepairOrderStatus.ASSIGNED,
+                RepairOrderStatus.ACKNOWLEDGED,
+                RepairOrderStatus.IN_PROGRESS,
+                RepairOrderStatus.PENDING_REVIEW,
+            ]),
+        )
+    )
+
+    total_result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
             and_(
                 RepairOrder.tenant_id == current_user.tenant_id,
                 RepairOrder.assigned_mechanic_id == current_user.id,
@@ -417,8 +463,15 @@ async def get_my_jobs(
                 ]),
             )
         )
+    )
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        base_query
         .options(selectinload(RepairOrder.vehicle))
         .order_by(RepairOrder.updated_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     orders = result.scalars().all()
     
@@ -447,18 +500,32 @@ async def get_my_jobs(
             work_started_at=getattr(order, 'work_started_at', None),
         ))
     
-    return jobs
+    return paginated_or_list(jobs, total, skip, limit, paginated)
 
 
 @router.get("/my-history", response_model=List[MechanicHistoryItem])
 async def get_my_history(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Get completed work history for the current mechanic"""
-    result = await db.execute(
-        select(RepairOrder)
-        .where(
+    base_query = select(RepairOrder).where(
+        and_(
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.assigned_mechanic_id == current_user.id,
+            RepairOrder.status.in_([
+                RepairOrderStatus.COMPLETED,
+                RepairOrderStatus.INVOICED,
+                RepairOrderStatus.PAID,
+            ]),
+        )
+    )
+
+    total_result = await db.execute(
+        select(func.count(RepairOrder.id)).where(
             and_(
                 RepairOrder.tenant_id == current_user.tenant_id,
                 RepairOrder.assigned_mechanic_id == current_user.id,
@@ -469,9 +536,15 @@ async def get_my_history(
                 ]),
             )
         )
+    )
+    total = total_result.scalar() or 0
+
+    result = await db.execute(
+        base_query
         .options(selectinload(RepairOrder.vehicle))
         .order_by(RepairOrder.updated_at.desc())
-        .limit(50)  # Limit history to last 50 jobs
+        .offset(skip)
+        .limit(limit)
     )
     orders = result.scalars().all()
     
@@ -521,7 +594,7 @@ async def get_my_history(
             points_earned=points_by_order.get(order.id, 0),
         ))
     
-    return history
+    return paginated_or_list(history, total, skip, limit, paginated)
 
 
 @router.get("/my-jobs/{order_id}", response_model=MechanicJobDetail)
@@ -582,6 +655,9 @@ async def get_my_job_detail(
 @router.get("/{mechanic_id}/work", response_model=list[MechanicWorkItem])
 async def get_mechanic_work(
     mechanic_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.MECHANIC)),
 ):
@@ -601,21 +677,26 @@ async def get_mechanic_work(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         tenant_id = current_user.tenant_id
 
+    base_filters = and_(
+        RepairOrder.tenant_id == tenant_id,
+        RepairOrder.assigned_mechanic_id == mechanic.id,
+    )
+    total_result = await db.execute(
+        select(func.count(RepairOrder.id)).where(base_filters)
+    )
+    total = total_result.scalar() or 0
+
     result = await db.execute(
-        select(RepairOrder, Customer, Vehicle)
-        .join(Customer, RepairOrder.customer_id == Customer.id)
+        select(RepairOrder, Vehicle)
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
-        .where(
-            and_(
-                RepairOrder.tenant_id == tenant_id,
-                RepairOrder.assigned_mechanic_id == mechanic.id,
-            )
-        )
+        .where(base_filters)
         .order_by(RepairOrder.updated_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     rows = result.all()
     work_items: list[MechanicWorkItem] = []
-    for order, customer, vehicle in rows:
+    for order, vehicle in rows:
         work_items.append(
             MechanicWorkItem(
                 id=str(order.id),
@@ -625,7 +706,7 @@ async def get_mechanic_work(
                 updated_at=order.updated_at.isoformat(),
             )
         )
-    return work_items
+    return paginated_or_list(work_items, total, skip, limit, paginated)
 
 
 class MechanicPasswordUpdate(BaseModel):
@@ -824,19 +905,28 @@ async def create_pto_request(
 
 @router.get("/pto-requests/my", response_model=List[PTORequestResponse])
 async def get_my_pto_requests(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
     """Mechanic views their own PTO requests"""
+    total_result = await db.execute(
+        select(func.count(PTORequest.id)).where(PTORequest.mechanic_id == current_user.id)
+    )
+    total = total_result.scalar() or 0
+
     result = await db.execute(
         select(PTORequest)
         .where(PTORequest.mechanic_id == current_user.id)
         .order_by(PTORequest.created_at.desc())
-        .limit(20)
+        .offset(skip)
+        .limit(limit)
     )
     requests = result.scalars().all()
     
-    return [
+    items = [
         PTORequestResponse(
             id=str(r.id),
             mechanic_id=str(r.mechanic_id),
@@ -855,6 +945,7 @@ async def get_my_pto_requests(
         )
         for r in requests
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.delete("/pto-requests/{request_id}", status_code=204)
@@ -886,10 +977,23 @@ async def cancel_pto_request(
 
 @router.get("/pto-requests/pending", response_model=List[PTORequestResponse])
 async def get_pending_pto_requests(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
     """Manager views all pending PTO requests"""
+    total_result = await db.execute(
+        select(func.count(PTORequest.id)).where(
+            and_(
+                PTORequest.tenant_id == current_user.tenant_id,
+                PTORequest.status == PTORequestStatus.PENDING,
+            )
+        )
+    )
+    total = total_result.scalar() or 0
+
     result = await db.execute(
         select(PTORequest, User)
         .join(User, PTORequest.mechanic_id == User.id)
@@ -900,10 +1004,12 @@ async def get_pending_pto_requests(
             )
         )
         .order_by(PTORequest.created_at.asc())
+        .offset(skip)
+        .limit(limit)
     )
     rows = result.all()
     
-    return [
+    items = [
         PTORequestResponse(
             id=str(r.id),
             mechanic_id=str(r.mechanic_id),
@@ -922,6 +1028,7 @@ async def get_pending_pto_requests(
         )
         for r, u in rows
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 class ProcessPTORequest(BaseModel):
@@ -1116,6 +1223,9 @@ async def upload_job_photo(
 @router.get("/my-jobs/{job_id}/photos", response_model=List[WorkPhotoResponse])
 async def list_job_photos(
     job_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(UserRole.MECHANIC, UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
@@ -1156,15 +1266,22 @@ async def list_job_photos(
         raise HTTPException(status_code=404, detail="Job not found")
     
     # Get photos with mechanic info
+    total_result = await db.execute(
+        select(func.count(WorkPhoto.id)).where(WorkPhoto.repair_order_id == job_id)
+    )
+    total = total_result.scalar() or 0
+
     result = await db.execute(
         select(WorkPhoto, User)
         .outerjoin(User, WorkPhoto.mechanic_id == User.id)
         .where(WorkPhoto.repair_order_id == job_id)
         .order_by(WorkPhoto.uploaded_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     rows = result.all()
     
-    return [
+    items = [
         WorkPhotoResponse(
             id=str(photo.id),
             image_url=photo.image_url,
@@ -1174,6 +1291,7 @@ async def list_job_photos(
         )
         for photo, mechanic in rows
     ]
+    return paginated_or_list(items, total, skip, limit, paginated)
 
 
 @router.delete("/my-jobs/{job_id}/photos/{photo_id}")

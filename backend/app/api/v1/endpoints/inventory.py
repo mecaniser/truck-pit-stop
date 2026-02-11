@@ -1,12 +1,13 @@
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
 
@@ -72,27 +73,38 @@ def require_admin():
 
 @router.get("", response_model=List[InventoryResponse])
 async def list_inventory(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     category: Optional[str] = None,
     low_stock: Optional[bool] = None,
 ):
     query = select(Inventory).where(Inventory.deleted_at.is_(None))
-    
+    count_query = select(func.count(Inventory.id)).where(Inventory.deleted_at.is_(None))
+
     if current_user.tenant_id:
         query = query.where(Inventory.tenant_id == current_user.tenant_id)
-    
+        count_query = count_query.where(Inventory.tenant_id == current_user.tenant_id)
+
     if category:
         query = query.where(Inventory.category == category)
-    
-    result = await db.execute(query.order_by(Inventory.name))
-    items = result.scalars().all()
-    
-    # Filter low stock items if requested
+        count_query = count_query.where(Inventory.category == category)
+
+    # Keep low-stock semantics while making pagination consistent.
     if low_stock:
-        items = [item for item in items if item.stock_quantity <= item.reorder_level]
-    
-    return [
+        low_stock_filter = Inventory.stock_quantity <= Inventory.reorder_level
+        query = query.where(low_stock_filter)
+        count_query = count_query.where(low_stock_filter)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query.order_by(Inventory.name).offset(skip).limit(limit))
+    items = result.scalars().all()
+
+    serialized_items = [
         InventoryResponse(
             id=item.id,
             tenant_id=item.tenant_id,
@@ -111,6 +123,7 @@ async def list_inventory(
         )
         for item in items
     ]
+    return paginated_or_list(serialized_items, total, skip, limit, paginated)
 
 
 @router.post("", response_model=InventoryResponse, status_code=status.HTTP_201_CREATED)

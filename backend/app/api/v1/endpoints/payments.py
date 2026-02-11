@@ -1,7 +1,7 @@
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.logging import get_logger
 from app.core.metrics import record_payment, record_payment_error
+from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -132,19 +133,22 @@ async def create_setup_intent(
 
 @router.get("/methods", response_model=List[PaymentMethodResponse])
 async def list_payment_methods(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """List customer's saved payment methods"""
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
-        return []
+        return paginated_or_list([], 0, skip, limit, paginated)
     
     # Get customer record
     result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
     customer = result.scalar_one_or_none()
     
     if not customer or not customer.stripe_customer_id:
-        return []
+        return paginated_or_list([], 0, skip, limit, paginated)
     
     try:
         # Get payment methods from Stripe
@@ -157,7 +161,7 @@ async def list_payment_methods(
         stripe_customer = stripe.Customer.retrieve(customer.stripe_customer_id)
         default_pm_id = stripe_customer.invoice_settings.default_payment_method
         
-        return [
+        items = [
             PaymentMethodResponse(
                 id=pm.id,
                 brand=pm.card.brand,
@@ -168,6 +172,9 @@ async def list_payment_methods(
             )
             for pm in payment_methods.data
         ]
+        total = len(items)
+        response_items = items[skip : skip + limit] if paginated else items
+        return paginated_or_list(response_items, total, skip, limit, paginated)
     except stripe.error.StripeError as e:
         logger.error("stripe_list_payment_methods_failed", customer_id=str(customer.id), error=str(e))
         record_payment_error(error_type=type(e).__name__, provider="stripe")
