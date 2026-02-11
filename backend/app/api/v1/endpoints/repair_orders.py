@@ -440,6 +440,17 @@ async def update_repair_order(
     
     await db.commit()
     await db.refresh(order)
+
+    # Keep real-time clients in sync for status/workflow edits from the side panel.
+    if "status" in update_data or "assigned_mechanic_id" in update_data:
+        await broadcast_repair_order_update(
+            tenant_id=str(order.tenant_id),
+            customer_id=str(order.customer_id),
+            order_id=str(order.id),
+            order_number=order.order_number,
+            status=order.status.value,
+            updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        )
     
     return RepairOrderResponse.model_validate(order)
 
@@ -1088,6 +1099,12 @@ async def delete_repair_order(
             detail="Access denied",
         )
 
+    # Save identifiers before deletion so we can broadcast cache invalidation.
+    tenant_id = str(order.tenant_id)
+    customer_id = str(order.customer_id)
+    order_id_str = str(order.id)
+    order_number = order.order_number
+
     # Delete related records first (no cascade in FK)
     # Delete quote if exists
     quote_result = await db.execute(select(Quote).where(Quote.repair_order_id == order_id))
@@ -1107,6 +1124,16 @@ async def delete_repair_order(
 
     await db.delete(order)
     await db.commit()
+
+    # Broadcast deletion so dashboards/lists update without manual refresh.
+    await broadcast_repair_order_update(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        order_id=order_id_str,
+        order_number=order_number,
+        status="deleted",
+        updated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1198,6 +1225,7 @@ async def add_parts_to_repair_order(
         repair_order_id=order_id,
         inventory_id=body.inventory_id,
         quantity=body.quantity,
+        unit_cost=inv.cost,
         unit_price=unit_price,
         total_price=total_price,
     )

@@ -40,7 +40,7 @@ class PartsUsage(BaseModel):
     inventory_item = relationship("Inventory", back_populates="parts_usage")
     
     quantity = Column(Integer, nullable=False)
+    unit_cost = Column(Numeric(10, 2), nullable=True)  # inventory cost snapshot at time of use
     unit_price = Column(Numeric(10, 2), nullable=False)
     total_price = Column(Numeric(10, 2), nullable=False)
-
 

@@ -19,8 +19,15 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.quote import Quote
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.db.models.inventory import PartsUsage
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
+from app.services.pricing import (
+    get_order_labor_total,
+    get_order_parts_total,
+    get_order_subtotal,
+    get_selected_services_total,
+)
 from app.core.websocket import broadcast_quote_event, broadcast_repair_order_update, WSEventType
 
 router = APIRouter()
@@ -70,6 +77,9 @@ class QuoteDetailResponse(BaseModel):
     vehicle_vin: Optional[str]
     customer_first_name: str
     services: list[dict] = []
+    parts: list[dict] = []
+    labor_total: Decimal = Decimal("0.00")
+    parts_total: Decimal = Decimal("0.00")
 
 
 def _require_staff(current_user: User) -> None:
@@ -138,21 +148,8 @@ async def create_quote(
             detail="A quote already exists for this repair order",
         )
     
-    # Calculate total: service prices (from internal_notes) are all-in (include parts + labor)
-    # If services selected, total = service total only (parts are for inventory tracking, not added)
-    # If no services, total = backend total_cost (parts + labor)
-    service_total = Decimal("0")
-    if order.internal_notes:
-        try:
-            notes_data = json.loads(order.internal_notes)
-            selected_services = notes_data.get("selected_services", [])
-            for svc in selected_services:
-                service_total += Decimal(str(svc.get("base_price", "0")))
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    
-    # If services selected, use service total; otherwise use backend total
-    total_amount = service_total if service_total > 0 else order.total_cost
+    # Quote subtotal is labor/services + parts.
+    total_amount = get_order_subtotal(order)
     
     # Use retry wrapper to handle rare race conditions on quote number
     from app.core.unique_id import create_with_retry
@@ -258,21 +255,69 @@ async def update_quote(
             detail="Cannot update an approved quote",
         )
     
-    # Recalculate total using same logic as create
-    service_total = Decimal("0")
-    if order.internal_notes:
-        try:
-            notes_data = json.loads(order.internal_notes)
-            selected_services = notes_data.get("selected_services", [])
-            for svc in selected_services:
-                service_total += Decimal(str(svc.get("base_price", "0")))
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    
-    quote.total_amount = service_total if service_total > 0 else order.total_cost
+    # Recalculate total using the same pricing logic as create.
+    quote.total_amount = get_order_subtotal(order)
     await db.commit()
     await db.refresh(quote)
     return QuoteResponse.model_validate(quote)
+
+
+@router.delete("/{quote_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_quote(
+    quote_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Delete a quote draft and revert the repair order back to draft."""
+    _require_staff(current_user)
+
+    result = await db.execute(
+        select(Quote).where(Quote.id == quote_id)
+    )
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quote not found",
+        )
+
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repair order not found",
+        )
+
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    if quote.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete an approved quote",
+        )
+
+    # Quote deletion reverts the order to draft to keep workflow explicit:
+    # Create/Update quote -> Send quote -> Customer action.
+    order.status = RepairOrderStatus.DRAFT
+    await db.delete(quote)
+    await db.commit()
+    await db.refresh(order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
 
 
 @router.post("/{quote_id}/send", response_model=QuoteResponse)
@@ -297,7 +342,11 @@ async def send_quote_to_customer(
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == quote.repair_order_id)
-        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .options(
+            selectinload(RepairOrder.customer),
+            selectinload(RepairOrder.vehicle),
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -311,6 +360,12 @@ async def send_quote_to_customer(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    # Force customer-facing send to use current totals (services + parts),
+    # even if the quote draft was created before later edits.
+    latest_total = get_order_subtotal(order)
+    if quote.total_amount != latest_total:
+        quote.total_amount = latest_total
     
     customer = order.customer
     if not customer or not customer.email:
@@ -322,21 +377,35 @@ async def send_quote_to_customer(
     # Generate magic link token
     quote.approval_token = secrets.token_urlsafe(48)
     
-    # Parse services from internal_notes for email
+    # Parse services and parts for email
     services_html = ""
+    selected_services: list[dict] = []
     if order.internal_notes:
         try:
             notes_data = json.loads(order.internal_notes)
             selected_services = notes_data.get("selected_services", [])
-            if selected_services:
-                services_html = '<div style="margin: 15px 0;"><strong>Services:</strong><ul style="margin: 10px 0; padding-left: 20px;">'
-                for svc in selected_services:
-                    svc_name = svc.get("name", "Service")
-                    svc_price = Decimal(str(svc.get("base_price", "0")))
-                    services_html += f'<li style="margin: 5px 0;">{svc_name} - ${svc_price:,.2f}</li>'
-                services_html += '</ul></div>'
         except (json.JSONDecodeError, TypeError, ValueError):
-            pass
+            selected_services = []
+    if selected_services:
+        services_html = '<div style="margin: 15px 0;"><strong>Services / Labor:</strong><ul style="margin: 10px 0; padding-left: 20px;">'
+        for svc in selected_services:
+            svc_name = svc.get("name", "Service")
+            svc_price = Decimal(str(svc.get("base_price", "0")))
+            services_html += f'<li style="margin: 5px 0;">{svc_name} - ${svc_price:,.2f}</li>'
+        services_html += '</ul></div>'
+
+    parts_html = ""
+    if order.parts_usage:
+        parts_html = '<div style="margin: 15px 0;"><strong>Parts:</strong><ul style="margin: 10px 0; padding-left: 20px;">'
+        for pu in order.parts_usage:
+            part_name = pu.inventory_item.name if pu.inventory_item else "Part"
+            qty = pu.quantity or 0
+            line_total = Decimal(str(pu.total_price or 0))
+            parts_html += f'<li style="margin: 5px 0;">{part_name} x{qty} - ${line_total:,.2f}</li>'
+        parts_html += '</ul></div>'
+
+    labor_total = get_order_labor_total(order)
+    parts_total = get_order_parts_total(order)
     
     # Build vehicle info
     vehicle = order.vehicle
@@ -365,6 +434,9 @@ async def send_quote_to_customer(
             {f'<p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>' if vehicle_info else ''}
             <p style="margin: 0 0 10px 0;"><strong>Description:</strong> {order.description or 'General Repair'}</p>
             {services_html}
+            {parts_html}
+            <p style="margin: 8px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Labor / Services:</strong> ${labor_total:,.2f}</p>
+            <p style="margin: 4px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Parts:</strong> ${parts_total:,.2f}</p>
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 15px 0;">
             <p style="margin: 0; font-size: 28px; color: #d97706; text-align: center;"><strong>Total: ${quote.total_amount:,.2f}</strong></p>
         </div>
@@ -429,6 +501,9 @@ async def send_quote_to_customer(
                 {f'<p><strong>Vehicle:</strong> {vehicle_info}</p>' if vehicle_info else ''}
                 <p><strong>Description:</strong> {order.description or 'General Repair'}</p>
                 {services_html}
+                {parts_html}
+                <p style="margin: 8px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Labor / Services:</strong> ${labor_total:,.2f}</p>
+                <p style="margin: 4px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Parts:</strong> ${parts_total:,.2f}</p>
                 <p style="color: #666; font-size: 14px;">Work will begin shortly. We will notify you when your vehicle is being serviced.</p>
             </body></html>
             """,
@@ -456,6 +531,18 @@ async def send_quote_to_customer(
                 template_name="quote_sent_sms")
         except Exception:
             pass
+    
+    # Broadcast WebSocket event to notify customer portal.
+    # If auto-approved, emit quote_approved to avoid "review quote" UX.
+    ws_event_type = WSEventType.QUOTE_APPROVED if auto_approved else WSEventType.QUOTE_CREATED
+    await broadcast_quote_event(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        quote_id=str(quote.id),
+        quote_number=quote.quote_number,
+        event_type=ws_event_type,
+        order_id=str(order.id),
+    )
     
     return QuoteResponse.model_validate(quote)
 
@@ -659,7 +746,11 @@ async def get_quote_by_token(
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == quote.repair_order_id)
-        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .options(
+            selectinload(RepairOrder.customer),
+            selectinload(RepairOrder.vehicle),
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -676,6 +767,17 @@ async def get_quote_by_token(
             services = notes_data.get("selected_services", [])
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
+
+    parts = []
+    for pu in order.parts_usage:
+        parts.append(
+            {
+                "name": pu.inventory_item.name if pu.inventory_item else "Part",
+                "quantity": pu.quantity,
+                "unit_price": str(pu.unit_price),
+                "total_price": str(pu.total_price),
+            }
+        )
     
     vehicle = order.vehicle
     customer = order.customer
@@ -690,6 +792,9 @@ async def get_quote_by_token(
         vehicle_vin=vehicle.vin if vehicle else None,
         customer_first_name=customer.first_name if customer else "Customer",
         services=services,
+        parts=parts,
+        labor_total=get_order_labor_total(order),
+        parts_total=get_order_parts_total(order),
     )
 
 

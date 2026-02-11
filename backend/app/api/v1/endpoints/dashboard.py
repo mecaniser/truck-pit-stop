@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, cast, Date
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 
@@ -12,32 +12,16 @@ from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
-from app.db.models.inventory import Inventory
+from app.db.models.inventory import Inventory, PartsUsage
+from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment, PaymentStatus
-import json
+from app.services.pricing import get_order_labor_total, get_order_subtotal
 
 router = APIRouter()
 
 
 def get_effective_total(order: RepairOrder) -> Decimal:
-    """Get effective total cost - uses service prices from internal_notes if available, else backend total"""
-    # Check for services in internal_notes (quote-based orders)
-    if order.internal_notes:
-        try:
-            notes_data = json.loads(order.internal_notes)
-            selected_services = notes_data.get("selected_services", [])
-            if selected_services:
-                service_total = sum(
-                    Decimal(str(svc.get("base_price", "0")))
-                    for svc in selected_services
-                )
-                if service_total > 0:
-                    return service_total
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    
-    # Fall back to backend total
-    return order.total_cost or Decimal("0")
+    return get_order_subtotal(order)
 
 
 class StatusCount(BaseModel):
@@ -79,6 +63,15 @@ class RevenueStats(BaseModel):
     this_week: str
     this_month: str
     total_paid_orders: int
+    today_parts_margin: str = "0.00"
+    this_week_parts_margin: str = "0.00"
+    this_month_parts_margin: str = "0.00"
+    today_gross_profit: str = "0.00"
+    this_week_gross_profit: str = "0.00"
+    this_month_gross_profit: str = "0.00"
+    today_ppi: str = "0.00"
+    this_week_ppi: str = "0.00"
+    this_month_ppi: str = "0.00"
 
 
 class DashboardStats(BaseModel):
@@ -355,7 +348,7 @@ async def get_dashboard_stats(
         )
         my_in_progress = result.scalar() or 0
 
-    # Phase 2: Revenue stats from completed payments
+    # Phase 2: Revenue and profitability stats from completed payments
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
@@ -396,6 +389,93 @@ async def get_dashboard_stats(
     )
     revenue_month = result.scalar() or Decimal("0.00")
 
+    # Profitability metrics by period:
+    # - Parts margin = billed parts total - parts cost basis
+    # - Gross profit = labor/services revenue + parts margin
+    # - PPI = gross profit per paid invoice
+    calc_start = min(week_start, month_start)
+    result = await db.execute(
+        select(
+            Payment.created_at,
+            Payment.invoice_id,
+            RepairOrder.id.label("order_id"),
+            RepairOrder.total_parts_cost,
+            RepairOrder.total_labor_cost,
+            RepairOrder.internal_notes,
+            Invoice.subtotal,
+        )
+        .join(Invoice, Invoice.id == Payment.invoice_id)
+        .join(RepairOrder, RepairOrder.id == Invoice.repair_order_id)
+        .where(
+            and_(
+                Payment.tenant_id == tenant_id,
+                Payment.status == PaymentStatus.COMPLETED,
+                cast(Payment.created_at, Date) >= calc_start,
+            )
+        )
+    )
+    paid_rows = result.all()
+
+    order_ids = [row.order_id for row in paid_rows]
+    parts_cost_by_order: Dict = {}
+    if order_ids:
+        result = await db.execute(
+            select(
+                PartsUsage.repair_order_id,
+                func.coalesce(
+                    func.sum(
+                        PartsUsage.quantity
+                        * func.coalesce(PartsUsage.unit_cost, Inventory.cost, 0)
+                    ),
+                    0,
+                ),
+            )
+            .outerjoin(Inventory, Inventory.id == PartsUsage.inventory_id)
+            .where(PartsUsage.repair_order_id.in_(order_ids))
+            .group_by(PartsUsage.repair_order_id)
+        )
+        parts_cost_by_order = {order_id: cost for order_id, cost in result.all()}
+
+    def _bucket_for(payment_date: date) -> List[str]:
+        buckets: List[str] = []
+        if payment_date >= month_start:
+            buckets.append("month")
+        if payment_date >= week_start:
+            buckets.append("week")
+        if payment_date == today:
+            buckets.append("today")
+        return buckets
+
+    profitability = {
+        "today": {"parts_margin": Decimal("0.00"), "gross_profit": Decimal("0.00"), "invoices": set()},
+        "week": {"parts_margin": Decimal("0.00"), "gross_profit": Decimal("0.00"), "invoices": set()},
+        "month": {"parts_margin": Decimal("0.00"), "gross_profit": Decimal("0.00"), "invoices": set()},
+    }
+
+    for row in paid_rows:
+        payment_date = row.created_at.date()
+        parts_revenue = Decimal(str(row.total_parts_cost or 0))
+        parts_cost = Decimal(str(parts_cost_by_order.get(row.order_id, 0) or 0))
+        parts_margin = parts_revenue - parts_cost
+
+        labor_revenue = get_order_labor_total(row)
+        if labor_revenue <= Decimal("0.00"):
+            subtotal = Decimal(str(row.subtotal or 0))
+            labor_revenue = max(subtotal - parts_revenue, Decimal("0.00"))
+
+        gross_profit = labor_revenue + parts_margin
+
+        for bucket in _bucket_for(payment_date):
+            profitability[bucket]["parts_margin"] += parts_margin
+            profitability[bucket]["gross_profit"] += gross_profit
+            profitability[bucket]["invoices"].add(row.invoice_id)
+
+    def _ppi_for(bucket: str) -> Decimal:
+        invoice_count = len(profitability[bucket]["invoices"])
+        if invoice_count == 0:
+            return Decimal("0.00")
+        return (profitability[bucket]["gross_profit"] / Decimal(invoice_count)).quantize(Decimal("0.01"))
+
     # Total paid orders count
     result = await db.execute(
         select(func.count(RepairOrder.id)).where(
@@ -412,6 +492,15 @@ async def get_dashboard_stats(
         this_week=str(revenue_week),
         this_month=str(revenue_month),
         total_paid_orders=total_paid_orders,
+        today_parts_margin=str(profitability["today"]["parts_margin"]),
+        this_week_parts_margin=str(profitability["week"]["parts_margin"]),
+        this_month_parts_margin=str(profitability["month"]["parts_margin"]),
+        today_gross_profit=str(profitability["today"]["gross_profit"]),
+        this_week_gross_profit=str(profitability["week"]["gross_profit"]),
+        this_month_gross_profit=str(profitability["month"]["gross_profit"]),
+        today_ppi=str(_ppi_for("today")),
+        this_week_ppi=str(_ppi_for("week")),
+        this_month_ppi=str(_ppi_for("month")),
     )
 
     # Phase 2: Mechanic workload distribution

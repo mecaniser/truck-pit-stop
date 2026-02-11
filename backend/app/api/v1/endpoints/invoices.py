@@ -15,6 +15,7 @@ from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
+from app.services.pricing import get_order_labor_total, get_order_parts_total
 from app.services.email_service import send_email
 from sqlalchemy.orm import selectinload
 from app.core.websocket import broadcast_invoice_created, broadcast_repair_order_update
@@ -138,28 +139,10 @@ async def create_invoice(
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
     
-    # Calculate total from parts/labor OR from selected services in internal_notes
-    subtotal = order.total_cost
-    labor_total = Decimal("0.00")
-    
-    # If total_cost is 0, check for services in internal_notes (quote-based orders)
-    if subtotal == Decimal("0.00") and order.internal_notes:
-        try:
-            import json
-            notes_data = json.loads(order.internal_notes)
-            selected_services = notes_data.get("selected_services", [])
-            if selected_services:
-                subtotal = sum(
-                    Decimal(str(svc.get("base_price", "0")))
-                    for svc in selected_services
-                )
-                # For quote-based, assume all is labor for shop supplies calc
-                labor_total = subtotal
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-    else:
-        # For parts/labor based orders, get labor from repair order
-        labor_total = order.total_labor_cost if order.total_labor_cost else Decimal("0.00")
+    # Subtotal uses service/labor charges plus parts sell price.
+    parts_total = get_order_parts_total(order)
+    labor_total = get_order_labor_total(order)
+    subtotal = parts_total + labor_total
     
     # Calculate fees based on tenant settings
     shop_supplies_rate = Decimal(str(tenant.shop_supplies_rate or 0)) / 100 if tenant else Decimal("0")
@@ -423,10 +406,23 @@ async def delete_invoice(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete a paid invoice")
     
     # Revert repair order status to completed
-    invoice.repair_order.status = RepairOrderStatus.COMPLETED
+    order = invoice.repair_order
+    order.status = RepairOrderStatus.COMPLETED
     
     await db.delete(invoice)
     await db.commit()
+
+    await db.refresh(order)
+
+    # Broadcast status rollback so active views update in real time.
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
 
 
 @router.post("/{invoice_id}/resend")
