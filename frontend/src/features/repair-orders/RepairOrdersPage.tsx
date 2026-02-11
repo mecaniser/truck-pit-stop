@@ -16,6 +16,8 @@ import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useNotificationManager } from '../../hooks/useNotificationManager'
+import NotificationBanner from '../../components/NotificationBanner'
 
 interface NewCustomerForm {
   first_name: string
@@ -33,12 +35,23 @@ interface NewVehicleForm {
   mileage: string
 }
 
+type ApiErrorLike = {
+  response?: {
+    data?: {
+      detail?: string
+    }
+  }
+}
+
 export default function RepairOrdersPage() {
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
   
+  // Notification manager for queued, deduplicated notifications
+  const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
+  
   // Connect to WebSocket for real-time updates
-  useWebSocket({ showToasts: true })
+  useWebSocket({ onNotification: notify })
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -263,6 +276,11 @@ export default function RepairOrdersPage() {
     return null
   }
 
+  const getErrorDetail = (error: unknown, fallback: string) => {
+    const detail = (error as ApiErrorLike)?.response?.data?.detail
+    return typeof detail === 'string' && detail.trim() ? detail : fallback
+  }
+
   const createCustomerMutation = useMutation({
     mutationFn: async (payload: NewCustomerForm) => {
       const response = await api.post('/customers', payload)
@@ -303,8 +321,8 @@ export default function RepairOrdersPage() {
       })
       return response.data as RepairOrder
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to create repair order')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to create repair order'))
     },
   })
 
@@ -319,8 +337,8 @@ export default function RepairOrdersPage() {
       setSelectedOrder(updated)
       toast.success(`Repair order ${updated.order_number} — Status: Cancelled`)
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to cancel repair order')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to cancel repair order'))
     },
   })
 
@@ -337,8 +355,8 @@ export default function RepairOrdersPage() {
       }
       toast.success('Repair order deleted')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to delete repair order')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to delete repair order'))
     },
   })
 
@@ -362,8 +380,8 @@ export default function RepairOrdersPage() {
       const wasApproved = variables.orderStatus === 'approved'
       toast.success(wasApproved ? 'Mechanic assigned - Customer notified' : 'Mechanic reassigned')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to assign mechanic')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to assign mechanic'))
     },
   })
 
@@ -381,8 +399,8 @@ export default function RepairOrdersPage() {
       setSelectedOrder(updated)
       toast.success('Work approved - Customer notified')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to approve completion')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to approve completion'))
     },
   })
 
@@ -406,8 +424,8 @@ export default function RepairOrdersPage() {
       setInvoiceDueDate('')
       toast.success('Invoice created and sent to customer')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to create invoice')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to create invoice'))
     },
   })
 
@@ -431,8 +449,8 @@ export default function RepairOrdersPage() {
       setSelectedPaymentMethod('')
       toast.success('Payment recorded successfully')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to record payment')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to record payment'))
     },
   })
 
@@ -448,8 +466,8 @@ export default function RepairOrdersPage() {
       setShowResendInvoice(false)
       setResendCustomEmail('')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to resend invoice')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to resend invoice'))
     },
   })
 
@@ -463,8 +481,8 @@ export default function RepairOrdersPage() {
       setSelectedOrder(prev => prev ? { ...prev, status: 'completed' } : null)
       toast.success('Invoice deleted. You can now recreate it.')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to delete invoice')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to delete invoice'))
     },
   })
 
@@ -557,10 +575,10 @@ export default function RepairOrdersPage() {
       refetchQuote()
       refetchOrderDetail()
       setSelectedOrder((prev) => (prev && prev.id === orderId ? { ...prev, status: 'quoted' } : prev))
-      toast.success(`Quote ${quote.quote_number} created — Status: Quoted`)
+      toast.success(`Quote ${quote.quote_number} draft ready`)
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to create quote')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to create quote'))
     },
   })
 
@@ -581,8 +599,8 @@ export default function RepairOrdersPage() {
       setQuoteNeedsUpdate(false)
       toast.success(`Quote ${quote.quote_number} updated — $${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to update quote')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to update quote'))
     },
   })
 
@@ -600,8 +618,8 @@ export default function RepairOrdersPage() {
       }
       toast.success('Quote sent — Awaiting customer approval')
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to send quote')
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to send quote'))
     },
   })
 
@@ -779,8 +797,6 @@ export default function RepairOrdersPage() {
         ? JSON.stringify({ selected_services: selectedServicePayload })
         : null
 
-      const quotedStatusPayload = { status: 'quoted' }
-
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
 
       const createdOrder = await createRepairOrderMutation.mutateAsync({
@@ -790,20 +806,28 @@ export default function RepairOrdersPage() {
         internal_notes: internalNotes,
       })
 
+      let createdQuoteNumber: string | null = null
       try {
-        await api.put(`/repair-orders/${createdOrder.id}`, quotedStatusPayload)
-      } catch (err: any) {
-        console.error('Failed to set quoted status', err)
+        const quoteResponse = await api.post('/quotes', { repair_order_id: createdOrder.id })
+        createdQuoteNumber = quoteResponse.data?.quote_number || null
+      } catch (err: unknown) {
+        // Keep order creation successful even if quote draft creation fails.
+        console.error('Failed to auto-create quote draft', err)
       }
 
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['quote', createdOrder.id] })
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       queryClient.invalidateQueries({ queryKey: ['vehicles'] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      toast.success(`Repair order ${createdOrder.order_number} created — Status: Draft`)
+      if (createdQuoteNumber) {
+        toast.success(`Repair order ${createdOrder.order_number} created — Quote ${createdQuoteNumber} ready to send`)
+      } else {
+        toast.success(`Repair order ${createdOrder.order_number} created`)
+      }
       closeModal()
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to create repair order')
+    } catch (err: unknown) {
+      toast.error(getErrorDetail(err, 'Failed to create repair order'))
     } finally {
       setIsSubmitting(false)
     }
@@ -821,6 +845,14 @@ export default function RepairOrdersPage() {
           + New Repair Order
         </button>
       </div>
+
+      {/* Real-time notification banners */}
+      <NotificationBanner
+        banners={banners}
+        onDismiss={dismissBanner}
+        onDismissAll={clearBanners}
+        autoDismissMs={10000}
+      />
 
       {/* Search Bar */}
       <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
@@ -900,12 +932,14 @@ export default function RepairOrdersPage() {
                       : getStatusStyle(order.status)
                     const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : order.status.replace('_', ' ')
                     const parsedServices = parseServiceNotes(order.internal_notes)
-                    const estimatedTotal = parsedServices?.reduce(
+                    const serviceTotal = parsedServices?.reduce(
                       (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                       0
-                    )
-                    const backendTotal = parseFloat(order.total_cost) || 0
-                    const displayTotal = backendTotal || estimatedTotal || 0
+                    ) || 0
+                    const backendParts = parseFloat(order.total_parts_cost ?? '0') || 0
+                    const backendLabor = parseFloat(order.total_labor_cost ?? '0') || 0
+                    const laborTotal = serviceTotal > 0 ? serviceTotal : backendLabor
+                    const displayTotal = backendParts + laborTotal
                     const customer = customerLookup.get(order.customer_id)
                     const vehicle = vehicleLookup.get(order.vehicle_id)
 
@@ -964,12 +998,15 @@ export default function RepairOrdersPage() {
                   : getStatusStyle(order.status)
                 const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : order.status.replace('_', ' ')
                 const parsedServices = parseServiceNotes(order.internal_notes)
-                const estimatedTotal = parsedServices?.reduce(
+                const serviceTotal = parsedServices?.reduce(
                   (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
                   0
-                )
-                const backendTotal = parseFloat(order.total_cost) || 0
-                const showEstimate = backendTotal === 0 && estimatedTotal && estimatedTotal > 0
+                ) || 0
+                const backendParts = parseFloat(order.total_parts_cost ?? '0') || 0
+                const backendLabor = parseFloat(order.total_labor_cost ?? '0') || 0
+                const laborTotal = serviceTotal > 0 ? serviceTotal : backendLabor
+                const displayTotal = backendParts + laborTotal
+                const showEstimate = serviceTotal > 0
                 const showMechanic = ['quoted', 'in_progress', 'paid'].includes(order.status) && order.assigned_mechanic_id
                 return (
                   <div 
@@ -1000,10 +1037,10 @@ export default function RepairOrdersPage() {
                       </div>
 
                       <div className="bg-white/50 rounded-lg p-3 space-y-2">
-                        <div className="text-xs text-slate-500 mb-1">{showEstimate ? 'Est. from services' : 'Total Cost'}</div>
+                        <div className="text-xs text-slate-500 mb-1">{showEstimate ? 'Services + Parts' : 'Total Cost'}</div>
                         <div className="text-xl font-bold text-slate-800">
                           $
-                          {(showEstimate ? estimatedTotal : backendTotal || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          {displayTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </div>
                         {showMechanic && (
                           <div className="flex items-center gap-2 text-xs text-slate-600">
@@ -2267,7 +2304,7 @@ export default function RepairOrdersPage() {
 
                         {/* Workflow steps */}
                         <div className="flex items-center gap-1 flex-wrap">
-                          {/* Step 1: Create/Update Quote */}
+                          {/* Step 1: Create/Update Quote Draft */}
                           {quoteNeedsUpdate && hasQuote ? (
                             <button
                               type="button"
@@ -2284,7 +2321,7 @@ export default function RepairOrdersPage() {
                                 : 'bg-amber-500 text-white'
                             }`}>
                               {hasQuote ? (
-                                <span className="flex items-center gap-1">✓ Created</span>
+                                <span className="flex items-center gap-1">✓ Draft Ready</span>
                               ) : (
                                 <button
                                   type="button"
@@ -2292,7 +2329,7 @@ export default function RepairOrdersPage() {
                                   disabled={createQuoteMutation.isPending}
                                   className="bg-transparent"
                                 >
-                                  {createQuoteMutation.isPending ? 'Creating...' : 'Create Quote'}
+                                  {createQuoteMutation.isPending ? 'Creating...' : 'Create Draft'}
                                 </button>
                               )}
                             </span>

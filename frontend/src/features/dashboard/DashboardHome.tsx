@@ -20,6 +20,8 @@ import { formatUSPhone } from '@/utils/phone'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useNotificationManager } from '../../hooks/useNotificationManager'
+import NotificationBanner from '../../components/NotificationBanner'
 import AlertsBanner from '../../components/AlertsBanner'
 
 interface StatusCount {
@@ -53,6 +55,15 @@ interface RevenueStats {
   this_week: string
   this_month: string
   total_paid_orders: number
+  today_parts_margin: string
+  this_week_parts_margin: string
+  this_month_parts_margin: string
+  today_gross_profit: string
+  this_week_gross_profit: string
+  this_month_gross_profit: string
+  today_ppi: string
+  this_week_ppi: string
+  this_month_ppi: string
 }
 
 interface DashboardStats {
@@ -184,8 +195,11 @@ export default function DashboardHome() {
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   
+  // Notification manager for queued, deduplicated notifications
+  const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
+  
   // Connect to WebSocket for real-time updates (replaces polling)
-  useWebSocket({ showToasts: true })
+  useWebSocket({ onNotification: notify })
   
   // Dashboard stats query (WebSocket invalidates this on updates)
   const { data: stats, isLoading: loading, error: queryError, isFetching: isRefreshing, dataUpdatedAt } = useQuery<DashboardStats>({
@@ -284,6 +298,24 @@ export default function DashboardHome() {
     return lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
+  const metricValue = (value?: string) => parseFloat(value || '0')
+  const teamMembers = stats?.mechanic_workload || []
+  const teamAssignedTotal = teamMembers.reduce((sum, m) => sum + m.assigned_count, 0)
+  const teamInProgressTotal = teamMembers.reduce((sum, m) => sum + m.in_progress_count, 0)
+  const teamQueuedTotal = Math.max(teamAssignedTotal - teamInProgressTotal, 0)
+  const teamUtilization = teamAssignedTotal > 0
+    ? Math.round((teamInProgressTotal / teamAssignedTotal) * 100)
+    : 0
+
+  const revenueCards = [
+    { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400', note: 'Cash collected' },
+    { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300', note: 'Labor + parts margin' },
+    { label: 'Today PPI', value: metricValue(stats?.revenue?.today_ppi), tone: 'text-violet-300', note: 'Profit per paid invoice' },
+    { label: 'Week Revenue', value: metricValue(stats?.revenue?.this_week), tone: 'text-emerald-400', note: 'Completed payments' },
+    { label: 'Month Revenue', value: metricValue(stats?.revenue?.this_month), tone: 'text-emerald-400', note: 'Completed payments' },
+    { label: 'Parts Margin', value: metricValue(stats?.revenue?.today_parts_margin), tone: 'text-sky-400', note: 'Today (sell - cost)' },
+  ]
+
   return (
     <div className="flex flex-col gap-5 flex-1 min-h-0">
       {/* Header */}
@@ -297,6 +329,14 @@ export default function DashboardHome() {
             : `Welcome back, ${user?.first_name || user?.email}`}
         </p>
       </div>
+
+      {/* Real-time notification banners */}
+      <NotificationBanner
+        banners={banners}
+        onDismiss={dismissBanner}
+        onDismissAll={clearBanners}
+        autoDismissMs={10000}
+      />
 
       {/* Action Buttons (managers only) */}
       {isManager && (
@@ -563,61 +603,105 @@ export default function DashboardHome() {
 
       {/* Bottom Bar: Revenue + Team Workload (managers only) */}
       {isManager && (
-        <div className="flex flex-col sm:flex-row gap-4 flex-shrink-0">
-          {/* Revenue - Compact row */}
-          <div className="flex-1 bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="flex items-center gap-6 flex-wrap">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Revenue</h3>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-500">Today</span>
-                <span className="text-sm font-semibold text-emerald-400">
-                  ${parseFloat(stats?.revenue?.today || '0').toLocaleString()}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-500">Week</span>
-                <span className="text-sm font-semibold text-emerald-400">
-                  ${parseFloat(stats?.revenue?.this_week || '0').toLocaleString()}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-gray-500">Month</span>
-                <span className="text-sm font-semibold text-emerald-400">
-                  ${parseFloat(stats?.revenue?.this_month || '0').toLocaleString()}
-                </span>
-              </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[1.9fr_1.1fr] gap-4 flex-shrink-0">
+          {/* Revenue KPIs */}
+          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Revenue KPIs</h3>
+              <span className="text-xs text-gray-400 bg-white/5 border border-white/10 rounded-full px-2 py-0.5">
+                {stats?.revenue?.total_paid_orders || 0} paid orders
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5">
+              {revenueCards.map((card) => (
+                <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                  <div className="text-[11px] uppercase tracking-wide text-gray-500">{card.label}</div>
+                  <div className={`mt-1 text-base font-semibold ${card.tone}`}>
+                    ${card.value.toLocaleString()}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-gray-500">{card.note}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Team Workload - Compact */}
+          {/* Team Workload */}
           <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="flex items-center gap-3">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team</h3>
-              {!stats?.mechanic_workload?.length ? (
-                <span className="text-xs text-gray-500">No mechanics</span>
-              ) : (
-                <div className="flex items-center gap-2 flex-wrap">
-                  {stats.mechanic_workload.slice(0, 6).map((m) => (
-                    <div
-                      key={m.mechanic_id}
-                      className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-lg border border-white/10"
-                      title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
-                    >
-                      <div 
-                        className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-medium"
-                        style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
-                      >
-                        {m.mechanic_name.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="text-xs text-white">{m.mechanic_name.split(' ')[0]}</span>
-                      <span className="text-xs font-medium" style={{ color: accentColors[400] }}>
-                        {m.in_progress_count}/{m.assigned_count}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team Capacity</h3>
+              <div className="text-xs text-gray-400">
+                Active <span className="text-white font-semibold">{teamInProgressTotal}</span>
+                <span className="text-gray-600 px-1">/</span>
+                Assigned <span className="text-white font-semibold">{teamAssignedTotal}</span>
+              </div>
             </div>
+
+            {!teamMembers.length ? (
+              <span className="text-xs text-gray-500">No mechanics</span>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-gray-500">
+                    <span>Team Utilization</span>
+                    <span>{teamUtilization}%</span>
+                  </div>
+                  <div className="mt-1.5 h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-2 rounded-full"
+                      style={{ width: `${teamUtilization}%`, backgroundColor: accentColors[500] }}
+                    />
+                  </div>
+                  <div className="mt-1.5 text-[11px] text-gray-500">
+                    {teamInProgressTotal} active, {teamQueuedTotal} queued
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {teamMembers.slice(0, 8).map((m) => {
+                    const loadPct = m.assigned_count > 0
+                      ? Math.round((m.in_progress_count / m.assigned_count) * 100)
+                      : 0
+                    const queued = Math.max(m.assigned_count - m.in_progress_count, 0)
+                    return (
+                      <div
+                        key={m.mechanic_id}
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                        title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-medium shrink-0"
+                              style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
+                            >
+                              {m.mechanic_name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="text-xs text-white truncate">{m.mechanic_name}</span>
+                          </div>
+                          <span className="text-[11px] text-gray-400 shrink-0">
+                            {m.in_progress_count} active · {queued} queued
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
+                          />
+                        </div>
+                        <div className="mt-1 text-[11px] text-gray-500">
+                          {loadPct}% load ({m.in_progress_count}/{m.assigned_count})
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {teamMembers.length > 8 && (
+                    <div className="text-[11px] text-gray-500 px-1">
+                      +{teamMembers.length - 8} more mechanics
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

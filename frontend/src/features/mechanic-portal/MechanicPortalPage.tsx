@@ -4,6 +4,8 @@ import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useNotificationManager } from '../../hooks/useNotificationManager'
+import NotificationBanner from '../../components/NotificationBanner'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { 
@@ -26,7 +28,10 @@ import {
   LogOut,
   Palette,
   Check,
-  RotateCcw
+  RotateCcw,
+  ChevronDown,
+  Camera,
+  X
 } from 'lucide-react'
 import { ACCENT_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -104,6 +109,14 @@ interface PTORequest {
   processed_at: string | null
 }
 
+interface WorkPhoto {
+  id: string
+  image_url: string
+  caption: string | null
+  uploaded_at: string
+  mechanic_name: string
+}
+
 const STATUS_LABELS: Record<string, string> = {
   assigned: 'New Job',
   acknowledged: 'Ready to Start',
@@ -155,12 +168,23 @@ export default function MechanicPortalPage() {
   const { accentColors, accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
   const queryClient = useQueryClient()
   
+  // Notification manager for queued, deduplicated notifications
+  const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
+  
   // Connect to WebSocket for real-time updates
-  useWebSocket({ showToasts: true })
+  useWebSocket({ onNotification: notify })
   
   const [view, setView] = useState<ViewType>('list')
   const [previousView, setPreviousView] = useState<ViewType>('list')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  
+  // Expandable job cards state
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
+  const toggleExpand = (jobId: string) => {
+    setExpandedJobId(prev => prev === jobId ? null : jobId)
+    setShowPhotoPreview(null)
+    setPhotoCaption('')
+  }
   
   // Request form state
   const [requestType, setRequestType] = useState<'pto' | 'cash'>('pto')
@@ -222,7 +246,7 @@ export default function MechanicPortalPage() {
     enabled: view === 'request',
   })
 
-  // Job detail
+  // Job detail (for full-page detail view - history items)
   const { data: jobDetail } = useQuery<MechanicJobDetail>({
     queryKey: ['mechanic-job-detail', selectedJobId],
     queryFn: async () => {
@@ -231,6 +255,37 @@ export default function MechanicPortalPage() {
     },
     enabled: !!selectedJobId && view === 'detail',
   })
+  
+  // Expanded job detail (for inline expandable cards)
+  const { data: expandedJobDetail, isLoading: expandedJobLoading } = useQuery<MechanicJobDetail>({
+    queryKey: ['mechanic-job-detail', expandedJobId],
+    queryFn: async () => {
+      const response = await api.get(`/mechanics/my-jobs/${expandedJobId}`)
+      return response.data
+    },
+    enabled: !!expandedJobId,
+  })
+  
+  // Work photos for expanded job
+  const { data: workPhotos } = useQuery<WorkPhoto[]>({
+    queryKey: ['work-photos', expandedJobId],
+    queryFn: async () => {
+      const response = await api.get(`/mechanics/my-jobs/${expandedJobId}/photos`)
+      return response.data
+    },
+    enabled: !!expandedJobId,
+  })
+  
+  // Photo upload state
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const [photoCaption, setPhotoCaption] = useState('')
+  const [showPhotoPreview, setShowPhotoPreview] = useState<string | null>(null)
+  const fileInputRef = useCallback((node: HTMLInputElement | null) => {
+    // Store ref for triggering file input
+    if (node) {
+      (window as any).__photoFileInput = node
+    }
+  }, [])
 
   // Mutations
   // Combined: Accept + Start in one action (skips acknowledge if already acknowledged)
@@ -255,12 +310,64 @@ export default function MechanicPortalPage() {
       queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-stats'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
+      setExpandedJobId(null) // Collapse expanded card
       setView('list')
       setSelectedJobId(null)
-      toast.success('🎉 Job completed! +10 points')
+      toast.success('🎉 Job completed!')
     },
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
   })
+  
+  const uploadPhotoMutation = useMutation({
+    mutationFn: async ({ jobId, image, caption }: { jobId: string; image: string; caption?: string }) => {
+      const response = await api.post(`/mechanics/my-jobs/${jobId}/photos`, { image, caption })
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['work-photos', expandedJobId] })
+      setShowPhotoPreview(null)
+      setPhotoCaption('')
+      toast.success('Photo uploaded!')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to upload photo'),
+  })
+  
+  const deletePhotoMutation = useMutation({
+    mutationFn: async ({ jobId, photoId }: { jobId: string; photoId: string }) => {
+      await api.delete(`/mechanics/my-jobs/${jobId}/photos/${photoId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['work-photos', expandedJobId] })
+      toast.success('Photo deleted')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to delete photo'),
+  })
+  
+  // Handle photo file selection
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    // Convert to base64
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = reader.result as string
+      setShowPhotoPreview(base64)
+    }
+    reader.readAsDataURL(file)
+    
+    // Reset input
+    e.target.value = ''
+  }
+  
+  const handlePhotoUpload = () => {
+    if (!showPhotoPreview || !expandedJobId) return
+    setIsUploadingPhoto(true)
+    uploadPhotoMutation.mutate(
+      { jobId: expandedJobId, image: showPhotoPreview, caption: photoCaption || undefined },
+      { onSettled: () => setIsUploadingPhoto(false) }
+    )
+  }
 
   const createRequestMutation = useMutation({
     mutationFn: async (data: { request_type: string; pto_start_date?: string; pto_end_date?: string; points_requested: number; notes?: string }) => {
@@ -1369,6 +1476,14 @@ export default function MechanicPortalPage() {
       </div>
 
       <main className="p-4 space-y-4 pb-24">
+        {/* Real-time notification banners */}
+        <NotificationBanner
+          banners={banners}
+          onDismiss={dismissBanner}
+          onDismissAll={clearBanners}
+          autoDismissMs={8000}
+        />
+
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
@@ -1460,48 +1575,214 @@ export default function MechanicPortalPage() {
           </>
         ) : (
           <>
-            {/* Active Jobs */}
+            {/* Active Jobs - Expandable Cards */}
             {activeJobs.map((job) => {
               const isNew = job.status === 'assigned'
               const isWorking = job.status === 'in_progress'
+              const isExpanded = expandedJobId === job.id
+              const detail = isExpanded ? expandedJobDetail : null
+              
+              // Status-based accent color
+              const borderColor = isWorking ? 'border-purple-500' : isNew ? 'border-blue-500' : 'border-gray-700'
+              const statusBg = isWorking ? 'bg-purple-500' : isNew ? 'bg-blue-500' : 'bg-gray-600'
               
               return (
-                <button
-                  key={job.id}
-                  onClick={() => openJob(job.id)}
-                  className={`w-full rounded-2xl p-5 text-left transition-all active:scale-[0.98] ${
-                    isWorking 
-                      ? 'bg-purple-600 shadow-lg shadow-purple-500/25' 
-                      : isNew 
-                        ? 'bg-blue-600 shadow-lg shadow-blue-500/25'
-                        : 'bg-gray-800 border border-gray-700'
-                  }`}
+                <div 
+                  key={job.id} 
+                  className={`rounded-2xl overflow-hidden bg-gray-800/50 border-2 ${borderColor} transition-all`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs uppercase tracking-wide mb-1 ${
-                        isWorking || isNew ? 'text-white/70' : 'text-gray-500'
-                      }`}>
-                        {STATUS_LABELS[job.status]}
-                      </p>
-                      <h3 className="text-white font-bold text-lg truncate">{job.vehicle_info}</h3>
-                      <p className={`text-sm mt-1 ${isWorking || isNew ? 'text-white/60' : 'text-gray-500'}`}>
-                        {job.services_count} service{job.services_count !== 1 ? 's' : ''}
-                      </p>
+                  {/* Header - Always visible */}
+                  <button
+                    onClick={() => toggleExpand(job.id)}
+                    className="w-full p-4 text-left transition-all active:scale-[0.99]"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        {/* Status indicator dot */}
+                        <div className={`w-3 h-3 rounded-full shrink-0 ${statusBg} ${isWorking ? 'animate-pulse' : ''}`} />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-white font-semibold truncate">{job.vehicle_info}</h3>
+                          <p className="text-sm text-gray-400">
+                            {job.services_count} service{job.services_count !== 1 ? 's' : ''} · {job.order_number}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-2 py-1 rounded-md text-xs font-medium text-white ${statusBg}`}>
+                          {STATUS_LABELS[job.status]}
+                        </span>
+                        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                      </div>
                     </div>
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                      isWorking ? 'bg-white/20' : isNew ? 'bg-white/20' : 'bg-gray-700'
-                    }`}>
-                      {isWorking ? (
-                        <PlayCircle className="w-6 h-6 text-white" />
-                      ) : isNew ? (
-                        <span className="text-2xl">🆕</span>
-                      ) : (
-                        <Wrench className="w-6 h-6 text-amber-400" />
-                      )}
+                  </button>
+                  
+                  {/* Expanded Content */}
+                  <div className={`overflow-hidden transition-all duration-200 ${
+                    isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
+                  }`}>
+                    <div className="px-4 pb-4 space-y-3">
+                      {expandedJobLoading ? (
+                        <div className="flex justify-center py-6">
+                          <Loader2 className="w-6 h-6 animate-spin text-gray-500" />
+                        </div>
+                      ) : detail ? (
+                        <>
+                          {/* Vehicle Details */}
+                          <div className="flex items-center gap-3 py-2 border-t border-gray-700/50">
+                            <Truck className="w-4 h-4 text-gray-500 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-white text-sm">
+                                {detail.vehicle_year} {detail.vehicle_make} {detail.vehicle_model}
+                              </p>
+                              {detail.vehicle_license_plate && (
+                                <p className="text-xs text-gray-500">{detail.vehicle_license_plate}</p>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Live Timer */}
+                          {isWorking && detail.work_started_at && (
+                            <LiveTimer startedAt={detail.work_started_at} />
+                          )}
+                          
+                          {/* Services List */}
+                          {detail.services.length > 0 && (
+                            <div>
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Services</p>
+                              <div className="space-y-1.5">
+                                {detail.services.map((svc, idx) => (
+                                  <div 
+                                    key={idx} 
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    <Wrench className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                    <span className="text-gray-200">{svc.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Work Photos Section */}
+                          {['assigned', 'acknowledged', 'in_progress'].includes(job.status) && (
+                            <div>
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs text-gray-500 uppercase tracking-wide">Photos</p>
+                                <label className="p-1.5 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer transition-colors">
+                                  <Camera className="w-4 h-4 text-gray-300" />
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    className="hidden"
+                                    onChange={handlePhotoSelect}
+                                    ref={fileInputRef}
+                                  />
+                                </label>
+                              </div>
+                              
+                              {/* Photo Preview */}
+                              {showPhotoPreview && (
+                                <div className="rounded-lg bg-gray-700/50 p-2 mb-2">
+                                  <div className="relative">
+                                    <img 
+                                      src={showPhotoPreview} 
+                                      alt="Preview" 
+                                      className="w-full rounded max-h-40 object-cover"
+                                    />
+                                    <button
+                                      onClick={() => { setShowPhotoPreview(null); setPhotoCaption('') }}
+                                      className="absolute top-1.5 right-1.5 p-1 bg-black/60 rounded-full"
+                                    >
+                                      <X className="w-3 h-3 text-white" />
+                                    </button>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    placeholder="Add note..."
+                                    value={photoCaption}
+                                    onChange={(e) => setPhotoCaption(e.target.value)}
+                                    className="w-full mt-2 px-2 py-1.5 rounded bg-gray-600 text-sm text-white placeholder-gray-400"
+                                  />
+                                  <button
+                                    onClick={handlePhotoUpload}
+                                    disabled={isUploadingPhoto}
+                                    className="w-full mt-2 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm font-medium rounded flex items-center justify-center gap-1.5"
+                                  >
+                                    {isUploadingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                                    Upload
+                                  </button>
+                                </div>
+                              )}
+                              
+                              {/* Photo Gallery */}
+                              {workPhotos && workPhotos.length > 0 && (
+                                <div className="grid grid-cols-4 gap-1.5">
+                                  {workPhotos.map((photo) => (
+                                    <div key={photo.id} className="relative group">
+                                      <img
+                                        src={photo.image_url}
+                                        alt={photo.caption || 'Work photo'}
+                                        className="w-full aspect-square object-cover rounded"
+                                      />
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (confirm('Delete this photo?')) {
+                                            deletePhotoMutation.mutate({ jobId: job.id, photoId: photo.id })
+                                          }
+                                        }}
+                                        className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                      >
+                                        <X className="w-2.5 h-2.5 text-white" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              
+                              {/* Empty state */}
+                              {(!workPhotos || workPhotos.length === 0) && !showPhotoPreview && (
+                                <p className="text-xs text-gray-600 text-center py-2">No photos</p>
+                              )}
+                            </div>
+                          )}
+                          
+                          {/* Action Button */}
+                          <div className="pt-2">
+                            {(job.status === 'assigned' || job.status === 'acknowledged') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
+                                }}
+                                disabled={isPending}
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                              >
+                                {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
+                                ACCEPT & START
+                              </button>
+                            )}
+                            
+                            {job.status === 'in_progress' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  completeWorkMutation.mutate(job.id)
+                                }}
+                                disabled={isPending}
+                                className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                              >
+                                {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                JOB DONE
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   </div>
-                </button>
+                </div>
               )
             })}
 

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, Vehicle, RepairOrder, Quote, Invoice } from '../../types'
+import { Customer, Vehicle, RepairOrder, RepairOrderDetail, Quote, Invoice } from '../../types'
 import { format } from 'date-fns'
 import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
@@ -15,6 +15,8 @@ import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-
 import toast from 'react-hot-toast'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useNotificationManager } from '../../hooks/useNotificationManager'
+import NotificationBanner from '../../components/NotificationBanner'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -22,34 +24,36 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
   declined: 'bg-red-100 text-red-700',
   approved: 'bg-cyan-100 text-cyan-700',
   in_progress: 'bg-amber-100 text-amber-700',
+  pending_review: 'bg-orange-100 text-orange-700',
   completed: 'bg-green-100 text-green-700',
   invoiced: 'bg-purple-100 text-purple-700',
   paid: 'bg-emerald-100 text-emerald-700',
   cancelled: 'bg-red-100 text-red-700',
 }
 
-// Calculate total including service prices from internal_notes
-const getOrderTotal = (order: RepairOrder): number => {
-  const backendTotal = parseFloat(order.total_cost) || 0
-  
-  // Parse services from internal_notes
-  let serviceTotal = 0
-  if (order.internal_notes) {
-    try {
-      const notes = JSON.parse(order.internal_notes)
-      const services = notes?.selected_services || []
-      serviceTotal = services.reduce(
-        (sum: number, svc: { base_price?: string }) => sum + (parseFloat(svc.base_price || '0') || 0),
-        0
-      )
-    } catch {
-      // ignore parse errors
-    }
+const getSelectedServicesTotal = (order: RepairOrder | RepairOrderDetail): number => {
+  if (!order.internal_notes) return 0
+  try {
+    const notes = JSON.parse(order.internal_notes)
+    const services = notes?.selected_services || []
+    return services.reduce(
+      (sum: number, svc: { base_price?: string }) => sum + (parseFloat(svc.base_price || '0') || 0),
+      0
+    )
+  } catch {
+    return 0
   }
-  
-  // If services selected, service total is all-in (includes parts)
-  // Otherwise use backend total
-  return serviceTotal > 0 ? serviceTotal : backendTotal
+}
+
+// Customer-facing total is labor/services + parts.
+const getOrderTotal = (order: RepairOrder | RepairOrderDetail): number => {
+  const selectedServicesTotal = getSelectedServicesTotal(order)
+  const backendLabor = parseFloat(order.total_labor_cost || '0') || 0
+  const backendParts = parseFloat(order.total_parts_cost || '0') || 0
+  const labor = selectedServicesTotal > 0 ? selectedServicesTotal : backendLabor
+  const combined = labor + backendParts
+  const backendTotal = parseFloat(order.total_cost || '0') || 0
+  return combined > 0 ? combined : backendTotal
 }
 
 function CustomerDashboard() {
@@ -80,16 +84,17 @@ function CustomerDashboard() {
     },
   })
 
-  const activeRepairs = repairOrders?.filter(o => 
-    ['in_progress', 'approved', 'quoted'].includes(o.status)
+  const activeRepairs = repairOrders?.filter(o =>
+    ['in_progress', 'approved', 'pending_review', 'completed'].includes(o.status) ||
+    (o.status === 'quoted' && o.quote_sent === true)
   ).length || 0
 
   const completedRepairs = repairOrders?.filter(o => 
-    ['completed', 'invoiced', 'paid'].includes(o.status)
+    ['paid'].includes(o.status)
   ).length || 0
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold text-white">
@@ -98,72 +103,125 @@ function CustomerDashboard() {
         <p className="text-gray-400 mt-1">Manage your vehicles and track repair status</p>
       </div>
 
-      {/* KPI Cards - Compact on mobile, expanded on desktop */}
+      {/* KPI Cards - compact summary */}
       {/* Mobile: Single compact card */}
-      <div className="sm:hidden bg-white/5 rounded-xl p-4 border border-white/10">
+      <div className="sm:hidden bg-white/5 rounded-xl p-3.5 border border-white/10">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center text-2xl">
-              <Truck className="w-7 h-7 text-cyan-200" />
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+              <Truck className="w-5 h-5 text-cyan-200" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{vehicles?.length || 0}</div>
+              <div className="text-xl font-bold text-white leading-none">{vehicles?.length || 0}</div>
               <div className="text-xs text-gray-400">Vehicles</div>
             </div>
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-3">
             <div className="text-center">
-              <div className="text-lg font-bold text-amber-400">{activeRepairs}</div>
+              <div className="text-base font-bold text-amber-400 leading-none">{activeRepairs}</div>
               <div className="text-[10px] text-gray-500">Active</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold text-green-400">{completedRepairs}</div>
+              <div className="text-base font-bold text-green-400 leading-none">{completedRepairs}</div>
               <div className="text-[10px] text-gray-500">Done</div>
             </div>
             <div className="text-center">
-              <div className="text-lg font-bold text-purple-400">{repairOrders?.length || 0}</div>
+              <div className="text-base font-bold text-purple-400 leading-none">{repairOrders?.length || 0}</div>
               <div className="text-[10px] text-gray-500">Total</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Desktop: Full KPI cards */}
-      <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 border-cyan-500/30 rounded-xl p-5 border">
-          <Truck className="w-8 h-8 text-cyan-200" />
-          <div className="mt-3">
-            <div className="text-4xl font-bold text-white">{vehicles?.length || 0}</div>
-            <div className="text-sm text-gray-400 mt-1">My Vehicles</div>
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-amber-500/20 to-amber-600/10 border-amber-500/30 rounded-xl p-5 border">
-          <Wrench className="w-8 h-8 text-amber-200" />
-          <div className="mt-3">
-            <div className="text-4xl font-bold text-white">{activeRepairs}</div>
-            <div className="text-sm text-gray-400 mt-1">Active Repairs</div>
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-green-500/20 to-green-600/10 border-green-500/30 rounded-xl p-5 border">
-          <CheckCircle className="w-8 h-8 text-green-200" />
-          <div className="mt-3">
-            <div className="text-4xl font-bold text-white">{completedRepairs}</div>
-            <div className="text-sm text-gray-400 mt-1">Completed</div>
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500/30 rounded-xl p-5 border">
-          <ClipboardList className="w-8 h-8 text-purple-200" />
-          <div className="mt-3">
-            <div className="text-4xl font-bold text-white">{repairOrders?.length || 0}</div>
-            <div className="text-sm text-gray-400 mt-1">Total Orders</div>
+      {/* Desktop: Inline KPI stat bar */}
+      <div className="hidden sm:block">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-x-auto">
+          <div className="flex min-w-[680px] divide-x divide-white/10">
+            <div className="flex-1 px-4 py-3 bg-cyan-500/5">
+              <div className="flex items-center gap-2 text-cyan-200">
+                <Truck className="w-4 h-4" />
+                <span className="text-xs text-gray-300">My Vehicles</span>
+              </div>
+              <div className="text-2xl font-bold text-white leading-none mt-2">{vehicles?.length || 0}</div>
+            </div>
+            <div className="flex-1 px-4 py-3 bg-amber-500/5">
+              <div className="flex items-center gap-2 text-amber-200">
+                <Wrench className="w-4 h-4" />
+                <span className="text-xs text-gray-300">Active Repairs</span>
+              </div>
+              <div className="text-2xl font-bold text-white leading-none mt-2">{activeRepairs}</div>
+            </div>
+            <div className="flex-1 px-4 py-3 bg-green-500/5">
+              <div className="flex items-center gap-2 text-green-200">
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-xs text-gray-300">Completed</span>
+              </div>
+              <div className="text-2xl font-bold text-white leading-none mt-2">{completedRepairs}</div>
+            </div>
+            <div className="flex-1 px-4 py-3 bg-purple-500/5">
+              <div className="flex items-center gap-2 text-purple-200">
+                <ClipboardList className="w-4 h-4" />
+                <span className="text-xs text-gray-300">Total Orders</span>
+              </div>
+              <div className="text-2xl font-bold text-white leading-none mt-2">{repairOrders?.length || 0}</div>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Action Required - quoted+sent (needs approval) or invoiced (needs payment) */}
+      {(() => {
+        const actionRequired = repairOrders?.filter(o =>
+          o.status === 'invoiced' || (o.status === 'quoted' && o.quote_sent === true)
+        ) || []
+        
+        if (actionRequired.length === 0) return null
+        
+        return (
+          <div className="bg-amber-500/10 rounded-xl p-4 sm:p-6 border border-amber-500/30">
+            <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+              Action Required
+            </h2>
+            <div className="space-y-2">
+              {actionRequired.map((order) => (
+                <Link
+                  key={order.id}
+                  to="/portal/repairs"
+                  state={{ selectedOrderId: order.id }}
+                  className="block bg-white/10 rounded-lg p-3 border border-white/10 hover:bg-white/20 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-white text-sm">{order.order_number}</p>
+                      {order.description && (
+                        <p className="text-gray-300 text-xs truncate mt-0.5">{order.description}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
+                        order.status === 'invoiced' 
+                          ? 'bg-green-500 text-white' 
+                          : 'bg-amber-500 text-white'
+                      }`}>
+                        {order.status === 'invoiced' ? 'Pay Now' : 'Review Quote'}
+                      </span>
+                      <div className="text-sm font-bold text-white">
+                        ${getOrderTotal(order).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Two Column Layout */}
       <div className="grid lg:grid-cols-2 gap-6">
         {/* My Vehicles */}
-        <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
+        <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10 overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">My Vehicles</h2>
             <Link to="/portal/vehicles" className="text-sm hover:opacity-80" style={{ color: 'var(--accent-500)' }}>
@@ -204,62 +262,102 @@ function CustomerDashboard() {
           )}
         </div>
 
-        {/* Recent Repairs */}
-        <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10">
+        {/* Active Repairs - approved, in_progress, pending_review, completed */}
+        <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10 overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Recent Repairs</h2>
-            <Link to="/portal/repairs" className="text-sm hover:opacity-80" style={{ color: 'var(--accent-500)' }}>
-              View All
-            </Link>
+            <h2 className="text-lg font-semibold text-white">Active Repairs</h2>
           </div>
-          {repairOrders && repairOrders.length > 0 ? (
+          {(() => {
+            const activeOrders = repairOrders?.filter(o => 
+              ['approved', 'in_progress', 'pending_review', 'completed'].includes(o.status)
+            ) || []
+            
+            return activeOrders.length > 0 ? (
+              <div className="space-y-2 sm:space-y-3">
+                {activeOrders.slice(0, 4).map((order) => (
+                  <Link
+                    key={order.id}
+                    to="/portal/repairs"
+                    state={{ selectedOrderId: order.id }}
+                    className="block bg-white/5 rounded-lg p-2.5 sm:p-3 border border-white/5 hover:bg-white/10 active:bg-white/15 transition-colors overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-white text-xs sm:text-sm">{order.order_number}</p>
+                        {order.description && (
+                          <p className="text-gray-400 text-[11px] sm:text-xs truncate mt-0.5">{order.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                          {order.status.replace('_', ' ')}
+                        </span>
+                        <div className="text-xs sm:text-sm font-medium text-white">
+                          ${getOrderTotal(order).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="flex justify-center mb-2">
+                  <Wrench className="w-8 h-8 text-amber-300" />
+                </div>
+                <p className="text-gray-400">No active repairs</p>
+              </div>
+            )
+          })()}
+        </div>
+      </div>
+
+      {/* Recent Activity - last few paid/declined */}
+      {(() => {
+        const recentCompleted = repairOrders?.filter(o => 
+          ['paid', 'declined'].includes(o.status)
+        ).slice(0, 3) || []
+        
+        if (recentCompleted.length === 0) return null
+        
+        return (
+          <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
+              <Link to="/portal/repairs" className="text-sm hover:opacity-80" style={{ color: 'var(--accent-500)' }}>
+                View History
+              </Link>
+            </div>
             <div className="space-y-2 sm:space-y-3">
-              {repairOrders.slice(0, 5).map((order) => (
+              {recentCompleted.map((order) => (
                 <Link
                   key={order.id}
                   to="/portal/repairs"
                   state={{ selectedOrderId: order.id }}
-                  className="block bg-white/5 rounded-lg p-2.5 sm:p-3 border border-white/5 hover:bg-white/10 active:bg-white/15 transition-colors"
+                  className="block bg-white/5 rounded-lg p-2.5 sm:p-3 border border-white/5 hover:bg-white/10 active:bg-white/15 transition-colors overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                        <span className="font-medium text-white text-xs sm:text-sm">{order.order_number}</span>
-                        <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                          {order.status.replace('_', ' ')}
-                        </span>
-                        {order.status === 'invoiced' && (
-                          <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium bg-green-500 text-white">
-                            Pay Now
-                          </span>
-                        )}
-                      </div>
+                      <p className="font-medium text-white text-xs sm:text-sm">{order.order_number}</p>
                       {order.description && (
-                        <p className="text-gray-400 text-xs sm:text-sm truncate mt-1">{order.description}</p>
+                        <p className="text-gray-400 text-[11px] sm:text-xs truncate mt-0.5">{order.description}</p>
                       )}
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                        {order.status.replace('_', ' ')}
+                      </span>
                       <div className="text-xs sm:text-sm font-medium text-white">
                         ${getOrderTotal(order).toFixed(2)}
-                      </div>
-                      <div className="text-[10px] sm:text-xs text-gray-500">
-                        {format(new Date(order.created_at), 'MMM d')}
                       </div>
                     </div>
                   </div>
                 </Link>
               ))}
             </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="flex justify-center mb-2">
-                <ClipboardList className="w-8 h-8 text-purple-300" />
-              </div>
-              <p className="text-gray-400">No repair history</p>
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -428,6 +526,7 @@ function CustomerRepairs() {
   const [stripeInstance, setStripeInstance] = useState<Awaited<ReturnType<typeof loadStripe>> | null>(null)
   const [declineNotes, setDeclineNotes] = useState('')
   const [showDeclineForm, setShowDeclineForm] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
@@ -435,6 +534,15 @@ function CustomerRepairs() {
       const response = await api.get('/repair-orders')
       return response.data
     },
+  })
+
+  const { data: selectedOrderDetail } = useQuery<RepairOrderDetail>({
+    queryKey: ['repair-order-detail-customer', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`)
+      return response.data
+    },
+    enabled: !!selectedOrder?.id,
   })
 
   // Handle navigation state to auto-select an order
@@ -471,18 +579,6 @@ function CustomerRepairs() {
       return response.data as Quote | null
     },
     enabled: !!selectedOrder && selectedOrder.status === 'quoted',
-  })
-
-  const quotedOrders = orders?.filter((o) => o.status === 'quoted') ?? []
-  const quoteQueries = useQueries({
-    queries: quotedOrders.map((order) => ({
-      queryKey: ['quote', order.id],
-      queryFn: async () => {
-        const response = await api.get(`/quotes?repair_order_id=${order.id}`)
-        return response.data as Quote | null
-      },
-      enabled: true,
-    })),
   })
 
   const approveQuoteMutation = useMutation({
@@ -580,14 +676,20 @@ function CustomerRepairs() {
 
   // Detail view for selected order
   if (selectedOrder) {
+    const displayOrder = selectedOrderDetail ?? selectedOrder
     const services = (() => {
       try {
-        const notes = JSON.parse(selectedOrder.internal_notes || '{}')
+        const notes = JSON.parse(displayOrder.internal_notes || '{}')
         return notes?.selected_services || []
       } catch {
         return []
       }
     })()
+    const partsUsage = selectedOrderDetail?.parts_usage || []
+    const laborFromServices = getSelectedServicesTotal(displayOrder)
+    const backendLaborTotal = parseFloat(displayOrder.total_labor_cost || '0') || 0
+    const laborTotal = laborFromServices > 0 ? laborFromServices : backendLaborTotal
+    const partsTotal = parseFloat(displayOrder.total_parts_cost || '0') || 0
 
     return (
       <div className="space-y-6">
@@ -633,7 +735,7 @@ function CustomerRepairs() {
 
           {services.length > 0 && (
             <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-400 mb-2">Services</h3>
+              <h3 className="text-sm font-medium text-gray-400 mb-2">Services / Labor</h3>
               <div className="space-y-2">
                 {services.map((svc: { id: string; name: string; base_price?: string }, idx: number) => (
                   <div key={svc.id || idx} className="flex justify-between items-center bg-white/5 p-3 rounded-lg">
@@ -641,6 +743,25 @@ function CustomerRepairs() {
                     {svc.base_price && (
                       <span className="text-gray-400">${parseFloat(svc.base_price).toFixed(2)}</span>
                     )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {partsUsage.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-400 mb-2">Parts</h3>
+              <div className="space-y-2">
+                {partsUsage.map((part) => (
+                  <div key={part.id} className="flex justify-between items-center bg-white/5 p-3 rounded-lg">
+                    <div>
+                      <div className="text-white">{part.inventory_name}</div>
+                      <div className="text-xs text-gray-500">
+                        {part.inventory_sku} · Qty {part.quantity}
+                      </div>
+                    </div>
+                    <span className="text-gray-300">${parseFloat(part.total_price).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -656,9 +777,19 @@ function CustomerRepairs() {
           )}
 
           <div className="border-t border-white/10 pt-4 mt-4">
-            <div className="flex justify-between items-center text-lg">
+            <div className="space-y-2 mb-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Labor / Services</span>
+                <span className="text-white">${laborTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Parts</span>
+                <span className="text-white">${partsTotal.toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex justify-between items-center text-lg border-t border-white/10 pt-3">
               <span className="font-medium text-white">Total</span>
-              <span className="font-bold text-white">${getOrderTotal(selectedOrder).toFixed(2)}</span>
+              <span className="font-bold text-white">${getOrderTotal(displayOrder).toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -828,138 +959,91 @@ function CustomerRepairs() {
     )
   }
 
-  // List view
-  const invoicedOrders = orders?.filter((o) => o.status === 'invoiced') ?? []
+  // List view - only finalized orders (paid, completed, cancelled, declined)
+  const finalizedStatuses = ['paid', 'completed', 'cancelled', 'declined']
+  const historyOrders = orders?.filter(o => finalizedStatuses.includes(o.status)) ?? []
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold text-white">Repair History</h1>
-        <p className="text-gray-400 mt-1">Track all your past and current repairs</p>
+        <p className="text-gray-400 mt-1">Completed and finalized repairs</p>
       </div>
 
-      {/* Invoices awaiting payment - prominent */}
-      {invoicedOrders.length > 0 && (
-        <div className="bg-purple-500/10 rounded-xl border border-purple-500/30 p-4 sm:p-6">
-          <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-            <CreditCard className="w-5 h-5 text-purple-400" />
-            Invoices Ready for Payment
-          </h2>
-          <div className="space-y-3">
-            {invoicedOrders.map((order) => (
-              <button
-                key={order.id}
-                onClick={() => setSelectedOrder(order)}
-                className="w-full bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:bg-white/10 transition-colors text-left"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
-                  <div className="min-w-0">
-                    <span className="font-medium text-white">{order.order_number}</span>
-                    <span className="text-gray-400 ml-2 hidden sm:inline">— {order.description || 'Repair'}</span>
-                    {order.description && (
-                      <p className="text-gray-400 text-sm truncate sm:hidden">{order.description}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between sm:justify-end gap-3">
-                    <span className="font-bold text-white text-lg">${getOrderTotal(order).toFixed(2)}</span>
-                    <span className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg whitespace-nowrap">
-                      Pay Now
-                    </span>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Status Filter - only finalized statuses */}
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+        {[
+          { value: 'all', label: 'All' },
+          { value: 'paid', label: 'Paid' },
+          { value: 'completed', label: 'Completed' },
+          { value: 'cancelled', label: 'Cancelled' },
+          { value: 'declined', label: 'Declined' },
+        ].map((option) => (
+          <button
+            key={option.value}
+            onClick={() => setStatusFilter(option.value)}
+            className={`px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+              statusFilter === option.value
+                ? 'text-white'
+                : 'bg-white/10 text-gray-300 hover:bg-white/20'
+            }`}
+            style={statusFilter === option.value ? { backgroundColor: 'var(--accent-500)' } : undefined}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
 
-      {/* Quotes pending approval */}
-      {quotedOrders.length > 0 && (
-        <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4 sm:p-6">
-          <h2 className="text-lg font-semibold text-white mb-3">Quotes pending your approval</h2>
-          <div className="space-y-3">
-            {quotedOrders.map((order, idx) => {
-              const quoteData = quoteQueries[idx]?.data as Quote | null | undefined
-              const quoteLoading = quoteQueries[idx]?.isLoading
-              return (
+      {/* History orders list */}
+      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+        {(() => {
+          const filteredOrders = statusFilter === 'all' 
+            ? historyOrders 
+            : historyOrders.filter(o => o.status === statusFilter)
+          
+          return filteredOrders.length > 0 ? (
+            <div className="divide-y divide-white/5">
+              {filteredOrders.map((order) => (
                 <button
                   key={order.id}
-                  type="button"
                   onClick={() => setSelectedOrder(order)}
-                  className="w-full bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:bg-white/10 hover:border-amber-500/50 transition-colors text-left"
+                  className="w-full p-3 sm:p-6 hover:bg-white/5 active:bg-white/10 transition-colors text-left"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <span className="font-medium text-white">{order.order_number}</span>
-                      <span className="text-gray-400 ml-2">— {order.description || 'Repair'}</span>
-                      {quoteData && (
-                        <p className="text-sm text-gray-400 mt-1">
-                          Quote #{quoteData.quote_number} · ${parseFloat(quoteData.total_amount).toFixed(2)}
-                        </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-white text-sm sm:text-base">{order.order_number}</h3>
+                      {order.description && (
+                        <p className="text-gray-400 text-xs sm:text-sm mt-1 line-clamp-1">{order.description}</p>
                       )}
+                      <p className="text-[10px] sm:text-xs text-gray-500 mt-1">
+                        {format(new Date(order.created_at), 'MMM d, yyyy')}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {quoteLoading ? (
-                        <span className="text-gray-500 text-sm">Loading...</span>
-                      ) : quoteData && !quoteData.is_approved ? (
-                        <span className="px-3 py-1.5 bg-amber-500 text-white text-sm font-medium rounded-lg">
-                          Review & Approve →
-                        </span>
-                      ) : quoteData?.is_approved ? (
-                        <span className="text-green-400 text-sm font-medium">Approved</span>
-                      ) : null}
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                        {order.status.replace('_', ' ')}
+                      </span>
+                      <div className="text-right">
+                        <div className="text-sm sm:text-lg font-bold text-white">
+                          ${getOrderTotal(order).toFixed(2)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* All orders list */}
-      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        {orders && orders.length > 0 ? (
-          <div className="divide-y divide-white/5">
-            {orders.map((order) => (
-              <button
-                key={order.id}
-                onClick={() => setSelectedOrder(order)}
-                className="w-full p-3 sm:p-6 hover:bg-white/5 active:bg-white/10 transition-colors text-left"
-              >
-                <div className="flex items-start justify-between gap-3 sm:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                      <h3 className="font-semibold text-white text-sm sm:text-base">{order.order_number}</h3>
-                      <span className={`px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {order.status.replace('_', ' ')}
-                      </span>
-                    </div>
-                    {order.description && (
-                      <p className="text-gray-400 text-sm mt-1.5 sm:mt-2 line-clamp-2">{order.description}</p>
-                    )}
-                    <p className="text-xs sm:text-sm text-gray-500 mt-1.5 sm:mt-2">
-                      {format(new Date(order.created_at), 'MMM d, yyyy')}
-                    </p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-lg sm:text-xl font-bold text-white">
-                      ${getOrderTotal(order).toFixed(2)}
-                    </div>
-                    <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5 sm:mt-1">Total</div>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <div className="flex justify-center mb-3">
-              <ClipboardList className="w-10 h-10 text-purple-300" />
+              ))}
             </div>
-            <p className="text-gray-400">No repair history yet</p>
-          </div>
-        )}
+          ) : (
+            <div className="text-center py-12">
+              <div className="flex justify-center mb-3">
+                <ClipboardList className="w-10 h-10 text-purple-300" />
+              </div>
+              <p className="text-gray-400">
+                {statusFilter === 'all' ? 'No repair history yet' : `No ${statusFilter.replace('_', ' ')} orders`}
+              </p>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )
@@ -969,8 +1053,11 @@ export default function CustomerPortalPage() {
   const location = useLocation()
   const { accentColors } = useTheme()
   
+  // Notification manager for queued, deduplicated notifications
+  const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
+  
   // Connect to WebSocket for real-time updates
-  useWebSocket({ showToasts: true })
+  useWebSocket({ onNotification: notify })
 
   const navLinks = [
     { to: '/portal', label: 'Dashboard', exact: true },
@@ -1084,7 +1171,15 @@ export default function CustomerPortalPage() {
         </div>
       </nav>
 
-      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto pb-20 md:pb-6">
+      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto pb-20 md:pb-6 overflow-x-hidden">
+        {/* Real-time notification banners */}
+        <NotificationBanner
+          banners={banners}
+          onDismiss={dismissBanner}
+          onDismissAll={clearBanners}
+          autoDismissMs={10000}
+        />
+
         {/* Breadcrumb - only show on sub-pages */}
         {isOnSubPage && (
           <div className="mb-4 flex items-center gap-2 text-sm">

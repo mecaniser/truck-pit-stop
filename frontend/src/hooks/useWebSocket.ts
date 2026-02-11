@@ -3,14 +3,17 @@
  * 
  * Connects to the backend WebSocket endpoint and automatically
  * invalidates React Query caches when relevant events are received.
+ * 
+ * Notifications are routed through the onNotification callback for
+ * centralized handling via useNotificationManager.
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../stores/authStore'
-import toast from 'react-hot-toast'
+import type { NotificationEvent } from './useNotificationManager'
 
 // Event types from backend
-type WSEventType = 
+export type WSEventType = 
   | 'repair_order_update'
   | 'quote_created'
   | 'quote_approved'
@@ -18,7 +21,7 @@ type WSEventType =
   | 'invoice_created'
   | 'payment_received'
 
-interface WSMessage {
+export interface WSMessage {
   type: WSEventType
   order_id?: string
   order_number?: string
@@ -32,8 +35,8 @@ interface WSMessage {
 }
 
 interface UseWebSocketOptions {
-  /** Show toast notifications for events (default: false) */
-  showToasts?: boolean
+  /** Callback for notification events (use with useNotificationManager) */
+  onNotification?: (event: NotificationEvent) => void
   /** Enable debug logging (default: false) */
   debug?: boolean
 }
@@ -46,7 +49,7 @@ interface UseWebSocketReturn {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const { showToasts = false, debug = false } = options
+  const { onNotification, debug = false } = options
   const ws = useRef<WebSocket | null>(null)
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -70,7 +73,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       
       // Invalidate relevant queries based on event type
       // Note: Backend sends both specific events AND repair_order_update for most actions.
-      // We show toasts only for specific events to avoid duplicates.
+      // Notifications are routed through onNotification callback for centralized handling.
       switch (data.type) {
         case 'repair_order_update':
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
@@ -79,33 +82,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
           
-          // Only show toast for statuses that don't have their own specific event
-          // (invoiced/paid have invoice_created/payment_received events)
-          if (showToasts && data.order_number && data.status) {
-            const statusLabels: Record<string, string> = {
-              assigned: 'Job assigned',
-              acknowledged: 'Job acknowledged',
-              in_progress: 'Work started',
-              pending_review: 'Work completed',
-              completed: 'Work approved',
-              // Skip these - they have dedicated events
-              // invoiced: handled by invoice_created
-              // paid: handled by payment_received
-              // approved: handled by quote_approved
-              // declined: handled by quote_declined
-            }
-            const label = statusLabels[data.status]
-            if (label) {
-              toast.success(`${data.order_number}: ${label}`)
-            }
+          // Route to notification manager
+          if (onNotification && data.order_number && data.status) {
+            onNotification({
+              type: 'repair_order_update',
+              orderId: data.order_id,
+              orderNumber: data.order_number,
+              status: data.status,
+            })
           }
           break
           
         case 'quote_created':
           queryClient.invalidateQueries({ queryKey: ['quotes'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          if (showToasts && data.quote_number) {
-            toast.success(`Quote ${data.quote_number} ready for review`)
+          if (onNotification && data.quote_number) {
+            onNotification({
+              type: 'quote_created',
+              orderId: data.order_id,
+              quoteNumber: data.quote_number,
+            })
           }
           break
           
@@ -114,8 +110,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
-          if (showToasts && data.quote_number) {
-            toast.success(`Quote ${data.quote_number} approved`)
+          if (onNotification && data.quote_number) {
+            onNotification({
+              type: 'quote_approved',
+              orderId: data.order_id,
+              quoteNumber: data.quote_number,
+            })
           }
           break
           
@@ -123,8 +123,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quotes'] })
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          if (showToasts && data.quote_number) {
-            toast(`Quote ${data.quote_number} declined`, { icon: '⚠️' })
+          if (onNotification && data.quote_number) {
+            onNotification({
+              type: 'quote_declined',
+              orderId: data.order_id,
+              quoteNumber: data.quote_number,
+            })
           }
           break
           
@@ -132,8 +136,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['invoices'] })
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          if (showToasts && data.invoice_number) {
-            toast.success(`Invoice ${data.invoice_number} ready`)
+          if (onNotification && data.invoice_number) {
+            onNotification({
+              type: 'invoice_created',
+              orderId: data.order_id,
+              invoiceNumber: data.invoice_number,
+              totalAmount: data.total_amount,
+            })
           }
           break
           
@@ -143,15 +152,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['payments'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
-          if (showToasts) {
-            toast.success('Payment confirmed!')
+          if (onNotification) {
+            onNotification({
+              type: 'payment_received',
+              orderId: data.order_id,
+            })
           }
           break
       }
     } catch (err) {
       log('Failed to parse message:', err)
     }
-  }, [queryClient, showToasts, log])
+  }, [queryClient, onNotification, log])
   
   const connect = useCallback(() => {
     if (!token || !isAuthenticated) {

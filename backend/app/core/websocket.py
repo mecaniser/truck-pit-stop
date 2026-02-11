@@ -16,12 +16,17 @@ from datetime import datetime, timedelta
 import logging
 import asyncio
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 # Security constants
 MAX_CONNECTIONS_PER_USER = 3
 CONNECTION_RATE_LIMIT_WINDOW = 60  # seconds
 MAX_CONNECTIONS_PER_WINDOW = 10  # max connection attempts per window
+
+# Disable rate limiting in development
+RATE_LIMIT_ENABLED = settings.ENVIRONMENT != "development"
 
 
 class ConnectionManager:
@@ -51,7 +56,11 @@ class ConnectionManager:
         """
         Check if user has exceeded connection rate limit.
         Returns True if allowed, False if rate limited.
+        Disabled in development environment.
         """
+        if not RATE_LIMIT_ENABLED:
+            return True
+        
         now = datetime.utcnow()
         cutoff = now - timedelta(seconds=CONNECTION_RATE_LIMIT_WINDOW)
         
