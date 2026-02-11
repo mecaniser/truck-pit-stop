@@ -626,24 +626,30 @@ export default function DashboardHome() {
           </div>
 
           {/* Team Workload */}
-          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+            <div className="flex items-center justify-between gap-3 mb-2">
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team Capacity</h3>
-              <div className="text-xs text-gray-400">
-                Active <span className="text-white font-semibold">{teamInProgressTotal}</span>
-                <span className="text-gray-600 px-1">/</span>
-                Assigned <span className="text-white font-semibold">{teamAssignedTotal}</span>
+              <div className="text-[11px] text-gray-500">
+                {teamAssignedTotal} assigned
               </div>
             </div>
 
             {!teamMembers.length ? (
               <span className="text-xs text-gray-500">No mechanics</span>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-gray-500">
-                    <span>Team Utilization</span>
-                    <span>{teamUtilization}%</span>
+                  <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-gray-500">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="truncate">Team Utilization</span>
+                      <span className="text-gray-400 normal-case tracking-normal">
+                        <span className="text-white font-semibold">{teamInProgressTotal}</span> active
+                      </span>
+                      <span className="text-gray-400 normal-case tracking-normal">
+                        <span className="text-white font-semibold">{teamQueuedTotal}</span> queued
+                      </span>
+                    </div>
+                    <span className="shrink-0">{teamUtilization}%</span>
                   </div>
                   <div className="mt-1.5 h-2 rounded-full bg-white/10 overflow-hidden">
                     <div
@@ -651,13 +657,10 @@ export default function DashboardHome() {
                       style={{ width: `${teamUtilization}%`, backgroundColor: accentColors[500] }}
                     />
                   </div>
-                  <div className="mt-1.5 text-[11px] text-gray-500">
-                    {teamInProgressTotal} active, {teamQueuedTotal} queued
-                  </div>
                 </div>
 
-                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                  {teamMembers.slice(0, 8).map((m) => {
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 max-h-44 overflow-y-auto pr-1">
+                  {teamMembers.slice(0, 9).map((m) => {
                     const loadPct = m.assigned_count > 0
                       ? Math.round((m.in_progress_count / m.assigned_count) * 100)
                       : 0
@@ -665,22 +668,20 @@ export default function DashboardHome() {
                     return (
                       <div
                         key={m.mechanic_id}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2"
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2"
                         title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div
-                              className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-medium shrink-0"
-                              style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
-                            >
-                              {m.mechanic_name.charAt(0).toUpperCase()}
-                            </div>
-                            <span className="text-xs text-white truncate">{m.mechanic_name}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0"
+                            style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
+                          >
+                            {m.mechanic_name.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-[11px] text-gray-400 shrink-0">
-                            {m.in_progress_count} active · {queued} queued
-                          </span>
+                          <span className="text-xs text-white truncate">{m.mechanic_name}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-gray-400">
+                          {m.in_progress_count} active · {queued} queued
                         </div>
                         <div className="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
                           <div
@@ -688,15 +689,12 @@ export default function DashboardHome() {
                             style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
                           />
                         </div>
-                        <div className="mt-1 text-[11px] text-gray-500">
-                          {loadPct}% load ({m.in_progress_count}/{m.assigned_count})
-                        </div>
                       </div>
                     )
                   })}
-                  {teamMembers.length > 8 && (
-                    <div className="text-[11px] text-gray-500 px-1">
-                      +{teamMembers.length - 8} more mechanics
+                  {teamMembers.length > 9 && (
+                    <div className="text-[11px] text-gray-500 px-1 col-span-full">
+                      +{teamMembers.length - 9} more mechanics
                     </div>
                   )}
                 </div>
