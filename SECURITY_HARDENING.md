@@ -2,7 +2,7 @@
 
 This document tracks all security implementations, audit findings, and remediation status for the TruckPitStop platform.
 
-**Last Updated:** 2026-02-09  
+**Last Updated:** 2026-02-11  
 **Audit Date:** 2026-02-07
 
 ---
@@ -17,6 +17,12 @@ This document tracks all security implementations, audit findings, and remediati
 | bcrypt Password Hashing | ✅ | `backend/app/core/security.py` |
 | httpOnly Cookies | ✅ | `backend/app/api/v1/endpoints/auth.py` |
 | Rate Limiting (auth endpoints) | ✅ | `/register`, `/login`, `/forgot-password`, `/reset-password` |
+| Shared API Rate Limiter Baseline | ✅ | `backend/app/core/rate_limit.py` |
+| HTTP Throttling (API-wide) | ✅ | `backend/app/middleware/throttling.py` |
+| Request Timeout (API-wide) | ✅ | `backend/app/middleware/timeout.py` |
+| API Cache Policy (no-store) | ✅ | `backend/app/middleware/cache_control.py` |
+| Idempotency for POST writes | ✅ | `backend/app/middleware/idempotency.py` |
+| Pagination Hardening (opt-in envelope) | ✅ | `backend/app/core/pagination.py` + list endpoints |
 | WebSocket JWT Authentication | ✅ | `backend/app/api/v1/endpoints/websocket.py` |
 | WebSocket Rate Limiting | ✅ | `backend/app/core/websocket.py` (10 conn/min) |
 | WebSocket Connection Limits | ✅ | `backend/app/core/websocket.py` (3 per user) |
@@ -95,6 +101,16 @@ This document tracks all security implementations, audit findings, and remediati
 - [ ] **5.1** Replace print() with structured logging
 - [ ] **5.2** Create audit trail table
 
+### Phase 6: API Security Controls
+
+- [x] **6.1** Introduce shared API limiter primitive
+- [x] **6.2** Add API request throttling middleware
+- [x] **6.3** Add API request timeout middleware
+- [x] **6.4** Add API no-store cache policy middleware
+- [x] **6.5** Add optional POST idempotency middleware
+- [x] **6.6** Add opt-in paginated response envelope
+- [ ] **6.7** API gateway rollout (docs-only plan complete, infra pending)
+
 ---
 
 ## Files Created
@@ -102,6 +118,8 @@ This document tracks all security implementations, audit findings, and remediati
 | File | Purpose | Status |
 |------|---------|--------|
 | `backend/app/core/password_policy.py` | Password complexity validation | ✅ Created |
+| `backend/app/core/rate_limit.py` | Shared API limiter + key resolver | ✅ Created |
+| `backend/app/core/pagination.py` | Standard pagination payload helper | ✅ Created |
 | `backend/app/core/encryption.py` | Field-level encryption | ⬜ Pending |
 | `backend/app/core/utils.py` | Safe update utility | ⬜ Pending |
 | `backend/app/core/logging_config.py` | Structured logging | ⬜ Pending |
@@ -112,6 +130,11 @@ This document tracks all security implementations, audit findings, and remediati
 | File | Changes | Status |
 |------|---------|--------|
 | `backend/app/main.py` | Security headers, CORS, error handling | ✅ Done |
+| `backend/app/main.py` | API timeout/throttle/cache/idempotency middleware wiring | ✅ Done |
+| `backend/app/middleware/timeout.py` | API request timeout handling | ✅ Done |
+| `backend/app/middleware/throttling.py` | Sliding-window throttling policy | ✅ Done |
+| `backend/app/middleware/cache_control.py` | API no-store headers | ✅ Done |
+| `backend/app/middleware/idempotency.py` | Idempotency key handling for POST | ✅ Done |
 | `backend/app/core/config.py` | SECRET_KEY validation, ENVIRONMENT | ✅ Done |
 | `backend/app/core/security.py` | Fix datetime.utcnow(), bcrypt rounds | ✅ Done |
 | `backend/app/api/v1/endpoints/auth.py` | Password validation, cookie security | ✅ Done |
@@ -166,6 +189,16 @@ SECRET_KEY=your-very-long-secret-key-at-least-32-chars
 - Connection rate limiting (max 10 attempts per minute) prevents abuse
 - `/ws/stats` endpoint now requires admin authentication
 - Oldest connections auto-closed when limit reached (graceful handling)
+
+### 2026-02-11
+- **API Security Hardening Pass** implemented for `/api/v1`
+- Added shared limiter primitive and centralized limiter imports
+- Added request timeout middleware (`30s`) with explicit `504` behavior
+- Added HTTP throttling middleware (soft delay + hard `429` policy)
+- Added API cache policy headers (`no-store, private`)
+- Added Redis-backed idempotency middleware for mutating POST endpoints
+- Added opt-in pagination envelope (`paginated=true`) across list endpoints
+- Added `API_SECURITY_SUMMARY.md` with controls, defaults, and gateway rollout plan
 
 ---
 
@@ -247,3 +280,4 @@ WebSocket connections require special security considerations since they maintai
 - [ ] Bug bounty program consideration
 - [ ] Email alerts for critical auth errors
 - [ ] IP-based rate limiting for repeated auth failures
+- [ ] API gateway infrastructure rollout (see `API_SECURITY_SUMMARY.md`)

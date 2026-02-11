@@ -1,5 +1,7 @@
 # Email Change Security - Quick Reference
 
+> Note: API-wide security controls (timeouts, idempotency, throttling, cache policy, pagination hardening) are tracked in `API_SECURITY_SUMMARY.md`.
+
 ## What Was Implemented ✅
 
 ### 🔐 Security Steps
