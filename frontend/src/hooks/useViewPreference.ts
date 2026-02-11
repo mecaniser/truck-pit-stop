@@ -4,6 +4,10 @@ type ViewMode = 'list' | 'cards'
 
 const STORAGE_KEY = 'tps_view_prefs'
 
+function coerceViewMode(value: unknown, fallback: ViewMode): ViewMode {
+  return value === 'list' || value === 'cards' ? value : fallback
+}
+
 function getStoredPrefs(): Record<string, ViewMode> {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
@@ -26,7 +30,7 @@ function setStoredPref(pageKey: string, mode: ViewMode) {
 export function useViewPreference(pageKey: string, defaultMode: ViewMode = 'list') {
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const prefs = getStoredPrefs()
-    return prefs[pageKey] || defaultMode
+    return coerceViewMode(prefs[pageKey], defaultMode)
   })
 
   const setViewMode = useCallback((mode: ViewMode) => {
