@@ -18,6 +18,15 @@ interface DashboardStats {
     this_week: string
     this_month: string
     total_paid_orders: number
+    today_parts_margin: string
+    this_week_parts_margin: string
+    this_month_parts_margin: string
+    today_gross_profit: string
+    this_week_gross_profit: string
+    this_month_gross_profit: string
+    today_ppi: string
+    this_week_ppi: string
+    this_month_ppi: string
   }
   mechanic_workload?: Array<{
     mechanic_id: string
@@ -93,6 +102,9 @@ export default function GarageAnalyticsPage() {
   const avgOrderValue = stats.revenue.total_paid_orders > 0
     ? thisMonthRevenue / stats.revenue.total_paid_orders
     : 0
+  const thisMonthGrossProfit = parseFloat(stats.revenue.this_month_gross_profit || '0')
+  const thisMonthPartsMargin = parseFloat(stats.revenue.this_month_parts_margin || '0')
+  const thisMonthPpi = parseFloat(stats.revenue.this_month_ppi || '0')
 
   return (
     <div className="space-y-6">
@@ -218,6 +230,27 @@ export default function GarageAnalyticsPage() {
                 <div className="text-lg font-semibold text-white">
                   {(stats.total_repair_orders / stats.total_customers).toFixed(2)}
                 </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
+              <div className="p-2 bg-amber-500/10 rounded">
+                <TrendingUp className="w-4 h-4 text-amber-400" />
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">This Month Gross Profit</div>
+                <div className="text-lg font-semibold text-white">{formatCurrency(thisMonthGrossProfit)}</div>
+                <div className="text-xs text-gray-500">Parts margin: {formatCurrency(thisMonthPartsMargin)}</div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
+              <div className="p-2 bg-violet-500/10 rounded">
+                <Target className="w-4 h-4 text-violet-400" />
+              </div>
+              <div>
+                <div className="text-sm text-gray-400">PPI (This Month)</div>
+                <div className="text-lg font-semibold text-white">{formatCurrency(thisMonthPpi)}</div>
               </div>
             </div>
 

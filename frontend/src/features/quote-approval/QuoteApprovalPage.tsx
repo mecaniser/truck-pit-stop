@@ -22,6 +22,9 @@ interface QuoteDetail {
   vehicle_vin: string | null
   customer_first_name: string
   services: Array<{ name: string; base_price: string; description?: string }>
+  parts: Array<{ name: string; quantity: number; unit_price: string; total_price: string }>
+  labor_total: string
+  parts_total: string
 }
 
 export default function QuoteApprovalPage() {
@@ -91,7 +94,20 @@ export default function QuoteApprovalPage() {
     )
   }
 
-  const { quote, order_number, order_description, vehicle_year, vehicle_make, vehicle_model, vehicle_vin, customer_first_name, services } = data
+  const {
+    quote,
+    order_number,
+    order_description,
+    vehicle_year,
+    vehicle_make,
+    vehicle_model,
+    vehicle_vin,
+    customer_first_name,
+    services,
+    parts,
+    labor_total,
+    parts_total,
+  } = data
   const vehicleInfo = vehicle_year && vehicle_make && vehicle_model
     ? `${vehicle_year} ${vehicle_make} ${vehicle_model}`
     : null
@@ -223,7 +239,7 @@ export default function QuoteApprovalPage() {
             {/* Services */}
             {services.length > 0 && (
               <div>
-                <p className="text-sm text-gray-500 mb-2">Services</p>
+                <p className="text-sm text-gray-500 mb-2">Services / Labor</p>
                 <div className="space-y-2">
                   {services.map((svc, idx) => (
                     <div
@@ -247,6 +263,41 @@ export default function QuoteApprovalPage() {
                 </div>
               </div>
             )}
+
+            {/* Parts */}
+            {parts.length > 0 && (
+              <div>
+                <p className="text-sm text-gray-500 mb-2">Parts</p>
+                <div className="space-y-2">
+                  {parts.map((part, idx) => (
+                    <div
+                      key={`${part.name}-${idx}`}
+                      className="bg-white/5 rounded-lg p-3 flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="text-white font-medium">{part.name}</p>
+                        <p className="text-xs text-gray-500">Qty {part.quantity} · ${parseFloat(part.unit_price).toFixed(2)} each</p>
+                      </div>
+                      <p className="text-white font-medium">
+                        ${parseFloat(part.total_price).toFixed(2)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Breakdown */}
+            <div className="bg-white/5 rounded-lg p-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Labor / Services</span>
+                <span className="text-white">${parseFloat(labor_total || '0').toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm mt-1">
+                <span className="text-gray-400">Parts</span>
+                <span className="text-white">${parseFloat(parts_total || '0').toFixed(2)}</span>
+              </div>
+            </div>
 
             {/* Total */}
             <div className="bg-amber-500/10 rounded-xl p-6 text-center border border-amber-500/30">
