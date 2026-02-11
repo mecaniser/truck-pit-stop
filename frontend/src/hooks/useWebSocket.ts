@@ -10,6 +10,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../stores/authStore'
+import { requestTokenRefresh } from '../lib/authRefresh'
+import { isTokenExpiredOrNearExpiry } from '../lib/authTokens'
 import type { NotificationEvent } from './useNotificationManager'
 
 // Event types from backend
@@ -53,6 +55,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const ws = useRef<WebSocket | null>(null)
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const authRecoveryAttempted = useRef(false)
   const queryClient = useQueryClient()
   const { token, isAuthenticated } = useAuthStore()
   const [isConnected, setIsConnected] = useState(false)
@@ -65,6 +68,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       console.log(`[WebSocket] ${message}`, ...args)
     }
   }, [debug])
+
+  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+    const state = useAuthStore.getState()
+    try {
+      const { access_token, refresh_token } = await requestTokenRefresh(state.refreshToken)
+      useAuthStore.getState().setTokens(access_token, refresh_token)
+      return access_token
+    } catch (error) {
+      log('Token refresh failed for WebSocket connection')
+      void useAuthStore.getState().logout()
+      return null
+    }
+  }, [log])
   
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -165,10 +181,22 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     }
   }, [queryClient, onNotification, log])
   
-  const connect = useCallback(() => {
-    if (!token || !isAuthenticated) {
+  const connect = useCallback(async () => {
+    const state = useAuthStore.getState()
+    if (!state.token || !state.isAuthenticated) {
       log('No token or not authenticated, skipping connection')
       return
+    }
+
+    let activeToken = state.token
+    if (isTokenExpiredOrNearExpiry(activeToken)) {
+      log('Access token expired/near expiry, refreshing before WebSocket connect')
+      const refreshedToken = await refreshAccessToken()
+      if (!refreshedToken) {
+        log('Unable to refresh token for WebSocket connection')
+        return
+      }
+      activeToken = refreshedToken
     }
     
     // Close existing connection if any
@@ -189,16 +217,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     let wsUrl: string
     if (apiUrl.startsWith('http')) {
       // Full URL provided - convert to WebSocket
-      wsUrl = apiUrl.replace(/^http/, 'ws') + `/ws?token=${token}`
+      wsUrl = apiUrl.replace(/^http/, 'ws') + `/ws?token=${encodeURIComponent(activeToken)}`
     } else if (apiUrl.startsWith('/')) {
       // Relative path - use current host
-      wsUrl = `${wsProtocol}//${window.location.host}${apiUrl}/ws?token=${token}`
+      wsUrl = `${wsProtocol}//${window.location.host}${apiUrl}/ws?token=${encodeURIComponent(activeToken)}`
     } else {
       // No API URL - use current host with /api/v1
-      wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws?token=${token}`
+      wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws?token=${encodeURIComponent(activeToken)}`
     }
     
-    log('Connecting to:', wsUrl.replace(token, '[TOKEN]'))
+    log('Connecting to:', wsUrl.replace(encodeURIComponent(activeToken), '[TOKEN]'))
     
     try {
       ws.current = new WebSocket(wsUrl)
@@ -206,6 +234,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       ws.current.onopen = () => {
         log('Connected')
         setIsConnected(true)
+        authRecoveryAttempted.current = false
         
         // Start ping interval to keep connection alive
         if (pingInterval.current) {
@@ -230,11 +259,27 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           pingInterval.current = null
         }
         
-        // Reconnect after delay if not intentionally closed
+        // If auth failed, attempt one refresh + reconnect before giving up.
+        if (shouldReconnect.current && event.code === 4001 && !authRecoveryAttempted.current) {
+          authRecoveryAttempted.current = true
+          void (async () => {
+            const refreshedToken = await refreshAccessToken()
+            if (refreshedToken && shouldReconnect.current) {
+              reconnectTimeout.current = setTimeout(() => {
+                void connect()
+              }, 500)
+            }
+          })()
+          return
+        }
+
+        // Reconnect after delay if not intentionally closed and not auth failure.
         if (shouldReconnect.current && event.code !== 4001) {
           const delay = event.code === 1006 ? 5000 : 3000 // Longer delay for abnormal closure
           log(`Reconnecting in ${delay}ms...`)
-          reconnectTimeout.current = setTimeout(connect, delay)
+          reconnectTimeout.current = setTimeout(() => {
+            void connect()
+          }, delay)
         }
       }
       
@@ -244,18 +289,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     } catch (err) {
       log('Failed to create WebSocket:', err)
     }
-  }, [token, isAuthenticated, handleMessage, log])
+  }, [handleMessage, log, isTokenExpiredOrNearExpiry, refreshAccessToken])
   
   const reconnect = useCallback(() => {
     shouldReconnect.current = true
-    connect()
+    void connect()
   }, [connect])
   
   // Connect when authenticated
   useEffect(() => {
     if (isAuthenticated && token) {
       shouldReconnect.current = true
-      connect()
+      void connect()
     }
     
     return () => {

@@ -71,7 +71,9 @@ export default function RegisterPage() {
       const { access_token, refresh_token } = response.data
 
       api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
-      const userResponse = await api.get('/auth/me')
+      const userResponse = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${access_token}` },
+      })
 
       login(access_token, refresh_token, userResponse.data)
 

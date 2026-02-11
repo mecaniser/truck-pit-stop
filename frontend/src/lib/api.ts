@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
+import { requestTokenRefresh } from './authRefresh'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api/v1',
@@ -7,14 +8,16 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true, // Send cookies with every request
+  timeout: 30000, // 30 second timeout
 })
 
 // Request interceptor to add auth token (fallback for non-cookie scenarios)
 api.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token
+    const hasAuthHeader = Boolean(config.headers?.Authorization || config.headers?.authorization)
     // Only add Authorization header if we have a token and cookies might not be set yet
-    if (token) {
+    if (token && !hasAuthHeader) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -70,13 +73,7 @@ api.interceptors.response.use(
       try {
         // Attempt to refresh the token
         const refreshToken = useAuthStore.getState().refreshToken
-        const response = await axios.post(
-          `${import.meta.env.VITE_API_URL || '/api/v1'}/auth/refresh`,
-          { refresh_token: refreshToken },
-          { withCredentials: true }
-        )
-
-        const { access_token, refresh_token: newRefreshToken } = response.data
+        const { access_token, refresh_token: newRefreshToken } = await requestTokenRefresh(refreshToken)
         
         // Update store with new tokens
         useAuthStore.getState().setTokens(access_token, newRefreshToken)
@@ -102,5 +99,3 @@ api.interceptors.response.use(
 )
 
 export default api
-
-

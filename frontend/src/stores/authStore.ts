@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import api from '../lib/api'
+import { isTokenExpired } from '../lib/authTokens'
 
 interface User {
   id: string
@@ -23,6 +24,34 @@ interface AuthState {
   logout: () => void
   setUser: (user: User) => void
   setTokens: (token: string, refreshToken: string) => void
+}
+
+function sanitizePersistedAuthState(state: Partial<AuthState>): Partial<AuthState> {
+  if (!state.token) {
+    return state
+  }
+  if (!isTokenExpired(state.token)) {
+    return state
+  }
+  const hasValidRefreshToken = Boolean(
+    state.refreshToken && !isTokenExpired(state.refreshToken)
+  )
+  if (hasValidRefreshToken) {
+    // Access token is short-lived; keep a valid refresh token so the app can
+    // recover session via /auth/refresh on the next protected API call.
+    return {
+      ...state,
+      token: null,
+      isAuthenticated: true,
+    }
+  }
+  return {
+    ...state,
+    user: null,
+    token: null,
+    refreshToken: null,
+    isAuthenticated: false,
+  }
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -61,7 +90,13 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => localStorage),
+      merge: (persistedState, currentState) => {
+        const sanitized = sanitizePersistedAuthState((persistedState as Partial<AuthState>) ?? {})
+        return {
+          ...currentState,
+          ...sanitized,
+        }
+      },
     }
   )
 )
-
