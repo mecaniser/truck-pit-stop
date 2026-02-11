@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
+    MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024  # 10MB
+    IDEMPOTENCY_MAX_CACHED_RESPONSE_BYTES: int = 1 * 1024 * 1024  # 1MB
+    RATE_LIMIT_TOKEN_CACHE_TTL_SECONDS: int = 30
+    RATE_LIMIT_INVALID_TOKEN_CACHE_TTL_SECONDS: int = 5
+    RATE_LIMIT_TOKEN_CACHE_MAX_ENTRIES: int = 5000
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REFRESH_TOKEN_EXPIRE_DAYS_REMEMBER: int = 30  # "Remember me" duration
@@ -81,4 +86,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

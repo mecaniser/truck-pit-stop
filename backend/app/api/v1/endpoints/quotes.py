@@ -9,11 +9,10 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.quote import Quote
@@ -31,9 +30,6 @@ from app.services.pricing import (
 from app.core.websocket import broadcast_quote_event, broadcast_repair_order_update, WSEventType
 
 router = APIRouter()
-
-# Rate limiter for magic link endpoints
-limiter = Limiter(key_func=get_remote_address)
 
 
 class QuoteCreate(BaseModel):

@@ -2,8 +2,6 @@ from datetime import timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -23,6 +21,7 @@ from app.core.redis import (
     delete_password_reset_token,
 )
 from app.core.config import settings
+from app.core.rate_limit import limiter
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -48,9 +47,6 @@ from app.services.email_service import (
 from app.core.password_policy import validate_password
 
 router = APIRouter()
-
-# Rate limiter - uses IP address as key
-limiter = Limiter(key_func=get_remote_address)
 
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str, remember_me: bool = False):

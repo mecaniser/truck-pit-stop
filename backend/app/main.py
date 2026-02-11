@@ -10,8 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
@@ -21,7 +20,13 @@ import stripe
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.core.metrics import setup_metrics, record_error, record_payment_error, record_unhandled_exception
+from app.core.rate_limit import limiter
 from app.middleware.observability import ObservabilityMiddleware
+from app.middleware.timeout import TimeoutMiddleware
+from app.middleware.throttling import ThrottlingMiddleware
+from app.middleware.cache_control import CacheControlMiddleware
+from app.middleware.idempotency import IdempotencyMiddleware
+from app.middleware.request_size import RequestBodyLimitMiddleware
 from app.api.v1.router import api_router
 from app.db.session import engine
 from app.core.redis import close_redis, get_redis
@@ -51,9 +56,6 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 
-# Rate limiter setup
-limiter = Limiter(key_func=get_remote_address)
-
 app = FastAPI(
     title="Truck Pit Stop API",
     description="API for managing semi-truck repair garages",
@@ -65,7 +67,15 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Add observability middleware (must be before CORS)
+# Register API middlewares.
+# NOTE: Starlette applies middleware in reverse order of registration (last added is outermost).
+# Observability must be outermost among API middlewares so correlation IDs are available
+# to throttling/timeout short-circuit responses.
+app.add_middleware(TimeoutMiddleware, timeout_seconds=30.0)
+app.add_middleware(ThrottlingMiddleware)
+app.add_middleware(CacheControlMiddleware)
+app.add_middleware(IdempotencyMiddleware)
+app.add_middleware(RequestBodyLimitMiddleware, max_body_bytes=settings.MAX_REQUEST_BODY_BYTES)
 app.add_middleware(ObservabilityMiddleware)
 
 app.add_middleware(
