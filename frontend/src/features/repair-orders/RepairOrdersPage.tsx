@@ -130,6 +130,7 @@ export default function RepairOrdersPage() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [showReviewNotes, setShowReviewNotes] = useState(false)
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
+  const [invoiceDiscountAmount, setInvoiceDiscountAmount] = useState('')
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
   const [showZelleQrModal, setShowZelleQrModal] = useState(false)
@@ -477,10 +478,19 @@ export default function RepairOrdersPage() {
   })
 
   const createInvoiceMutation = useMutation({
-    mutationFn: async ({ repairOrderId, dueDate }: { repairOrderId: string; dueDate?: string }) => {
+    mutationFn: async ({
+      repairOrderId,
+      dueDate,
+      discountAmount,
+    }: {
+      repairOrderId: string
+      dueDate?: string
+      discountAmount?: string
+    }) => {
       const response = await api.post('/invoices', { 
         repair_order_id: repairOrderId,
         due_date: dueDate || null,
+        discount_amount: discountAmount && discountAmount.trim() !== '' ? discountAmount : '0.00',
       })
       return response.data
     },
@@ -494,6 +504,7 @@ export default function RepairOrdersPage() {
         setSelectedOrder(prev => prev ? { ...prev, status: 'invoiced' } : null)
       }
       setInvoiceDueDate('')
+      setInvoiceDiscountAmount('')
       toast.success('Invoice created and sent to customer')
     },
     onError: (error: unknown) => {
@@ -2096,11 +2107,25 @@ export default function RepairOrdersPage() {
                         className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                       />
                     </div>
+                    <div className="mb-3">
+                      <label className="block text-sm font-medium text-indigo-700 mb-1">Discount Amount (optional)</label>
+                      <input
+                        type="number"
+                        value={invoiceDiscountAmount}
+                        onChange={(e) => setInvoiceDiscountAmount(e.target.value)}
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <p className="mt-1 text-xs text-indigo-600">Applies to this invoice only.</p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => selectedOrder.id && createInvoiceMutation.mutate({ 
                         repairOrderId: selectedOrder.id,
                         dueDate: invoiceDueDate || undefined,
+                        discountAmount: invoiceDiscountAmount || undefined,
                       })}
                       disabled={createInvoiceMutation.isPending}
                       className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"

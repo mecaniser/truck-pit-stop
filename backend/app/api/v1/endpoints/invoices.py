@@ -27,6 +27,7 @@ router = APIRouter()
 class InvoiceCreate(BaseModel):
     repair_order_id: UUID
     due_date: Optional[date] = None
+    discount_amount: Decimal = Decimal("0.00")
 
 
 class InvoiceUpdate(BaseModel):
@@ -170,9 +171,23 @@ async def create_invoice(
     
     # Sales tax
     tax_amount = (taxable_amount * sales_tax_rate).quantize(Decimal("0.01"))
+
+    requested_discount = (body.discount_amount or Decimal("0.00")).quantize(Decimal("0.01"))
+    if requested_discount < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="discount_amount must be greater than or equal to 0.00",
+        )
+
+    pre_discount_total = taxable_amount + tax_amount
+    if requested_discount > pre_discount_total:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="discount_amount cannot exceed invoice total",
+        )
     
     # Total
-    total_amount = taxable_amount + tax_amount
+    total_amount = (pre_discount_total - requested_discount).quantize(Decimal("0.01"))
     
     # Default due date to today if not specified
     due_date = body.due_date if body.due_date else date.today()
@@ -190,7 +205,7 @@ async def create_invoice(
             shop_supplies_amount=shop_supplies_amount,
             service_fee_amount=service_fee_amount,
             tax_amount=tax_amount,
-            discount_amount=Decimal("0.00"),
+            discount_amount=requested_discount,
             total_amount=total_amount,
             due_date=due_date,
             paid_at=None,
@@ -251,6 +266,8 @@ async def create_invoice(
             fee_lines.append(f'<p style="margin: 0 0 5px 0;">Service Fee: ${invoice.service_fee_amount:.2f}</p>')
         if invoice.tax_amount > 0:
             fee_lines.append(f'<p style="margin: 0 0 5px 0;">Tax: ${invoice.tax_amount:.2f}</p>')
+        if invoice.discount_amount > 0:
+            fee_lines.append(f'<p style="margin: 0 0 5px 0;">Discount: -${invoice.discount_amount:.2f}</p>')
         fee_breakdown = "\n                ".join(fee_lines)
         
         email_html = f"""
