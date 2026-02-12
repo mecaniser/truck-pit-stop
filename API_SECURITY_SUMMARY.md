@@ -89,6 +89,26 @@
 3. Confirm whether denial was throttle (`429`) or timeout (`504`).
 4. Validate caller identity key resolution (user key vs IP fallback).
 
+## Invoice Access Security Model
+
+- Public invoice links (`/api/v1/invoice-access/*`) are bearer-style magic links.
+- Detailed implementation and non-security behavior notes live in `docs/INVOICE_ACCESS_IMPLEMENTATION.md`.
+- Possession of a valid, unexpired invoice token is treated as proof of customer access for:
+  - invoice viewing
+  - guest card payment
+  - portal account bootstrap/login for the linked customer
+- Existing customer accounts can be signed in from a valid invoice token without password re-entry by design.
+- Token abuse controls currently include:
+  - short TTL (7 days)
+  - endpoint-level rate limits
+  - strict invoice/customer consistency checks
+  - one-time invoice-token consumption on successful guest payment or portal activation
+  - short-lived portal-enrollment token (24h, one-time) issued after successful guest payment
+- Stripe Connect tradeoff:
+  - In connected-account mode, PaymentIntents are intentionally created without attaching a connected-account `customer` object.
+  - Invoice/customer context is carried in PaymentIntent metadata (`customer_id`, `customer_name`, `customer_email`, `order_number`, invoice fields).
+  - This preserves one-time checkout and dashboard readability, but does not provide connected-account customer history or saved-card reuse.
+
 ## API Gateway Rollout Plan (Docs-Only)
 
 ### Candidate Platforms

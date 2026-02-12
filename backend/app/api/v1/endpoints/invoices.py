@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
-from app.core.config import settings
 from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -18,6 +17,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
 from app.services.pricing import get_order_labor_total, get_order_parts_total
 from app.services.email_service import send_email
+from app.services.invoice_access_service import generate_invoice_access_link
 from sqlalchemy.orm import selectinload
 from app.core.websocket import broadcast_invoice_created, broadcast_repair_order_update
 
@@ -227,7 +227,7 @@ async def create_invoice(
     vehicle = order.vehicle
     if customer and customer.email:
         vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
-        portal_url = f"{settings.FRONTEND_URL}/portal"
+        invoice_access_url = await generate_invoice_access_link(invoice=invoice, order=order, customer=customer)
         
         # Build fee breakdown lines
         fee_lines = []
@@ -255,9 +255,9 @@ async def create_invoice(
                 <p style="margin: 15px 0 0 0; font-size: 24px; color: #1f2937; border-top: 1px solid #e5e7eb; padding-top: 15px;"><strong>Total: ${invoice.total_amount:.2f}</strong></p>
             </div>
             
-            <p>You can view and pay your invoice through your customer portal:</p>
+            <p>You can view and pay your invoice instantly:</p>
             
-            <a href="{portal_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">
+            <a href="{invoice_access_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">
                 View Invoice & Pay
             </a>
             
@@ -481,7 +481,7 @@ async def resend_invoice(
         )
     
     vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip()
-    portal_url = f"{settings.FRONTEND_URL}/portal"
+    invoice_access_url = await generate_invoice_access_link(invoice=invoice, order=order, customer=customer)
     
     email_html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -495,9 +495,9 @@ async def resend_invoice(
             <p style="margin: 0; font-size: 24px; color: #1f2937;"><strong>Total: ${invoice.total_amount:.2f}</strong></p>
         </div>
         
-        <p>You can view and pay your invoice through your customer portal:</p>
+        <p>You can view and pay your invoice instantly:</p>
         
-        <a href="{portal_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">
+        <a href="{invoice_access_url}" style="display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 0;">
             View Invoice & Pay
         </a>
         

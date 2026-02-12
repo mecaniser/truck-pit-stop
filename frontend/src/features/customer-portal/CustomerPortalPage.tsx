@@ -9,14 +9,16 @@ import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
+import CustomerInvoicePage from './CustomerInvoicePage'
 import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar } from 'lucide-react'
-import { loadStripe } from '@stripe/stripe-js'
+import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
 import NotificationBanner from '../../components/NotificationBanner'
+import { getStripeForAccount } from '../../lib/stripe'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -426,20 +428,6 @@ function CustomerVehicles() {
   )
 }
 
-// Stripe promise cache - keyed by account (null for platform, account_id for connected)
-const stripePromiseCache: Map<string | null, ReturnType<typeof loadStripe>> = new Map()
-
-const getStripe = async (stripeAccountId?: string | null) => {
-  const cacheKey = stripeAccountId || null
-  
-  if (!stripePromiseCache.has(cacheKey)) {
-    const { data } = await api.get('/payments/config')
-    const options = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined
-    stripePromiseCache.set(cacheKey, loadStripe(data.publishable_key, options))
-  }
-  return stripePromiseCache.get(cacheKey)!
-}
-
 // Payment form component
 function PaymentForm({ 
   invoiceId, 
@@ -523,7 +511,7 @@ function CustomerRepairs() {
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [showPayment, setShowPayment] = useState(false)
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
-  const [stripeInstance, setStripeInstance] = useState<Awaited<ReturnType<typeof loadStripe>> | null>(null)
+  const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
   const [declineNotes, setDeclineNotes] = useState('')
   const [showDeclineForm, setShowDeclineForm] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -616,7 +604,7 @@ function CustomerRepairs() {
       })
       
       // Load Stripe with the connected account if using Stripe Connect
-      const stripe = await getStripe(data.stripe_account_id)
+      const stripe = await getStripeForAccount(data.stripe_account_id)
       setStripeInstance(stripe)
       
       setStripeOptions({ 
@@ -1074,6 +1062,7 @@ export default function CustomerPortalPage() {
   
   const getCurrentPageLabel = () => {
     if (location.pathname.startsWith('/portal/book/')) return 'Book Appointment'
+    if (location.pathname.startsWith('/portal/invoices/')) return 'Invoice'
     if (location.pathname === '/portal/settings') return 'Profile Settings'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
@@ -1203,6 +1192,7 @@ export default function CustomerPortalPage() {
           <Route path="appointments" element={<AppointmentsPage />} />
           <Route path="vehicles" element={<CustomerVehicles />} />
           <Route path="repairs" element={<CustomerRepairs />} />
+          <Route path="invoices/:invoiceId" element={<CustomerInvoicePage />} />
           <Route path="settings" element={<ProfileSettingsPage />} />
         </Routes>
       </main>
@@ -1255,9 +1245,11 @@ export default function CustomerPortalPage() {
           <Link
             to="/portal/repairs"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname !== '/portal/repairs' ? 'text-gray-500 hover:text-gray-700' : ''
+              !(location.pathname === '/portal/repairs' || location.pathname.startsWith('/portal/invoices/'))
+                ? 'text-gray-500 hover:text-gray-700'
+                : ''
             }`}
-            style={location.pathname === '/portal/repairs' ? { color: accentColors[500] } : undefined}
+            style={(location.pathname === '/portal/repairs' || location.pathname.startsWith('/portal/invoices/')) ? { color: accentColors[500] } : undefined}
           >
             <History className="w-5 h-5" />
             <span className="text-[10px] font-medium">History</span>

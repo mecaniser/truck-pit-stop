@@ -3,7 +3,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
@@ -20,16 +20,9 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
 from app.db.models.tenant import Tenant
 from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
+from app.services.payment_number_service import allocate_next_payment_number
 
 logger = get_logger(__name__)
-
-
-async def generate_payment_number(db: AsyncSession, tenant_id: UUID) -> str:
-    result = await db.execute(
-        select(func.count(Payment.id)).where(Payment.tenant_id == tenant_id)
-    )
-    count = result.scalar() or 0
-    return f"PAY-{str(tenant_id).replace('-', '').upper()[:8]}-{count + 1:06d}"
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
@@ -311,14 +304,22 @@ async def create_payment_intent_for_invoice(
         
         # Create PaymentIntent
         amount_cents = int(invoice.total_amount * 100)
+        metadata = {
+            "invoice_id": str(invoice.id),
+            "invoice_number": invoice.invoice_number,
+            "tenant_id": str(invoice.tenant_id),
+            "order_number": invoice.repair_order.order_number if invoice.repair_order else "",
+        }
+        if customer:
+            metadata["customer_id"] = str(customer.id)
+            metadata["customer_name"] = f"{customer.first_name} {customer.last_name}".strip()
+            if customer.email:
+                metadata["customer_email"] = customer.email
+
         intent_params = {
             "amount": amount_cents,
             "currency": "usd",
-            "metadata": {
-                "invoice_id": str(invoice.id),
-                "invoice_number": invoice.invoice_number,
-                "tenant_id": str(invoice.tenant_id),
-            },
+            "metadata": metadata,
             "automatic_payment_methods": {"enabled": True},
         }
         
@@ -329,8 +330,9 @@ async def create_payment_intent_for_invoice(
             platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
             if platform_fee > 0:
                 intent_params["application_fee_amount"] = platform_fee
-            # For connected accounts, customer must be on the connected account
-            # So we don't pass the platform's customer ID
+            # Product decision: no connected-account customer mapping for now.
+            # In connected-account mode we intentionally omit `customer` and
+            # rely on metadata for dashboard context.
         elif stripe_customer_id:
             # Fallback to platform account (no Connect)
             intent_params["customer"] = stripe_customer_id
@@ -440,7 +442,7 @@ async def confirm_payment(
     invoice.repair_order.status = RepairOrderStatus.PAID
     
     # Create payment record
-    payment_number = await generate_payment_number(db, invoice.tenant_id)
+    payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
     payment = Payment(
         tenant_id=invoice.tenant_id,
         invoice_id=invoice.id,
@@ -528,7 +530,7 @@ async def record_manual_payment(
     invoice.repair_order.status = RepairOrderStatus.PAID
     
     # Create payment record
-    payment_number = await generate_payment_number(db, invoice.tenant_id)
+    payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
     payment = Payment(
         tenant_id=invoice.tenant_id,
         invoice_id=invoice.id,

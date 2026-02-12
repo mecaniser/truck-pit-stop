@@ -1,11 +1,12 @@
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
@@ -13,6 +14,14 @@ from decimal import Decimal
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.core.redis import (
+    consume_quote_portal_enrollment_token,
+    get_quote_portal_enrollment_payload,
+    get_token_version,
+    is_quote_portal_enrollment_token_consumed,
+)
+from app.core.security import create_access_token, create_refresh_token, get_password_hash
+from app.core.password_policy import validate_password
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.quote import Quote
@@ -28,6 +37,10 @@ from app.services.pricing import (
     get_selected_services_total,
 )
 from app.core.websocket import broadcast_quote_event, broadcast_repair_order_update, WSEventType
+from app.services.quote_access_service import (
+    QUOTE_PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
+    generate_quote_portal_enrollment_token,
+)
 
 router = APIRouter()
 
@@ -76,6 +89,28 @@ class QuoteDetailResponse(BaseModel):
     parts: list[dict] = []
     labor_total: Decimal = Decimal("0.00")
     parts_total: Decimal = Decimal("0.00")
+    has_portal_account: bool = False
+    requires_password_setup: bool = True
+
+
+class QuotePortalResolveResponse(BaseModel):
+    has_portal_account: bool
+    requires_password_setup: bool
+    portal_enrollment_token: str
+    portal_enrollment_expires_in: int
+
+
+class QuotePortalCreateRequest(BaseModel):
+    token: str
+    new_password: Optional[str] = None
+
+
+class QuotePortalCreateResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    redirect_to: str
+    user_exists: bool
 
 
 def _require_staff(current_user: User) -> None:
@@ -89,6 +124,168 @@ def _require_staff(current_user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient permissions",
         )
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE_EFFECTIVE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.COOKIE_SECURE_EFFECTIVE,
+        samesite=settings.COOKIE_SAMESITE,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path="/api/v1/auth",
+    )
+
+
+def _quote_token_reference_time(quote: Quote) -> datetime:
+    ref = quote.sent_at or quote.created_at
+    if ref.tzinfo is None:
+        return ref.replace(tzinfo=timezone.utc)
+    return ref
+
+
+def _validate_quote_token_not_expired_or_400(quote: Quote) -> None:
+    expires_at = _quote_token_reference_time(quote) + timedelta(days=7)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Quote link expired. Please contact the shop for a new quote link.",
+        )
+
+
+async def _load_quote_context_by_token_or_400(
+    db: AsyncSession,
+    token: str,
+    *,
+    include_parts: bool = False,
+) -> tuple[Quote, RepairOrder]:
+    result = await db.execute(select(Quote).where(Quote.approval_token == token))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quote not found or link expired",
+        )
+
+    _validate_quote_token_not_expired_or_400(quote)
+
+    order_query = (
+        select(RepairOrder)
+        .where(RepairOrder.id == quote.repair_order_id)
+        .options(
+            selectinload(RepairOrder.customer),
+            selectinload(RepairOrder.vehicle),
+        )
+    )
+    if include_parts:
+        order_query = order_query.options(
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
+    result = await db.execute(order_query)
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repair order not found",
+        )
+    return quote, order
+
+
+async def _get_quote_portal_enrollment_payload_or_400(token: str) -> dict:
+    payload = await get_quote_portal_enrollment_payload(token)
+    if payload:
+        return payload
+
+    if await is_quote_portal_enrollment_token_consumed(token):
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This portal link has already been used. Please return to your quote link.",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid or expired portal link.",
+    )
+
+
+def _validate_quote_portal_subject(payload: dict, quote: Quote, order: RepairOrder) -> None:
+    if str(quote.id) != payload.get("quote_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid portal link.")
+    if str(order.customer_id) != payload.get("customer_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid portal link.")
+    if str(order.tenant_id) != payload.get("tenant_id"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid portal link.")
+
+
+def _validate_existing_customer_user(email_user: User, customer_id: UUID) -> None:
+    if email_user.role != UserRole.CUSTOMER:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This email belongs to another account type. Please contact the shop for assistance.",
+        )
+    if email_user.customer_id and email_user.customer_id != customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This email is already linked to another account. Please contact the shop for assistance.",
+        )
+
+
+def _validate_new_password_or_400(password: str) -> None:
+    try:
+        validate_password(password)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password. Please choose a stronger password and try again.",
+        ) from exc
+
+
+async def _resolve_customer_user_after_conflict(db: AsyncSession, customer: Customer) -> User:
+    result = await db.execute(select(User).where(User.customer_id == customer.id))
+    user = result.scalar_one_or_none()
+    if user:
+        return user
+
+    result = await db.execute(select(User).where(User.email == customer.email))
+    email_user = result.scalar_one_or_none()
+    if not email_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Portal account setup is in progress. Please retry in a moment.",
+        )
+
+    _validate_existing_customer_user(email_user, customer.id)
+    if not email_user.customer_id:
+        email_user.customer_id = customer.id
+        email_user.tenant_id = customer.tenant_id
+        email_user.is_active = True
+        try:
+            await db.commit()
+            await db.refresh(email_user)
+        except IntegrityError:
+            await db.rollback()
+            result = await db.execute(select(User).where(User.customer_id == customer.id))
+            user = result.scalar_one_or_none()
+            if user:
+                return user
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Portal account setup is in progress. Please retry in a moment.",
+            )
+
+    return email_user
 
 
 async def generate_quote_number(db: AsyncSession, tenant_id: UUID) -> str:
@@ -460,7 +657,7 @@ async def send_quote_to_customer(
     
     # Mark as sent and reset declined status if resending
     quote.sent_to_customer = True
-    quote.sent_at = datetime.utcnow()
+    quote.sent_at = datetime.now(timezone.utc)
     if quote.is_declined:
         quote.is_declined = False
         quote.decline_notes = None
@@ -729,31 +926,7 @@ async def get_quote_by_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Get quote details by magic link token - no auth required"""
-    result = await db.execute(
-        select(Quote).where(Quote.approval_token == token)
-    )
-    quote = result.scalar_one_or_none()
-    if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quote not found or link expired",
-        )
-    
-    result = await db.execute(
-        select(RepairOrder)
-        .where(RepairOrder.id == quote.repair_order_id)
-        .options(
-            selectinload(RepairOrder.customer),
-            selectinload(RepairOrder.vehicle),
-            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
-        )
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
-        )
+    quote, order = await _load_quote_context_by_token_or_400(db, token, include_parts=True)
     
     # Parse services
     services = []
@@ -777,6 +950,8 @@ async def get_quote_by_token(
     
     vehicle = order.vehicle
     customer = order.customer
+    user_result = await db.execute(select(User).where(User.customer_id == order.customer_id))
+    existing_user = user_result.scalar_one_or_none()
     
     return QuoteDetailResponse(
         quote=QuoteResponse.model_validate(quote),
@@ -791,6 +966,8 @@ async def get_quote_by_token(
         parts=parts,
         labor_total=get_order_labor_total(order),
         parts_total=get_order_parts_total(order),
+        has_portal_account=existing_user is not None,
+        requires_password_setup=existing_user is None,
     )
 
 
@@ -802,25 +979,7 @@ async def approve_quote_by_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Approve quote via magic link - no auth required"""
-    result = await db.execute(
-        select(Quote).where(Quote.approval_token == token)
-    )
-    quote = result.scalar_one_or_none()
-    if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quote not found or link expired",
-        )
-    
-    result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
-        )
+    quote, order = await _load_quote_context_by_token_or_400(db, token)
     
     if quote.is_declined:
         raise HTTPException(
@@ -860,6 +1019,152 @@ async def approve_quote_by_token(
     return QuoteResponse.model_validate(quote)
 
 
+@router.post("/token/{token}/portal-resolve", response_model=QuotePortalResolveResponse)
+@limiter.limit("5/minute")
+async def resolve_quote_portal_access(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    quote, order = await _load_quote_context_by_token_or_400(db, token)
+    if not quote.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Portal onboarding is available after quote approval.",
+        )
+    if not order.customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    result = await db.execute(select(User).where(User.customer_id == order.customer_id))
+    existing_user = result.scalar_one_or_none()
+
+    portal_enrollment_token = await generate_quote_portal_enrollment_token(
+        quote=quote,
+        order=order,
+        customer=order.customer,
+    )
+
+    return QuotePortalResolveResponse(
+        has_portal_account=existing_user is not None,
+        requires_password_setup=existing_user is None,
+        portal_enrollment_token=portal_enrollment_token,
+        portal_enrollment_expires_in=QUOTE_PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
+    )
+
+
+@router.post("/portal/create", response_model=QuotePortalCreateResponse)
+@limiter.limit("5/minute")
+async def create_portal_from_quote_link(
+    request: Request,
+    response: Response,
+    body: QuotePortalCreateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    payload = await _get_quote_portal_enrollment_payload_or_400(body.token)
+    try:
+        quote_id = UUID(payload["quote_id"])
+    except (KeyError, ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired portal link.")
+
+    result = await db.execute(select(Quote).where(Quote.id == quote_id))
+    quote = result.scalar_one_or_none()
+    if not quote:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Quote not found.")
+
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == quote.repair_order_id)
+        .options(selectinload(RepairOrder.customer))
+    )
+    order = result.scalar_one_or_none()
+    if not order or not order.customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
+
+    if not quote.is_approved:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Portal onboarding is available after quote approval.",
+        )
+
+    _validate_quote_portal_subject(payload, quote, order)
+    customer = order.customer
+
+    result = await db.execute(select(User).where(User.customer_id == customer.id))
+    user = result.scalar_one_or_none()
+    user_exists = user is not None
+
+    if not user:
+        result = await db.execute(select(User).where(User.email == customer.email))
+        email_user = result.scalar_one_or_none()
+        if email_user:
+            _validate_existing_customer_user(email_user, customer.id)
+            user = email_user
+            user.customer_id = customer.id
+            user.tenant_id = customer.tenant_id
+            user.is_active = True
+            try:
+                await db.commit()
+                await db.refresh(user)
+            except IntegrityError:
+                await db.rollback()
+                user = await _resolve_customer_user_after_conflict(db, customer)
+            user_exists = True
+        else:
+            if not body.new_password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Password is required to create your portal account.",
+                )
+            _validate_new_password_or_400(body.new_password)
+            user = User(
+                email=customer.email,
+                hashed_password=get_password_hash(body.new_password),
+                first_name=customer.first_name,
+                last_name=customer.last_name,
+                phone=customer.phone,
+                role=UserRole.CUSTOMER,
+                tenant_id=customer.tenant_id,
+                customer_id=customer.id,
+                is_active=True,
+                is_verified=False,
+            )
+            db.add(user)
+            try:
+                await db.commit()
+                await db.refresh(user)
+                user_exists = False
+            except IntegrityError:
+                await db.rollback()
+                user = await _resolve_customer_user_after_conflict(db, customer)
+                user_exists = True
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is inactive. Please contact the shop.",
+        )
+
+    consumed = await consume_quote_portal_enrollment_token(body.token)
+    if consumed is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This portal link has already been used. Please return to your quote link.",
+        )
+
+    token_version = await get_token_version(str(user.id))
+    access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version)
+    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version)
+    _set_auth_cookies(response, access_token, refresh_token)
+
+    return QuotePortalCreateResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        redirect_to="/portal",
+        user_exists=user_exists,
+    )
+
+
 @router.post("/token/{token}/decline", response_model=QuoteResponse)
 @limiter.limit("5/minute")  # Rate limit decline actions
 async def decline_quote_by_token(
@@ -869,26 +1174,7 @@ async def decline_quote_by_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Decline quote via magic link - no auth required"""
-    result = await db.execute(
-        select(Quote).where(Quote.approval_token == token)
-    )
-    quote = result.scalar_one_or_none()
-    if not quote:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Quote not found or link expired",
-        )
-    
-    result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == quote.repair_order_id)
-            .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
-    )
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Repair order not found",
-        )
+    quote, order = await _load_quote_context_by_token_or_400(db, token)
     
     if quote.is_approved:
         raise HTTPException(

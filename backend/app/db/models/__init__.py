@@ -9,6 +9,7 @@ from app.db.models.labor import Labor
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
+from app.db.models.payment_number_counter import PaymentNumberCounter
 from app.db.models.notification import Notification
 from app.db.models.service import ServiceCategory, Service
 from app.db.models.appointment import Appointment, AppointmentStatus
@@ -29,6 +30,7 @@ __all__ = [
     "Quote",
     "Invoice",
     "Payment",
+    "PaymentNumberCounter",
     "Notification",
     "ServiceCategory",
     "Service",
@@ -45,5 +47,4 @@ __all__ = [
     "ErrorSeverity",
     "WorkPhoto",
 ]
-
 

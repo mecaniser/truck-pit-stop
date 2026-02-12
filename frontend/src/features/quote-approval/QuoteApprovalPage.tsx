@@ -1,8 +1,12 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { AxiosError } from 'axios'
+import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { CheckCircle, XCircle, Truck, Wrench, AlertCircle, Loader2 } from 'lucide-react'
+import { useAuthStore } from '../../stores/authStore'
+import { getPasswordValidationError } from '../../lib/passwordPolicy'
 
 interface QuoteDetail {
   quote: {
@@ -25,12 +29,40 @@ interface QuoteDetail {
   parts: Array<{ name: string; quantity: number; unit_price: string; total_price: string }>
   labor_total: string
   parts_total: string
+  has_portal_account: boolean
+  requires_password_setup: boolean
+}
+
+interface QuotePortalResolveResponse {
+  has_portal_account: boolean
+  requires_password_setup: boolean
+  portal_enrollment_token: string
+  portal_enrollment_expires_in: number
+}
+
+interface QuotePortalCreateResponse {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  redirect_to: string
+  user_exists: boolean
 }
 
 export default function QuoteApprovalPage() {
+  const navigate = useNavigate()
   const { token } = useParams<{ token: string }>()
+  const { login } = useAuthStore()
   const [declineNotes, setDeclineNotes] = useState('')
   const [showDeclineForm, setShowDeclineForm] = useState(false)
+  const [password, setPassword] = useState('')
+
+  const getErrorDetail = (error: unknown, fallback: string): string => {
+    if (error instanceof AxiosError) {
+      const detail = error.response?.data?.detail
+      return typeof detail === 'string' ? detail : fallback
+    }
+    return fallback
+  }
 
   const { data, isLoading, error, refetch } = useQuery<QuoteDetail>({
     queryKey: ['quote-token', token],
@@ -60,6 +92,26 @@ export default function QuoteApprovalPage() {
     onSuccess: () => {
       refetch()
       setShowDeclineForm(false)
+    },
+  })
+
+  const portalResolveMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/quotes/token/${token}/portal-resolve`)
+      return response.data as QuotePortalResolveResponse
+    },
+  })
+
+  const createPortalMutation = useMutation({
+    mutationFn: async (payload: { token: string; new_password?: string }) => {
+      const response = await api.post('/quotes/portal/create', payload)
+      return response.data as QuotePortalCreateResponse
+    },
+    onSuccess: async (data) => {
+      api.defaults.headers.common['Authorization'] = `Bearer ${data.access_token}`
+      const userResponse = await api.get('/auth/me')
+      login(data.access_token, data.refresh_token, userResponse.data)
+      navigate(data.redirect_to)
     },
   })
 
@@ -111,6 +163,35 @@ export default function QuoteApprovalPage() {
   const vehicleInfo = vehicle_year && vehicle_make && vehicle_model
     ? `${vehicle_year} ${vehicle_make} ${vehicle_model}`
     : null
+  const passwordValidationError = password ? getPasswordValidationError(password) : null
+  const portalActionPending = portalResolveMutation.isPending || createPortalMutation.isPending
+
+  const openPortalFromApprovedState = async (newPassword?: string) => {
+    if (!token) return
+
+    if (typeof newPassword === 'string') {
+      const validationError = getPasswordValidationError(newPassword)
+      if (validationError) {
+        toast.error(validationError)
+        return
+      }
+    }
+
+    try {
+      const resolveData = await portalResolveMutation.mutateAsync()
+      if (!resolveData.has_portal_account && !newPassword) {
+        toast.error('Please set a password to create your portal account.')
+        return
+      }
+      await createPortalMutation.mutateAsync(
+        newPassword
+          ? { token: resolveData.portal_enrollment_token, new_password: newPassword }
+          : { token: resolveData.portal_enrollment_token }
+      )
+    } catch (err: unknown) {
+      toast.error(getErrorDetail(err, 'Unable to open portal from this quote link.'))
+    }
+  }
 
   // Already approved
   if (quote.is_approved) {
@@ -127,12 +208,44 @@ export default function QuoteApprovalPage() {
           <p className="text-gray-500 text-sm mb-6">
             We'll get started on your repair soon. You'll receive updates via text.
           </p>
-          <Link
-            to="/portal"
-            className="inline-block px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
-          >
-            Go to My Portal
-          </Link>
+          {data.has_portal_account ? (
+            <button
+              onClick={() => openPortalFromApprovedState()}
+              disabled={portalActionPending}
+              className="inline-block px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            >
+              {portalActionPending ? 'Opening...' : 'Open My Portal'}
+            </button>
+          ) : (
+            <div className="space-y-3 text-left">
+              <label className="block text-sm text-gray-300">
+                Create your portal password to track this repair and future invoices.
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`w-full px-4 py-3 border rounded-lg bg-white text-gray-900 placeholder-gray-500 ${
+                  passwordValidationError ? 'border-red-400' : 'border-gray-300'
+                }`}
+                placeholder="8+ chars, upper/lower/digit/special"
+              />
+              {passwordValidationError ? (
+                <p className="text-xs text-red-400">{passwordValidationError}</p>
+              ) : (
+                <p className="text-xs text-gray-400">
+                  Must include uppercase, lowercase, number, and special character.
+                </p>
+              )}
+              <button
+                onClick={() => openPortalFromApprovedState(password)}
+                disabled={!password || !!passwordValidationError || portalActionPending}
+                className="w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+              >
+                {portalActionPending ? 'Creating...' : 'Create Portal Account'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )

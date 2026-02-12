@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, admin, websocket
+from app.api.v1.endpoints import auth, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, admin, websocket, invoice_access
 
 api_router = APIRouter()
 
@@ -11,6 +11,7 @@ api_router.include_router(vehicles.router, prefix="/vehicles", tags=["vehicles"]
 api_router.include_router(repair_orders.router, prefix="/repair-orders", tags=["repair-orders"])
 api_router.include_router(quotes.router, prefix="/quotes", tags=["quotes"])
 api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
+api_router.include_router(invoice_access.router, prefix="/invoice-access", tags=["invoice-access"])
 api_router.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(services.router, prefix="/services", tags=["services"])

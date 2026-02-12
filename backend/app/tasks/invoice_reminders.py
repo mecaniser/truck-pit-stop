@@ -17,12 +17,10 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
 from app.services.email_service import send_email
+from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.twilio_service import send_sms
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
-from app.core.config import settings
-
-
 # Fallback defaults if tenant settings are missing
 DEFAULT_MAX_REMINDERS = 3
 DEFAULT_REMINDER_INTERVAL_DAYS = 3
@@ -133,7 +131,11 @@ async def _process_invoice_reminders(tenant_id: str = None):
             
             # Send email if customer has email (and not a placeholder)
             if customer.email and "@placeholder" not in customer.email:
-                portal_url = f"{settings.FRONTEND_URL}/portal"
+                invoice_access_url = await generate_invoice_access_link(
+                    invoice=invoice,
+                    order=repair_order,
+                    customer=customer,
+                )
                 
                 if reminder_num == 1:
                     subject = f"Payment Reminder: Invoice #{invoice.invoice_number} Due Today"
@@ -161,9 +163,9 @@ async def _process_invoice_reminders(tenant_id: str = None):
                     <p>Please pay at your earliest convenience to avoid any service delays on future repairs.</p>
                     
                     <p style="margin: 30px 0; text-align: center;">
-                        <a href="{portal_url}" 
+                        <a href="{invoice_access_url}" 
                            style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                            Pay Now in Portal
+                            View Invoice & Pay
                         </a>
                     </p>
                     

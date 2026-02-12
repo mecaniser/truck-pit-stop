@@ -13,6 +13,7 @@ import DashboardLayout from './components/layout/DashboardLayout'
 import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
 import QuoteApprovalPage from './features/quote-approval/QuoteApprovalPage'
 import MechanicPortalPage from './features/mechanic-portal/MechanicPortalPage'
+import InvoiceAccessPage from './features/invoice-access/InvoiceAccessPage'
 
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
@@ -96,6 +97,7 @@ function App() {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/quote/:token" element={<QuoteApprovalPage />} />
+        <Route path="/invoice/:token" element={<InvoiceAccessPage />} />
         
         <Route
           path="/dashboard/*"
@@ -132,5 +134,4 @@ function App() {
 }
 
 export default App
-
 

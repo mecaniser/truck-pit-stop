@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { loadStripe } from '@stripe/stripe-js'
+import type { Stripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
+import { getStripeForAccount } from '../../lib/stripe'
 
 interface PaymentMethod {
   id: string
@@ -106,15 +107,10 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
 function PaymentMethodsList() {
   const queryClient = useQueryClient()
   const [showAddForm, setShowAddForm] = useState(false)
-  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null)
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null)
 
-  // Fetch Stripe config
   useEffect(() => {
-    api.get('/payments/config').then(({ data }) => {
-      if (data.publishable_key) {
-        setStripePromise(loadStripe(data.publishable_key))
-      }
-    })
+    setStripePromise(getStripeForAccount().catch(() => null))
   }, [])
 
   const { data: methods, isLoading } = useQuery<PaymentMethod[]>({
