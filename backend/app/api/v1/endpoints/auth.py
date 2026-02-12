@@ -22,6 +22,7 @@ from app.core.redis import (
 )
 from app.core.config import settings
 from app.core.rate_limit import limiter
+from app.core.metrics import record_login, record_logout
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -196,14 +197,17 @@ async def login(
 ):
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
+    tenant_id = str(user.tenant_id) if user and user.tenant_id else "unknown"
     
     if not user or not verify_password(credentials.password, user.hashed_password):
+        record_login(success=False, tenant_id=tenant_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
     
     if not user.is_active:
+        record_login(success=False, tenant_id=tenant_id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user",
@@ -217,6 +221,7 @@ async def login(
     
     # Set httpOnly cookies
     set_auth_cookies(response, access_token, refresh_token, remember_me=credentials.remember_me)
+    record_login(success=True, tenant_id=tenant_id)
     
     return {
         "access_token": access_token,
@@ -340,6 +345,7 @@ async def logout(
     
     # Clear cookies
     clear_auth_cookies(response)
+    record_logout(tenant_id=str(current_user.tenant_id) if current_user.tenant_id else "unknown")
     
     return LogoutResponse(message="Successfully logged out")
 
@@ -786,6 +792,12 @@ async def enroll_garage(
     Public endpoint for garage owners to apply for platform enrollment.
     Creates a tenant and owner user with pending status.
     """
+    if enrollment_data.email.strip().lower() != enrollment_data.owner_email.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Business contact email and owner login email must match.",
+        )
+
     # Validate password complexity
     validate_password(enrollment_data.owner_password)
     
@@ -808,7 +820,7 @@ async def enroll_garage(
         )
     
     # Check if owner email is already registered
-    result = await db.execute(select(User).where(User.email == enrollment_data.owner_email))
+    result = await db.execute(select(User).where(User.email == enrollment_data.email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise HTTPException(
@@ -836,7 +848,7 @@ async def enroll_garage(
     
     # Create owner user with inactive status
     owner = User(
-        email=enrollment_data.owner_email,
+        email=enrollment_data.email,
         hashed_password=get_password_hash(enrollment_data.owner_password),
         first_name=enrollment_data.owner_first_name,
         last_name=enrollment_data.owner_last_name,
@@ -859,7 +871,7 @@ async def enroll_garage(
     owner_name = f"{enrollment_data.owner_first_name} {enrollment_data.owner_last_name}"
     try:
         await send_enrollment_received_email(
-            to=enrollment_data.owner_email,
+            to=enrollment_data.email,
             garage_name=enrollment_data.garage_name,
             owner_name=owner_name,
         )
@@ -878,7 +890,7 @@ async def enroll_garage(
                 admin_emails=admin_emails,
                 garage_name=enrollment_data.garage_name,
                 owner_name=owner_name,
-                owner_email=enrollment_data.owner_email,
+                owner_email=enrollment_data.email,
             )
         except Exception as e:
             print(f"Error sending admin notification: {e}")

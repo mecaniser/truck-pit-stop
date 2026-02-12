@@ -6,6 +6,7 @@ import { z } from 'zod'
 import api from '../../lib/api'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { Building2, User, FileText, CheckCircle, ArrowLeft, ArrowRight, Loader2 } from 'lucide-react'
+import { getPasswordValidationError } from '../../lib/passwordPolicy'
 
 // Step 1: Garage Info
 const garageInfoSchema = z.object({
@@ -39,11 +40,15 @@ const ownerAccountBaseSchema = z.object({
   owner_phone: z.string().refine((val) => isValidUSPhone(val), {
     message: 'Please enter a valid phone number',
   }),
-  owner_password: z.string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number'),
+  owner_password: z.string().superRefine((value, ctx) => {
+    const validationError = getPasswordValidationError(value)
+    if (validationError) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: validationError,
+      })
+    }
+  }),
   confirm_password: z.string(),
 })
 
@@ -78,6 +83,7 @@ export default function GarageEnrollmentPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
+  const [resumeStepAfterGarageEdit, setResumeStepAfterGarageEdit] = useState<number | null>(null)
   
   // Form data storage
   const [formData, setFormData] = useState<Partial<EnrollmentData & { confirm_password: string }>>({})
@@ -113,7 +119,29 @@ export default function GarageEnrollmentPage() {
   }
 
   const handleStep1Submit = (data: GarageInfoData) => {
-    setFormData(prev => ({ ...prev, ...data }))
+    step1Form.clearErrors(['email', 'slug'])
+    setError(null)
+    const currentOwnerPhone = step3Form.getValues('owner_phone')
+    const shouldSyncOwnerPhone = !currentOwnerPhone || currentOwnerPhone === formData.phone
+
+    step3Form.setValue('owner_email', data.email, { shouldValidate: false, shouldDirty: false })
+    if (shouldSyncOwnerPhone) {
+      step3Form.setValue('owner_phone', data.phone, { shouldValidate: false, shouldDirty: false })
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      ...data,
+      owner_email: data.email,
+      owner_phone: shouldSyncOwnerPhone ? data.phone : prev.owner_phone,
+    }))
+
+    if (resumeStepAfterGarageEdit === 4) {
+      setResumeStepAfterGarageEdit(null)
+      setCurrentStep(4)
+      return
+    }
+
     setCurrentStep(2)
   }
 
@@ -136,7 +164,27 @@ export default function GarageEnrollmentPage() {
       await api.post('/auth/enroll-garage', submitData)
       setIsSuccess(true)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Enrollment failed. Please try again.')
+      const detail = err.response?.data?.detail || 'Enrollment failed. Please try again.'
+
+      if (typeof detail === 'string' && detail.includes('This email is already registered')) {
+        setResumeStepAfterGarageEdit(4)
+        setCurrentStep(1)
+        step1Form.setError('email', {
+          type: 'server',
+          message: 'This email is already registered. Use a different business email.',
+        })
+        setError('Business and owner login email must match. Please update email in Garage Info.')
+      } else if (typeof detail === 'string' && detail.includes('garage URL slug is already taken')) {
+        setResumeStepAfterGarageEdit(4)
+        setCurrentStep(1)
+        step1Form.setError('slug', {
+          type: 'server',
+          message: 'This URL slug is already taken. Please choose another.',
+        })
+        setError('Garage URL slug is already taken. Please update it in Garage Info.')
+      } else {
+        setError(detail)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -325,7 +373,7 @@ export default function GarageEnrollmentPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email <span className="text-red-500">*</span>
+                  Business Contact Email <span className="text-red-500">*</span>
                 </label>
                 <input
                   {...step1Form.register('email')}
@@ -362,7 +410,8 @@ export default function GarageEnrollmentPage() {
                 type="submit"
                 className="px-6 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2"
               >
-                Next <ArrowRight className="w-4 h-4" />
+                {resumeStepAfterGarageEdit === 4 ? 'Return to Review' : 'Next'}
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </form>
@@ -462,12 +511,16 @@ export default function GarageEnrollmentPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email <span className="text-red-500">*</span>
+                Owner Login Email <span className="text-red-500">*</span>
               </label>
+              <p className="mb-1 text-xs text-gray-500">
+                Uses the same email as Business Contact Email.
+              </p>
               <input
                 {...step3Form.register('owner_email')}
                 type="email"
-                className={getInputClasses(!!step3Form.formState.errors.owner_email)}
+                readOnly
+                className={`${getInputClasses(!!step3Form.formState.errors.owner_email)} bg-gray-100 text-gray-700 cursor-not-allowed`}
                 placeholder="john@example.com"
               />
               {step3Form.formState.errors.owner_email && (
@@ -479,6 +532,7 @@ export default function GarageEnrollmentPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Phone <span className="text-red-500">*</span>
               </label>
+              <p className="mb-1 text-xs text-gray-500">Prefilled from Garage Info. Change only if different.</p>
               <input
                 {...step3Form.register('owner_phone', {
                   onChange: (e) => step3Form.setValue('owner_phone', formatUSPhone(e.target.value)),
@@ -500,7 +554,7 @@ export default function GarageEnrollmentPage() {
                 {...step3Form.register('owner_password')}
                 type="password"
                 className={getInputClasses(!!step3Form.formState.errors.owner_password)}
-                placeholder="Min 8 characters"
+                placeholder="8+ chars, upper/lower/digit/special"
               />
               {step3Form.watch('owner_password') && (
                 <div className="mt-2">
@@ -562,9 +616,21 @@ export default function GarageEnrollmentPage() {
         {currentStep === 4 && (
           <div className="space-y-6">
             <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-emerald-600" /> Garage Information
-              </h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-emerald-600" /> Garage Information
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResumeStepAfterGarageEdit(4)
+                    setCurrentStep(1)
+                  }}
+                  className="text-xs font-medium text-emerald-700 hover:text-emerald-800 underline"
+                >
+                  Edit
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Name:</span>
@@ -583,7 +649,7 @@ export default function GarageEnrollmentPage() {
                   <p className="font-medium">{formData.phone}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Email:</span>
+                  <span className="text-gray-500">Business Email:</span>
                   <p className="font-medium">{formData.email}</p>
                 </div>
                 {formData.website && (
@@ -597,9 +663,18 @@ export default function GarageEnrollmentPage() {
 
             {(formData.business_license || formData.ein) && (
               <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-emerald-600" /> Business Details
-                </h3>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-emerald-600" /> Business Details
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentStep(2)}
+                    className="text-xs font-medium text-emerald-700 hover:text-emerald-800 underline"
+                  >
+                    Edit
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   {formData.business_license && (
                     <div>
@@ -618,16 +693,25 @@ export default function GarageEnrollmentPage() {
             )}
 
             <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                <User className="w-5 h-5 text-emerald-600" /> Owner Account
-              </h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <User className="w-5 h-5 text-emerald-600" /> Owner Account
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(3)}
+                  className="text-xs font-medium text-emerald-700 hover:text-emerald-800 underline"
+                >
+                  Edit
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Name:</span>
                   <p className="font-medium">{formData.owner_first_name} {formData.owner_last_name}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Email:</span>
+                  <span className="text-gray-500">Owner Login Email:</span>
                   <p className="font-medium">{formData.owner_email}</p>
                 </div>
                 <div>

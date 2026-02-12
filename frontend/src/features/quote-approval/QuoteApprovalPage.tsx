@@ -209,13 +209,22 @@ export default function QuoteApprovalPage() {
             We'll get started on your repair soon. You'll receive updates via text.
           </p>
           {data.has_portal_account ? (
-            <button
-              onClick={() => openPortalFromApprovedState()}
-              disabled={portalActionPending}
-              className="inline-block px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
-            >
-              {portalActionPending ? 'Opening...' : 'Open My Portal'}
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={() => openPortalFromApprovedState()}
+                disabled={portalActionPending}
+                className="w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+              >
+                {portalActionPending ? 'Opening...' : 'Open My Portal'}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="w-full py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                Exit
+              </button>
+            </div>
           ) : (
             <div className="space-y-3 text-left">
               <label className="block text-sm text-gray-300">
@@ -243,6 +252,13 @@ export default function QuoteApprovalPage() {
                 className="w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
               >
                 {portalActionPending ? 'Creating...' : 'Create Portal Account'}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="w-full py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors text-center"
+              >
+                Exit
               </button>
             </div>
           )}
