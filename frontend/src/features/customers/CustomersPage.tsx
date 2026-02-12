@@ -2,8 +2,8 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, Vehicle, RepairOrder, RepairOrderStatus } from '../../types'
-import { AlertTriangle, ArrowRight, DollarSign, Mail, MapPin, Pencil, Phone, Plus, Trash2, Truck, Wrench, X } from 'lucide-react'
+import { Customer, Vehicle, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
+import { AlertTriangle, ArrowRight, DollarSign, Loader2, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, Truck, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -24,6 +24,17 @@ interface CustomerFormData {
   billing_country: string
   notes: string
   auto_approval_threshold: string
+  // Initial vehicle fields (for new customers)
+  no_vehicle: boolean
+  vehicle_vin: string
+  vehicle_make: string
+  vehicle_model: string
+  vehicle_year: string
+  vehicle_unit_number: string
+  vehicle_license_plate: string
+  vehicle_color: string
+  vehicle_mileage: string
+  vehicle_notes: string
 }
 
 interface VehicleFormData {
@@ -63,6 +74,17 @@ const emptyForm: CustomerFormData = {
   billing_country: 'USA',
   notes: '',
   auto_approval_threshold: '',
+  // Initial vehicle
+  no_vehicle: false,
+  vehicle_vin: '',
+  vehicle_make: '',
+  vehicle_model: '',
+  vehicle_year: '',
+  vehicle_unit_number: '',
+  vehicle_license_plate: '',
+  vehicle_color: '',
+  vehicle_mileage: '',
+  vehicle_notes: '',
 }
 
 const US_STATES = [
@@ -273,18 +295,85 @@ export default function CustomersPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
-      const response = await api.post('/customers', data)
+      // Build payload with initial vehicle if provided
+      const payload: Record<string, any> = {
+        first_name: data.first_name,
+        last_name: data.last_name,
+        email: data.email,
+        phone: data.phone || null,
+        billing_address_line1: data.billing_address_line1 || null,
+        billing_address_line2: data.billing_address_line2 || null,
+        billing_city: data.billing_city || null,
+        billing_state: data.billing_state || null,
+        billing_zip: data.billing_zip || null,
+        billing_country: data.billing_country,
+        notes: data.notes || null,
+        auto_approval_threshold: data.auto_approval_threshold ? parseFloat(data.auto_approval_threshold) : null,
+        no_vehicle: data.no_vehicle,
+      }
+      
+      // Add initial vehicle if not "no vehicle"
+      if (!data.no_vehicle && data.vehicle_make && data.vehicle_model) {
+        payload.initial_vehicle = {
+          vin: data.vehicle_vin || null,
+          make: data.vehicle_make,
+          model: data.vehicle_model,
+          year: data.vehicle_year ? parseInt(data.vehicle_year) : null,
+          unit_number: data.vehicle_unit_number || null,
+          license_plate: data.vehicle_license_plate || null,
+          color: data.vehicle_color || null,
+          mileage: data.vehicle_mileage ? parseInt(data.vehicle_mileage) : null,
+          notes: data.vehicle_notes || null,
+        }
+      }
+      
+      const response = await api.post('/customers', payload)
       return response.data
     },
-    onSuccess: (customer: Customer) => {
+    onSuccess: (customer: CustomerWithVehicles) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
       closeModal()
-      toast.success(`Customer ${customer.first_name} ${customer.last_name} created`)
+      const vehicleCount = customer.vehicles?.length || 0
+      toast.success(`Customer ${customer.first_name} ${customer.last_name} created${vehicleCount > 0 ? ` with ${vehicleCount} vehicle` : ''}`)
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to create customer')
     },
   })
+
+  // VIN Decoder
+  const [isDecodingVin, setIsDecodingVin] = useState(false)
+  
+  const decodeVin = async (vin: string) => {
+    if (!vin || vin.length < 11) {
+      toast.error('VIN must be at least 11 characters')
+      return
+    }
+    setIsDecodingVin(true)
+    try {
+      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${vin}`)
+      const result = response.data
+      
+      if (result.error_code && result.error_code !== '0') {
+        toast.error(result.error_text || 'Failed to decode VIN')
+        return
+      }
+      
+      // Populate vehicle fields from decoded data
+      setFormData(prev => ({
+        ...prev,
+        vehicle_make: result.make || prev.vehicle_make,
+        vehicle_model: result.model || prev.vehicle_model,
+        vehicle_year: result.year?.toString() || prev.vehicle_year,
+      }))
+      
+      toast.success(`VIN decoded: ${result.year} ${result.make} ${result.model}`)
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+    } finally {
+      setIsDecodingVin(false)
+    }
+  }
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<CustomerFormData> }) => {
@@ -410,6 +499,7 @@ export default function CustomersPage() {
   const populateFormFromCustomer = (customer: Customer) => {
     setEditingCustomer(customer)
     setFormData({
+      ...emptyForm,
       first_name: customer.first_name,
       last_name: customer.last_name,
       email: customer.email,
@@ -489,6 +579,39 @@ export default function CustomersPage() {
     setVehicleFormData((prev) => ({ ...prev, [name]: value }))
   }
 
+  // VIN decoder for vehicle form (separate from customer form)
+  const [isDecodingVehicleVin, setIsDecodingVehicleVin] = useState(false)
+  
+  const decodeVehicleVin = async (vin: string) => {
+    if (!vin || vin.length < 11) {
+      toast.error('VIN must be at least 11 characters')
+      return
+    }
+    setIsDecodingVehicleVin(true)
+    try {
+      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${vin}`)
+      const result = response.data
+      
+      if (result.error_code && result.error_code !== '0') {
+        toast.error(result.error_text || 'Failed to decode VIN')
+        return
+      }
+      
+      setVehicleFormData(prev => ({
+        ...prev,
+        make: result.make || prev.make,
+        model: result.model || prev.model,
+        year: result.year?.toString() || prev.year,
+      }))
+      
+      toast.success(`VIN decoded: ${result.year} ${result.make} ${result.model}`)
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+    } finally {
+      setIsDecodingVehicleVin(false)
+    }
+  }
+
   const handleVehicleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedCustomer) return
@@ -544,17 +667,33 @@ export default function CustomersPage() {
       return
     }
 
-    const payload = {
-      ...formData,
-      auto_approval_threshold: formData.auto_approval_threshold
-        ? parseFloat(formData.auto_approval_threshold)
-        : null,
+    // For new customers, require vehicle or no_vehicle flag
+    if (!editingCustomer && !formData.no_vehicle) {
+      if (!formData.vehicle_make.trim() || !formData.vehicle_model.trim()) {
+        toast.error('Vehicle make and model are required, or check "No truck available"')
+        return
+      }
     }
 
     if (editingCustomer) {
+      // For updates, only send customer fields
+      const payload = {
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        email: formData.email,
+        phone: formData.phone || null,
+        billing_address_line1: formData.billing_address_line1 || null,
+        billing_address_line2: formData.billing_address_line2 || null,
+        billing_city: formData.billing_city || null,
+        billing_state: formData.billing_state || null,
+        billing_zip: formData.billing_zip || null,
+        billing_country: formData.billing_country,
+        notes: formData.notes || null,
+        auto_approval_threshold: formData.auto_approval_threshold ? parseFloat(formData.auto_approval_threshold) : null,
+      }
       updateMutation.mutate({ id: editingCustomer.id, data: payload as any })
     } else {
-      createMutation.mutate(payload as any)
+      createMutation.mutate(formData)
     }
   }
 
@@ -845,41 +984,252 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* Auto-Approval Threshold */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Auto-Approve Threshold
-        </label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-          <input
-            type="number"
-            name="auto_approval_threshold"
-            value={formData.auto_approval_threshold}
-            onChange={handleInputChange}
-            step="0.01"
-            min="0"
-            className="w-full pl-7 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-            placeholder="Leave empty to disable"
-          />
-        </div>
-        <p className="text-xs text-gray-500 mt-1">Quotes at or below this amount will be auto-approved. Leave empty to require manual approval.</p>
-      </div>
+      {editingCustomer && (
+        <>
+          {/* Auto-Approval Threshold */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Auto-Approve Threshold
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                name="auto_approval_threshold"
+                value={formData.auto_approval_threshold}
+                onChange={handleInputChange}
+                step="0.01"
+                min="0"
+                className="w-full pl-7 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                placeholder="Leave empty to disable"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Quotes at or below this amount will be auto-approved. Leave empty to require manual approval.</p>
+          </div>
 
-      {/* Notes */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Notes
-        </label>
-        <textarea
-          name="notes"
-          value={formData.notes}
-          onChange={handleInputChange}
-          rows={3}
-          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
-          placeholder="Any additional notes about this customer..."
-        />
-      </div>
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes
+            </label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleInputChange}
+              rows={3}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+              placeholder="Any additional notes about this customer..."
+            />
+          </div>
+        </>
+      )}
+
+      {/* Initial Vehicle Section - Only for new customers */}
+      {!editingCustomer && (
+        <div className="border-t border-gray-200 pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <Truck className="w-4 h-4" />
+              Initial Truck
+            </h3>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.no_vehicle}
+                onChange={(e) => setFormData(prev => ({ ...prev, no_vehicle: e.target.checked }))}
+                className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+              />
+              <span className="text-gray-600">No truck available at this time</span>
+            </label>
+          </div>
+
+          {!formData.no_vehicle && (
+            <div className="space-y-4">
+              {/* VIN with decode button */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  VIN
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    name="vehicle_vin"
+                    value={formData.vehicle_vin}
+                    onChange={handleInputChange}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
+                    placeholder="Enter VIN to auto-fill"
+                    maxLength={17}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => decodeVin(formData.vehicle_vin)}
+                    disabled={isDecodingVin || formData.vehicle_vin.length < 11}
+                    className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {isDecodingVin ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    Decode
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Enter VIN and click Decode to auto-fill make, model, and year</p>
+              </div>
+
+              {/* Make & Model */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Make <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="vehicle_make"
+                    value={formData.vehicle_make}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="Freightliner"
+                    required={!formData.no_vehicle}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Model <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="vehicle_model"
+                    value={formData.vehicle_model}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="Cascadia"
+                    required={!formData.no_vehicle}
+                  />
+                </div>
+              </div>
+
+              {/* Year & Unit Number */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Year
+                  </label>
+                  <input
+                    type="number"
+                    name="vehicle_year"
+                    value={formData.vehicle_year}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="2024"
+                    min="1900"
+                    max="2100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Unit Number
+                  </label>
+                  <input
+                    type="text"
+                    name="vehicle_unit_number"
+                    value={formData.vehicle_unit_number}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="T-001"
+                  />
+                </div>
+              </div>
+
+              {/* License Plate & Color */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    License Plate
+                  </label>
+                  <input
+                    type="text"
+                    name="vehicle_license_plate"
+                    value={formData.vehicle_license_plate}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase"
+                    placeholder="ABC-1234"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Color
+                  </label>
+                  <input
+                    type="text"
+                    name="vehicle_color"
+                    value={formData.vehicle_color}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="White"
+                  />
+                </div>
+              </div>
+
+              {/* Mileage */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Mileage
+                </label>
+                <input
+                  type="number"
+                  name="vehicle_mileage"
+                  value={formData.vehicle_mileage}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                  placeholder="150000"
+                  min="0"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!editingCustomer && (
+        <div className="space-y-6 border-t border-gray-200 pt-6">
+          {/* Auto-Approval Threshold */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Auto-Approve Threshold
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                name="auto_approval_threshold"
+                value={formData.auto_approval_threshold}
+                onChange={handleInputChange}
+                step="0.01"
+                min="0"
+                className="w-full pl-7 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                placeholder="Leave empty to disable"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Quotes at or below this amount will be auto-approved. Leave empty to require manual approval.</p>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes
+            </label>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleInputChange}
+              rows={3}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+              placeholder="Any additional notes about this customer..."
+            />
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
@@ -970,31 +1320,47 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* VIN & Unit Number */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+      {/* VIN with decode */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
+        <div className="flex gap-2">
           <input
             type="text"
             name="vin"
             value={vehicleFormData.vin}
             onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
-            placeholder="1FTFW1E50MFA00000"
+            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono uppercase"
+            placeholder="Enter VIN to auto-fill"
             maxLength={17}
           />
+          <button
+            type="button"
+            onClick={() => decodeVehicleVin(vehicleFormData.vin)}
+            disabled={isDecodingVehicleVin || vehicleFormData.vin.length < 11}
+            className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
+          >
+            {isDecodingVehicleVin ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
+            Decode
+          </button>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Unit Number</label>
-          <input
-            type="text"
-            name="unit_number"
-            value={vehicleFormData.unit_number}
-            onChange={handleVehicleInputChange}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
-            placeholder="UNIT-001"
-          />
-        </div>
+        <p className="text-xs text-gray-500 mt-1">Enter VIN and click Decode to auto-fill make, model, and year</p>
+      </div>
+
+      {/* Unit Number */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Unit Number</label>
+        <input
+          type="text"
+          name="unit_number"
+          value={vehicleFormData.unit_number}
+          onChange={handleVehicleInputChange}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono"
+          placeholder="UNIT-001"
+        />
       </div>
 
       {/* License Plate & Mileage */}

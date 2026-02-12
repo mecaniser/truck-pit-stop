@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from uuid import UUID
@@ -23,8 +23,22 @@ class CustomerBase(BaseModel):
     auto_approval_threshold: Optional[Decimal] = None
 
 
+class InitialVehicle(BaseModel):
+    """Vehicle data for creating a customer with their first truck"""
+    vin: Optional[str] = None
+    unit_number: Optional[str] = None
+    make: str
+    model: str
+    year: Optional[int] = None
+    license_plate: Optional[str] = None
+    color: Optional[str] = None
+    mileage: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class CustomerCreate(CustomerBase):
-    pass
+    initial_vehicle: Optional[InitialVehicle] = None
+    no_vehicle: bool = False  # Explicit flag when customer has no truck
 
 
 class CustomerUpdate(BaseModel):
@@ -79,7 +93,7 @@ class CustomerWithVehiclesResponse(CustomerBase):
     tenant_id: UUID
     created_at: datetime
     updated_at: datetime
-    vehicles: List[VehicleInCustomer] = []
+    vehicles: List[VehicleInCustomer] = Field(default_factory=list)
     
     class Config:
         from_attributes = True

@@ -24,6 +24,7 @@ interface NewCustomerForm {
   last_name: string
   email: string
   phone: string
+  no_vehicle?: boolean
 }
 
 interface NewVehicleForm {
@@ -740,6 +741,9 @@ export default function RepairOrdersPage() {
           last_name: newCustomer.last_name.trim(),
           email: newCustomer.email.trim(),
           phone: newCustomer.phone.trim(),
+          // Customer is created before vehicle in this flow.
+          // Explicitly allow customer creation without an inline initial_vehicle payload.
+          no_vehicle: true,
         })
         finalCustomerId = createdCustomer.id
       } else if (!finalCustomerId) {

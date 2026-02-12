@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.appointment import Appointment
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerWithVehiclesResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
+from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
 router = APIRouter()
 
@@ -29,7 +30,7 @@ def require_role(*allowed_roles: UserRole):
     return role_checker
 
 
-@router.post("", response_model=CustomerResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CustomerWithVehiclesResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
     customer_data: CustomerCreate,
     db: AsyncSession = Depends(get_db),
@@ -43,6 +44,13 @@ async def create_customer(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must be associated with a tenant",
+        )
+    
+    # Require either a vehicle or explicit no_vehicle flag
+    if not customer_data.initial_vehicle and not customer_data.no_vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Customer must have a vehicle or 'no_vehicle' must be set to true",
         )
     
     # Check if customer email already exists for this tenant
@@ -61,16 +69,36 @@ async def create_customer(
             detail="Customer with this email already exists",
         )
     
+    # Extract customer fields only (exclude vehicle data)
+    customer_fields = customer_data.model_dump(exclude={'initial_vehicle', 'no_vehicle'})
     customer = Customer(
         tenant_id=current_user.tenant_id,
-        **customer_data.model_dump(),
+        **customer_fields,
     )
     
     db.add(customer)
-    await db.commit()
-    await db.refresh(customer)
+    await db.flush()  # Get customer.id before creating vehicle
     
-    return CustomerResponse.model_validate(customer)
+    # Create initial vehicle if provided
+    if customer_data.initial_vehicle:
+        vehicle = Vehicle(
+            tenant_id=current_user.tenant_id,
+            customer_id=customer.id,
+            **customer_data.initial_vehicle.model_dump(),
+        )
+        db.add(vehicle)
+    
+    await db.commit()
+    
+    # Reload with vehicles
+    result = await db.execute(
+        select(Customer)
+        .options(selectinload(Customer.vehicles))
+        .where(Customer.id == customer.id)
+    )
+    customer = result.scalar_one()
+    
+    return CustomerWithVehiclesResponse.model_validate(customer)
 
 
 @router.get("", response_model=List[CustomerResponse])
@@ -525,3 +553,27 @@ async def get_customer_with_vehicles(
         )
     
     return CustomerWithVehiclesResponse.model_validate(customer)
+
+
+# ============================================================================
+# VIN DECODER ENDPOINT
+# ============================================================================
+
+@router.get("/vin/decode/{vin}", response_model=VINDecodeResult)
+async def decode_vehicle_vin(
+    vin: str,
+    model_year: Optional[int] = Query(None, description="Optional model year for better accuracy"),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Decode a VIN using the free NHTSA vPIC API.
+    Returns vehicle make, model, year, and other specifications.
+    """
+    try:
+        result = await decode_vin(vin, model_year)
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to decode VIN: {str(e)}",
+        )

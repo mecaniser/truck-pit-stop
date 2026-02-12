@@ -63,6 +63,28 @@ export interface Vehicle {
   updated_at: string
 }
 
+export interface VINDecodeResult {
+  vin: string
+  make: string | null
+  model: string | null
+  year: number | null
+  vehicle_type: string | null
+  body_class: string | null
+  drive_type: string | null
+  fuel_type: string | null
+  engine_cylinders: number | null
+  engine_displacement_l: number | null
+  engine_hp: number | null
+  transmission: string | null
+  gvwr: string | null
+  error_code: string | null
+  error_text: string | null
+}
+
+export interface CustomerWithVehicles extends Customer {
+  vehicles: Vehicle[]
+}
+
 export interface PartsUsage {
   id: string
   repair_order_id: string
