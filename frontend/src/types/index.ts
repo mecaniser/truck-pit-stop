@@ -43,9 +43,76 @@ export interface Customer {
   billing_country: string
   notes: string | null
   source?: string | null
+  sms_opt_out?: boolean
+  sms_opted_out_at?: string | null
+  sms_opt_out_source?: string | null
   auto_approval_threshold: string | null
   created_at: string
   updated_at: string
+}
+
+export type SMSDirection = 'inbound' | 'outbound'
+export type SMSMessageSource = 'inbound' | 'manual' | 'automated'
+export type SMSDeliveryStatus = 'pending' | 'queued' | 'sent' | 'delivered' | 'undelivered' | 'failed'
+
+export interface MessageThread {
+  id: string
+  tenant_id: string
+  customer_id: string
+  customer_phone: string | null
+  unread_count_staff: number
+  last_message_at: string | null
+  last_message_preview: string | null
+  created_at: string
+  updated_at: string
+  customer: {
+    id: string
+    first_name: string
+    last_name: string
+    email: string
+    phone: string | null
+    sms_opt_out: boolean
+  }
+}
+
+export interface SmsMessage {
+  id: string
+  tenant_id: string
+  thread_id: string
+  customer_id: string
+  created_by_user_id: string | null
+  direction: SMSDirection
+  source: SMSMessageSource
+  body: string
+  from_number: string | null
+  to_number: string | null
+  twilio_message_sid: string | null
+  delivery_status: SMSDeliveryStatus
+  error_code: string | null
+  error_message: string | null
+  sent_at: string | null
+  delivered_at: string | null
+  failed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SendSmsRequest {
+  customer_id: string
+  body: string
+  thread_id?: string | null
+}
+
+export interface CursorPageMessageThreads {
+  items: MessageThread[]
+  next_cursor: string | null
+  has_more: boolean
+}
+
+export interface CursorPageSmsMessages {
+  items: SmsMessage[]
+  next_cursor: string | null
+  has_more: boolean
 }
 
 export interface Vehicle {

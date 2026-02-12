@@ -1,6 +1,6 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import CustomersPage from '@/features/customers/CustomersPage'
 import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
@@ -12,6 +12,7 @@ import GaragesPage from '@/features/platform-admin/GaragesPage'
 import GarageAnalyticsPage from '@/features/platform-admin/GarageAnalyticsPage'
 import PlatformAnalyticsPage from '@/features/platform-admin/PlatformAnalyticsPage'
 import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollmentsPage'
+import MessagesInboxPage from '@/features/messages/MessagesInboxPage'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
@@ -33,6 +34,7 @@ export default function DashboardLayout() {
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
         { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
+        { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare },
         { to: '/dashboard/garage', label: 'My Garage', mobileLabel: 'Garage', icon: Building2 },
       ]
 
@@ -201,6 +203,7 @@ export default function DashboardLayout() {
             <>
               <Route path="customers" element={<CustomersPage />} />
               <Route path="repair-orders" element={<RepairOrdersPage />} />
+              <Route path="messages" element={<MessagesInboxPage />} />
               <Route path="garage/*" element={<MyGaragePage />} />
               <Route path="settings" element={<UnifiedSettingsPage />} />
               <Route path="" element={<DashboardHome />} />

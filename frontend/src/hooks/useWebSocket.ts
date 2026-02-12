@@ -22,6 +22,8 @@ export type WSEventType =
   | 'quote_declined'
   | 'invoice_created'
   | 'payment_received'
+  | 'sms_message_created'
+  | 'sms_thread_updated'
 
 export interface WSMessage {
   type: WSEventType
@@ -34,6 +36,10 @@ export interface WSMessage {
   invoice_number?: string
   total_amount?: string
   updated_at?: string
+  thread_id?: string
+  message_id?: string
+  customer_id?: string
+  delivery_status?: string
 }
 
 interface UseWebSocketOptions {
@@ -174,6 +180,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
               orderId: data.order_id,
             })
           }
+          break
+
+        case 'sms_message_created':
+        case 'sms_thread_updated':
+          queryClient.invalidateQueries({ queryKey: ['message-threads'] })
+          queryClient.invalidateQueries({ queryKey: ['thread-messages'] })
           break
       }
     } catch (err) {
