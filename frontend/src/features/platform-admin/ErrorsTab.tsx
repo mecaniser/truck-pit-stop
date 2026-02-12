@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   AlertTriangle, AlertCircle, AlertOctagon, Search,
   RefreshCw, Filter, X, CheckCircle, Clock,
-  ChevronLeft, ChevronRight, ExternalLink
+  ChevronLeft, ChevronRight, ExternalLink, Copy, Check
 } from 'lucide-react'
 import api from '../../lib/api'
 import { GlassNoirCard } from '../../components/ui/GlassNoirCard'
@@ -78,6 +78,7 @@ export default function ErrorsTab() {
   const [selectedError, setSelectedError] = useState<ErrorDetail | null>(null)
   const [_detailLoading, setDetailLoading] = useState(false)
   const [resolveNotes, setResolveNotes] = useState('')
+  const [copiedErrorId, setCopiedErrorId] = useState<string | null>(null)
 
   // Fetch error types for filter dropdown
   useEffect(() => {
@@ -217,6 +218,40 @@ export default function ErrorsTab() {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleString()
+  }
+
+  const formatDateParts = (dateStr: string) => {
+    const date = new Date(dateStr)
+    return {
+      date: date.toLocaleDateString(),
+      time: date.toLocaleTimeString(),
+    }
+  }
+
+  const buildCopyText = (err: ErrorLog) => {
+    return [
+      `Error ID: ${err.id}`,
+      `Correlation ID: ${err.correlation_id || 'N/A'}`,
+      `Date/Time: ${formatDate(err.created_at)}`,
+      `Severity: ${err.severity}`,
+      `Type: ${err.error_type}`,
+      `Category: ${err.error_category}`,
+      `Status: ${err.resolved ? 'Resolved' : 'Open'}`,
+      `Endpoint: ${err.method ? `${err.method} ` : ''}${err.endpoint || '-'}`,
+      `Message: ${err.message}`,
+    ].join('\n')
+  }
+
+  const handleQuickCopy = async (err: ErrorLog) => {
+    try {
+      await navigator.clipboard.writeText(buildCopyText(err))
+      setCopiedErrorId(err.id)
+      window.setTimeout(() => {
+        setCopiedErrorId(current => (current === err.id ? null : current))
+      }, 1800)
+    } catch (copyErr) {
+      console.error('Failed to copy error details', copyErr)
+    }
   }
 
   const totalPages = Math.ceil(total / limit)
@@ -364,63 +399,158 @@ export default function ErrorsTab() {
           <p className="text-gray-400">No errors found matching your filters</p>
         </GlassNoirCard>
       ) : (
-        <GlassNoirCard padding="sm" className="overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gold-500/5">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Severity</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Endpoint</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Message</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Time</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gold-500/10">
-              {errors.map((err) => (
-                <tr
+        <GlassNoirCard padding="sm">
+          <div className="space-y-3 lg:hidden">
+            {errors.map((err) => {
+              const createdAt = formatDateParts(err.created_at)
+              return (
+                <button
                   key={err.id}
                   onClick={() => openErrorDetail(err.id)}
-                  className="hover:bg-gold-500/5 cursor-pointer transition-colors"
+                  className="w-full text-left rounded-lg border border-gold-500/20 bg-black/30 p-4 hover:bg-gold-500/5 transition-colors"
                 >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {getSeverityIcon(err.severity)}
-                      <span className={`text-xs px-2 py-0.5 rounded border ${getSeverityBadge(err.severity)}`}>
-                        {err.severity}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-gold-400/80 uppercase">Date & Time</p>
+                      <p className="text-sm text-white">{createdAt.date}</p>
+                      <p className="text-xs text-gray-400">{createdAt.time}</p>
+                    </div>
+                    <div className="flex flex-col items-start gap-2 sm:items-end">
+                      <div className="flex items-center gap-2">
+                        {getSeverityIcon(err.severity)}
+                        <span className={`text-xs px-2 py-0.5 rounded border ${getSeverityBadge(err.severity)}`}>
+                          {err.severity}
+                        </span>
+                      </div>
+                      {err.resolved ? (
+                        <span className="flex items-center gap-1 text-xs text-green-400">
+                          <CheckCircle className="w-3 h-3" /> Resolved
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-gold-400">
+                          <Clock className="w-3 h-3" /> Open
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs text-gold-400/80 uppercase">Type</p>
+                      <p className="text-sm text-white font-mono break-words">{err.error_type}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gold-400/80 uppercase">Category</p>
+                      <span className={`inline-flex text-xs px-2 py-0.5 rounded ${getCategoryBadge(err.error_category)}`}>
+                        {err.error_category}
                       </span>
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-white font-mono">{err.error_type}</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded ${getCategoryBadge(err.error_category)}`}>
-                      {err.error_category}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-400 font-mono">
-                    {err.method && <span className="text-gold-400 mr-1">{err.method}</span>}
-                    {err.endpoint ? (err.endpoint.length > 30 ? err.endpoint.slice(0, 30) + '...' : err.endpoint) : '-'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-300 max-w-xs truncate">
-                    {err.message.length > 50 ? err.message.slice(0, 50) + '...' : err.message}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-400">{formatDate(err.created_at)}</td>
-                  <td className="px-4 py-3">
-                    {err.resolved ? (
-                      <span className="flex items-center gap-1 text-xs text-green-400">
-                        <CheckCircle className="w-3 h-3" /> Resolved
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-gold-400">
-                        <Clock className="w-3 h-3" /> Open
-                      </span>
-                    )}
-                  </td>
+                  </div>
+
+                  <div className="mt-3">
+                    <p className="text-xs text-gold-400/80 uppercase">Endpoint</p>
+                    <p className="text-sm text-gray-300 font-mono break-all">
+                      {err.method && <span className="text-gold-400 mr-1">{err.method}</span>}
+                      {err.endpoint || '-'}
+                    </p>
+                  </div>
+
+                  <div className="mt-3">
+                    <p className="text-xs text-gold-400/80 uppercase">Message</p>
+                    <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">{err.message}</p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-[1000px]">
+              <thead className="bg-gold-500/5">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Date / Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Severity</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Category</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Endpoint</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Message</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gold-400/80 uppercase">Copy</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gold-500/10">
+                {errors.map((err) => {
+                  const createdAt = formatDateParts(err.created_at)
+                  return (
+                    <tr
+                      key={err.id}
+                      onClick={() => openErrorDetail(err.id)}
+                      className="hover:bg-gold-500/5 cursor-pointer transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-white whitespace-nowrap">{createdAt.date}</div>
+                        <div className="text-xs text-gray-400 whitespace-nowrap">{createdAt.time}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {getSeverityIcon(err.severity)}
+                          <span className={`text-xs px-2 py-0.5 rounded border ${getSeverityBadge(err.severity)}`}>
+                            {err.severity}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white font-mono">{err.error_type}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded ${getCategoryBadge(err.error_category)}`}>
+                          {err.error_category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-400 font-mono">
+                        {err.method && <span className="text-gold-400 mr-1">{err.method}</span>}
+                        {err.endpoint ? (err.endpoint.length > 40 ? err.endpoint.slice(0, 40) + '...' : err.endpoint) : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-300 max-w-md">
+                        <span className="whitespace-pre-wrap break-words">{err.message}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {err.resolved ? (
+                          <span className="flex items-center gap-1 text-xs text-green-400">
+                            <CheckCircle className="w-3 h-3" /> Resolved
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-xs text-gold-400">
+                            <Clock className="w-3 h-3" /> Open
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleQuickCopy(err)
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-gold-500/30 bg-gold-500/10 px-2 py-1 text-xs text-gold-300 hover:bg-gold-500/20 transition-colors"
+                        >
+                          {copiedErrorId === err.id ? (
+                            <>
+                              <Check className="w-3 h-3" />
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              Copy
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {/* Pagination */}
           <div className="flex items-center justify-between px-4 py-3 border-t border-gold-500/20">
@@ -591,6 +721,22 @@ export default function ErrorsTab() {
 
             {/* Modal Footer */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gold-500/20">
+              <button
+                onClick={() => handleQuickCopy(selectedError)}
+                className="px-4 py-2 bg-black/40 border border-gold-500/30 text-gold-300 rounded-lg hover:bg-gold-500/10 transition-colors inline-flex items-center gap-2"
+              >
+                {copiedErrorId === selectedError.id ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </>
+                )}
+              </button>
               <button
                 onClick={() => setSelectedError(null)}
                 className="px-4 py-2 bg-gold-500/10 border border-gold-500/30 text-gold-400 rounded-lg hover:bg-gold-500/20 transition-colors"

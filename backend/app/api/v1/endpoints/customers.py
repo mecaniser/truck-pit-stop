@@ -9,6 +9,8 @@ from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.db.models.repair_order import RepairOrder
+from app.db.models.appointment import Appointment
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerWithVehiclesResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
 
@@ -175,6 +177,72 @@ async def update_customer(
     await db.refresh(customer)
     
     return CustomerResponse.model_validate(customer)
+
+
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_customer(
+    customer_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+    )),
+):
+    result = await db.execute(select(Customer).where(Customer.id == customer_id))
+    customer = result.scalar_one_or_none()
+
+    if not customer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Customer not found",
+        )
+
+    if current_user.tenant_id != customer.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    repair_order_count_result = await db.execute(
+        select(func.count(RepairOrder.id)).where(RepairOrder.customer_id == customer_id)
+    )
+    repair_order_count = repair_order_count_result.scalar() or 0
+    if repair_order_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete customer with repair orders",
+        )
+
+    # If there is a linked customer-portal user, detach it from this customer.
+    # For customer-role users, also deactivate access after detaching.
+    linked_users_result = await db.execute(
+        select(User).where(User.customer_id == customer_id)
+    )
+    linked_users = linked_users_result.scalars().all()
+    for linked_user in linked_users:
+        linked_user.customer_id = None
+        if linked_user.role == UserRole.CUSTOMER:
+            linked_user.is_active = False
+
+    # Remove orphanable appointments so customer deletion can proceed cleanly.
+    # Repair-order-backed history is still protected by the guard above.
+    appointments_result = await db.execute(
+        select(Appointment).where(
+            and_(
+                Appointment.customer_id == customer_id,
+                Appointment.tenant_id == customer.tenant_id,
+            )
+        )
+    )
+    appointments = appointments_result.scalars().all()
+    for appointment in appointments:
+        await db.delete(appointment)
+
+    await db.delete(customer)
+    await db.commit()
+
+    return None
 
 
 # ============================================================================
