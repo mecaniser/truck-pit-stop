@@ -21,6 +21,7 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.core.config import settings
+from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
 from app.core.websocket import broadcast_repair_order_update
 from app.schemas.repair_order import (
@@ -138,6 +139,7 @@ async def create_repair_order(
         entity_name="repair_order",
     )
     await db.refresh(repair_order)
+    record_repair_order_created(str(current_user.tenant_id))
     
     return RepairOrderResponse.model_validate(repair_order)
 
@@ -262,6 +264,7 @@ async def quick_create_repair_order(
             entity_name="repair_order",
         )
         await db.refresh(repair_order)
+        record_repair_order_created(str(tenant_id))
 
         return RepairOrderResponse.model_validate(repair_order)
     except HTTPException:

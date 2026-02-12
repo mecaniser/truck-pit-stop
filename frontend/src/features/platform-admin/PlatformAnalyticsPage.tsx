@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { 
   Building2, Users, DollarSign,
   TrendingUp, CheckCircle, XCircle,
@@ -35,8 +36,14 @@ interface TenantSummary {
   created_at: string
 }
 
+function isTabType(value: string | null): value is TabType {
+  return value === 'business' || value === 'performance' || value === 'errors'
+}
+
 export default function PlatformAnalyticsPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('business')
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState<TabType>(isTabType(initialTab) ? initialTab : 'business')
   const [stats, setStats] = useState<PlatformStats | null>(null)
   const [tenants, setTenants] = useState<TenantSummary[]>([])
   const [loading, setLoading] = useState(true)

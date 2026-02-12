@@ -20,6 +20,7 @@ from app.core.redis import (
     get_token_version,
     is_quote_portal_enrollment_token_consumed,
 )
+from app.core.metrics import record_quote
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
 from app.core.password_policy import validate_password
 from app.db.models.user import User, UserRole
@@ -369,6 +370,7 @@ async def create_quote(
         entity_name="quote",
     )
     await db.refresh(quote)
+    record_quote(status="created", tenant_id=str(current_user.tenant_id))
     return QuoteResponse.model_validate(quote)
 
 
@@ -676,6 +678,8 @@ async def send_quote_to_customer(
     
     await db.commit()
     await db.refresh(quote)
+    if auto_approved:
+        record_quote(status="approved", tenant_id=str(current_user.tenant_id))
     
     if auto_approved:
         # Send auto-approved confirmation instead of approval request
@@ -786,6 +790,7 @@ async def approve_quote(
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
+    record_quote(status="approved", tenant_id=str(order.tenant_id))
     
     # Broadcast WebSocket updates
     await broadcast_quote_event(
@@ -861,6 +866,7 @@ async def decline_quote(
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
+    record_quote(status="declined", tenant_id=str(order.tenant_id))
     
     # Broadcast WebSocket updates
     await broadcast_quote_event(
@@ -997,6 +1003,7 @@ async def approve_quote_by_token(
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
+    record_quote(status="approved", tenant_id=str(order.tenant_id))
     
     # Broadcast WebSocket updates
     await broadcast_quote_event(
@@ -1189,6 +1196,7 @@ async def decline_quote_by_token(
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
+    record_quote(status="declined", tenant_id=str(order.tenant_id))
     
     # Broadcast WebSocket updates
     await broadcast_quote_event(

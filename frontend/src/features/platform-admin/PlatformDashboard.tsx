@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Building2, Users, TrendingUp, Crown, DollarSign, Wrench, UserCog, ChevronRight } from 'lucide-react'
+import { Building2, Users, TrendingUp, Crown, DollarSign, Wrench, UserCog, ChevronRight, Gauge } from 'lucide-react'
 import api from '../../lib/api'
 import { GlassNoirCard, GlassNoirHeader } from '../../components/ui/GlassNoirCard'
 import { StatScrollRow, CollapsibleStats, InlineStats } from '../../components/ui/MobileStats'
@@ -153,7 +153,7 @@ export default function PlatformDashboard() {
       {/* Quick Actions */}
       <GlassNoirCard>
         <h2 className="text-lg font-bold text-white mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <a
             href="/dashboard/garages"
             className="flex items-center gap-3 p-3 bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 rounded-lg transition-all"
@@ -170,6 +170,15 @@ export default function PlatformDashboard() {
             <TrendingUp className="w-5 h-5 text-gold-400 flex-shrink-0" />
             <div className="min-w-0">
               <div className="font-medium text-white text-sm">Analytics</div>
+            </div>
+          </a>
+          <a
+            href="/dashboard/analytics?tab=performance"
+            className="flex items-center gap-3 p-3 bg-gold-500/10 hover:bg-gold-500/20 border border-gold-500/30 rounded-lg transition-all"
+          >
+            <Gauge className="w-5 h-5 text-gold-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-medium text-white text-sm">Performance</div>
             </div>
           </a>
           <a

@@ -48,6 +48,26 @@ interface PerformanceStats {
   }
 }
 
+function getHealthReadyUrl() {
+  const apiUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/+$/, '')
+  const backendBase = apiUrl.replace(/\/api\/v1$/, '')
+  return backendBase ? `${backendBase}/health/ready` : '/health/ready'
+}
+
+async function fetchHealthReady(): Promise<HealthData> {
+  const response = await fetch(getHealthReadyUrl(), { credentials: 'include' })
+  if (!response.ok) {
+    throw new Error(`Health check failed (${response.status})`)
+  }
+
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.toLowerCase().includes('application/json')) {
+    throw new Error('Health endpoint returned non-JSON response')
+  }
+
+  return response.json()
+}
+
 export default function PerformanceTab() {
   const [health, setHealth] = useState<HealthData | null>(null)
   const [stats, setStats] = useState<PerformanceStats | null>(null)
@@ -58,13 +78,8 @@ export default function PerformanceTab() {
 
   const fetchData = useCallback(async () => {
     try {
-      // Health endpoint is at root, not under /api/v1
-      // Derive backend base URL from API URL
-      const apiUrl = import.meta.env.VITE_API_URL || '/api/v1'
-      const backendBase = apiUrl.replace('/api/v1', '') || ''
-      
       const [healthRes, statsRes] = await Promise.all([
-        fetch(`${backendBase}/health/ready`, { credentials: 'include' }).then(r => r.json()),
+        fetchHealthReady(),
         api.get('/admin/performance/stats'),
       ])
       setHealth(healthRes)
@@ -72,7 +87,7 @@ export default function PerformanceTab() {
       setError(null)
       setLastRefresh(new Date())
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load performance data')
+      setError(err.response?.data?.detail || err.message || 'Failed to load performance data')
       console.error(err)
     } finally {
       setLoading(false)

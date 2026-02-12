@@ -4,9 +4,12 @@ Metrics Parser
 Reads metrics from prometheus_client registry and returns structured data
 for the admin performance dashboard.
 """
+import gc
+import platform
+import resource
+import time
 from typing import Any
-from prometheus_client import REGISTRY, CollectorRegistry
-from prometheus_client.metrics import MetricWrapperBase
+from prometheus_client import REGISTRY
 
 
 def get_metric_value(metric_name: str, labels: dict = None) -> float:
@@ -69,6 +72,25 @@ def get_performance_stats() -> dict[str, Any]:
     }
 
 
+def _iter_samples(all_metrics: dict[str, dict[str, Any]]):
+    for metric_data in all_metrics.values():
+        for sample in metric_data.get("samples", []):
+            yield sample
+
+
+def _is_created_sample(sample_name: str) -> bool:
+    return sample_name.endswith("_created")
+
+
+def _is_http_request_total_sample(sample_name: str, labels: dict[str, Any]) -> bool:
+    if not sample_name.endswith("_total"):
+        return False
+    if "http" not in sample_name or "request" not in sample_name:
+        return False
+    # Instrumentator request counters include handler/method/status labels.
+    return "handler" in labels or "method" in labels or "status" in labels
+
+
 def _parse_http_metrics(all_metrics: dict) -> dict:
     """Parse HTTP-related metrics."""
     result = {
@@ -81,78 +103,87 @@ def _parse_http_metrics(all_metrics: dict) -> dict:
         "p99_latency_ms": 0.0,
         "requests_in_progress": 0,
     }
-    
+
     # Parse request counts by status
     endpoint_counts = {}
-    
-    # Look for truckpitstop_http_requests_total or similar
-    for name, data in all_metrics.items():
-        if "requests_total" in name and "http" in name:
-            for sample in data.get("samples", []):
-                # Skip _created timestamp samples, but keep _total (the actual counter value)
-                if sample["name"].endswith("_created"):
-                    continue
-                labels = sample["labels"]
-                value = sample["value"]
-                
-                # Count by status
-                status = labels.get("status", labels.get("status_code", ""))
-                if status:
-                    status_str = str(status)
-                    if status_str.startswith("2"):
-                        result["requests_by_status"]["2xx"] += int(value)
-                    elif status_str.startswith("4"):
-                        result["requests_by_status"]["4xx"] += int(value)
-                    elif status_str.startswith("5"):
-                        result["requests_by_status"]["5xx"] += int(value)
-                
-                result["requests_total"] += int(value)
-                
-                # Count by endpoint
-                handler = labels.get("handler", labels.get("path", "unknown"))
-                if handler and handler != "unknown":
-                    endpoint_counts[handler] = endpoint_counts.get(handler, 0) + int(value)
-    
+
+    for sample in _iter_samples(all_metrics):
+        sample_name = sample["name"]
+        if _is_created_sample(sample_name):
+            continue
+        labels = sample["labels"]
+
+        if _is_http_request_total_sample(sample_name, labels):
+            value = int(sample["value"])
+            result["requests_total"] += value
+
+            status = str(labels.get("status") or labels.get("status_code") or "")
+            if status.startswith("2"):
+                result["requests_by_status"]["2xx"] += value
+            elif status.startswith("4"):
+                result["requests_by_status"]["4xx"] += value
+            elif status.startswith("5"):
+                result["requests_by_status"]["5xx"] += value
+
+            handler = labels.get("handler") or labels.get("path") or labels.get("route")
+            if handler and handler not in ("unknown", "none"):
+                endpoint_counts[handler] = endpoint_counts.get(handler, 0) + value
+
+        if "requests_inprogress" in sample_name or "requests_in_progress" in sample_name:
+            result["requests_in_progress"] += int(sample["value"])
+
     # Sort endpoints by count
     result["requests_by_endpoint"] = [
         {"path": path, "count": count}
         for path, count in sorted(endpoint_counts.items(), key=lambda x: -x[1])[:10]
     ]
-    
-    # Parse latency histograms
-    for name, data in all_metrics.items():
-        if "latency" in name or "duration" in name:
-            if "http" in name:
-                buckets = {}
-                total_sum = 0
-                total_count = 0
-                
-                for sample in data.get("samples", []):
-                    if "_bucket" in sample["name"]:
-                        le = sample["labels"].get("le", "")
-                        if le and le != "+Inf":
-                            buckets[float(le)] = sample["value"]
-                    elif "_sum" in sample["name"]:
-                        total_sum += sample["value"]
-                    elif "_count" in sample["name"]:
-                        total_count += sample["value"]
-                
-                if total_count > 0:
-                    result["avg_latency_ms"] = round((total_sum / total_count) * 1000, 2)
-                
-                # Estimate percentiles from buckets
-                if buckets and total_count > 0:
-                    sorted_buckets = sorted(buckets.items())
-                    result["p50_latency_ms"] = _estimate_percentile(sorted_buckets, total_count, 0.50) * 1000
-                    result["p95_latency_ms"] = _estimate_percentile(sorted_buckets, total_count, 0.95) * 1000
-                    result["p99_latency_ms"] = _estimate_percentile(sorted_buckets, total_count, 0.99) * 1000
-    
-    # Parse in-progress requests
-    for name, data in all_metrics.items():
-        if "inprogress" in name or "in_progress" in name:
-            for sample in data.get("samples", []):
-                result["requests_in_progress"] += int(sample["value"])
-    
+
+    # Parse one authoritative HTTP latency histogram.
+    histogram_candidates = [
+        name
+        for name, data in all_metrics.items()
+        if data.get("type") == "histogram" and "http" in name and ("duration" in name or "latency" in name)
+    ]
+    selected_histogram = None
+    for preferred_suffix in (
+        "http_request_duration_seconds",
+        "request_duration_seconds",
+        "http_request_latency_seconds",
+    ):
+        selected_histogram = next(
+            (name for name in histogram_candidates if name.endswith(preferred_suffix)),
+            None,
+        )
+        if selected_histogram:
+            break
+    if not selected_histogram and histogram_candidates:
+        selected_histogram = sorted(histogram_candidates)[0]
+
+    if selected_histogram:
+        buckets: dict[float, float] = {}
+        total_sum = 0.0
+        total_count = 0.0
+        for sample in all_metrics[selected_histogram].get("samples", []):
+            sample_name = sample["name"]
+            if _is_created_sample(sample_name):
+                continue
+            if sample_name.endswith("_bucket"):
+                le = sample["labels"].get("le", "")
+                if le and le != "+Inf":
+                    buckets[float(le)] = float(sample["value"])
+            elif sample_name.endswith("_sum"):
+                total_sum += float(sample["value"])
+            elif sample_name.endswith("_count"):
+                total_count += float(sample["value"])
+
+        if total_count > 0:
+            result["avg_latency_ms"] = round((total_sum / total_count) * 1000, 2)
+            if buckets:
+                sorted_buckets = sorted(buckets.items())
+                result["p50_latency_ms"] = round(_estimate_percentile(sorted_buckets, total_count, 0.50) * 1000, 2)
+                result["p95_latency_ms"] = round(_estimate_percentile(sorted_buckets, total_count, 0.95) * 1000, 2)
+                result["p99_latency_ms"] = round(_estimate_percentile(sorted_buckets, total_count, 0.99) * 1000, 2)
+
     return result
 
 
@@ -165,43 +196,53 @@ def _parse_business_metrics(all_metrics: dict) -> dict:
         "quotes": {"created": 0, "approved": 0, "declined": 0},
         "payments": {"success": 0, "failure": 0},
     }
-    
+
     for name, data in all_metrics.items():
         # Login metrics
         if "auth_login" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 status = sample["labels"].get("status", "")
                 if status == "success":
                     result["logins"]["success"] += int(sample["value"])
                 elif status == "failure":
                     result["logins"]["failure"] += int(sample["value"])
-        
+
         # Logout metrics
         if "auth_logout" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 result["logouts"] += int(sample["value"])
-        
+
         # Repair orders
         if "repair_orders_created" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 result["orders_created"] += int(sample["value"])
-        
+
         # Quotes
-        if "quotes_total" in name:
+        if name.endswith("quotes") or "quotes_total" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 status = sample["labels"].get("status", "")
                 if status in result["quotes"]:
                     result["quotes"][status] += int(sample["value"])
-        
+
         # Payments
-        if "payments_total" in name:
+        if name.endswith("payments") or "payments_total" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 status = sample["labels"].get("status", "")
                 if status == "success":
                     result["payments"]["success"] += int(sample["value"])
                 elif status in ("failure", "failed"):
                     result["payments"]["failure"] += int(sample["value"])
-    
+
     return result
 
 
@@ -214,35 +255,93 @@ def _parse_system_metrics(all_metrics: dict) -> dict:
         "process_memory_bytes": 0,
         "active_users": 0,
     }
-    
+
+    login_success_total = 0
+    logout_total = 0
+
     for name, data in all_metrics.items():
         # Python info
         if name == "python_info":
             for sample in data.get("samples", []):
                 labels = sample["labels"]
-                result["python_version"] = f"{labels.get('major', '?')}.{labels.get('minor', '?')}.{labels.get('patchlevel', '?')}"
-        
+                major = labels.get("major")
+                minor = labels.get("minor")
+                patch = labels.get("patchlevel")
+                if major is not None and minor is not None and patch is not None:
+                    result["python_version"] = f"{major}.{minor}.{patch}"
+                elif labels.get("version"):
+                    result["python_version"] = labels["version"]
+
         # GC collections
         if "gc_collections" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 result["gc_collections"] += int(sample["value"])
-        
+
         # Process CPU
         if "process_cpu_seconds" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 result["process_cpu_seconds"] = round(sample["value"], 2)
-        
+
         # Process memory
         if "process_resident_memory" in name or "process_virtual_memory" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 if sample["value"] > result["process_memory_bytes"]:
                     result["process_memory_bytes"] = int(sample["value"])
-        
+
         # Active users gauge
         if "active_users" in name:
             for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
                 result["active_users"] = int(sample["value"])
-    
+
+        # Keep auth counters for a fallback active-user approximation.
+        if "auth_login" in name:
+            for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
+                if sample["labels"].get("status") == "success":
+                    login_success_total += int(sample["value"])
+        if "auth_logout" in name:
+            for sample in data.get("samples", []):
+                if _is_created_sample(sample["name"]):
+                    continue
+                logout_total += int(sample["value"])
+
+    # Fallbacks for environments without process_* collectors (e.g., macOS local dev).
+    if result["python_version"] == "unknown":
+        result["python_version"] = platform.python_version()
+
+    if result["gc_collections"] == 0:
+        try:
+            result["gc_collections"] = sum(g.get("collections", 0) for g in gc.get_stats())
+        except Exception:
+            pass
+
+    if result["process_cpu_seconds"] == 0:
+        result["process_cpu_seconds"] = round(time.process_time(), 2)
+
+    if result["process_memory_bytes"] == 0:
+        try:
+            ru_maxrss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            if platform.system() == "Darwin":
+                # macOS already reports bytes
+                result["process_memory_bytes"] = int(ru_maxrss)
+            else:
+                # Linux reports KiB
+                result["process_memory_bytes"] = int(ru_maxrss * 1024)
+        except Exception:
+            pass
+
+    if result["active_users"] == 0:
+        result["active_users"] = max(login_success_total - logout_total, 0)
+
     return result
 
 
