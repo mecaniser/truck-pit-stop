@@ -793,9 +793,15 @@ async def start_work(
         vehicle = order.vehicle
         vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         try:
-            await send_sms(db, str(order.tenant_id), customer.phone,
+            await send_sms(
+                db,
+                str(order.tenant_id),
+                customer.phone,
                 f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - Truck Pit Stop",
-                template_name="work_started_sms")
+                template_name="work_started_sms",
+                customer_id=customer.id,
+                source="automated",
+            )
         except Exception:
             pass  # Don't fail the request if SMS fails
     
@@ -998,9 +1004,15 @@ async def complete_work(
         vehicle = order.vehicle
         vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         try:
-            await send_sms(db, str(order.tenant_id), customer.phone,
+            await send_sms(
+                db,
+                str(order.tenant_id),
+                customer.phone,
                 f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - Truck Pit Stop",
-                template_name="work_complete_sms")
+                template_name="work_complete_sms",
+                customer_id=customer.id,
+                source="automated",
+            )
         except Exception:
             pass
     
@@ -1129,9 +1141,15 @@ async def approve_completion(
         vehicle = order.vehicle
         vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         try:
-            await send_sms(db, str(order.tenant_id), customer.phone,
+            await send_sms(
+                db,
+                str(order.tenant_id),
+                customer.phone,
                 f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - Truck Pit Stop",
-                template_name="ready_pickup_sms")
+                template_name="ready_pickup_sms",
+                customer_id=customer.id,
+                source="automated",
+            )
         except Exception:
             pass
     

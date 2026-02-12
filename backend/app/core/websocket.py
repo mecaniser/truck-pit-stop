@@ -323,6 +323,8 @@ class WSEventType:
     QUOTE_DECLINED = "quote_declined"
     INVOICE_CREATED = "invoice_created"
     PAYMENT_RECEIVED = "payment_received"
+    SMS_MESSAGE_CREATED = "sms_message_created"
+    SMS_THREAD_UPDATED = "sms_thread_updated"
 
 
 async def broadcast_repair_order_update(
@@ -411,3 +413,49 @@ async def broadcast_payment_received(
     
     await manager.broadcast_to_tenant(tenant_id, message)
     await manager.send_to_customer(customer_id, message)
+
+
+async def broadcast_sms_message_event(
+    tenant_id: str,
+    thread_id: str,
+    message_id: str,
+    customer_id: str,
+    direction: str,
+    source: str,
+    body: str,
+    delivery_status: str,
+    created_at: Optional[str] = None,
+) -> None:
+    """Broadcast an SMS message creation/update event to tenant staff."""
+    message = {
+        "type": WSEventType.SMS_MESSAGE_CREATED,
+        "thread_id": thread_id,
+        "message_id": message_id,
+        "customer_id": customer_id,
+        "direction": direction,
+        "source": source,
+        "body": body,
+        "delivery_status": delivery_status,
+        "created_at": created_at,
+    }
+    await manager.broadcast_to_tenant(tenant_id, message)
+
+
+async def broadcast_sms_thread_event(
+    tenant_id: str,
+    thread_id: str,
+    customer_id: str,
+    unread_count_staff: int,
+    last_message_at: Optional[str],
+    last_message_preview: Optional[str],
+) -> None:
+    """Broadcast a thread summary update to tenant staff."""
+    message = {
+        "type": WSEventType.SMS_THREAD_UPDATED,
+        "thread_id": thread_id,
+        "customer_id": customer_id,
+        "unread_count_staff": unread_count_staff,
+        "last_message_at": last_message_at,
+        "last_message_preview": last_message_preview,
+    }
+    await manager.broadcast_to_tenant(tenant_id, message)

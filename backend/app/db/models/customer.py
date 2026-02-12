@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, ForeignKey, Numeric
+from sqlalchemy import Column, String, Text, ForeignKey, Numeric, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -25,6 +25,9 @@ class Customer(BaseModel):
     
     notes = Column(Text, nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. zelle, walk_in, portal
+    sms_opt_out = Column(Boolean, nullable=False, default=False, index=True)
+    sms_opted_out_at = Column(DateTime(timezone=True), nullable=True)
+    sms_opt_out_source = Column(String(50), nullable=True)
     
     # Auto-approve quotes at or below this amount (None = disabled)
     auto_approval_threshold = Column(Numeric(10, 2), nullable=True, default=None)

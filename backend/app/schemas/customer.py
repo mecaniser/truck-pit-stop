@@ -62,6 +62,9 @@ class CustomerResponse(CustomerBase):
     id: UUID
     tenant_id: UUID
     source: Optional[str] = None
+    sms_opt_out: bool = False
+    sms_opted_out_at: Optional[datetime] = None
+    sms_opt_out_source: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -95,6 +98,9 @@ class CustomerWithVehiclesResponse(CustomerBase):
     id: UUID
     tenant_id: UUID
     source: Optional[str] = None
+    sms_opt_out: bool = False
+    sms_opted_out_at: Optional[datetime] = None
+    sms_opt_out_source: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     vehicles: List[VehicleInCustomer] = Field(default_factory=list)

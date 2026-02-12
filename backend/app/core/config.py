@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
+    PUBLIC_API_BASE_URL: str = "http://localhost:8000"
     CORS_ORIGINS_STR: str = "http://localhost:5173"
     
     @property

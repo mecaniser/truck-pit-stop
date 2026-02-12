@@ -1,11 +1,13 @@
-from typing import Optional
-from app.core.config import settings
-from app.db.models.notification import Notification, NotificationType, NotificationStatus
-from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
-from twilio.rest import Client
+from __future__ import annotations
 
-client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+from typing import Optional
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.notification import Notification
+from app.db.models.sms_message import SMSMessageSource
+from app.services.messaging_service import send_sms_with_tracking
 
 
 async def send_sms(
@@ -14,39 +16,20 @@ async def send_sms(
     to: str,
     body: str,
     template_name: Optional[str] = None,
+    customer_id: Optional[UUID | str] = None,
+    source: SMSMessageSource | str = SMSMessageSource.AUTOMATED,
+    created_by_user_id: Optional[UUID | str] = None,
 ) -> Notification:
-    """Send SMS via Twilio and create notification record"""
-    
-    notification = Notification(
+    """Backwards-compatible SMS sender with threaded tracking support."""
+    notification, _, _ = await send_sms_with_tracking(
+        db=db,
         tenant_id=tenant_id,
-        type=NotificationType.SMS,
-        status=NotificationStatus.PENDING,
-        recipient_phone=to,
+        to=to,
         body=body,
         template_name=template_name,
+        customer_id=customer_id,
+        source=source,
+        created_by_user_id=created_by_user_id,
+        raise_on_failure=False,
     )
-    
-    db.add(notification)
-    await db.commit()
-    
-    try:
-        message = client.messages.create(
-            body=body,
-            from_=settings.TWILIO_PHONE_NUMBER,
-            to=to,
-        )
-        
-        notification.status = NotificationStatus.SENT
-        notification.external_id = message.sid
-        notification.sent_at = datetime.utcnow()
-        
-    except Exception as e:
-        notification.status = NotificationStatus.FAILED
-        notification.error_message = str(e)
-    
-    await db.commit()
-    await db.refresh(notification)
-    
     return notification
-
-

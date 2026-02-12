@@ -124,8 +124,13 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 
                 try:
                     await send_sms(
-                        db, str(invoice.tenant_id), customer.phone, sms_body,
-                        template_name="invoice_reminder_sms"
+                        db,
+                        str(invoice.tenant_id),
+                        customer.phone,
+                        sms_body,
+                        template_name="invoice_reminder_sms",
+                        customer_id=customer.id,
+                        source="automated",
                     )
                 except Exception:
                     pass

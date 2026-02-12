@@ -17,6 +17,13 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
 from app.db.models.work_photo import WorkPhoto
+from app.db.models.message_thread import MessageThread
+from app.db.models.sms_message import (
+    SMSMessage,
+    SMSMessageDirection,
+    SMSMessageSource,
+    SMSDeliveryStatus,
+)
 
 __all__ = [
     "Tenant",
@@ -46,5 +53,9 @@ __all__ = [
     "ErrorCategory",
     "ErrorSeverity",
     "WorkPhoto",
+    "MessageThread",
+    "SMSMessage",
+    "SMSMessageDirection",
+    "SMSMessageSource",
+    "SMSDeliveryStatus",
 ]
-

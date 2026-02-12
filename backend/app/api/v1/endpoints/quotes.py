@@ -724,8 +724,15 @@ async def send_quote_to_customer(
         else:
             sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - Truck Pit Stop"
         try:
-            await send_sms(db, str(current_user.tenant_id), customer.phone, sms_body,
-                template_name="quote_sent_sms")
+            await send_sms(
+                db,
+                str(current_user.tenant_id),
+                customer.phone,
+                sms_body,
+                template_name="quote_sent_sms",
+                customer_id=customer.id,
+                source="automated",
+            )
         except Exception:
             pass
     

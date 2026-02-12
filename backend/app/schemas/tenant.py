@@ -10,6 +10,10 @@ class TenantBase(BaseModel):
     address: Optional[str] = Field(None, max_length=500)
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[str] = Field(None, max_length=255)
+    sms_phone_number: Optional[str] = Field(None, max_length=20)
+    sms_phone_sid: Optional[str] = Field(None, max_length=64)
+    sms_enabled: bool = False
+    sms_messaging_service_sid: Optional[str] = Field(None, max_length=64)
     
     @field_validator('slug')
     @classmethod
@@ -39,6 +43,10 @@ class TenantUpdate(BaseModel):
     is_active: Optional[bool] = None
     stripe_account_id: Optional[str] = None
     stripe_onboarding_complete: Optional[bool] = None
+    sms_phone_number: Optional[str] = Field(None, max_length=20)
+    sms_phone_sid: Optional[str] = Field(None, max_length=64)
+    sms_enabled: Optional[bool] = None
+    sms_messaging_service_sid: Optional[str] = Field(None, max_length=64)
 
 
 class TenantResponse(TenantBase):

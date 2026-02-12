@@ -14,6 +14,10 @@ class Tenant(BaseModel):
     phone = Column(String(20), nullable=True)
     email = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    sms_phone_number = Column(String(20), nullable=True, unique=True, index=True)
+    sms_phone_sid = Column(String(64), nullable=True)
+    sms_enabled = Column(Boolean, default=False, nullable=False)
+    sms_messaging_service_sid = Column(String(64), nullable=True)
     
     # Garage ownership
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
@@ -50,5 +54,4 @@ class Tenant(BaseModel):
     approved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     approved_by = relationship("User", foreign_keys=[approved_by_id])
     rejection_reason = Column(Text, nullable=True)
-
 
