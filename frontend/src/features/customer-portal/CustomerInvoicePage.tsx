@@ -52,11 +52,12 @@ function InvoicePaymentForm({
 
     if (paymentIntent && paymentIntent.status === 'succeeded') {
       try {
-        await api.post('/payments/confirm-payment', {
+        const response = await api.post('/payments/confirm-payment', {
           invoice_id: invoiceId,
           payment_intent_id: paymentIntent.id,
         })
-        toast.success('Payment successful!')
+        const paymentNote = response.data?.payment_note
+        toast.success(paymentNote || 'Payment successful!')
         onSuccess()
       } catch {
         setError('Payment confirmed but failed to update records. Please contact support.')

@@ -1,5 +1,7 @@
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import urlencode
+from typing import Optional
 
 from app.core.config import settings
 from app.core.redis import store_invoice_access_token, store_portal_enrollment_token
@@ -35,10 +37,25 @@ async def generate_invoice_access_link(
     invoice: Invoice,
     order: RepairOrder,
     customer: Customer,
+    shop_name: Optional[str] = None,
+    shop_phone: Optional[str] = None,
+    shop_email: Optional[str] = None,
 ) -> str:
     """Generate a full frontend URL for tokenized invoice access."""
     token = await generate_invoice_access_token(invoice=invoice, order=order, customer=customer)
-    return f"{settings.FRONTEND_URL}/invoice/{token}"
+    base_url = f"{settings.FRONTEND_URL}/invoice/{token}"
+    query_params = {}
+    if shop_name:
+        query_params["shop_name"] = shop_name
+    if shop_phone:
+        query_params["shop_phone"] = shop_phone
+    if shop_email:
+        query_params["shop_email"] = shop_email
+
+    if not query_params:
+        return base_url
+
+    return f"{base_url}?{urlencode(query_params)}"
 
 
 async def generate_portal_enrollment_token(

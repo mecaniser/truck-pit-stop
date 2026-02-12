@@ -20,6 +20,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
 from app.db.models.tenant import Tenant
 from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
+from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.payment_number_service import allocate_next_payment_number
 
 logger = get_logger(__name__)
@@ -27,6 +28,8 @@ logger = get_logger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 router = APIRouter()
+
+PORTAL_PAYMENT_NOTE = "Payment made by customer portal flow."
 
 
 class SetupIntentResponse(BaseModel):
@@ -257,7 +260,10 @@ async def create_payment_intent_for_invoice(
     # Get invoice with repair order
     result = await db.execute(
         select(Invoice)
-        .options(selectinload(Invoice.repair_order))
+        .options(
+            selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
+            selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle),
+        )
         .where(Invoice.id == body.invoice_id)
     )
     invoice = result.scalar_one_or_none()
@@ -268,6 +274,10 @@ async def create_payment_intent_for_invoice(
     # Verify customer owns this invoice
     if invoice.repair_order.customer_id != current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    customer = invoice.repair_order.customer
+    if not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
@@ -451,6 +461,7 @@ async def confirm_payment(
         method=PaymentMethodEnum.STRIPE,
         status=PaymentStatus.COMPLETED,
         stripe_payment_intent_id=body.payment_intent_id,
+        notes=PORTAL_PAYMENT_NOTE,
     )
     db.add(payment)
     
@@ -482,8 +493,28 @@ async def confirm_payment(
         payment_intent_id=body.payment_intent_id,
         amount=float(invoice.total_amount),
     )
+
+    try:
+        await send_invoice_payment_confirmation_email(
+            db=db,
+            invoice=invoice,
+            order=invoice.repair_order,
+            customer=customer,
+            tenant=tenant,
+            vehicle=invoice.repair_order.vehicle,
+        )
+    except Exception as exc:
+        logger.warning(
+            "invoice_paid_confirmation_email_failed",
+            invoice_id=str(invoice.id),
+            error=str(exc),
+        )
     
-    return {"status": "success", "message": "Payment confirmed"}
+    return {
+        "status": "success",
+        "message": "Payment confirmed",
+        "payment_note": PORTAL_PAYMENT_NOTE,
+    }
 
 
 @router.post("/record-manual")

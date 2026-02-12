@@ -227,7 +227,14 @@ async def create_invoice(
     vehicle = order.vehicle
     if customer and customer.email:
         vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
-        invoice_access_url = await generate_invoice_access_link(invoice=invoice, order=order, customer=customer)
+        invoice_access_url = await generate_invoice_access_link(
+            invoice=invoice,
+            order=order,
+            customer=customer,
+            shop_name=tenant.name if tenant else None,
+            shop_phone=tenant.phone if tenant else None,
+            shop_email=tenant.email if tenant else None,
+        )
         
         # Build fee breakdown lines
         fee_lines = []
@@ -481,7 +488,16 @@ async def resend_invoice(
         )
     
     vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip()
-    invoice_access_url = await generate_invoice_access_link(invoice=invoice, order=order, customer=customer)
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    invoice_access_url = await generate_invoice_access_link(
+        invoice=invoice,
+        order=order,
+        customer=customer,
+        shop_name=tenant.name if tenant else None,
+        shop_phone=tenant.phone if tenant else None,
+        shop_email=tenant.email if tenant else None,
+    )
     
     email_html = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

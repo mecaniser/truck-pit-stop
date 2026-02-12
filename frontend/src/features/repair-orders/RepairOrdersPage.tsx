@@ -2153,7 +2153,7 @@ export default function RepairOrdersPage() {
 
                 {/* Paid confirmation for paid orders */}
                 {(orderDetail ?? selectedOrder).status === 'paid' && invoiceForOrder && (
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
                         <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2167,6 +2167,70 @@ export default function RepairOrdersPage() {
                         </p>
                       </div>
                     </div>
+
+                    {!showResendInvoice ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowResendInvoice(true)}
+                        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        Resend Invoice Copy
+                      </button>
+                    ) : (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-green-800 mb-1">
+                            Send to different email (optional)
+                          </label>
+                          <input
+                            type="email"
+                            value={resendCustomEmail}
+                            onChange={(e) => setResendCustomEmail(e.target.value)}
+                            placeholder={customerLookup.get(selectedOrder?.customer_id || '')?.email || 'customer@email.com'}
+                            className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                          />
+                          <p className="text-xs text-green-700 mt-1">
+                            Leave empty to send to customer's default email
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowResendInvoice(false)
+                              setResendCustomEmail('')
+                            }}
+                            className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => resendInvoiceMutation.mutate({
+                              invoiceId: invoiceForOrder.id,
+                              customEmail: resendCustomEmail || undefined,
+                            })}
+                            disabled={resendInvoiceMutation.isPending}
+                            className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                          >
+                            {resendInvoiceMutation.isPending ? (
+                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                              </svg>
+                            )}
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { CreditCard, Lock, FileText, UserPlus } from 'lucide-react'
@@ -45,6 +45,7 @@ interface ConfirmGuestPaymentResponse {
   paid_at: string | null
   portal_enrollment_token: string | null
   portal_enrollment_expires_in: number | null
+  payment_note?: string | null
 }
 
 interface CreatePortalResponse {
@@ -103,7 +104,7 @@ function GuestPaymentForm({
           payment_intent_id: paymentIntent.id,
         })
         const result = response.data as ConfirmGuestPaymentResponse
-        toast.success('Payment successful!')
+        toast.success(result.payment_note || 'Payment successful!')
         onSuccess(result)
       } catch (err: unknown) {
         setError(getErrorDetail(err, 'Payment confirmed but update failed. Please contact the shop.'))
@@ -222,6 +223,7 @@ function PortalEnrollmentSection({
 
 export default function InvoiceAccessPage() {
   const { token } = useParams<{ token: string }>()
+  const location = useLocation()
   const navigate = useNavigate()
   const { login } = useAuthStore()
   const [password, setPassword] = useState('')
@@ -254,6 +256,19 @@ export default function InvoiceAccessPage() {
     ? paymentResult?.portalEnrollmentToken ?? null
     : token
   const passwordValidationError = password ? getPasswordValidationError(password) : null
+  const shopContact = (() => {
+    const params = new URLSearchParams(location.search)
+    const shopName = params.get('shop_name')?.trim() || null
+    const shopEmailRaw = params.get('shop_email')?.trim() || null
+    const shopPhoneRaw = params.get('shop_phone')?.trim() || null
+    const shopEmail =
+      shopEmailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shopEmailRaw) ? shopEmailRaw : null
+    const normalizedPhone = shopPhoneRaw ? shopPhoneRaw.replace(/[^\d+]/g, '') : null
+    const shopPhone =
+      normalizedPhone && normalizedPhone.replace(/\D/g, '').length >= 10 ? shopPhoneRaw : null
+    const telHref = shopPhone && normalizedPhone ? `tel:${normalizedPhone}` : null
+    return { shopName, shopEmail, shopPhone, telHref }
+  })()
 
   const createIntentMutation = useMutation({
     mutationFn: async (tokenValue: string) => {
@@ -351,9 +366,36 @@ export default function InvoiceAccessPage() {
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-red-200 p-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-3">{title}</h1>
           <p className="text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{detail}</p>
-          <p className="text-sm text-gray-600 mt-4">
-            Please contact the shop and ask them to resend your invoice link.
-          </p>
+          <div className="mt-4 space-y-2">
+            <p className="text-sm text-gray-600">
+              Please contact {shopContact.shopName || 'the shop'} and ask them to resend your invoice link.
+            </p>
+            {shopContact.shopPhone || shopContact.shopEmail ? (
+              <div className="text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1">
+                <p className="font-medium text-amber-900">Shop contact</p>
+                {shopContact.shopPhone && shopContact.telHref && (
+                  <p>
+                    Phone:{' '}
+                    <a className="text-amber-800 font-medium underline" href={shopContact.telHref}>
+                      {shopContact.shopPhone}
+                    </a>
+                  </p>
+                )}
+                {shopContact.shopEmail && (
+                  <p>
+                    Email:{' '}
+                    <a className="text-amber-800 font-medium underline" href={`mailto:${shopContact.shopEmail}`}>
+                      {shopContact.shopEmail}
+                    </a>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">
+                If contact details are not shown here, reply to the original invoice email or SMS from the shop.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -519,11 +561,37 @@ export default function InvoiceAccessPage() {
           )}
         </div>
 
-        <div className="text-center text-sm text-gray-600">
-          Need help with this invoice? Contact the shop directly.
-          <Link to="/login" className="ml-2 text-amber-700 hover:text-amber-800 font-medium">
-            Staff login
-          </Link>
+        <div className="text-center text-sm text-gray-600 space-y-1">
+          <p>Need help with this invoice? Contact {shopContact.shopName || 'the shop'} directly.</p>
+          {shopContact.shopPhone || shopContact.shopEmail ? (
+            <p className="text-gray-700">
+              {shopContact.shopPhone && shopContact.telHref && (
+                <>
+                  Phone:{' '}
+                  <a className="text-amber-700 hover:text-amber-800 font-medium underline" href={shopContact.telHref}>
+                    {shopContact.shopPhone}
+                  </a>
+                </>
+              )}
+              {shopContact.shopPhone && shopContact.shopEmail && ' • '}
+              {shopContact.shopEmail && (
+                <>
+                  Email:{' '}
+                  <a
+                    className="text-amber-700 hover:text-amber-800 font-medium underline"
+                    href={`mailto:${shopContact.shopEmail}`}
+                  >
+                    {shopContact.shopEmail}
+                  </a>
+                </>
+              )}
+            </p>
+          ) : null}
+          <p>
+            <Link to="/login" className="text-amber-700 hover:text-amber-800 font-medium">
+              Staff login
+            </Link>
+          </p>
         </div>
       </div>
     </div>

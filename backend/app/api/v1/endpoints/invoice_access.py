@@ -40,11 +40,14 @@ from app.services.invoice_access_service import (
     PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
     generate_portal_enrollment_token,
 )
+from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.payment_number_service import allocate_next_payment_number
 
 router = APIRouter()
 logger = get_logger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+GUEST_INVOICE_PAYMENT_NOTE = "Payment made by guest invoice flow."
 
 
 class TokenRequest(BaseModel):
@@ -91,6 +94,7 @@ class ConfirmGuestPaymentResponse(BaseModel):
     paid_at: Optional[datetime] = None
     portal_enrollment_token: Optional[str] = None
     portal_enrollment_expires_in: Optional[int] = None
+    payment_note: Optional[str] = None
 
 
 class CreatePortalRequest(BaseModel):
@@ -430,7 +434,7 @@ async def confirm_guest_payment(
     db: AsyncSession = Depends(get_db),
 ):
     payload = await _get_invoice_payload_for_confirm_or_400(body.token)
-    invoice, order, customer, _ = await _load_invoice_context(db, payload["invoice_id"])
+    invoice, order, customer, vehicle = await _load_invoice_context(db, payload["invoice_id"])
 
     _validate_invoice_link_subject(payload, invoice, order)
 
@@ -467,6 +471,7 @@ async def confirm_guest_payment(
             paid_at=invoice.paid_at,
             portal_enrollment_token=portal_enrollment_token,
             portal_enrollment_expires_in=portal_enrollment_expires_in,
+            payment_note=existing_payment.notes or GUEST_INVOICE_PAYMENT_NOTE,
         )
 
     if invoice.status == InvoiceStatus.PAID:
@@ -512,6 +517,7 @@ async def confirm_guest_payment(
         method=PaymentMethodEnum.STRIPE,
         status=PaymentStatus.COMPLETED,
         stripe_payment_intent_id=body.payment_intent_id,
+        notes=GUEST_INVOICE_PAYMENT_NOTE,
     )
     db.add(payment)
 
@@ -558,6 +564,23 @@ async def confirm_guest_payment(
     )
 
     record_payment(status="success", payment_method="stripe", tenant_id=str(invoice.tenant_id))
+
+    try:
+        await send_invoice_payment_confirmation_email(
+            db=db,
+            invoice=invoice,
+            order=order,
+            customer=customer,
+            tenant=tenant,
+            vehicle=vehicle,
+        )
+    except Exception as exc:
+        logger.warning(
+            "invoice_paid_confirmation_email_failed",
+            invoice_id=str(invoice.id),
+            error=str(exc),
+        )
+
     return ConfirmGuestPaymentResponse(
         status="success",
         message="Payment confirmed",
@@ -565,6 +588,7 @@ async def confirm_guest_payment(
         paid_at=invoice.paid_at,
         portal_enrollment_token=portal_enrollment_token,
         portal_enrollment_expires_in=portal_enrollment_expires_in,
+        payment_note=GUEST_INVOICE_PAYMENT_NOTE,
     )
 
 

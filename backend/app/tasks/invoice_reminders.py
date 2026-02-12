@@ -135,6 +135,9 @@ async def _process_invoice_reminders(tenant_id: str = None):
                     invoice=invoice,
                     order=repair_order,
                     customer=customer,
+                    shop_name=tenant.name if tenant else None,
+                    shop_phone=tenant.phone if tenant else None,
+                    shop_email=tenant.email if tenant else None,
                 )
                 
                 if reminder_num == 1:
