@@ -65,11 +65,35 @@ Features identified from competitor analysis (Fullbay, Easy Truck Shop), with im
 
 ### 2-Way Texting
 
-| Feature | Description | Competitor | Complexity | Value | Dependencies |
-|---------|-------------|------------|------------|-------|--------------|
-| Receive Customer Texts | Inbound SMS handling with webhook | Fullbay | Medium | High | Twilio webhooks |
-| Text Thread View | Conversation history UI per customer | Fullbay | Medium | High | Message storage |
-| Conversation Dashboard | Manage all customer text conversations in one place | Fullbay | Medium | Medium | Above features |
+| Feature | Description | Competitor | Complexity | Value | Status |
+|---------|-------------|------------|------------|-------|--------|
+| Receive Customer Texts | Inbound SMS handling with Twilio signature validation and idempotency | Fullbay | Medium | High | **Implemented (v1)** |
+| Text Thread View | Staff thread UI with cursor pagination and real-time updates | Fullbay | Medium | High | **Implemented (v1)** |
+| Conversation Dashboard | Shared staff inbox with reply + new outbound compose flow | Fullbay | Medium | Medium | **Implemented (v1)** |
+| Opt-out Compliance | STOP/START handling, persisted customer opt-out flags, pre-send enforcement | Fullbay | Medium | High | **Implemented (v1)** |
+| Delivery Tracking | Twilio status callback mapped to explicit delivery states | Fullbay | Medium | Medium | **Implemented (v1)** |
+
+**Implemented in v1 (Feb 2026):**
+- New persistence layer for `message_threads` and `sms_messages` with Twilio SID uniqueness for webhook idempotency.
+- Per-tenant SMS number support (`tenant.sms_phone_number`, `tenant.sms_phone_sid`, `tenant.sms_enabled`) with Super Admin provisioning endpoint.
+- Public Twilio webhook endpoints:
+  `POST /api/v1/webhooks/twilio/sms/inbound`
+  `POST /api/v1/webhooks/twilio/sms/status`
+- Staff messaging endpoints:
+  `GET /api/v1/messages/threads`
+  `GET /api/v1/messages/threads/{thread_id}/messages`
+  `POST /api/v1/messages/send`
+  `POST /api/v1/messages/threads/new`
+- `POST /messages/send` rate limit at tenant scope (`30/min`) to reduce accidental spam.
+- Customer consent fields added:
+  `sms_opt_out`, `sms_opted_out_at`, `sms_opt_out_source`.
+- Automated customer-facing SMS now flows into thread history (`source=automated`) for unified timeline visibility.
+
+**Still in backlog (future enhancements):**
+- MMS/media attachments and image/video rendering in threads.
+- Assignment/ownership and SLA workflow per conversation.
+- AI triage/intent routing and canned automation playbooks.
+- Customer portal two-way chat surface (currently staff inbox only).
 
 ### Customer Portal Enhancements
 
@@ -130,6 +154,7 @@ These features were identified from competitor analysis and have been built:
 - Declined quote status and dashboard alerts
 - Customer portal with quote approval/decline
 - Walk-in customer flow with account linking
+- Two-way SMS shared inbox (Twilio-backed) with compliance controls and delivery tracking
 
 ### Payment Options (Feb 2026)
 - **Cash payments** - Staff can mark invoices as paid with cash
