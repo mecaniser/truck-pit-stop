@@ -134,19 +134,19 @@ export default function RepairOrdersPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
   const [showZelleQrModal, setShowZelleQrModal] = useState(false)
   const [zelleModalMode, setZelleModalMode] = useState<ZelleModalMode>('collect')
-  const [showAmountBreakdown, setShowAmountBreakdown] = useState(false)
   const [zelleSenderEmail, setZelleSenderEmail] = useState('')
   const [zelleSenderPhone, setZelleSenderPhone] = useState('')
   const [captureZelleSender, setCaptureZelleSender] = useState(false)
+  const [showAmountBreakdown, setShowAmountBreakdown] = useState(false)
 
   const openZellePaymentModal = (mode: ZelleModalMode = 'collect') => {
     setShowInvoicePaymentOptions(false)
     setSelectedPaymentMethod('zelle')
     setZelleModalMode(mode)
-    setShowAmountBreakdown(false)
     setCaptureZelleSender(mode === 'collect' ? isSelectedOrderWalkIn : false)
     setZelleSenderEmail('')
     setZelleSenderPhone('')
+    setShowAmountBreakdown(false)
     setShowZelleQrModal(true)
   }
 
@@ -3104,8 +3104,8 @@ export default function RepairOrdersPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowZelleQrModal(false)
                     setShowAmountBreakdown(false)
+                    setShowZelleQrModal(false)
                   }}
                   className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
                 >
