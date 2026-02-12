@@ -9,10 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from pydantic import BaseModel
+from twilio.base.exceptions import TwilioRestException
+from twilio.rest import Client
+
+from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
+from app.core.redis import get_redis
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -22,6 +27,21 @@ from app.schemas.tenant import TenantCreate, TenantUpdate, TenantResponse, Tenan
 from app.services import error_service
 
 router = APIRouter()
+twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+SMS_PROVISION_COOLDOWN_SECONDS = 15
+
+
+class ProvisionSMSNumberRequest(BaseModel):
+    area_code: Optional[int] = None
+    country_code: str = "US"
+    replace_existing: bool = False
+
+
+class ProvisionSMSNumberResponse(BaseModel):
+    tenant_id: UUID
+    phone_number: str
+    phone_sid: str
+    sms_enabled: bool
 
 
 def require_super_admin():
@@ -34,6 +54,15 @@ def require_super_admin():
             )
         return current_user
     return role_checker
+
+
+async def _release_sms_provision_cooldown(cooldown_key: str) -> None:
+    try:
+        redis = await get_redis()
+        await redis.delete(cooldown_key)
+    except Exception:
+        # Best effort only; don't fail request path on cooldown cleanup.
+        pass
 
 
 @router.get("/tenants", response_model=List[TenantWithOwnerResponse])
@@ -278,6 +307,102 @@ async def update_tenant(
     await db.refresh(tenant)
     
     return TenantResponse.model_validate(tenant)
+
+
+@router.post("/tenants/{tenant_id}/provision-sms-number", response_model=ProvisionSMSNumberResponse)
+async def provision_tenant_sms_number(
+    tenant_id: UUID,
+    body: ProvisionSMSNumberRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """Purchase and assign a Twilio number for tenant SMS."""
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    if tenant.sms_phone_sid and not body.replace_existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant already has a provisioned SMS number",
+        )
+
+    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Twilio account credentials are not configured",
+        )
+
+    cooldown_key = f"sms_provision_cooldown:{tenant_id}"
+    try:
+        redis = await get_redis()
+        acquired = await redis.set(cooldown_key, "1", ex=SMS_PROVISION_COOLDOWN_SECONDS, nx=True)
+        if not acquired:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=(
+                    "Provisioning SMS is temporarily rate-limited for this garage. "
+                    f"Please wait {SMS_PROVISION_COOLDOWN_SECONDS} seconds and try again."
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        # Fail open when Redis is unavailable; keep endpoint operational.
+        pass
+
+    try:
+        country_code = (body.country_code or "US").upper()
+        search_params = {"sms_enabled": True, "limit": 20}
+        if body.area_code and country_code == "US":
+            search_params["area_code"] = body.area_code
+
+        available_numbers = twilio_client.available_phone_numbers(country_code).local.list(**search_params)
+        if not available_numbers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No available Twilio phone numbers found for the requested filters",
+            )
+
+        selected = available_numbers[0]
+        purchased = twilio_client.incoming_phone_numbers.create(phone_number=selected.phone_number)
+
+        base_url = settings.PUBLIC_API_BASE_URL.rstrip("/")
+        sms_url = f"{base_url}/api/v1/webhooks/twilio/sms/inbound"
+        status_callback = f"{base_url}/api/v1/webhooks/twilio/sms/status"
+        twilio_client.incoming_phone_numbers(purchased.sid).update(
+            sms_url=sms_url,
+            sms_method="POST",
+            status_callback=status_callback,
+            status_callback_method="POST",
+        )
+
+        tenant.sms_phone_number = purchased.phone_number
+        tenant.sms_phone_sid = purchased.sid
+        tenant.sms_enabled = True
+        await db.commit()
+        await db.refresh(tenant)
+
+    except HTTPException:
+        await _release_sms_provision_cooldown(cooldown_key)
+        raise
+    except TwilioRestException as exc:
+        await _release_sms_provision_cooldown(cooldown_key)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Twilio provisioning failed: {exc.msg}",
+        )
+    except Exception:
+        await _release_sms_provision_cooldown(cooldown_key)
+        raise
+
+    return ProvisionSMSNumberResponse(
+        tenant_id=tenant.id,
+        phone_number=tenant.sms_phone_number or "",
+        phone_sid=tenant.sms_phone_sid or "",
+        sms_enabled=tenant.sms_enabled,
+    )
 
 
 @router.delete("/tenants/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar, MessageSquare, Loader2, X } from 'lucide-react'
 import api from '../../lib/api'
+import toast from 'react-hot-toast'
 import { GlassNoirCard, GlassNoirButton, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
+import { formatUSPhone } from '../../utils/phone'
 
 interface Tenant {
   id: string
@@ -17,6 +19,9 @@ interface Tenant {
   owner_phone: string | null
   stripe_account_id: string | null
   stripe_onboarding_complete: boolean
+  sms_phone_number: string | null
+  sms_phone_sid: string | null
+  sms_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -24,16 +29,38 @@ interface Tenant {
 export default function GaragesPage() {
   const [garages, setGarages] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showActiveOnly, setShowActiveOnly] = useState(false)
+  const [smsDetailsOpenByGarageId, setSmsDetailsOpenByGarageId] = useState<Record<string, boolean>>({})
+  const [smsModalGarage, setSmsModalGarage] = useState<Tenant | null>(null)
+  const [smsAreaCode, setSmsAreaCode] = useState('')
+  const [replaceConfirmation, setReplaceConfirmation] = useState(false)
+  const [smsProvisioning, setSmsProvisioning] = useState(false)
+  const [smsProvisionError, setSmsProvisionError] = useState<string | null>(null)
+  const [smsStateUpdatingGarageId, setSmsStateUpdatingGarageId] = useState<string | null>(null)
+  const isFirstLoadRef = useRef(true)
+  const smsModalRef = useRef<HTMLDivElement | null>(null)
+  const areaCodeInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
-    fetchGarages()
+    fetchGarages(isFirstLoadRef.current ? 'initial' : 'refresh')
+    isFirstLoadRef.current = false
   }, [showActiveOnly])
 
-  const fetchGarages = async () => {
+  useEffect(() => {
+    if (!smsModalGarage) return
+    areaCodeInputRef.current?.focus()
+  }, [smsModalGarage])
+
+  const fetchGarages = async (mode: 'initial' | 'refresh' = 'initial') => {
     try {
-      setLoading(true)
+      if (mode === 'initial') {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
+      setError(null)
       const params = showActiveOnly ? { active_only: true } : {}
       const response = await api.get('/admin/tenants', { params })
       setGarages(response.data)
@@ -41,7 +68,11 @@ export default function GaragesPage() {
       setError(err.response?.data?.detail || 'Failed to load garages')
       console.error(err)
     } finally {
-      setLoading(false)
+      if (mode === 'initial') {
+        setLoading(false)
+      } else {
+        setRefreshing(false)
+      }
     }
   }
 
@@ -51,6 +82,134 @@ export default function GaragesPage() {
       month: 'short',
       day: 'numeric',
     })
+  }
+
+  const hasProvisionedSMSNumber = (garage: Tenant) => Boolean(garage.sms_phone_number || garage.sms_phone_sid)
+
+  const formatSMSPhoneNumber = (phone: string | null) => {
+    if (!phone) return null
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length === 11 && digits.startsWith('1')) {
+      return `+1 ${formatUSPhone(digits.slice(1))}`
+    }
+    if (digits.length === 10) {
+      return formatUSPhone(digits)
+    }
+    return phone
+  }
+
+  const openSMSProvisionModal = (garage: Tenant) => {
+    setSmsModalGarage(garage)
+    setSmsAreaCode('')
+    setReplaceConfirmation(false)
+    setSmsProvisionError(null)
+  }
+
+  const closeSMSProvisionModal = (force = false) => {
+    if (smsProvisioning && !force) return
+    setSmsModalGarage(null)
+    setSmsAreaCode('')
+    setReplaceConfirmation(false)
+    setSmsProvisionError(null)
+  }
+
+  const handleSMSModalKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeSMSProvisionModal()
+      return
+    }
+
+    if (e.key !== 'Tab' || !smsModalRef.current) return
+
+    const focusable = smsModalRef.current.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+
+    if (!focusable.length) return
+
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement
+
+    if (e.shiftKey && active === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
+
+  const handleSetSMSEnabled = async (garage: Tenant, enabled: boolean) => {
+    if (smsStateUpdatingGarageId) return
+
+    if (!enabled) {
+      const confirmed = window.confirm(`Disable SMS for ${garage.name}? You can enable it again later.`)
+      if (!confirmed) return
+    }
+
+    try {
+      setSmsStateUpdatingGarageId(garage.id)
+      await api.put(`/admin/tenants/${garage.id}`, { sms_enabled: enabled })
+      toast.success(enabled ? `Enabled SMS for ${garage.name}` : `Disabled SMS for ${garage.name}`)
+      await fetchGarages('refresh')
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || `Failed to ${enabled ? 'enable' : 'disable'} SMS`)
+      console.error(err)
+    } finally {
+      setSmsStateUpdatingGarageId(null)
+    }
+  }
+
+  const handleProvisionSMSNumber = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!smsModalGarage) return
+
+    const trimmedAreaCode = smsAreaCode.trim()
+    let areaCode: number | undefined
+    if (trimmedAreaCode) {
+      if (!/^\d{3}$/.test(trimmedAreaCode)) {
+        setSmsProvisionError('Area code must be exactly 3 digits (US only).')
+        return
+      }
+      areaCode = Number.parseInt(trimmedAreaCode, 10)
+    }
+
+    const replacingExistingNumber = Boolean(smsModalGarage.sms_phone_sid)
+    if (replacingExistingNumber && !replaceConfirmation) {
+      setSmsProvisionError('Please confirm that you want to replace the existing SMS number.')
+      return
+    }
+
+    try {
+      setSmsProvisioning(true)
+      setSmsProvisionError(null)
+
+      const payload: { area_code?: number; replace_existing: boolean; country_code: string } = {
+        replace_existing: replacingExistingNumber,
+        country_code: 'US',
+      }
+      if (areaCode) {
+        payload.area_code = areaCode
+      }
+
+      await api.post(`/admin/tenants/${smsModalGarage.id}/provision-sms-number`, payload)
+
+      toast.success(
+        replacingExistingNumber
+          ? `Replaced SMS number for ${smsModalGarage.name}`
+          : `Provisioned SMS number for ${smsModalGarage.name}`
+      )
+
+      closeSMSProvisionModal(true)
+      await fetchGarages('refresh')
+    } catch (err: any) {
+      setSmsProvisionError(err.response?.data?.detail || 'Failed to provision SMS number')
+      console.error(err)
+    } finally {
+      setSmsProvisioning(false)
+    }
   }
 
   if (loading) {
@@ -85,6 +244,10 @@ export default function GaragesPage() {
           <span className="text-gray-400">Stripe</span>
           <span className="font-bold text-gold-400">{garages.filter(g => g.stripe_onboarding_complete).length}</span>
         </div>
+        <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+          <span className="text-gray-400">SMS</span>
+          <span className="font-bold text-blue-400">{garages.filter(g => g.sms_enabled).length}</span>
+        </div>
         <label className="flex items-center gap-2 cursor-pointer bg-white/5 border border-white/10 rounded-lg px-3 py-2 hover:bg-white/10 transition-colors">
           <input
             type="checkbox"
@@ -94,9 +257,17 @@ export default function GaragesPage() {
           />
           <span className="text-gray-300 whitespace-nowrap">Active only</span>
         </label>
-        <GlassNoirButton onClick={() => alert('Create garage feature coming soon!')} className="ml-auto whitespace-nowrap" size="sm">
-          + New Garage
-        </GlassNoirButton>
+        <div className="ml-auto flex items-center gap-2">
+          {refreshing && (
+            <span className="inline-flex items-center gap-2 text-xs text-gold-300 bg-gold-500/10 border border-gold-500/20 rounded-lg px-3 py-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Refreshing...
+            </span>
+          )}
+          <GlassNoirButton onClick={() => alert('Create garage feature coming soon!')} className="whitespace-nowrap" size="sm">
+            + New Garage
+          </GlassNoirButton>
+        </div>
       </div>
 
       {/* Garages List */}
@@ -140,6 +311,11 @@ export default function GaragesPage() {
                       <span className="whitespace-nowrap">Stripe ✓</span>
                     </GlassNoirBadge>
                   )}
+                  {garage.sms_enabled && (
+                    <GlassNoirBadge variant="info">
+                      <span className="whitespace-nowrap">SMS ✓</span>
+                    </GlassNoirBadge>
+                  )}
                 </div>
               </div>
 
@@ -167,6 +343,31 @@ export default function GaragesPage() {
                       </a>
                     </div>
                   )}
+                  <div className="flex items-start gap-2 text-xs sm:text-sm">
+                    <MessageSquare className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <div className={garage.sms_enabled ? 'text-green-400' : hasProvisionedSMSNumber(garage) ? 'text-amber-400' : 'text-gray-400'}>
+                        SMS {garage.sms_enabled ? 'Enabled' : hasProvisionedSMSNumber(garage) ? 'Disabled' : 'Not provisioned'}
+                      </div>
+                      {garage.sms_phone_number && (
+                        <div className="text-gray-300">{formatSMSPhoneNumber(garage.sms_phone_number)}</div>
+                      )}
+                      {garage.sms_phone_sid && (
+                        <button
+                          type="button"
+                          onClick={() => setSmsDetailsOpenByGarageId(prev => ({ ...prev, [garage.id]: !prev[garage.id] }))}
+                          className="mt-1 text-[11px] text-gold-400 hover:text-gold-300"
+                        >
+                          {smsDetailsOpenByGarageId[garage.id] ? 'Hide details' : 'Show details'}
+                        </button>
+                      )}
+                      {garage.sms_phone_sid && smsDetailsOpenByGarageId[garage.id] && (
+                        <div className="text-[11px] text-gray-500 font-mono break-all mt-1">
+                          Twilio SID: {garage.sms_phone_sid}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Owner Info */}
@@ -214,6 +415,41 @@ export default function GaragesPage() {
                 >
                   View Analytics
                 </a>
+                <GlassNoirButton
+                  variant={hasProvisionedSMSNumber(garage) ? 'ghost' : 'secondary'}
+                  size="sm"
+                  disabled={Boolean(smsStateUpdatingGarageId)}
+                  onClick={() => openSMSProvisionModal(garage)}
+                >
+                  {hasProvisionedSMSNumber(garage) ? 'Replace SMS Number' : 'Provision SMS Number'}
+                </GlassNoirButton>
+                {hasProvisionedSMSNumber(garage) && !garage.sms_enabled && (
+                  <GlassNoirButton
+                    variant="secondary"
+                    size="sm"
+                    disabled={Boolean(smsStateUpdatingGarageId)}
+                    onClick={() => handleSetSMSEnabled(garage, true)}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {smsStateUpdatingGarageId === garage.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Enable SMS
+                    </span>
+                  </GlassNoirButton>
+                )}
+                {garage.sms_enabled && (
+                  <GlassNoirButton
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-400 hover:bg-red-500/10"
+                    disabled={Boolean(smsStateUpdatingGarageId)}
+                    onClick={() => handleSetSMSEnabled(garage, false)}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {smsStateUpdatingGarageId === garage.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Disable SMS
+                    </span>
+                  </GlassNoirButton>
+                )}
                 {!garage.is_active && (
                   <GlassNoirButton
                     variant="secondary"
@@ -229,6 +465,130 @@ export default function GaragesPage() {
           ))
         )}
       </div>
+
+      {smsModalGarage && (
+        <div
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onKeyDown={handleSMSModalKeyDown}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sms-modal-title"
+          tabIndex={-1}
+        >
+          <div ref={smsModalRef} className="bg-noir-800 rounded-xl border border-gold-500/20 w-full max-w-lg shadow-2xl shadow-gold-500/10">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gold-500/20">
+              <div>
+                <h2 id="sms-modal-title" className="text-lg font-semibold text-white">
+                  {smsModalGarage.sms_phone_sid ? 'Replace SMS Number' : 'Provision SMS Number'}
+                </h2>
+                <p className="text-sm text-gray-400">{smsModalGarage.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => closeSMSProvisionModal()}
+                disabled={smsProvisioning}
+                className="p-2 rounded-lg hover:bg-gold-500/10 text-gray-400 hover:text-gold-400 transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleProvisionSMSNumber} className="px-6 py-5 space-y-4">
+              {smsModalGarage.sms_phone_number && (
+                <div className="rounded-lg border border-gold-500/20 bg-black/30 p-3">
+                  <p className="text-xs text-gold-400/80 uppercase tracking-wide">Current Number</p>
+                  <p className="text-sm text-white mt-1">{formatSMSPhoneNumber(smsModalGarage.sms_phone_number)}</p>
+                </div>
+              )}
+
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                <p className="text-sm text-amber-200">
+                  This will purchase a new phone number from Twilio. Standard Twilio rates apply.
+                </p>
+              </div>
+
+              {smsModalGarage.sms_phone_sid && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                  <p className="text-xs text-red-300">
+                    Replacing SMS will purchase another number and keep the old one unless it is released separately.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="areaCode" className="block text-sm text-gray-300 mb-1">
+                  Area Code (optional)
+                </label>
+                <input
+                  ref={areaCodeInputRef}
+                  id="areaCode"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]{3}"
+                  maxLength={3}
+                  value={smsAreaCode}
+                  onChange={(e) => {
+                    setSmsAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))
+                    if (smsProvisionError) setSmsProvisionError(null)
+                  }}
+                  placeholder="e.g. 305"
+                  className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Applies to US numbers only. Leave blank for any available US number.</p>
+              </div>
+
+              {smsModalGarage.sms_phone_sid && (
+                <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={replaceConfirmation}
+                    onChange={(e) => {
+                      setReplaceConfirmation(e.target.checked)
+                      if (smsProvisionError) setSmsProvisionError(null)
+                    }}
+                    className="mt-0.5 w-4 h-4 rounded border-gold-500/50 bg-black/40 text-gold-500 focus:ring-gold-500 focus:ring-offset-0"
+                  />
+                  <span>
+                    I confirm this will replace the current SMS number for this garage.
+                  </span>
+                </label>
+              )}
+
+              {smsProvisionError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                  {smsProvisionError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <GlassNoirButton
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => closeSMSProvisionModal()}
+                  disabled={smsProvisioning}
+                >
+                  Cancel
+                </GlassNoirButton>
+                <GlassNoirButton type="submit" size="sm" disabled={smsProvisioning}>
+                  <span className="inline-flex items-center gap-2">
+                    {smsProvisioning ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Provisioning...
+                      </>
+                    ) : smsModalGarage.sms_phone_sid ? (
+                      'Replace SMS Number'
+                    ) : (
+                      'Provision SMS Number'
+                    )}
+                  </span>
+                </GlassNoirButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
