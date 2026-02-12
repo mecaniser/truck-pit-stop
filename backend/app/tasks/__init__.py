@@ -14,16 +14,24 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Explicitly import task modules so decorators register on worker/beat boot.
+    imports=(
+        "app.tasks.notifications",
+        "app.tasks.invoice_reminders",
+        "app.tasks.pending_zelle_reminders",
+    ),
     # Beat schedule for periodic tasks
     beat_schedule={
         "process-invoice-reminders-daily": {
             "task": "process_invoice_reminders",
             "schedule": crontab(hour=9, minute=0),  # Run daily at 9 AM UTC
         },
+        "process-pending-zelle-reminders-hourly": {
+            "task": "process_pending_zelle_reminders",
+            "schedule": crontab(minute=15),  # Run hourly at :15 UTC
+        },
     },
 )
 
 # Import tasks to register them
 celery_app.autodiscover_tasks(["app.tasks"])
-
-

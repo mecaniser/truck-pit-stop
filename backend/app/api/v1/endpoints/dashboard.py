@@ -13,7 +13,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.invoice import Invoice
+from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentStatus
 from app.services.pricing import get_order_labor_total, get_order_subtotal
 
@@ -33,6 +33,7 @@ class RecentOrder(BaseModel):
     id: str
     order_number: str
     status: str
+    pending_zelle_confirmation: bool = False
     description: Optional[str]
     customer_name: str
     vehicle_info: str
@@ -241,7 +242,7 @@ async def get_dashboard_stats(
     # --- Work Queue Lanes ---
     Mechanic = aliased(User)
 
-    def _build_order(order, customer, vehicle, mechanic=None):
+    def _build_order(order, customer, vehicle, mechanic=None, pending_zelle_confirmation: bool = False):
         mech_name = None
         if mechanic and mechanic.first_name:
             mech_name = f"{mechanic.first_name} {mechanic.last_name}"
@@ -249,6 +250,7 @@ async def get_dashboard_stats(
             id=str(order.id),
             order_number=order.order_number,
             status=order.status.value if hasattr(order.status, "value") else order.status,
+            pending_zelle_confirmation=pending_zelle_confirmation,
             description=order.description,
             customer_name=f"{customer.first_name} {customer.last_name}",
             vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
@@ -321,7 +323,33 @@ async def get_dashboard_stats(
         .order_by(RepairOrder.updated_at.desc())
         .limit(10)
     )
-    orders_ready_to_close = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
+    ready_rows = result.all()
+    ready_order_ids = [o.id for o, _, _, _ in ready_rows]
+    pending_zelle_map: Dict = {}
+    if ready_order_ids:
+        pending_result = await db.execute(
+            select(Invoice.repair_order_id, Invoice.status, Invoice.zelle_pending_submitted_at).where(
+                and_(
+                    Invoice.tenant_id == tenant_id,
+                    Invoice.repair_order_id.in_(ready_order_ids),
+                )
+            )
+        )
+        pending_zelle_map = {
+            repair_order_id: bool(zelle_pending_submitted_at and status != InvoiceStatus.PAID)
+            for repair_order_id, status, zelle_pending_submitted_at in pending_result.all()
+        }
+
+    orders_ready_to_close = [
+        _build_order(
+            o,
+            c,
+            v,
+            m,
+            pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
+        )
+        for o, c, v, m in ready_rows
+    ]
 
     # Mechanic-specific stats
     my_assigned_orders = 0

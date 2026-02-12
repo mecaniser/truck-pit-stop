@@ -5,7 +5,7 @@ from uuid import UUID
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Response, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,7 @@ from app.core.redis import (
     get_token_version,
 )
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
+from app.core.phone import normalize_phone
 from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
 from app.core.password_policy import validate_password
 from app.db.models.customer import Customer
@@ -41,6 +42,7 @@ from app.services.invoice_access_service import (
     generate_portal_enrollment_token,
 )
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
+from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.payment_number_service import allocate_next_payment_number
 
 router = APIRouter()
@@ -71,6 +73,10 @@ class ResolveInvoiceLinkResponse(BaseModel):
     due_date: Optional[datetime] = None
     paid_at: Optional[datetime] = None
     is_paid: bool = False
+    pending_zelle_confirmation: bool = False
+    zelle_email: Optional[str] = None
+    zelle_phone: Optional[str] = None
+    zelle_qr_image: Optional[str] = None
     has_portal_account: bool = False
     requires_password_setup: bool = True
 
@@ -108,6 +114,19 @@ class CreatePortalResponse(BaseModel):
     token_type: str = "bearer"
     redirect_to: str
     user_exists: bool
+
+
+class SubmitGuestZellePaymentRequest(BaseModel):
+    token: str
+    sender_email: Optional[EmailStr] = None
+    sender_phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SubmitGuestZellePaymentResponse(BaseModel):
+    status: str
+    message: str
+    pending_zelle_confirmation: bool = True
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -296,6 +315,8 @@ async def resolve_invoice_link(
 ):
     payload = await _get_active_invoice_payload_or_400(body.token)
     invoice, order, customer, vehicle = await _load_invoice_context(db, payload["invoice_id"])
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
 
     # Safety check against tampering/inconsistent payload
     _validate_invoice_link_subject(payload, invoice, order)
@@ -321,8 +342,92 @@ async def resolve_invoice_link(
         due_date=invoice.due_date,
         paid_at=invoice.paid_at,
         is_paid=invoice.status == InvoiceStatus.PAID,
+        pending_zelle_confirmation=invoice.pending_zelle_confirmation,
+        zelle_email=tenant.zelle_email if tenant else None,
+        zelle_phone=tenant.zelle_phone if tenant else None,
+        zelle_qr_image=tenant.zelle_qr_image if tenant else None,
         has_portal_account=existing_user is not None,
         requires_password_setup=existing_user is None,
+    )
+
+
+@router.post("/submit-zelle", response_model=SubmitGuestZellePaymentResponse)
+@limiter.limit("5/minute")
+async def submit_guest_zelle_payment(
+    request: Request,
+    body: SubmitGuestZellePaymentRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    payload = await _get_active_invoice_payload_or_400(body.token)
+    invoice, order, customer, _ = await _load_invoice_context(db, payload["invoice_id"])
+
+    _validate_invoice_link_subject(payload, invoice, order)
+
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid.")
+
+    was_pending = invoice.pending_zelle_confirmation
+    sender_email = str(body.sender_email).strip().lower() if body.sender_email else None
+    sender_phone = normalize_phone(body.sender_phone)
+    notes = body.notes.strip() if body.notes else None
+
+    invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    invoice.zelle_pending_sender_email = sender_email
+    invoice.zelle_pending_sender_phone = sender_phone
+    invoice.zelle_pending_last_reminder_at = None
+    invoice.zelle_pending_reminder_count = 0
+    if notes:
+        existing_notes = (invoice.notes or "").strip()
+        note_line = f"[Customer Zelle submit] {notes}"
+        invoice.notes = f"{existing_notes}\n{note_line}".strip() if existing_notes else note_line
+
+    await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(invoice.repair_order)
+
+    if not was_pending:
+        customer_name = f"{customer.first_name} {customer.last_name}".strip() if customer else "Customer"
+        try:
+            await send_pending_zelle_submission_alert(
+                db=db,
+                tenant_id=invoice.tenant_id,
+                order_id=invoice.repair_order.id,
+                order_number=invoice.repair_order.order_number,
+                invoice_number=invoice.invoice_number,
+                customer_name=customer_name,
+                amount=invoice.total_amount,
+                source_label="guest invoice link",
+                sender_email=sender_email,
+                sender_phone=sender_phone,
+            )
+        except Exception as exc:
+            logger.warning(
+                "pending_zelle_submission_alert_failed",
+                invoice_id=str(invoice.id),
+                source="guest_invoice_access",
+                error=str(exc),
+            )
+
+    await broadcast_repair_order_update(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        order_id=str(invoice.repair_order_id),
+        order_number=invoice.repair_order.order_number,
+        status=invoice.repair_order.status.value,
+        updated_at=invoice.repair_order.updated_at.isoformat() if invoice.repair_order.updated_at else None,
+    )
+
+    logger.info(
+        "guest_zelle_submitted",
+        invoice_id=str(invoice.id),
+        order_id=str(order.id),
+        customer_id=str(customer.id),
+    )
+
+    return SubmitGuestZellePaymentResponse(
+        status="success",
+        message="Zelle payment marked as submitted. Garage staff will confirm receipt.",
+        pending_zelle_confirmation=invoice.pending_zelle_confirmation,
     )
 
 
@@ -504,6 +609,11 @@ async def confirm_guest_payment(
     if payment_intent.metadata.get("invoice_id") != str(invoice.id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment intent mismatch.")
 
+    invoice.zelle_pending_submitted_at = None
+    invoice.zelle_pending_sender_email = None
+    invoice.zelle_pending_sender_phone = None
+    invoice.zelle_pending_last_reminder_at = None
+    invoice.zelle_pending_reminder_count = 0
     invoice.status = InvoiceStatus.PAID
     invoice.paid_at = datetime.now(timezone.utc)
     order.status = RepairOrderStatus.PAID

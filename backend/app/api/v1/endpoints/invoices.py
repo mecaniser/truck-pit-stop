@@ -53,6 +53,12 @@ class InvoiceResponse(BaseModel):
     due_date: Optional[datetime]
     paid_at: Optional[datetime]
     notes: Optional[str]
+    pending_zelle_confirmation: bool = False
+    zelle_pending_submitted_at: Optional[datetime] = None
+    zelle_pending_sender_email: Optional[str] = None
+    zelle_pending_sender_phone: Optional[str] = None
+    zelle_pending_last_reminder_at: Optional[datetime] = None
+    zelle_pending_reminder_count: int = 0
     last_reminder_sent_at: Optional[datetime] = None
     reminder_count: int = 0
     created_at: datetime

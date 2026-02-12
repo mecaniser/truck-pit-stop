@@ -97,6 +97,7 @@ class RepairOrderResponse(RepairOrderBase):
     work_started_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
+    pending_zelle_confirmation: bool = False
 
     class Config:
         from_attributes = True
@@ -111,4 +112,3 @@ class QuickRepairOrderCreate(BaseModel):
     phone: Optional[str] = None
     vehicle_description: Optional[str] = None
     complaint: Optional[str] = None
-

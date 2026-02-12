@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -22,8 +22,18 @@ import NotificationBanner from '../../components/NotificationBanner'
 interface NewCustomerForm {
   first_name: string
   last_name: string
+  company_name: string
   email: string
   phone: string
+  no_vehicle?: boolean
+}
+
+interface CreateCustomerPayload {
+  first_name: string
+  last_name: string
+  company_name?: string | null
+  email: string
+  phone?: string | null
   no_vehicle?: boolean
 }
 
@@ -42,6 +52,27 @@ type ApiErrorLike = {
       detail?: string
     }
   }
+}
+
+type ZelleModalMode = 'collect' | 'confirm_pending'
+
+type ManualPaymentResponse = {
+  status: string
+  message: string
+  warning?: string | null
+}
+
+const isWalkInPlaceholderCustomer = (customer?: Customer | null): boolean => {
+  if (!customer) return false
+  const email = (customer.email || '').toLowerCase()
+  const firstName = (customer.first_name || '').toLowerCase()
+  const source = (customer.source || '').toLowerCase()
+  return firstName === 'walk-in' || email.includes('@placeholder.truckpitstop.com') || source === 'walk_in'
+}
+
+const truncateWithEllipsis = (value: string, maxLength = 36): string => {
+  if (value.length <= maxLength) return value
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`
 }
 
 export default function RepairOrdersPage() {
@@ -71,6 +102,7 @@ export default function RepairOrdersPage() {
   const [newCustomer, setNewCustomer] = useState<NewCustomerForm>({
     first_name: '',
     last_name: '',
+    company_name: '',
     email: '',
     phone: '',
   })
@@ -101,6 +133,22 @@ export default function RepairOrdersPage() {
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
   const [showZelleQrModal, setShowZelleQrModal] = useState(false)
+  const [zelleModalMode, setZelleModalMode] = useState<ZelleModalMode>('collect')
+  const [showAmountBreakdown, setShowAmountBreakdown] = useState(false)
+  const [zelleSenderEmail, setZelleSenderEmail] = useState('')
+  const [zelleSenderPhone, setZelleSenderPhone] = useState('')
+  const [captureZelleSender, setCaptureZelleSender] = useState(false)
+
+  const openZellePaymentModal = (mode: ZelleModalMode = 'collect') => {
+    setShowInvoicePaymentOptions(false)
+    setSelectedPaymentMethod('zelle')
+    setZelleModalMode(mode)
+    setShowAmountBreakdown(false)
+    setCaptureZelleSender(mode === 'collect' ? isSelectedOrderWalkIn : false)
+    setZelleSenderEmail('')
+    setZelleSenderPhone('')
+    setShowZelleQrModal(true)
+  }
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -203,7 +251,7 @@ export default function RepairOrdersPage() {
     enabled: !!(selectedOrder?.id && isDetailOpen),
   })
 
-  const { data: invoiceForOrder } = useQuery<{ id: string; invoice_number: string; total_amount: string; due_date: string | null } | null>({
+  const { data: invoiceForOrder } = useQuery<Invoice | null>({
     queryKey: ['invoice-for-order', selectedOrder?.id],
     queryFn: async () => {
       const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`)
@@ -264,6 +312,21 @@ export default function RepairOrdersPage() {
     return map
   }, [mechanics])
 
+  const selectedOrderCustomer = selectedOrder ? customerLookup.get(selectedOrder.customer_id) : undefined
+  const selectedOrderVehicle = selectedOrder ? vehicleLookup.get(selectedOrder.vehicle_id) : undefined
+  const isSelectedOrderWalkIn = isWalkInPlaceholderCustomer(selectedOrderCustomer)
+  const paymentCustomerName = selectedOrderCustomer
+    ? `${selectedOrderCustomer.first_name} ${selectedOrderCustomer.last_name}`
+    : 'Unknown customer'
+  const paymentCompanyName = selectedOrderCustomer?.company_name || 'No company on file'
+  const paymentCompanyNameShort = truncateWithEllipsis(paymentCompanyName, 34)
+  const paymentTruckUnit = selectedOrderVehicle?.unit_number || 'No unit number'
+  const paymentVehicleLabel = selectedOrderVehicle
+    ? [selectedOrderVehicle.year, selectedOrderVehicle.make, selectedOrderVehicle.model]
+        .filter(Boolean)
+        .join(' ')
+    : 'Vehicle info unavailable'
+
   const parseServiceNotes = (notes?: string | null) => {
     if (!notes) return null
     try {
@@ -282,8 +345,18 @@ export default function RepairOrdersPage() {
     return typeof detail === 'string' && detail.trim() ? detail : fallback
   }
 
+  const parseMoney = (value: string | number | null | undefined): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+    const parsed = Number(value ?? 0)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  const formatMoney = (value: string | number | null | undefined): string => {
+    return `$${parseMoney(value).toFixed(2)}`
+  }
+
   const createCustomerMutation = useMutation({
-    mutationFn: async (payload: NewCustomerForm) => {
+    mutationFn: async (payload: CreateCustomerPayload) => {
       const response = await api.post('/customers', payload)
       return response.data as Customer
     },
@@ -362,13 +435,13 @@ export default function RepairOrdersPage() {
   })
 
   const assignMechanicMutation = useMutation({
-    mutationFn: async ({ orderId, mechanicId, orderStatus }: { orderId: string; mechanicId: string; orderStatus?: string }) => {
-      // Use dedicated assign-mechanic endpoint for approved orders (sends email notification)
-      if (orderStatus === 'approved' && mechanicId) {
+    mutationFn: async ({ orderId, mechanicId, orderStatus: _orderStatus }: { orderId: string; mechanicId: string; orderStatus?: string }) => {
+      // Use dedicated endpoint for all assignment/reassignment actions so mechanic notifications are sent.
+      if (mechanicId) {
         const response = await api.post(`/repair-orders/${orderId}/assign-mechanic`, { mechanic_id: mechanicId })
         return response.data as RepairOrder
       }
-      // Fallback to generic update for other cases
+      // Fallback to generic update only for unassigning.
       const response = await api.put(`/repair-orders/${orderId}`, { assigned_mechanic_id: mechanicId || null })
       return response.data as RepairOrder
     },
@@ -377,9 +450,7 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
-      // Show different message for first assignment vs reassignment
-      const wasApproved = variables.orderStatus === 'approved'
-      toast.success(wasApproved ? 'Mechanic assigned - Customer notified' : 'Mechanic reassigned')
+      toast.success(variables.mechanicId ? 'Mechanic assigned and notified' : 'Mechanic unassigned')
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to assign mechanic'))
@@ -431,27 +502,70 @@ export default function RepairOrdersPage() {
   })
 
   const recordManualPaymentMutation = useMutation({
-    mutationFn: async ({ invoiceId, method, notes }: { invoiceId: string; method: string; notes?: string }) => {
+    mutationFn: async ({
+      invoiceId,
+      method,
+      notes,
+      zelleSenderEmail,
+      zelleSenderPhone,
+      updateCustomerFromSender,
+    }: {
+      invoiceId: string
+      method: string
+      notes?: string
+      zelleSenderEmail?: string
+      zelleSenderPhone?: string
+      updateCustomerFromSender?: boolean
+    }) => {
       const response = await api.post('/payments/record-manual', { 
         invoice_id: invoiceId,
         method,
         notes,
+        zelle_sender_email: zelleSenderEmail || null,
+        zelle_sender_phone: zelleSenderPhone || null,
+        update_customer_from_sender: !!updateCustomerFromSender,
       })
-      return response.data
+      return response.data as ManualPaymentResponse
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
       if (selectedOrder?.id) {
         queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
         setSelectedOrder(prev => prev ? { ...prev, status: 'paid' } : null)
       }
       setShowInvoicePaymentOptions(false)
       setSelectedPaymentMethod('')
+      setShowZelleQrModal(false)
+      setZelleSenderEmail('')
+      setZelleSenderPhone('')
+      setCaptureZelleSender(false)
       toast.success('Payment recorded successfully')
+      if (data?.warning) {
+        toast(data.warning, { icon: '⚠️' })
+      }
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to record payment'))
+    },
+  })
+
+  const clearPendingZelleMutation = useMutation({
+    mutationFn: async ({ invoiceId }: { invoiceId: string }) => {
+      const response = await api.post('/payments/zelle-pending/revert', {
+        invoice_id: invoiceId,
+      })
+      return response.data as { status: string; message: string }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-for-order', selectedOrder?.id] })
+      toast.success(data.message || 'Pending Zelle status cleared')
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to clear pending Zelle status'))
     },
   })
 
@@ -634,7 +748,11 @@ export default function RepairOrdersPage() {
 
     // Filter by status
     if (statusFilter !== 'all') {
-      filtered = filtered.filter((order) => order.status === statusFilter)
+      if (statusFilter === 'pending_zelle') {
+        filtered = filtered.filter((order) => !!order.pending_zelle_confirmation)
+      } else {
+        filtered = filtered.filter((order) => order.status === statusFilter)
+      }
     }
 
     // Filter by search query
@@ -673,6 +791,7 @@ export default function RepairOrdersPage() {
 
   const statusOptions = [
     { value: 'all', label: 'All' },
+    { value: 'pending_zelle', label: 'Pending Zelle' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'quoted', label: 'Quoted' },
     { value: 'declined', label: 'Declined' },
@@ -688,7 +807,7 @@ export default function RepairOrdersPage() {
     setDescription('')
     setServiceSearch('')
     setSelectedServiceIds([])
-    setNewCustomer({ first_name: '', last_name: '', email: '', phone: '' })
+    setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
     setNewVehicle({ make: '', model: '', year: '', vin: '', license_plate: '', mileage: '' })
   }
 
@@ -739,6 +858,7 @@ export default function RepairOrdersPage() {
         const createdCustomer = await createCustomerMutation.mutateAsync({
           first_name: newCustomer.first_name.trim(),
           last_name: newCustomer.last_name.trim(),
+          company_name: newCustomer.company_name.trim() || null,
           email: newCustomer.email.trim(),
           phone: newCustomer.phone.trim(),
           // Customer is created before vehicle in this flow.
@@ -931,10 +1051,17 @@ export default function RepairOrdersPage() {
                 <tbody className="divide-y divide-white/10">
                   {filteredOrders?.map((order) => {
                     const isAwaitingApproval = order.status === 'quoted' && order.quote_sent
+                    const isPendingZelle = !!order.pending_zelle_confirmation && order.status !== 'paid'
                     const statusStyle = isAwaitingApproval 
                       ? { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' }
-                      : getStatusStyle(order.status)
-                    const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : order.status.replace('_', ' ')
+                      : isPendingZelle
+                        ? { bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' }
+                        : getStatusStyle(order.status)
+                    const displayStatus = isAwaitingApproval
+                      ? 'Awaiting Approval'
+                      : isPendingZelle
+                        ? 'Pending Zelle'
+                        : order.status.replace('_', ' ')
                     const parsedServices = parseServiceNotes(order.internal_notes)
                     const serviceTotal = parsedServices?.reduce(
                       (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
@@ -997,10 +1124,17 @@ export default function RepairOrdersPage() {
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredOrders?.map((order) => {
                 const isAwaitingApproval = order.status === 'quoted' && order.quote_sent
+                const isPendingZelle = !!order.pending_zelle_confirmation && order.status !== 'paid'
                 const statusStyle = isAwaitingApproval 
                   ? { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' }
-                  : getStatusStyle(order.status)
-                const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : order.status.replace('_', ' ')
+                  : isPendingZelle
+                    ? { bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' }
+                    : getStatusStyle(order.status)
+                const displayStatus = isAwaitingApproval
+                  ? 'Awaiting Approval'
+                  : isPendingZelle
+                    ? 'Pending Zelle'
+                    : order.status.replace('_', ' ')
                 const parsedServices = parseServiceNotes(order.internal_notes)
                 const serviceTotal = parsedServices?.reduce(
                   (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
@@ -1273,13 +1407,23 @@ export default function RepairOrdersPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name / Company</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                         <input
                           name="last_name"
                           value={newCustomer.last_name}
                           onChange={(e) => setNewCustomer((prev) => ({ ...prev, last_name: e.target.value }))}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          placeholder="Logistics"
+                          placeholder="Doe"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                        <input
+                          name="company_name"
+                          value={newCustomer.company_name}
+                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, company_name: e.target.value }))}
+                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          placeholder="Acme Logistics"
                         />
                       </div>
                       <div>
@@ -1998,6 +2142,32 @@ export default function RepairOrdersPage() {
                         Due: {format(new Date(invoiceForOrder.due_date), 'MMM d, yyyy')}
                       </p>
                     )}
+
+                    {invoiceForOrder.pending_zelle_confirmation && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                        <p className="text-sm font-medium text-yellow-900">Pending Zelle confirmation</p>
+                        <p className="text-xs text-yellow-800 mt-1">
+                          Customer marked this invoice as paid via Zelle. Confirm receipt or clear pending status.
+                        </p>
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            type="button"
+                            onClick={() => openZellePaymentModal('confirm_pending')}
+                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-md transition-colors"
+                          >
+                            Confirm Payment
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => clearPendingZelleMutation.mutate({ invoiceId: invoiceForOrder.id })}
+                            disabled={clearPendingZelleMutation.isPending}
+                            className="px-3 py-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-900 text-xs font-medium rounded-md transition-colors disabled:opacity-60"
+                          >
+                            {clearPendingZelleMutation.isPending ? 'Clearing...' : 'Clear Pending'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     
                     {!showResendInvoice && !showInvoicePaymentOptions ? (
                       <div className="space-y-2">
@@ -2051,7 +2221,7 @@ export default function RepairOrdersPage() {
                               onClick={() => {
                                 setSelectedPaymentMethod(method.value)
                                 if (method.value === 'zelle') {
-                                  setShowZelleQrModal(true)
+                                  openZellePaymentModal()
                                 }
                               }}
                               className={`py-2 px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 text-sm font-medium ${
@@ -2086,7 +2256,7 @@ export default function RepairOrdersPage() {
                                 })
                               }
                             }}
-                            disabled={!selectedPaymentMethod || recordManualPaymentMutation.isPending}
+                            disabled={!selectedPaymentMethod || selectedPaymentMethod === 'zelle' || recordManualPaymentMutation.isPending}
                             className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {recordManualPaymentMutation.isPending ? (
@@ -2095,7 +2265,7 @@ export default function RepairOrdersPage() {
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                               </svg>
                             ) : (
-                              'Mark as Paid'
+                              selectedPaymentMethod === 'zelle' ? 'Use Zelle Modal' : 'Mark as Paid'
                             )}
                           </button>
                         </div>
@@ -2745,55 +2915,198 @@ export default function RepairOrdersPage() {
       {showZelleQrModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
-            <div className="p-6">
+              <div className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
                   <span className="text-xl">📱</span>
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Zelle Payment</h3>
-                  <p className="text-sm text-gray-500">Show QR code to customer</p>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {zelleModalMode === 'confirm_pending' ? 'Confirm Zelle Payment' : 'Zelle Payment'}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    {zelleModalMode === 'confirm_pending'
+                      ? 'Customer already submitted payment from the portal'
+                      : 'Show QR code to customer'}
+                  </p>
                 </div>
               </div>
 
-              {/* QR Code Display */}
-              <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                {zelleSettings?.zelle_qr_image ? (
-                  <div className="flex flex-col items-center">
-                    <img
-                      src={zelleSettings.zelle_qr_image}
-                      alt="Zelle QR Code"
-                      className="w-48 h-48 object-contain bg-white rounded-lg border"
-                    />
-                    <p className="text-sm text-gray-600 mt-3 text-center">
-                      Customer scans this QR code with their Zelle app
+              {zelleModalMode === 'collect' ? (
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  {zelleSettings?.zelle_qr_image ? (
+                    <div className="flex flex-col items-center">
+                      <img
+                        src={zelleSettings.zelle_qr_image}
+                        alt="Zelle QR Code"
+                        className="w-48 h-48 object-contain bg-white rounded-lg border"
+                      />
+                      <p className="text-sm text-gray-600 mt-3 text-center">
+                        Customer scans this QR code with their Zelle app
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-gray-500 text-sm">
+                        No Zelle QR code uploaded.
+                      </p>
+                      <p className="text-gray-400 text-xs mt-1">
+                        Upload in Garage Settings → Zelle Payments
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 space-y-2">
+                  <p className="text-sm text-blue-900 font-medium">
+                    Customer marked this invoice as paid through the customer portal.
+                  </p>
+                  {invoiceForOrder?.zelle_pending_submitted_at && (
+                    <p className="text-xs text-blue-800">
+                      Submitted:{' '}
+                      {format(new Date(invoiceForOrder.zelle_pending_submitted_at), 'MMM d, yyyy h:mm a')}
                     </p>
-                  </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <p className="text-gray-500 text-sm">
-                      No Zelle QR code uploaded.
+                  )}
+                  {invoiceForOrder?.zelle_pending_sender_email && (
+                    <p className="text-xs text-blue-800">
+                      Sender email: {invoiceForOrder.zelle_pending_sender_email}
                     </p>
-                    <p className="text-gray-400 text-xs mt-1">
-                      Upload in Garage Settings → Zelle Payments
+                  )}
+                  {invoiceForOrder?.zelle_pending_sender_phone && (
+                    <p className="text-xs text-blue-800">
+                      Sender phone: {invoiceForOrder.zelle_pending_sender_phone}
                     </p>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Amount Display */}
               {invoiceForOrder && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                  <p className="text-sm text-green-800 text-center">
-                    Amount due: <span className="font-bold">${parseFloat(invoiceForOrder.total_amount).toFixed(2)}</span>
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-green-800">
+                      Amount due: <span className="font-bold">{formatMoney(invoiceForOrder.total_amount)}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAmountBreakdown((prev) => !prev)}
+                      className="text-xs font-medium text-green-800 hover:text-green-900 underline"
+                    >
+                      {showAmountBreakdown ? 'Hide breakdown' : 'Show breakdown'}
+                    </button>
+                  </div>
+                  {showAmountBreakdown && (
+                    <div className="mt-3 pt-3 border-t border-green-200 space-y-1 text-xs text-green-900">
+                      <div className="flex items-center justify-between">
+                        <span>Subtotal</span>
+                        <span>{formatMoney(invoiceForOrder.subtotal)}</span>
+                      </div>
+                      {parseMoney(invoiceForOrder.shop_supplies_amount) > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Shop supplies</span>
+                          <span>{formatMoney(invoiceForOrder.shop_supplies_amount)}</span>
+                        </div>
+                      )}
+                      {parseMoney(invoiceForOrder.service_fee_amount) > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Service fee</span>
+                          <span>{formatMoney(invoiceForOrder.service_fee_amount)}</span>
+                        </div>
+                      )}
+                      {parseMoney(invoiceForOrder.tax_amount) > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Tax</span>
+                          <span>{formatMoney(invoiceForOrder.tax_amount)}</span>
+                        </div>
+                      )}
+                      {parseMoney(invoiceForOrder.discount_amount) > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span>Discount</span>
+                          <span>-{formatMoney(invoiceForOrder.discount_amount)}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between pt-2 border-t border-green-200 font-semibold">
+                        <span>Total</span>
+                        <span>{formatMoney(invoiceForOrder.total_amount)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {zelleModalMode === 'collect' && isSelectedOrderWalkIn ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 space-y-3">
+                  <label className="flex items-start gap-2 text-sm text-amber-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={captureZelleSender}
+                      onChange={(e) => setCaptureZelleSender(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Capture sender info and update customer profile
+                      <span className="font-medium"> (recommended for walk-in customers)</span>
+                    </span>
+                  </label>
+
+                  {captureZelleSender && (
+                    <div className="space-y-2">
+                      <input
+                        type="email"
+                        value={zelleSenderEmail}
+                        onChange={(e) => setZelleSenderEmail(e.target.value)}
+                        placeholder="Sender Zelle email (optional)"
+                        className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      />
+                      <input
+                        type="tel"
+                        value={zelleSenderPhone}
+                        onChange={(e) => setZelleSenderPhone(formatUSPhone(e.target.value))}
+                        placeholder="Sender Zelle phone (optional)"
+                        className="w-full px-3 py-2 border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                      />
+                      <p className="text-xs text-amber-700">
+                        Enter what you received from the bank notification to enrich walk-in customer records.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 mb-4">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Payment For</p>
+                    {invoiceForOrder?.invoice_number && (
+                      <span className="text-[11px] font-semibold text-slate-700 bg-slate-200 px-2 py-1 rounded-md">
+                        {invoiceForOrder.invoice_number}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Customer</p>
+                      <p className="text-sm font-semibold text-slate-900 truncate">{paymentCustomerName}</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                      <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-1.5">Company / Truck Unit</p>
+                      <p
+                        className="text-sm font-semibold text-slate-900 truncate"
+                        title={`${paymentCompanyName} \u00b7 Unit: ${paymentTruckUnit}`}
+                      >
+                        {paymentCompanyNameShort} &middot; Unit: {paymentTruckUnit}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500 truncate">Vehicle: {paymentVehicleLabel}</p>
                 </div>
               )}
 
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowZelleQrModal(false)}
+                  onClick={() => {
+                    setShowZelleQrModal(false)
+                    setShowAmountBreakdown(false)
+                  }}
                   className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
                 >
                   Close
@@ -2806,13 +3119,20 @@ export default function RepairOrdersPage() {
                       recordManualPaymentMutation.mutate({
                         invoiceId: invoiceForOrder.id,
                         method: 'zelle',
+                        zelleSenderEmail: zelleSenderEmail,
+                        zelleSenderPhone: zelleSenderPhone,
+                        updateCustomerFromSender: captureZelleSender,
                       })
                     }
                   }}
                   disabled={recordManualPaymentMutation.isPending}
                   className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
                 >
-                  {recordManualPaymentMutation.isPending ? 'Recording...' : 'Payment Received'}
+                  {recordManualPaymentMutation.isPending
+                    ? 'Recording...'
+                    : zelleModalMode === 'confirm_pending'
+                      ? 'Confirm Received'
+                      : 'Payment Received'}
                 </button>
               </div>
             </div>

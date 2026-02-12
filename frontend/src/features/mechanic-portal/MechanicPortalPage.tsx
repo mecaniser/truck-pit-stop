@@ -42,6 +42,7 @@ interface MechanicJob {
   vehicle_info: string
   description: string | null
   services_count: number
+  created_at: string
   updated_at: string
   work_started_at: string | null
 }
@@ -458,6 +459,12 @@ export default function MechanicPortalPage() {
   }
 
   const isPending = acceptAndStartMutation.isPending || completeWorkMutation.isPending
+  const formatCreatedAt = (createdAt?: string | null) => {
+    if (!createdAt) return 'Unknown'
+    const parsed = new Date(createdAt)
+    if (Number.isNaN(parsed.getTime())) return 'Unknown'
+    return format(parsed, 'MMM d, yyyy h:mm a')
+  }
 
   // Bottom Navigation Component - defined here so it's available in all views
   const BottomNav = () => {
@@ -534,6 +541,7 @@ export default function MechanicPortalPage() {
                   {jobDetail.vehicle_license_plate && (
                     <p className="text-gray-400 text-sm">{jobDetail.vehicle_license_plate}</p>
                   )}
+                  <p className="text-gray-500 text-xs mt-1">Created {formatCreatedAt(jobDetail.created_at)}</p>
                 </div>
               </div>
             </div>
@@ -1605,6 +1613,7 @@ export default function MechanicPortalPage() {
                           <p className="text-sm text-gray-400">
                             {job.services_count} service{job.services_count !== 1 ? 's' : ''} · {job.order_number}
                           </p>
+                          <p className="text-xs text-gray-500 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -1637,6 +1646,7 @@ export default function MechanicPortalPage() {
                               {detail.vehicle_license_plate && (
                                 <p className="text-xs text-gray-500">{detail.vehicle_license_plate}</p>
                               )}
+                              <p className="text-xs text-gray-500 mt-0.5">Created {formatCreatedAt(detail.created_at)}</p>
                             </div>
                           </div>
                           
@@ -1799,6 +1809,7 @@ export default function MechanicPortalPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-white font-medium truncate">{job.vehicle_info}</p>
                       <p className="text-xs text-gray-500">{job.order_number}</p>
+                      <p className="text-xs text-gray-600 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
                     </div>
                     <span className="text-xs text-orange-400 bg-orange-500/20 px-2 py-1 rounded-full shrink-0">
                       Pending Review

@@ -14,6 +14,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 interface CustomerFormData {
   first_name: string
   last_name: string
+  company_name: string
   email: string
   phone: string
   billing_address_line1: string
@@ -64,6 +65,7 @@ const emptyVehicleForm: VehicleFormData = {
 const emptyForm: CustomerFormData = {
   first_name: '',
   last_name: '',
+  company_name: '',
   email: '',
   phone: '',
   billing_address_line1: '',
@@ -299,6 +301,7 @@ export default function CustomersPage() {
       const payload: Record<string, any> = {
         first_name: data.first_name,
         last_name: data.last_name,
+        company_name: data.company_name || null,
         email: data.email,
         phone: data.phone || null,
         billing_address_line1: data.billing_address_line1 || null,
@@ -502,6 +505,7 @@ export default function CustomersPage() {
       ...emptyForm,
       first_name: customer.first_name,
       last_name: customer.last_name,
+      company_name: customer.company_name || '',
       email: customer.email,
       phone: customer.phone || '',
       billing_address_line1: customer.billing_address_line1 || '',
@@ -680,6 +684,7 @@ export default function CustomersPage() {
       const payload = {
         first_name: formData.first_name,
         last_name: formData.last_name,
+        company_name: formData.company_name || null,
         email: formData.email,
         phone: formData.phone || null,
         billing_address_line1: formData.billing_address_line1 || null,
@@ -778,6 +783,14 @@ export default function CustomersPage() {
     }
   }
 
+  const formatCustomerSource = (source?: string | null) => {
+    if (!source) return null
+    if (source === 'walk_in') return 'Walk-in'
+    if (source === 'zelle') return 'Zelle'
+    if (source === 'portal') return 'Portal'
+    return source.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  }
+
   const vehicleCount = customerVehicles?.length || 0
 
   const repairOrderStats = useMemo(() => {
@@ -823,6 +836,19 @@ export default function CustomersPage() {
 
       {/* Contact Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Company Name
+          </label>
+          <input
+            type="text"
+            name="company_name"
+            value={formData.company_name}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="Acme Logistics"
+          />
+        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Email <span className="text-red-500">*</span>
@@ -1434,11 +1460,13 @@ export default function CustomersPage() {
     if (!customers || !searchQuery.trim()) return customers
 
     const query = searchQuery.toLowerCase().trim()
+    const phoneQuery = query.replace(/\D/g, '')
     
     return customers.filter((customer) => {
-      const nameMatch = `${customer.first_name} ${customer.last_name}`.toLowerCase().includes(query)
+      const nameMatch = `${customer.first_name} ${customer.last_name} ${customer.company_name || ''}`.toLowerCase().includes(query)
       const emailMatch = customer.email?.toLowerCase().includes(query)
-      const phoneMatch = customer.phone?.toLowerCase().includes(query)
+      const customerPhone = (customer.phone || '').replace(/\D/g, '')
+      const phoneMatch = phoneQuery.length > 0 ? customerPhone.includes(phoneQuery) : false
 
       switch (searchType) {
         case 'name':
@@ -1919,6 +1947,30 @@ export default function CustomersPage() {
                   <div>
                     <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact Information</h3>
                     <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                      {selectedCustomer.source && (
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <span className="text-indigo-700 font-semibold text-xs">SRC</span>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Source</p>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                              {formatCustomerSource(selectedCustomer.source)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      {selectedCustomer.company_name && (
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                            <span className="text-blue-700 font-semibold text-xs">CO</span>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Company</p>
+                            <p className="text-gray-900 font-medium">{selectedCustomer.company_name}</p>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
                           <Mail className="w-5 h-5 text-amber-600" />

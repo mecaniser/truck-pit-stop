@@ -53,6 +53,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
         conditions = [
             Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.OVERDUE]),
             Invoice.due_date <= today,
+            Invoice.zelle_pending_submitted_at.is_(None),
         ]
         
         # Add tenant filter if specified (for manual triggers by garage owners)

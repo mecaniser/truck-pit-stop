@@ -41,6 +41,13 @@ class Invoice(BaseModel):
     due_date = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+
+    # Pending Zelle confirmation tracking (customer marked as sent, staff must confirm receipt)
+    zelle_pending_submitted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    zelle_pending_sender_email = Column(String(255), nullable=True)
+    zelle_pending_sender_phone = Column(String(20), nullable=True)
+    zelle_pending_last_reminder_at = Column(DateTime(timezone=True), nullable=True)
+    zelle_pending_reminder_count = Column(Integer, default=0, nullable=False)
     
     # Reminder tracking for overdue invoices
     last_reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
@@ -48,4 +55,6 @@ class Invoice(BaseModel):
     
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan")
 
-
+    @property
+    def pending_zelle_confirmation(self) -> bool:
+        return self.status != InvoiceStatus.PAID and self.zelle_pending_submitted_at is not None

@@ -33,6 +33,7 @@ interface RecentOrder {
   id: string
   order_number: string
   status: string
+  pending_zelle_confirmation?: boolean
   description: string | null
   customer_name: string
   vehicle_info: string
@@ -98,6 +99,7 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
   pending_review: 'bg-orange-100 text-orange-700',
   completed: 'bg-green-100 text-green-700',
   invoiced: 'bg-purple-100 text-purple-700',
+  pending_zelle: 'bg-amber-100 text-amber-800',
   paid: 'bg-emerald-100 text-emerald-700',
   cancelled: 'bg-red-100 text-red-700',
 }
@@ -137,6 +139,9 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
   const elapsed = useElapsedTime(
     order.status === 'in_progress' ? order.work_started_at : null,
   )
+  const isPendingZelle = order.status === 'invoiced' && !!order.pending_zelle_confirmation
+  const statusKey = isPendingZelle ? 'pending_zelle' : order.status
+  const statusLabel = isPendingZelle ? 'awaiting zelle' : order.status.replace(/_/g, ' ')
 
   return (
     <button
@@ -148,9 +153,9 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
           <div className="flex items-center gap-2">
             <span className="font-medium text-white text-sm">{order.order_number}</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}
+              className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[statusKey] || 'bg-gray-100 text-gray-700'}`}
             >
-              {order.status.replace(/_/g, ' ')}
+              {statusLabel}
             </span>
             {elapsed && (
               <span className="text-xs font-mono" style={{ color: accentColor }}>{elapsed}</span>

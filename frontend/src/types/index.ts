@@ -32,6 +32,7 @@ export interface Customer {
   tenant_id: string
   first_name: string
   last_name: string
+  company_name: string | null
   email: string
   phone: string | null
   billing_address_line1: string | null
@@ -41,6 +42,7 @@ export interface Customer {
   billing_zip: string | null
   billing_country: string
   notes: string | null
+  source?: string | null
   auto_approval_threshold: string | null
   created_at: string
   updated_at: string
@@ -126,6 +128,7 @@ export interface RepairOrder {
   created_at: string
   updated_at: string
   quote_sent?: boolean | null
+  pending_zelle_confirmation?: boolean
 }
 
 export interface RepairOrderDetail extends RepairOrder {
@@ -256,6 +259,12 @@ export interface Invoice {
   due_date: string | null
   paid_at: string | null
   notes: string | null
+  pending_zelle_confirmation?: boolean
+  zelle_pending_submitted_at?: string | null
+  zelle_pending_sender_email?: string | null
+  zelle_pending_sender_phone?: string | null
+  zelle_pending_last_reminder_at?: string | null
+  zelle_pending_reminder_count?: number
   created_at: string
   updated_at: string
 }

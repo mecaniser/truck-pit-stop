@@ -226,6 +226,7 @@ class MechanicJobSummary(BaseModel):
     vehicle_info: str
     description: Optional[str] = None
     services_count: int = 0
+    created_at: datetime
     updated_at: datetime
     work_started_at: Optional[datetime] = None
 
@@ -496,6 +497,7 @@ async def get_my_jobs(
             vehicle_info=vehicle_info,
             description=order.description,
             services_count=services_count,
+            created_at=order.created_at,
             updated_at=order.updated_at,
             work_started_at=getattr(order, 'work_started_at', None),
         ))

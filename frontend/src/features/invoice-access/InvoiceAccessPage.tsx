@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { CreditCard, Lock, FileText, UserPlus } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
@@ -11,6 +11,7 @@ import api from '../../lib/api'
 import { getStripeForAccount } from '../../lib/stripe'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import { useAuthStore } from '../../stores/authStore'
+import { formatUSPhone } from '@/utils/phone'
 
 interface InvoiceAccessResolve {
   invoice_id: string
@@ -29,6 +30,10 @@ interface InvoiceAccessResolve {
   due_date: string | null
   paid_at: string | null
   is_paid: boolean
+  pending_zelle_confirmation: boolean
+  zelle_email: string | null
+  zelle_phone: string | null
+  zelle_qr_image: string | null
   has_portal_account: boolean
   requires_password_setup: boolean
 }
@@ -54,6 +59,12 @@ interface CreatePortalResponse {
   token_type: string
   redirect_to: string
   user_exists: boolean
+}
+
+interface SubmitGuestZellePaymentResponse {
+  status: string
+  message: string
+  pending_zelle_confirmation: boolean
 }
 
 const getErrorDetail = (error: unknown, fallback: string): string => {
@@ -225,11 +236,15 @@ export default function InvoiceAccessPage() {
   const { token } = useParams<{ token: string }>()
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { login } = useAuthStore()
   const [password, setPassword] = useState('')
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
   const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
   const [showPayment, setShowPayment] = useState(false)
+  const [zelleSenderEmail, setZelleSenderEmail] = useState('')
+  const [zelleSenderPhone, setZelleSenderPhone] = useState('')
+  const [zelleNotes, setZelleNotes] = useState('')
   const [paymentResult, setPaymentResult] = useState<{
     paidAt: string | null
     portalEnrollmentToken: string | null
@@ -308,6 +323,26 @@ export default function InvoiceAccessPage() {
     },
     onError: (err: unknown) => {
       toast.error(getErrorDetail(err, 'Unable to open portal'))
+    },
+  })
+
+  const submitZelleMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/invoice-access/submit-zelle', {
+        token,
+        sender_email: zelleSenderEmail.trim() || null,
+        sender_phone: zelleSenderPhone.trim() || null,
+        notes: zelleNotes.trim() || null,
+      })
+      return response.data as SubmitGuestZellePaymentResponse
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Zelle payment submitted')
+      queryClient.invalidateQueries({ queryKey: ['invoice-access', token] })
+      setZelleNotes('')
+    },
+    onError: (err: unknown) => {
+      toast.error(getErrorDetail(err, 'Unable to submit Zelle payment'))
     },
   })
 
@@ -490,6 +525,65 @@ export default function InvoiceAccessPage() {
             </section>
           ) : (
             <div className="space-y-6">
+              <section className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <h3 className="font-semibold text-blue-900 mb-2">Pay with Zelle</h3>
+                <p className="text-sm text-blue-800 mb-3">
+                  Send exactly <strong>{formatMoney(invoice.amount_due)}</strong> via Zelle and include invoice{' '}
+                  <strong>#{invoice.invoice_number}</strong> in the memo.
+                </p>
+                {(invoice.zelle_email || invoice.zelle_phone) && (
+                  <p className="text-sm text-blue-900 mb-3">
+                    {invoice.zelle_email ? `Zelle Email: ${invoice.zelle_email}` : ''}
+                    {invoice.zelle_email && invoice.zelle_phone ? ' • ' : ''}
+                    {invoice.zelle_phone ? `Zelle Phone: ${invoice.zelle_phone}` : ''}
+                  </p>
+                )}
+                {invoice.zelle_qr_image && (
+                  <div className="bg-white border border-blue-100 rounded-lg p-3 mb-3 flex justify-center">
+                    <img src={invoice.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
+                  </div>
+                )}
+                {invoice.pending_zelle_confirmation ? (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-900 text-sm">
+                    Payment is marked as submitted via Zelle and is pending staff confirmation.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="email"
+                      value={zelleSenderEmail}
+                      onChange={(e) => setZelleSenderEmail(e.target.value)}
+                      placeholder="Your Zelle sender email (optional)"
+                      className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm"
+                    />
+                    <input
+                      type="tel"
+                      value={zelleSenderPhone}
+                      onChange={(e) => setZelleSenderPhone(formatUSPhone(e.target.value))}
+                      placeholder="Your Zelle sender phone (optional)"
+                      className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm"
+                    />
+                    <textarea
+                      value={zelleNotes}
+                      onChange={(e) => setZelleNotes(e.target.value)}
+                      rows={2}
+                      placeholder="Optional note for garage staff"
+                      className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm resize-none"
+                    />
+                    <button
+                      onClick={() => submitZelleMutation.mutate()}
+                      disabled={submitZelleMutation.isPending}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+                    >
+                      {submitZelleMutation.isPending ? 'Submitting...' : 'I Sent Payment via Zelle'}
+                    </button>
+                    <p className="text-xs text-blue-700">
+                      Staff will confirm receipt. If unconfirmed, they receive reminders at 24h and 48h.
+                    </p>
+                  </div>
+                )}
+              </section>
+
               {invoice.has_portal_account ? (
                 <>
                   <section className="bg-amber-50 border border-amber-200 rounded-xl p-4">

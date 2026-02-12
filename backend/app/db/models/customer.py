@@ -12,6 +12,7 @@ class Customer(BaseModel):
     
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
+    company_name = Column(String(255), nullable=True, index=True)
     email = Column(String(255), nullable=False, index=True)
     phone = Column(String(20), nullable=True)
     
@@ -23,6 +24,7 @@ class Customer(BaseModel):
     billing_country = Column(String(100), nullable=True, default="USA")
     
     notes = Column(Text, nullable=True)
+    source = Column(String(50), nullable=True, index=True)  # e.g. zelle, walk_in, portal
     
     # Auto-approve quotes at or below this amount (None = disabled)
     auto_approval_threshold = Column(Numeric(10, 2), nullable=True, default=None)
@@ -32,5 +34,3 @@ class Customer(BaseModel):
     
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     repair_orders = relationship("RepairOrder", back_populates="customer")
-
-

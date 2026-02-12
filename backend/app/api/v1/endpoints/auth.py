@@ -23,6 +23,7 @@ from app.core.redis import (
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.metrics import record_login, record_logout
+from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -116,6 +117,7 @@ async def register(
     # Check if there's an existing Customer record with this email or phone
     # This links the new User account to the Customer created by staff (including walk-ins)
     existing_customer = None
+    normalized_phone = normalize_phone(user_data.phone)
     
     # First try email match (scoped to target tenant if specified)
     if target_tenant_id:
@@ -130,8 +132,7 @@ async def register(
     
     # If no email match and phone provided, try phone match (for walk-ins with placeholder emails)
     # MUST be scoped to target tenant to avoid cross-tenant linking
-    if not existing_customer and user_data.phone and target_tenant_id:
-        normalized_phone = user_data.phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if not existing_customer and normalized_phone and target_tenant_id:
         result = await db.execute(
             select(Customer).where(
                 and_(Customer.phone == normalized_phone, Customer.tenant_id == target_tenant_id)
@@ -161,7 +162,7 @@ async def register(
         hashed_password=get_password_hash(user_data.password),
         first_name=user_data.first_name,
         last_name=user_data.last_name,
-        phone=user_data.phone,
+        phone=normalized_phone,
         role=UserRole.CUSTOMER,
         tenant_id=tenant_id,
         customer_id=customer_id,
@@ -472,6 +473,8 @@ async def update_current_user(
     
     # Remove password from update data
     data.pop('password', None)
+    if 'phone' in data:
+        data['phone'] = normalize_phone(data['phone'])
     
     # If only email was being changed (no other fields to update), return early
     if email_verification_pending and not any(k in data for k in ['first_name', 'last_name', 'phone']):

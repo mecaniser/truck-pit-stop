@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
@@ -71,6 +72,10 @@ async def create_customer(
     
     # Extract customer fields only (exclude vehicle data)
     customer_fields = customer_data.model_dump(exclude={'initial_vehicle', 'no_vehicle'})
+    customer_fields["phone"] = normalize_phone(customer_fields.get("phone"))
+    if "company_name" in customer_fields:
+        company = (customer_fields.get("company_name") or "").strip()
+        customer_fields["company_name"] = company or None
     customer = Customer(
         tenant_id=current_user.tenant_id,
         **customer_fields,
@@ -199,6 +204,11 @@ async def update_customer(
     
     # Update fields
     update_data = customer_data.model_dump(exclude_unset=True)
+    if "phone" in update_data:
+        update_data["phone"] = normalize_phone(update_data["phone"])
+    if "company_name" in update_data:
+        company = (update_data.get("company_name") or "").strip()
+        update_data["company_name"] = company or None
     for field, value in update_data.items():
         setattr(customer, field, value)
     

@@ -1,11 +1,11 @@
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from decimal import Decimal
 import stripe
 from app.core.config import settings
@@ -13,6 +13,8 @@ from app.core.dependencies import get_db, get_current_active_user
 from app.core.logging import get_logger
 from app.core.metrics import record_payment, record_payment_error
 from app.core.pagination import paginated_or_list
+from app.core.rate_limit import limiter
+from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -21,6 +23,7 @@ from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, P
 from app.db.models.tenant import Tenant
 from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
+from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.payment_number_service import allocate_next_payment_number
 
 logger = get_logger(__name__)
@@ -69,12 +72,61 @@ class ManualPaymentRequest(BaseModel):
     invoice_id: UUID
     method: str  # 'cash', 'zelle', 'check', 'ach', 'other'
     notes: Optional[str] = None
+    zelle_sender_email: Optional[EmailStr] = None
+    zelle_sender_phone: Optional[str] = None
+    update_customer_from_sender: bool = False
 
 
 class ZelleInfoResponse(BaseModel):
     zelle_email: Optional[str] = None
     zelle_phone: Optional[str] = None
+    zelle_qr_image: Optional[str] = None
     garage_name: str
+
+
+class ManualPaymentResponse(BaseModel):
+    status: str
+    message: str
+    warning: Optional[str] = None
+
+
+class RevertPendingZelleRequest(BaseModel):
+    invoice_id: UUID
+    reason: Optional[str] = None
+
+
+class SubmitCustomerZellePaymentRequest(BaseModel):
+    invoice_id: UUID
+    sender_email: Optional[EmailStr] = None
+    sender_phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SubmitCustomerZellePaymentResponse(BaseModel):
+    status: str
+    message: str
+    pending_zelle_confirmation: bool = True
+
+
+def _normalize_phone(phone: Optional[str]) -> Optional[str]:
+    return normalize_phone(phone)
+
+
+def _normalize_email(email: Optional[str]) -> Optional[str]:
+    if not email:
+        return None
+    normalized = email.strip().lower()
+    return normalized or None
+
+
+def _is_placeholder_walkin_customer(customer: Customer) -> bool:
+    email = (customer.email or "").lower()
+    first_name = (customer.first_name or "").lower()
+    return (
+        "@placeholder.truckpitstop.com" in email
+        or first_name == "walk-in"
+        or (customer.source or "").lower() == "walk_in"
+    )
 
 
 @router.get("/config", response_model=ConfigResponse)
@@ -444,6 +496,13 @@ async def confirm_payment(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment intent mismatch")
     
+    # Clear pending-Zelle tracking before finalizing payment.
+    invoice.zelle_pending_submitted_at = None
+    invoice.zelle_pending_sender_email = None
+    invoice.zelle_pending_sender_phone = None
+    invoice.zelle_pending_last_reminder_at = None
+    invoice.zelle_pending_reminder_count = 0
+
     # Update invoice status
     invoice.status = InvoiceStatus.PAID
     invoice.paid_at = datetime.now(timezone.utc)
@@ -517,7 +576,7 @@ async def confirm_payment(
     }
 
 
-@router.post("/record-manual")
+@router.post("/record-manual", response_model=ManualPaymentResponse)
 async def record_manual_payment(
     body: ManualPaymentRequest,
     db: AsyncSession = Depends(get_db),
@@ -552,7 +611,75 @@ async def record_manual_payment(
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
+
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+
+    # Optional walk-in capture/enrichment for Zelle payments
+    customer_result = await db.execute(
+        select(Customer).where(
+            and_(
+                Customer.id == invoice.repair_order.customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    customer = customer_result.scalar_one_or_none()
+
+    sender_email = _normalize_email(body.zelle_sender_email)
+    sender_phone = _normalize_phone(body.zelle_sender_phone)
+    should_update_from_sender = (
+        body.method == "zelle"
+        and body.update_customer_from_sender
+        and (sender_email is not None or sender_phone is not None)
+        and customer is not None
+    )
+
+    warning_message: Optional[str] = None
+
+    if should_update_from_sender:
+        if sender_email:
+            # Keep tenant-scoped customer emails unique during enrichment.
+            existing_result = await db.execute(
+                select(Customer).where(
+                    and_(
+                        Customer.tenant_id == current_user.tenant_id,
+                        Customer.email == sender_email,
+                        Customer.id != customer.id,
+                    )
+                )
+            )
+            email_conflict = existing_result.scalar_one_or_none()
+            if email_conflict:
+                warning_message = (
+                    "Sender email was not applied because it already belongs to another customer in this garage."
+                )
+                logger.warning(
+                    "zelle_sender_email_conflict",
+                    invoice_id=str(invoice.id),
+                    customer_id=str(customer.id),
+                    conflicting_customer_id=str(email_conflict.id),
+                    sender_email=sender_email,
+                )
+            else:
+                customer.email = sender_email
+
+        if sender_phone:
+            customer.phone = sender_phone
+
+        customer.source = "zelle"
+
+    elif body.method == "zelle" and customer and _is_placeholder_walkin_customer(customer):
+        # Track source when a walk-in record is paid via Zelle, even if sender details are omitted.
+        customer.source = "zelle"
     
+    # Clear pending-Zelle tracking now that staff is explicitly recording payment.
+    invoice.zelle_pending_submitted_at = None
+    invoice.zelle_pending_sender_email = None
+    invoice.zelle_pending_sender_phone = None
+    invoice.zelle_pending_last_reminder_at = None
+    invoice.zelle_pending_reminder_count = 0
+
     # Update invoice status
     invoice.status = InvoiceStatus.PAID
     invoice.paid_at = datetime.now(timezone.utc)
@@ -601,8 +728,173 @@ async def record_manual_payment(
         method=body.method,
         amount=float(invoice.total_amount),
     )
+
+    try:
+        await send_invoice_payment_confirmation_email(
+            db=db,
+            invoice=invoice,
+            order=invoice.repair_order,
+            customer=customer,
+            tenant=tenant,
+            vehicle=invoice.repair_order.vehicle,
+        )
+    except Exception as exc:
+        logger.warning(
+            "invoice_paid_confirmation_email_failed",
+            invoice_id=str(invoice.id),
+            error=str(exc),
+        )
     
-    return {"status": "success", "message": f"Payment recorded as {body.method}"}
+    return {
+        "status": "success",
+        "message": f"Payment recorded as {body.method}",
+        "warning": warning_message,
+    }
+
+
+@router.post("/zelle-pending/revert")
+async def revert_pending_zelle(
+    body: RevertPendingZelleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Clear pending-Zelle state when staff determines no payment was received."""
+    if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.RECEPTIONIST]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Staff access required")
+
+    result = await db.execute(
+        select(Invoice)
+        .options(selectinload(Invoice.repair_order))
+        .where(
+            and_(
+                Invoice.id == body.invoice_id,
+                Invoice.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    invoice = result.scalar_one_or_none()
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice is already paid")
+    if not invoice.zelle_pending_submitted_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice is not pending Zelle confirmation")
+
+    invoice.zelle_pending_submitted_at = None
+    invoice.zelle_pending_sender_email = None
+    invoice.zelle_pending_sender_phone = None
+    invoice.zelle_pending_last_reminder_at = None
+    invoice.zelle_pending_reminder_count = 0
+    if body.reason:
+        reason = body.reason.strip()
+        if reason:
+            existing_notes = (invoice.notes or "").strip()
+            prefix = f"[Zelle pending cleared] {reason}"
+            invoice.notes = f"{existing_notes}\n{prefix}".strip() if existing_notes else prefix
+
+    await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(invoice.repair_order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        order_id=str(invoice.repair_order_id),
+        order_number=invoice.repair_order.order_number,
+        status=invoice.repair_order.status.value,
+        updated_at=invoice.repair_order.updated_at.isoformat() if invoice.repair_order.updated_at else None,
+    )
+
+    return {"status": "success", "message": "Pending Zelle status cleared"}
+
+
+@router.post("/submit-zelle", response_model=SubmitCustomerZellePaymentResponse)
+@limiter.limit("5/minute")
+async def submit_customer_zelle_payment(
+    request: Request,
+    body: SubmitCustomerZellePaymentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Mark an invoice as pending Zelle confirmation from the customer portal."""
+    if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Customer access required")
+
+    result = await db.execute(
+        select(Invoice)
+        .options(selectinload(Invoice.repair_order))
+        .where(Invoice.id == body.invoice_id)
+    )
+    invoice = result.scalar_one_or_none()
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    if invoice.repair_order.customer_id != current_user.customer_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if invoice.status == InvoiceStatus.PAID:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
+
+    was_pending = invoice.pending_zelle_confirmation
+    sender_email = _normalize_email(str(body.sender_email) if body.sender_email else None)
+    sender_phone = _normalize_phone(body.sender_phone)
+    notes = body.notes.strip() if body.notes else None
+
+    invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
+    invoice.zelle_pending_sender_email = sender_email
+    invoice.zelle_pending_sender_phone = sender_phone
+    invoice.zelle_pending_last_reminder_at = None
+    invoice.zelle_pending_reminder_count = 0
+    if notes:
+        existing_notes = (invoice.notes or "").strip()
+        note_line = f"[Customer portal Zelle submit] {notes}"
+        invoice.notes = f"{existing_notes}\n{note_line}".strip() if existing_notes else note_line
+
+    await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(invoice.repair_order)
+
+    customer_name = f"{current_user.first_name} {current_user.last_name}".strip() or "Customer"
+    if not was_pending:
+        try:
+            await send_pending_zelle_submission_alert(
+                db=db,
+                tenant_id=invoice.tenant_id,
+                order_id=invoice.repair_order.id,
+                order_number=invoice.repair_order.order_number,
+                invoice_number=invoice.invoice_number,
+                customer_name=customer_name,
+                amount=invoice.total_amount,
+                source_label="customer portal",
+                sender_email=sender_email,
+                sender_phone=sender_phone,
+            )
+        except Exception as exc:
+            logger.warning(
+                "pending_zelle_submission_alert_failed",
+                invoice_id=str(invoice.id),
+                source="customer_portal",
+                error=str(exc),
+            )
+
+    await broadcast_repair_order_update(
+        tenant_id=str(invoice.tenant_id),
+        customer_id=str(invoice.repair_order.customer_id),
+        order_id=str(invoice.repair_order_id),
+        order_number=invoice.repair_order.order_number,
+        status=invoice.repair_order.status.value,
+        updated_at=invoice.repair_order.updated_at.isoformat() if invoice.repair_order.updated_at else None,
+    )
+
+    logger.info(
+        "customer_portal_zelle_submitted",
+        invoice_id=str(invoice.id),
+        customer_id=str(current_user.customer_id),
+    )
+
+    return SubmitCustomerZellePaymentResponse(
+        status="success",
+        message="Zelle payment marked as submitted. Garage staff will confirm receipt.",
+        pending_zelle_confirmation=invoice.pending_zelle_confirmation,
+    )
 
 
 @router.get("/zelle-info/{invoice_id}", response_model=ZelleInfoResponse)
@@ -640,5 +932,6 @@ async def get_zelle_info(
     return ZelleInfoResponse(
         zelle_email=tenant.zelle_email,
         zelle_phone=tenant.zelle_phone,
+        zelle_qr_image=tenant.zelle_qr_image,
         garage_name=tenant.name,
     )

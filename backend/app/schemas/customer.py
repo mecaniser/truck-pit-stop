@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 class CustomerBase(BaseModel):
     first_name: str
     last_name: str
+    company_name: Optional[str] = None
     email: str  # plain str to allow walk-in placeholder emails
     phone: Optional[str] = None
     billing_address_line1: Optional[str] = None
@@ -44,6 +45,7 @@ class CustomerCreate(CustomerBase):
 class CustomerUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    company_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     billing_address_line1: Optional[str] = None
@@ -59,6 +61,7 @@ class CustomerUpdate(BaseModel):
 class CustomerResponse(CustomerBase):
     id: UUID
     tenant_id: UUID
+    source: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -91,6 +94,7 @@ class CustomerWithVehiclesResponse(CustomerBase):
     """Customer response that includes vehicles array"""
     id: UUID
     tenant_id: UUID
+    source: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     vehicles: List[VehicleInCustomer] = Field(default_factory=list)

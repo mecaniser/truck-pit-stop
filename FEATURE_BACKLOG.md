@@ -43,23 +43,23 @@ Features identified from competitor analysis (Fullbay, Easy Truck Shop), with im
 | Feature | Description | Complexity | Value | Status |
 |---------|-------------|------------|-------|--------|
 | QR Code Upload & Display | Garage uploads their Zelle QR image, displayed when staff selects Zelle payment | Low | High | **Implemented** |
-| Walk-in Customer Capture | When recording Zelle payment from unknown customer, staff can create new customer from sender's Zelle email/phone (seen in bank notification) | Low | High | Planned |
-| Customer Source Tracking | Mark customers created from Zelle payments with `source = "zelle"` for later enrichment (add truck details, etc.) | Low | Medium | Planned |
+| Walk-in Customer Capture | When recording Zelle payment from unknown customer, staff can capture sender email/phone (seen in bank notification) and enrich the customer profile | Low | High | **Implemented** |
+| Customer Source Tracking | Mark customers created from walk-in/Zelle flows with `source` metadata for later enrichment/reporting | Low | Medium | **Implemented** |
 
 **Walk-in Zelle Customer Flow:**
 1. Walk-in customer gets repair done (no existing customer record, or placeholder)
 2. Customer pays via Zelle → shop receives bank notification showing sender's email/phone
 3. Staff records Zelle payment → prompted to enter sender's Zelle info
-4. New customer created with `source = "zelle"`, linked to repair order
+4. Walk-in customer record is enriched with sender contact info and tagged with `source = "zelle"`
 5. Customer returns later → staff can add truck/trailer details to complete profile
 
 **Implementation Steps:**
 1. ~~Add `zelle_qr_image_url` field to Tenant model (migration)~~ ✓
 2. ~~Update Garage Settings page to allow QR image upload~~ ✓
 3. ~~Display QR image in Zelle payment modal on repair orders~~ ✓
-4. Add `source` field to Customer model (migration) — for "zelle", "walk-in", "portal", etc.
-5. Add quick customer creation form when recording Zelle payment for unknown customer
-6. Show customer source badge on profile, prompt to complete partial records
+4. ~~Add `source` field to Customer model (migration) — for "zelle", "walk-in", "portal", etc.~~ ✓
+5. ~~Add quick customer capture fields when recording Zelle payment for unknown customer~~ ✓
+6. ~~Show customer source badge on profile, prompt to complete partial records~~ ✓
 
 ---
 
@@ -135,6 +135,7 @@ These features were identified from competitor analysis and have been built:
 - **Cash payments** - Staff can mark invoices as paid with cash
 - **Zelle payments** - Manual payment recording, email/phone config in garage settings
 - **Zelle QR upload/display** - Garage uploads QR in settings; staff can show QR in repair order payment modal
+- **Zelle walk-in capture** - Staff can capture sender email/phone during Zelle payment and enrich walk-in customer profiles
 - **Check/ACH payments** - Manual payment recording for all methods
 - **Invoice due dates** - Set due date when creating invoice, track overdue
 

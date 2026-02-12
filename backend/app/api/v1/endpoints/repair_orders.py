@@ -14,6 +14,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.quote import Quote
@@ -23,6 +24,7 @@ from app.services.twilio_service import send_sms
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
+from app.core.phone import normalize_phone
 from app.core.websocket import broadcast_repair_order_update
 from app.schemas.repair_order import (
     RepairOrderCreate,
@@ -163,7 +165,7 @@ async def quick_create_repair_order(
 
         raw_phone = (data.phone or "").strip()
         # Normalize phone for consistent storage and lookup
-        phone = raw_phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        phone = normalize_phone(raw_phone) or ""
 
         # Find or create customer
         if phone:
@@ -184,6 +186,7 @@ async def quick_create_repair_order(
                     last_name=raw_phone or "Customer",  # Keep original format for display
                     email=f"walkin+{phone}@placeholder.truckpitstop.com",
                     phone=phone,  # Store normalized
+                    source="walk_in",
                 )
                 db.add(customer)
                 await db.flush()
@@ -206,6 +209,7 @@ async def quick_create_repair_order(
                     first_name="Walk-in",
                     last_name="Customer",
                     email="walkin@placeholder.truckpitstop.com",
+                    source="walk_in",
                 )
                 db.add(customer)
                 await db.flush()
@@ -336,13 +340,24 @@ async def list_repair_orders(
             .where(Quote.repair_order_id.in_(order_ids))
         )
         quote_sent_map = {row[0]: row[1] for row in quote_result.fetchall()}
+
+        invoice_result = await db.execute(
+            select(Invoice.repair_order_id, Invoice.status, Invoice.zelle_pending_submitted_at)
+            .where(Invoice.repair_order_id.in_(order_ids))
+        )
+        pending_zelle_map = {
+            row[0]: (row[2] is not None and row[1] != InvoiceStatus.PAID)
+            for row in invoice_result.fetchall()
+        }
     else:
         quote_sent_map = {}
+        pending_zelle_map = {}
     
     items = [
         RepairOrderResponse(
-            **RepairOrderResponse.model_validate(o).model_dump(exclude={'quote_sent'}),
+            **RepairOrderResponse.model_validate(o).model_dump(exclude={'quote_sent', 'pending_zelle_confirmation'}),
             quote_sent=quote_sent_map.get(o.id),
+            pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
         )
         for o in orders
     ]
@@ -382,8 +397,17 @@ async def get_repair_order_detail(
         for pu in order.parts_usage
     ]
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+
+    invoice_result = await db.execute(
+        select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
+    )
+    invoice = invoice_result.scalar_one_or_none()
+    pending_zelle_confirmation = bool(
+        invoice and invoice.zelle_pending_submitted_at is not None and invoice.status != InvoiceStatus.PAID
+    )
     return RepairOrderDetailResponse(
-        **RepairOrderResponse.model_validate(order).model_dump(),
+        **RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'}),
+        pending_zelle_confirmation=pending_zelle_confirmation,
         parts_usage=parts_resp,
         labor_items=labor_resp,
     )
@@ -417,7 +441,18 @@ async def get_repair_order(
             detail="Access denied",
         )
     
-    return RepairOrderResponse.model_validate(order)
+    invoice_result = await db.execute(
+        select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
+    )
+    invoice = invoice_result.scalar_one_or_none()
+    pending_zelle_confirmation = bool(
+        invoice and invoice.zelle_pending_submitted_at is not None and invoice.status != InvoiceStatus.PAID
+    )
+
+    return RepairOrderResponse(
+        **RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'}),
+        pending_zelle_confirmation=pending_zelle_confirmation,
+    )
 
 
 @router.put("/{order_id}", response_model=RepairOrderResponse)
@@ -484,7 +519,7 @@ async def assign_mechanic(
         UserRole.RECEPTIONIST,
     )),
 ):
-    """Assign mechanic to repair order, set status to in_progress, notify customer"""
+    """Assign/reassign mechanic, set status to assigned when needed, and notify mechanic."""
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id)
@@ -552,6 +587,7 @@ async def assign_mechanic(
     # Send email notification to MECHANIC (not customer - customer notified when work starts)
     vehicle = order.vehicle
     vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+    portal_url = f"{settings.FRONTEND_URL.rstrip('/')}/mechanic"
     
     # Parse services from internal_notes
     services_html = ""
@@ -587,7 +623,7 @@ async def assign_mechanic(
         </div>
         
         <p style="margin: 30px 0; text-align: center;">
-            <a href="{settings.FRONTEND_URL}/mechanic" 
+            <a href="{portal_url}" 
                style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
                 View in Mechanic Portal
             </a>
@@ -605,7 +641,22 @@ async def assign_mechanic(
             body=html_body,
             template_name="job_assigned",
         )
-    
+
+    if mechanic.phone:
+        try:
+            await send_sms(
+                db=db,
+                tenant_id=str(current_user.tenant_id),
+                to=mechanic.phone,
+                body=(
+                    f"New job assigned: Order #{order.order_number} for {vehicle_info}. "
+                    f"Portal: {portal_url} - Truck Pit Stop"
+                ),
+                template_name="job_assigned_sms",
+            )
+        except Exception:
+            pass
+
     return RepairOrderResponse.model_validate(order)
 
 
