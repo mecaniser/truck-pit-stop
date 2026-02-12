@@ -1,6 +1,6 @@
 # TruckPitStop Feature Backlog
 
-Features identified from competitor analysis (Fullbay, Easy Truck Shop) that are not yet implemented.
+Features identified from competitor analysis (Fullbay, Easy Truck Shop), with implementation status tracked below.
 
 ---
 
@@ -42,7 +42,7 @@ Features identified from competitor analysis (Fullbay, Easy Truck Shop) that are
 
 | Feature | Description | Complexity | Value | Status |
 |---------|-------------|------------|-------|--------|
-| QR Code Upload & Display | Garage uploads their Zelle QR image, displayed when staff selects Zelle payment | Low | High | **Implementing** |
+| QR Code Upload & Display | Garage uploads their Zelle QR image, displayed when staff selects Zelle payment | Low | High | **Implemented** |
 | Walk-in Customer Capture | When recording Zelle payment from unknown customer, staff can create new customer from sender's Zelle email/phone (seen in bank notification) | Low | High | Planned |
 | Customer Source Tracking | Mark customers created from Zelle payments with `source = "zelle"` for later enrichment (add truck details, etc.) | Low | Medium | Planned |
 
@@ -104,7 +104,7 @@ Features identified from competitor analysis (Fullbay, Easy Truck Shop) that are
 | Feature | Description | Competitor | Complexity | Value | Dependencies |
 |---------|-------------|------------|------------|-------|--------------|
 | MOTOR Labor Guides | Access labor times, wiring diagrams, parts cross-ref | Fullbay | High | Medium | MOTOR API subscription |
-| VIN Decoder Tool | Decode VIN for vehicle details auto-fill | Fullbay | Low | Medium | NHTSA API (free) |
+| VIN Decoder Tool | Decode VIN for vehicle details auto-fill | Fullbay | Low | Medium | NHTSA API (free) (implemented) |
 | FleetNet Integration | Receive emergency repair requests from FleetNet | Fullbay | High | Low | FleetNet partnership |
 | Whip Around DVIR | Auto-create service requests from inspection defects | Fullbay | High | Low | Whip Around API |
 
@@ -134,6 +134,7 @@ These features were identified from competitor analysis and have been built:
 ### Payment Options (Feb 2026)
 - **Cash payments** - Staff can mark invoices as paid with cash
 - **Zelle payments** - Manual payment recording, email/phone config in garage settings
+- **Zelle QR upload/display** - Garage uploads QR in settings; staff can show QR in repair order payment modal
 - **Check/ACH payments** - Manual payment recording for all methods
 - **Invoice due dates** - Set due date when creating invoice, track overdue
 
@@ -141,6 +142,8 @@ These features were identified from competitor analysis and have been built:
 - **Unit number field** - Fleet/company unit identifier for trucks
 - **Vehicle repair history** - Click on vehicle to see all repair orders and mechanics who worked on it
 - **Nested vehicle endpoints** - Vehicles managed under customers (`/customers/{id}/vehicles`)
+- **VIN decoder integration** - Decode VIN in customer and vehicle forms using NHTSA vPIC API
+- **Initial truck on customer creation** - Create customer with first vehicle in one flow, with explicit no-truck option
 
 ---
 
@@ -170,11 +173,8 @@ These features were identified from competitor analysis and have been built:
 ## Implementation Notes
 
 ### Quick Wins (Low complexity, High value)
-1. **Labor Efficiency Reports** - Data already exists, just need UI
-2. **Automated Reorder Alerts** - Twilio/Resend ready, add trigger logic
-3. **Parts Markup Calculator** - Simple utility tool
-4. **VIN Decoder** - Free NHTSA API
-5. **Invoice History in Portal** - Invoice data exists
+1. **Parts Markup Calculator** - Simple utility tool
+2. **Invoice History in Portal** - Invoice data exists
 
 ### Strategic Investments (High complexity, High value)
 1. **QuickBooks Integration** - Major accounting workflow improvement
@@ -184,5 +184,5 @@ These features were identified from competitor analysis and have been built:
 
 ---
 
-*Last updated: February 2026*
+*Last updated: February 12, 2026*
 *Based on analysis of Fullbay and Easy Truck Shop platforms*
