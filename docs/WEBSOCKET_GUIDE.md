@@ -181,6 +181,40 @@ This leverages React Query's existing caching and loading states.
 | `quote_declined` | Customer declines | May need revised quote |
 | `invoice_created` | Invoice generated | Customer can pay |
 | `payment_received` | Payment confirmed | Order complete |
+| `mechanic_timer_update` | Timer lifecycle updates | Session started/stopped/switched/corrected |
+| `mechanic_attendance_update` | Attendance lifecycle updates | Mechanic clocked in/out (manual/auto/manager) |
+| `mechanic_break_update` | Break lifecycle updates | Break started/ended (manual/manager/auto) |
+| `mechanic_idle_alert` | Idle threshold reached | Mechanic idle >= threshold during core hours |
+
+### Mechanic Timer Message Examples
+
+```json
+{
+  "type": "mechanic_attendance_update",
+  "mechanic_id": "uuid",
+  "attendance_session_id": "uuid",
+  "action": "clock_in"
+}
+```
+
+```json
+{
+  "type": "mechanic_break_update",
+  "mechanic_id": "uuid",
+  "break_session_id": "uuid",
+  "action": "start"
+}
+```
+
+```json
+{
+  "type": "mechanic_idle_alert",
+  "mechanic_id": "uuid",
+  "mechanic_name": "Alex Torres",
+  "idle_minutes": 35,
+  "local_date": "2026-02-13"
+}
+```
 
 ## Debugging WebSockets
 

@@ -18,6 +18,7 @@ export type NotificationEventType =
   | 'quote_declined'
   | 'invoice_created'
   | 'payment_received'
+  | 'mechanic_idle_alert'
 
 export type NotificationPriority = 'high' | 'medium' | 'low'
 
@@ -29,6 +30,10 @@ export interface NotificationEvent {
   quoteNumber?: string
   invoiceNumber?: string
   totalAmount?: string
+  mechanicId?: string
+  mechanicName?: string
+  idleMinutes?: number
+  localDate?: string
 }
 
 interface QueuedNotification {
@@ -262,6 +267,19 @@ export function useNotificationManager(
       case 'invoice_created':
       case 'payment_received':
         return
+
+      case 'mechanic_idle_alert': {
+        const idleMinutes = event.idleMinutes || 0
+        const mechanicLabel = event.mechanicName || (event.mechanicId ? `Mechanic ${event.mechanicId.slice(0, 8)}` : 'Mechanic')
+        const message = `${mechanicLabel} idle for ${idleMinutes}m`
+        addToQueue({
+          id: `idle-${event.mechanicId || 'unknown'}-${event.localDate || Date.now()}`,
+          message,
+          priority: 'high',
+          timestamp,
+        })
+        break
+      }
     }
   }, [isMechanic, addToQueue, addBanner])
   

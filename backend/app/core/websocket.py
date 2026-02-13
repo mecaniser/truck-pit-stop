@@ -325,6 +325,10 @@ class WSEventType:
     PAYMENT_RECEIVED = "payment_received"
     SMS_MESSAGE_CREATED = "sms_message_created"
     SMS_THREAD_UPDATED = "sms_thread_updated"
+    MECHANIC_TIMER_UPDATE = "mechanic_timer_update"
+    MECHANIC_IDLE_ALERT = "mechanic_idle_alert"
+    MECHANIC_ATTENDANCE_UPDATE = "mechanic_attendance_update"
+    MECHANIC_BREAK_UPDATE = "mechanic_break_update"
 
 
 async def broadcast_repair_order_update(
@@ -457,5 +461,67 @@ async def broadcast_sms_thread_event(
         "unread_count_staff": unread_count_staff,
         "last_message_at": last_message_at,
         "last_message_preview": last_message_preview,
+    }
+    await manager.broadcast_to_tenant(tenant_id, message)
+
+
+async def broadcast_mechanic_timer_update(
+    tenant_id: str,
+    mechanic_id: str,
+    session_id: str,
+    action: str,
+) -> None:
+    message = {
+        "type": WSEventType.MECHANIC_TIMER_UPDATE,
+        "mechanic_id": mechanic_id,
+        "session_id": session_id,
+        "action": action,
+    }
+    await manager.broadcast_to_tenant(tenant_id, message)
+
+
+async def broadcast_mechanic_idle_alert(
+    tenant_id: str,
+    mechanic_id: str,
+    idle_minutes: int,
+    local_date: str,
+    mechanic_name: Optional[str] = None,
+) -> None:
+    message = {
+        "type": WSEventType.MECHANIC_IDLE_ALERT,
+        "mechanic_id": mechanic_id,
+        "idle_minutes": idle_minutes,
+        "local_date": local_date,
+        "mechanic_name": mechanic_name,
+    }
+    await manager.broadcast_to_tenant(tenant_id, message)
+
+
+async def broadcast_mechanic_attendance_update(
+    tenant_id: str,
+    mechanic_id: str,
+    attendance_session_id: str,
+    action: str,
+) -> None:
+    message = {
+        "type": WSEventType.MECHANIC_ATTENDANCE_UPDATE,
+        "mechanic_id": mechanic_id,
+        "attendance_session_id": attendance_session_id,
+        "action": action,
+    }
+    await manager.broadcast_to_tenant(tenant_id, message)
+
+
+async def broadcast_mechanic_break_update(
+    tenant_id: str,
+    mechanic_id: str,
+    break_session_id: str,
+    action: str,
+) -> None:
+    message = {
+        "type": WSEventType.MECHANIC_BREAK_UPDATE,
+        "mechanic_id": mechanic_id,
+        "break_session_id": break_session_id,
+        "action": action,
     }
     await manager.broadcast_to_tenant(tenant_id, message)

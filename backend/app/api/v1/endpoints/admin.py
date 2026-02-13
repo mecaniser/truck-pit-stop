@@ -25,6 +25,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
 from app.schemas.tenant import TenantCreate, TenantUpdate, TenantResponse, TenantWithOwnerResponse
 from app.services import error_service
+from app.services.mechanic_time_service import validate_local_time_str, validate_timezone_name
 
 router = APIRouter()
 twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
@@ -774,6 +775,20 @@ class TaxFeeSettingsResponse(BaseModel):
     labor_rate: float
 
 
+class WorkforceSettingsRequest(BaseModel):
+    timezone: str
+    default_core_hours_minutes: int
+    default_shift_start_local: str
+    default_shift_end_local: str
+
+
+class WorkforceSettingsResponse(BaseModel):
+    timezone: str
+    default_core_hours_minutes: int
+    default_shift_start_local: str
+    default_shift_end_local: str
+
+
 def require_garage_owner():
     """Dependency to ensure only garage owner/admin can access"""
     async def role_checker(current_user: User = Depends(get_current_active_user)):
@@ -1021,6 +1036,69 @@ async def update_tax_fee_settings(
         shop_supplies_rate=float(tenant.shop_supplies_rate),
         service_fee_rate=float(tenant.service_fee_rate),
         labor_rate=float(tenant.labor_rate),
+    )
+
+
+# ============================================================================
+# Workforce Settings
+# ============================================================================
+
+@router.get("/workforce-settings", response_model=WorkforceSettingsResponse)
+async def get_workforce_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    return WorkforceSettingsResponse(
+        timezone=tenant.timezone or "America/New_York",
+        default_core_hours_minutes=int(tenant.default_core_hours_minutes or 480),
+        default_shift_start_local=tenant.default_shift_start_local or "08:00",
+        default_shift_end_local=tenant.default_shift_end_local or "18:00",
+    )
+
+
+@router.put("/workforce-settings", response_model=WorkforceSettingsResponse)
+async def update_workforce_settings(
+    body: WorkforceSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    try:
+        validate_timezone_name(body.timezone)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+    try:
+        validate_local_time_str(body.default_shift_start_local)
+        validate_local_time_str(body.default_shift_end_local)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Shift times must be in HH:MM format")
+
+    if body.default_shift_start_local >= body.default_shift_end_local:
+        raise HTTPException(status_code=400, detail="default_shift_start_local must be before default_shift_end_local")
+    if not 1 <= body.default_core_hours_minutes <= 1440:
+        raise HTTPException(status_code=400, detail="default_core_hours_minutes must be between 1 and 1440")
+
+    tenant.timezone = body.timezone
+    tenant.default_core_hours_minutes = body.default_core_hours_minutes
+    tenant.default_shift_start_local = body.default_shift_start_local
+    tenant.default_shift_end_local = body.default_shift_end_local
+    await db.commit()
+    await db.refresh(tenant)
+
+    return WorkforceSettingsResponse(
+        timezone=tenant.timezone,
+        default_core_hours_minutes=int(tenant.default_core_hours_minutes),
+        default_shift_start_local=tenant.default_shift_start_local,
+        default_shift_end_local=tenant.default_shift_end_local,
     )
 
 

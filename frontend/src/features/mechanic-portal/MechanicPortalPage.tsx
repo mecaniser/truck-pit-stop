@@ -6,6 +6,8 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
 import NotificationBanner from '../../components/NotificationBanner'
+import LiveElapsedTimer from '@/components/LiveElapsedTimer'
+import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { 
@@ -34,6 +36,7 @@ import {
   X
 } from 'lucide-react'
 import { ACCENT_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
+import { MISC_WORK_OPTIONS, formatMiscCategory } from '@/lib/mechanicWorkLabels'
 
 interface MechanicJob {
   id: string
@@ -118,6 +121,59 @@ interface WorkPhoto {
   mechanic_name: string
 }
 
+interface MechanicDaySummary {
+  date: string
+  timezone: string
+  core_target_minutes: number
+  tracked_minutes: number
+  ro_minutes: number
+  misc_minutes: number
+  overtime_minutes: number
+  utilization_percent: number
+  efficiency_percent: number | null
+  book_hours: number
+  actual_ro_hours: number
+  active_session: {
+    id: string
+    session_type: 'repair_order' | 'misc'
+    repair_order_id?: string | null
+    misc_category: string | null
+    started_at?: string | null
+  } | null
+  attendance_active: boolean
+  attendance_started_at: string | null
+  attendance_ended_at: string | null
+  break_active: boolean
+  break_started_at: string | null
+  attendance_minutes: number
+  break_minutes: number
+  idle_minutes: number
+  late_arrival_minutes: number
+  early_leave_minutes: number
+  flex_budget_minutes: number
+  flex_used_minutes: number
+  flex_remaining_minutes: number
+  flex_overrun_minutes: number
+  core_gap_minutes: number
+  trend_7_days: Array<{
+    date: string
+    tracked_minutes: number
+    utilization_percent: number
+    efficiency_percent: number | null
+  }>
+}
+
+interface TimerActionResponse {
+  success: boolean
+  session_id?: string
+  attendance_session_id?: string
+  break_session_id?: string
+  auto_clocked_in?: boolean
+  auto_stopped_timer_session_id?: string
+  auto_ended_break_session_id?: string
+  message: string
+}
+
 const STATUS_LABELS: Record<string, string> = {
   assigned: 'New Job',
   acknowledged: 'Ready to Start',
@@ -129,6 +185,13 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request' | 'profile'
+
+function formatMinutesAsClock(totalMinutes: number): string {
+  const safeMinutes = Math.max(0, Math.floor(totalMinutes))
+  const hours = Math.floor(safeMinutes / 60)
+  const minutes = safeMinutes % 60
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`
+}
 
 function LiveTimer({ startedAt }: { startedAt: string }) {
   const calc = useCallback(() => {
@@ -192,6 +255,8 @@ export default function MechanicPortalPage() {
   const [ptoStartDate, setPtoStartDate] = useState('')
   const [ptoEndDate, setPtoEndDate] = useState('')
   const [requestNotes, setRequestNotes] = useState('')
+  const [miscCategory, setMiscCategory] = useState('shop_cleanup')
+  const [miscNote, setMiscNote] = useState('')
   
   // Profile form state
   const [isEditingProfile, setIsEditingProfile] = useState(false)
@@ -226,6 +291,15 @@ export default function MechanicPortalPage() {
       const response = await api.get('/mechanics/my-stats')
       return response.data
     },
+  })
+
+  const { data: daySummary } = useQuery<MechanicDaySummary>({
+    queryKey: ['mechanic-day-summary'],
+    queryFn: async () => {
+      const response = await api.get('/mechanics/me/day-summary')
+      return response.data
+    },
+    refetchOnWindowFocus: true,
   })
 
   // History (always load for empty state preview)
@@ -296,11 +370,13 @@ export default function MechanicPortalPage() {
         await api.post(`/repair-orders/${orderId}/acknowledge`)
       }
       await api.post(`/repair-orders/${orderId}/start-work`)
+      return { currentStatus }
     },
-    onSuccess: () => {
+    onSuccess: ({ currentStatus }) => {
       queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
-      toast.success('Job accepted & started!')
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      toast.success(currentStatus === 'in_progress' ? 'Timer resumed' : 'Job accepted & started!')
     },
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
   })
@@ -311,6 +387,7 @@ export default function MechanicPortalPage() {
       queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-stats'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
       setExpandedJobId(null) // Collapse expanded card
       setView('list')
       setSelectedJobId(null)
@@ -386,6 +463,91 @@ export default function MechanicPortalPage() {
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to submit request'),
   })
 
+  const startMiscTimerMutation = useMutation({
+    mutationFn: async (payload: { misc_category: string; note?: string }) => {
+      const response = await api.post<TimerActionResponse>('/mechanics/me/timer/start-misc', payload)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      toast.success('Misc timer started')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to start misc timer'),
+  })
+
+  const stopTimerMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post<TimerActionResponse>('/mechanics/me/timer/stop')
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      toast.success('Timer stopped')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to stop timer'),
+  })
+
+  const clockInMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post<TimerActionResponse>('/mechanics/me/attendance/clock-in')
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+      toast.success('Clocked in')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to clock in'),
+  })
+
+  const clockOutMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post<TimerActionResponse>('/mechanics/me/attendance/clock-out')
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+      toast.success('Clocked out')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to clock out'),
+  })
+
+  const startBreakMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post<TimerActionResponse>('/mechanics/me/break/start')
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+      toast.success('Break started')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to start break'),
+  })
+
+  const endBreakMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post<TimerActionResponse>('/mechanics/me/break/end')
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+      toast.success('Break ended')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to end break'),
+  })
+
   const cancelRequestMutation = useMutation({
     mutationFn: (requestId: string) => api.delete(`/mechanics/pto-requests/${requestId}`),
     onSuccess: () => {
@@ -459,6 +621,37 @@ export default function MechanicPortalPage() {
   }
 
   const isPending = acceptAndStartMutation.isPending || completeWorkMutation.isPending
+  const isClockedIn = !!daySummary?.attendance_active
+  const isOnBreak = !!daySummary?.break_active
+  const hasActiveDayTimer = !!daySummary?.active_session
+  const timerToggleBusy = startMiscTimerMutation.isPending || stopTimerMutation.isPending
+  const attendanceToggleBusy = clockInMutation.isPending || clockOutMutation.isPending
+  const breakToggleBusy = startBreakMutation.isPending || endBreakMutation.isPending
+
+  const handleTimerToggle = () => {
+    if (hasActiveDayTimer) {
+      stopTimerMutation.mutate()
+      return
+    }
+    startMiscTimerMutation.mutate({ misc_category: miscCategory, note: miscNote || undefined })
+  }
+
+  const handleAttendanceToggle = () => {
+    if (isClockedIn) {
+      clockOutMutation.mutate()
+      return
+    }
+    clockInMutation.mutate()
+  }
+
+  const handleBreakToggle = () => {
+    if (isOnBreak) {
+      endBreakMutation.mutate()
+      return
+    }
+    startBreakMutation.mutate()
+  }
+
   const formatCreatedAt = (createdAt?: string | null) => {
     if (!createdAt) return 'Unknown'
     const parsed = new Date(createdAt)
@@ -511,6 +704,10 @@ export default function MechanicPortalPage() {
 
   // ============ JOB DETAIL VIEW ============
   if (view === 'detail' && selectedJobId && jobDetail) {
+    const isTimedForDetail = daySummary?.active_session?.session_type === 'repair_order'
+      && daySummary.active_session.repair_order_id === jobDetail.id
+    const timedStartForDetail = daySummary?.active_session?.started_at || jobDetail.work_started_at
+
     return (
       <Container className="flex flex-col">
         <div className="flex flex-col min-h-screen">
@@ -548,9 +745,16 @@ export default function MechanicPortalPage() {
           </div>
 
           {/* Live Timer */}
-          {jobDetail.status === 'in_progress' && jobDetail.work_started_at && (
+          {jobDetail.status === 'in_progress' && isTimedForDetail && timedStartForDetail && (
             <div className="px-4">
-              <LiveTimer startedAt={jobDetail.work_started_at} />
+              <LiveTimer startedAt={timedStartForDetail} />
+            </div>
+          )}
+          {jobDetail.status === 'in_progress' && !isTimedForDetail && (
+            <div className="px-4">
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                In-progress job is currently not timed. Resume timer for this repair order.
+              </div>
             </div>
           )}
 
@@ -583,14 +787,26 @@ export default function MechanicPortalPage() {
             )}
 
             {jobDetail.status === 'in_progress' && (
-              <button
-                onClick={() => completeWorkMutation.mutate(jobDetail.id)}
-                disabled={isPending}
-                className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
-              >
-                {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
-                JOB DONE ✓
-              </button>
+              <div className={`grid gap-3 ${isTimedForDetail ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {!isTimedForDetail && (
+                  <button
+                    onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
+                    disabled={isPending}
+                    className="w-full py-5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25"
+                  >
+                    {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
+                    RESUME
+                  </button>
+                )}
+                <button
+                  onClick={() => completeWorkMutation.mutate(jobDetail.id)}
+                  disabled={isPending}
+                  className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
+                >
+                  {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
+                  JOB DONE ✓
+                </button>
+              </div>
             )}
 
             {jobDetail.status === 'pending_review' && (
@@ -1492,6 +1708,168 @@ export default function MechanicPortalPage() {
           autoDismissMs={8000}
         />
 
+        {/* Daily Utilization + Misc Controls */}
+        {daySummary && (
+          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-white">Daily Core Timer</p>
+                <SectionInfoTooltip text="Your daily progress against core target hours. This includes repair-order and misc shop time, with overtime tracked separately." />
+              </div>
+              <span className="text-xs text-gray-400">
+                {(daySummary.tracked_minutes / 60).toFixed(1)}h / {(daySummary.core_target_minutes / 60).toFixed(1)}h
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className={`px-2 py-1 rounded-full ${isClockedIn ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gray-700 text-gray-300'}`}>
+                {isClockedIn ? 'Clocked In' : 'Clocked Out'}
+              </span>
+              <span className={`px-2 py-1 rounded-full ${isOnBreak ? 'bg-amber-500/20 text-amber-300' : 'bg-gray-700 text-gray-300'}`}>
+                {isOnBreak ? 'On Break' : 'No Break'}
+              </span>
+              <span className="px-2 py-1 rounded-full bg-sky-500/20 text-sky-300">
+                Idle {daySummary.idle_minutes}m
+              </span>
+            </div>
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+              <p className="text-xs uppercase tracking-wide text-emerald-300 mb-2">Live Timer</p>
+              {daySummary.active_session?.started_at ? (
+                <LiveElapsedTimer startedAt={daySummary.active_session.started_at} className="font-mono text-5xl leading-none font-semibold text-emerald-100" />
+              ) : (
+                <p className="font-mono text-5xl leading-none font-semibold text-gray-300">
+                  {formatMinutesAsClock(daySummary.tracked_minutes)}
+                </p>
+              )}
+              <p className="text-xs mt-2 text-gray-300">
+                {daySummary.active_session ? 'Running now' : 'No active timer'}
+              </p>
+            </div>
+            <div className="h-2 rounded-full bg-gray-700 overflow-hidden">
+              <div
+                className="h-2 rounded-full bg-amber-500"
+                style={{ width: `${Math.min(daySummary.utilization_percent, 100)}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
+              <div>RO: <span className="text-white">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
+              <div>Misc: <span className="text-white">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
+              <div>Overtime: <span className="text-white">{(daySummary.overtime_minutes / 60).toFixed(1)}h</span></div>
+              <div>Efficiency: <span className="text-white">{daySummary.efficiency_percent == null ? 'n/a' : `${daySummary.efficiency_percent.toFixed(1)}%`}</span></div>
+              <div>Break: <span className="text-white">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
+              <div>Core Gap: <span className="text-white">{(daySummary.core_gap_minutes / 60).toFixed(1)}h</span></div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-gray-900/40 p-2 text-xs">
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Flex Budget</span>
+                <span>
+                  {daySummary.flex_used_minutes}m / {daySummary.flex_budget_minutes}m
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 rounded-full bg-gray-700 overflow-hidden">
+                <div
+                  className={`h-1.5 rounded-full ${daySummary.flex_overrun_minutes > 0 ? 'bg-rose-500' : 'bg-cyan-400'}`}
+                  style={{
+                    width: `${Math.min(
+                      daySummary.flex_budget_minutes > 0
+                        ? (daySummary.flex_used_minutes / daySummary.flex_budget_minutes) * 100
+                        : 0,
+                      100,
+                    )}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-gray-400">
+                <span>Remaining: {daySummary.flex_remaining_minutes}m</span>
+                {daySummary.flex_overrun_minutes > 0 ? (
+                  <span className="text-rose-300">Overrun: {daySummary.flex_overrun_minutes}m</span>
+                ) : null}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleAttendanceToggle}
+                disabled={attendanceToggleBusy}
+                className={`w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
+                  isClockedIn ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+              >
+                {attendanceToggleBusy
+                  ? (isClockedIn ? 'Clocking Out...' : 'Clocking In...')
+                  : (isClockedIn ? 'Clock Out' : 'Clock In')}
+              </button>
+              <button
+                onClick={handleBreakToggle}
+                disabled={!isClockedIn || breakToggleBusy}
+                className={`w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
+                  isOnBreak ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {breakToggleBusy
+                  ? (isOnBreak ? 'Ending Break...' : 'Starting Break...')
+                  : (isOnBreak ? 'End Break' : 'Start Break')}
+              </button>
+            </div>
+
+            <div className="pt-1">
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs text-gray-400">Quick Picks</p>
+                <SectionInfoTooltip text="Choose the misc task category before starting a non-repair-order timer." />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {MISC_WORK_OPTIONS.map((option) => {
+                  const isSelected = miscCategory === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      disabled={hasActiveDayTimer || isOnBreak}
+                      onClick={() => setMiscCategory(option.value)}
+                      className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                          : 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600'
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <input
+              value={miscNote}
+              onChange={(e) => setMiscNote(e.target.value)}
+              placeholder="Misc note (optional)"
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
+              disabled={hasActiveDayTimer || isOnBreak}
+            />
+            <button
+              onClick={handleTimerToggle}
+              disabled={timerToggleBusy || isOnBreak}
+              className={`w-full py-3 text-white text-base font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
+                hasActiveDayTimer ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              {timerToggleBusy
+                ? (hasActiveDayTimer ? 'Stopping...' : 'Starting...')
+                : (hasActiveDayTimer ? 'Stop Active Timer' : `Start ${formatMiscCategory(miscCategory)} Timer`)}
+            </button>
+            <div className="text-xs text-gray-400">
+              Active source:{' '}
+              {daySummary.active_session
+                ? daySummary.active_session.session_type === 'repair_order'
+                  ? `Repair Order ${daySummary.active_session.repair_order_id || ''}`.trim()
+                  : `Misc (${formatMiscCategory(daySummary.active_session.misc_category)})`
+                : 'No active timer'}
+            </div>
+            {daySummary.active_session?.started_at ? (
+              <div className="text-xs text-emerald-300">
+                Running timer: <LiveElapsedTimer startedAt={daySummary.active_session.started_at} className="font-mono text-emerald-200" />
+              </div>
+            ) : null}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
@@ -1584,11 +1962,20 @@ export default function MechanicPortalPage() {
         ) : (
           <>
             {/* Active Jobs - Expandable Cards */}
+            {activeJobs.length > 0 && (
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Active Jobs</p>
+                <SectionInfoTooltip text="Jobs you can accept, resume, or complete. Expanding a card shows services, photos, and job actions." />
+              </div>
+            )}
             {activeJobs.map((job) => {
               const isNew = job.status === 'assigned'
               const isWorking = job.status === 'in_progress'
               const isExpanded = expandedJobId === job.id
               const detail = isExpanded ? expandedJobDetail : null
+              const isTimedForThisJob = daySummary?.active_session?.session_type === 'repair_order'
+                && daySummary.active_session.repair_order_id === job.id
+              const timedStartForJob = daySummary?.active_session?.started_at || detail?.work_started_at || null
               
               // Status-based accent color
               const borderColor = isWorking ? 'border-purple-500' : isNew ? 'border-blue-500' : 'border-gray-700'
@@ -1651,8 +2038,13 @@ export default function MechanicPortalPage() {
                           </div>
                           
                           {/* Live Timer */}
-                          {isWorking && detail.work_started_at && (
-                            <LiveTimer startedAt={detail.work_started_at} />
+                          {isWorking && isTimedForThisJob && timedStartForJob && (
+                            <LiveTimer startedAt={timedStartForJob} />
+                          )}
+                          {isWorking && !isTimedForThisJob && (
+                            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                              In-progress job is currently not timed. Resume timer for this repair order.
+                            </div>
                           )}
                           
                           {/* Services List */}
@@ -1775,17 +2167,32 @@ export default function MechanicPortalPage() {
                             )}
                             
                             {job.status === 'in_progress' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  completeWorkMutation.mutate(job.id)
-                                }}
-                                disabled={isPending}
-                                className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
-                              >
-                                {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-                                JOB DONE
-                              </button>
+                              <div className={`grid gap-2 ${isTimedForThisJob ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                {!isTimedForThisJob && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
+                                    }}
+                                    disabled={isPending}
+                                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                  >
+                                    {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
+                                    RESUME
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    completeWorkMutation.mutate(job.id)
+                                  }}
+                                  disabled={isPending}
+                                  className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                >
+                                  {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                  JOB DONE
+                                </button>
+                              </div>
                             )}
                           </div>
                         </>
@@ -1799,7 +2206,10 @@ export default function MechanicPortalPage() {
             {/* Pending Review */}
             {pendingReview.length > 0 && (
               <div className="pt-4">
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Awaiting Review</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Awaiting Review</p>
+                  <SectionInfoTooltip text="Completed jobs waiting for manager verification before final closeout." />
+                </div>
                 {pendingReview.map((job) => (
                   <div
                     key={job.id}

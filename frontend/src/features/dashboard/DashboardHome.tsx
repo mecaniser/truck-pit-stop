@@ -23,6 +23,7 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
 import NotificationBanner from '../../components/NotificationBanner'
 import AlertsBanner from '../../components/AlertsBanner'
+import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 
 interface StatusCount {
   status: string
@@ -511,9 +512,12 @@ export default function DashboardHome() {
       <div className="flex-1 flex flex-col gap-2.5 2xl:gap-2 min-h-0">
         {/* Swimlanes Header with Live Indicator */}
         <div className="flex items-center justify-between flex-shrink-0">
-          <h2 className="text-sm 2xl:text-base font-semibold text-gray-400 uppercase tracking-wide">
-            Work Queue
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm 2xl:text-base font-semibold text-gray-400 uppercase tracking-wide">
+              Work Queue
+            </h2>
+            <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
+          </div>
           <button
             onClick={handleManualRefresh}
             disabled={isRefreshing}
@@ -534,6 +538,7 @@ export default function DashboardHome() {
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-400" />
               <h3 className="text-sm 2xl:text-base font-semibold text-white">Needs Action</h3>
+              <SectionInfoTooltip text="Orders blocked by approvals, missing info, or other manager actions that should be handled first." />
             </div>
             <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
               {stats?.orders_needing_action?.length || 0}
@@ -561,6 +566,7 @@ export default function DashboardHome() {
             <div className="flex items-center gap-2">
               <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
               <h3 className="text-sm 2xl:text-base font-semibold text-white">On the Floor</h3>
+              <SectionInfoTooltip text="Orders currently in production with mechanics assigned or actively working." />
             </div>
             <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
               {stats?.orders_on_floor?.length || 0}
@@ -588,6 +594,7 @@ export default function DashboardHome() {
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-emerald-400" />
               <h3 className="text-sm 2xl:text-base font-semibold text-white">Ready to Close</h3>
+              <SectionInfoTooltip text="Orders that are operationally complete and ready for invoicing, payment, and closeout." />
             </div>
             <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
               {stats?.orders_ready_to_close?.length || 0}
@@ -617,7 +624,10 @@ export default function DashboardHome() {
           {/* Revenue KPIs */}
           <div className="bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
             <div className="flex items-center justify-between gap-3 mb-2.5">
-              <h3 className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider">Revenue KPIs</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider">Revenue KPIs</h3>
+                <SectionInfoTooltip text="Daily, weekly, and monthly financial indicators for revenue, gross profit, and profit-per-invoice performance." />
+              </div>
               <span className="text-xs 2xl:text-sm text-gray-400 bg-white/5 border border-white/10 rounded-full px-2 py-0.5">
                 {stats?.revenue?.total_paid_orders || 0} paid orders
               </span>
@@ -638,7 +648,16 @@ export default function DashboardHome() {
           {/* Team Workload */}
           <div className="bg-white/5 rounded-xl p-3 2xl:p-2.5 border border-white/10">
             <div className="flex items-center justify-between gap-3 mb-1.5">
-              <h3 className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider">Team Capacity</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard/mechanics')}
+                  className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
+                >
+                  Team Capacity
+                </button>
+                <SectionInfoTooltip text="Mechanic staffing capacity snapshot with active vs queued work, per-mechanic load, and click-through to detailed timer boards." />
+              </div>
               <div className="text-[11px] 2xl:text-xs text-gray-500">
                 {teamAssignedTotal} assigned
               </div>
@@ -678,6 +697,7 @@ export default function DashboardHome() {
                     return (
                       <div
                         key={m.mechanic_id}
+                        onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
                         className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 2xl:px-2"
                         title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                       >

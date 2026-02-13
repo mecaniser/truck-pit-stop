@@ -13,6 +13,8 @@ import GarageAnalyticsPage from '@/features/platform-admin/GarageAnalyticsPage'
 import PlatformAnalyticsPage from '@/features/platform-admin/PlatformAnalyticsPage'
 import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollmentsPage'
 import MessagesInboxPage from '@/features/messages/MessagesInboxPage'
+import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
+import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
@@ -45,6 +47,8 @@ export default function DashboardLayout() {
   
   const getCurrentPageLabel = () => {
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
+    if (location.pathname === '/dashboard/mechanics') return 'Mechanic Board'
+    if (location.pathname.startsWith('/dashboard/mechanics/')) return 'Mechanic Detail'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
   }
@@ -204,6 +208,8 @@ export default function DashboardLayout() {
               <Route path="customers" element={<CustomersPage />} />
               <Route path="repair-orders" element={<RepairOrdersPage />} />
               <Route path="messages" element={<MessagesInboxPage />} />
+              <Route path="mechanics" element={<MechanicsBoardPage />} />
+              <Route path="mechanics/:mechanicId" element={<MechanicBoardDetailPage />} />
               <Route path="garage/*" element={<MyGaragePage />} />
               <Route path="settings" element={<UnifiedSettingsPage />} />
               <Route path="" element={<DashboardHome />} />

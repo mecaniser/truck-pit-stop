@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, cast, Date
-from pydantic import BaseModel
+from sqlalchemy import select, func, and_, cast, Date, or_
+from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
+from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import aliased
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.websocket import (
+    broadcast_mechanic_attendance_update,
+    broadcast_mechanic_break_update,
+    broadcast_mechanic_timer_update,
+)
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
@@ -15,13 +22,32 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentStatus
+from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession, MiscWorkCategory
 from app.services.pricing import get_order_labor_total, get_order_subtotal
+from app.services.mechanic_time_service import (
+    clock_in,
+    clock_out,
+    compute_7day_trend,
+    compute_day_summary,
+    delete_session,
+    end_break,
+    edit_session,
+    fetch_tenant_and_mechanic,
+    start_break,
+    start_session,
+    stop_active_session,
+)
 
 router = APIRouter()
 
 
 def get_effective_total(order: RepairOrder) -> Decimal:
     return get_order_subtotal(order)
+
+
+def require_manager(current_user: User) -> None:
+    if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(status_code=403, detail="Garage owner/admin access required")
 
 
 class StatusCount(BaseModel):
@@ -589,3 +615,652 @@ async def get_dashboard_stats(
         orders_on_floor=orders_on_floor,
         orders_ready_to_close=orders_ready_to_close,
     )
+
+
+class ManagerTimerStartRequest(BaseModel):
+    session_type: str = Field(..., description="repair_order or misc")
+    repair_order_id: Optional[UUID] = None
+    misc_category: Optional[str] = None
+    note: Optional[str] = None
+    manager_reason: str
+
+
+class ManagerTimerStopRequest(BaseModel):
+    manager_reason: str
+
+
+class ManagerClockActionRequest(BaseModel):
+    manager_reason: str
+    note: Optional[str] = None
+
+
+class ManagerBreakActionRequest(BaseModel):
+    manager_reason: str
+    note: Optional[str] = None
+
+
+class SessionEditRequest(BaseModel):
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    note: Optional[str] = None
+    misc_category: Optional[str] = None
+    manager_reason: str
+
+
+class SessionDeleteRequest(BaseModel):
+    manager_reason: str
+
+
+class TimerActionResponse(BaseModel):
+    success: bool
+    session_id: str
+    attendance_session_id: Optional[str] = None
+    break_session_id: Optional[str] = None
+    auto_clocked_in: Optional[bool] = None
+    auto_stopped_timer_session_id: Optional[str] = None
+    auto_ended_break_session_id: Optional[str] = None
+    message: str
+
+
+class MechanicBoardItem(BaseModel):
+    mechanic_id: str
+    mechanic_name: str
+    date: str
+    timezone: str
+    core_target_minutes: int
+    tracked_minutes: int
+    ro_minutes: int
+    misc_minutes: int
+    overtime_minutes: int
+    utilization_percent: float
+    efficiency_percent: Optional[float] = None
+    book_hours: float
+    actual_ro_hours: float
+    active_session: Optional[dict] = None
+    attendance_active: bool = False
+    attendance_started_at: Optional[str] = None
+    attendance_ended_at: Optional[str] = None
+    break_active: bool = False
+    break_started_at: Optional[str] = None
+    attendance_minutes: int = 0
+    break_minutes: int = 0
+    idle_minutes: int = 0
+    late_arrival_minutes: int = 0
+    early_leave_minutes: int = 0
+    flex_budget_minutes: int = 0
+    flex_used_minutes: int = 0
+    flex_remaining_minutes: int = 0
+    flex_overrun_minutes: int = 0
+    core_gap_minutes: int = 0
+    trend_7_days: List[dict] = []
+
+
+class TeamMechanicsBoardResponse(BaseModel):
+    date: str
+    timezone: str
+    team_core_target_minutes: int
+    team_tracked_minutes: int
+    team_overtime_minutes: int
+    team_utilization_percent: float
+    mechanics: List[MechanicBoardItem]
+
+
+class MechanicBoardDetailResponse(BaseModel):
+    mechanic: MechanicBoardItem
+    today_sessions: List[dict]
+
+
+@router.get("/mechanics/board", response_model=TeamMechanicsBoardResponse)
+async def get_team_mechanics_board(
+    date_value: Optional[date] = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRole.MECHANIC,
+                User.is_active.is_(True),
+            )
+        )
+    )
+    mechanics = result.scalars().all()
+    if not mechanics:
+        return TeamMechanicsBoardResponse(
+            date=(date_value or date.today()).isoformat(),
+            timezone="America/New_York",
+            team_core_target_minutes=0,
+            team_tracked_minutes=0,
+            team_overtime_minutes=0,
+            team_utilization_percent=0.0,
+            mechanics=[],
+        )
+
+    tenant, _ = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanics[0].id,
+    )
+
+    mechanics_payload: List[MechanicBoardItem] = []
+    team_core = 0
+    team_tracked = 0
+    team_overtime = 0
+
+    for mechanic in mechanics:
+        summary = await compute_day_summary(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            target_date=date_value,
+        )
+        trend = await compute_7day_trend(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            end_date=date_value,
+        )
+        mechanics_payload.append(
+            MechanicBoardItem(
+                mechanic_id=str(mechanic.id),
+                mechanic_name=f"{mechanic.first_name} {mechanic.last_name}".strip(),
+                trend_7_days=trend,
+                **summary,
+            )
+        )
+        team_core += summary["core_target_minutes"]
+        team_tracked += summary["tracked_minutes"]
+        team_overtime += summary["overtime_minutes"]
+
+    team_utilization = 0.0
+    if team_core > 0:
+        team_utilization = min((team_tracked / team_core) * 100.0, 100.0)
+
+    return TeamMechanicsBoardResponse(
+        date=mechanics_payload[0].date,
+        timezone=mechanics_payload[0].timezone,
+        team_core_target_minutes=team_core,
+        team_tracked_minutes=team_tracked,
+        team_overtime_minutes=team_overtime,
+        team_utilization_percent=round(team_utilization, 2),
+        mechanics=mechanics_payload,
+    )
+
+
+@router.get("/mechanics/{mechanic_id}/board", response_model=MechanicBoardDetailResponse)
+async def get_mechanic_board_detail(
+    mechanic_id: UUID,
+    date_value: Optional[date] = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    summary = await compute_day_summary(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        target_date=date_value,
+    )
+    trend = await compute_7day_trend(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        end_date=date_value,
+    )
+    item = MechanicBoardItem(
+        mechanic_id=str(mechanic.id),
+        mechanic_name=f"{mechanic.first_name} {mechanic.last_name}".strip(),
+        trend_7_days=trend,
+        **summary,
+    )
+
+    tz = ZoneInfo(tenant.timezone or "America/New_York")
+    day_local = datetime.combine(date.fromisoformat(item.date), datetime.min.time(), tzinfo=tz)
+    day_start_utc = day_local.astimezone(timezone.utc)
+    day_end_utc = (day_local + timedelta(days=1)).astimezone(timezone.utc)
+    sessions_result = await db.execute(
+        select(MechanicTimeSession).where(
+            and_(
+                MechanicTimeSession.tenant_id == tenant.id,
+                MechanicTimeSession.mechanic_id == mechanic.id,
+                MechanicTimeSession.deleted_at.is_(None),
+                MechanicTimeSession.started_at < day_end_utc,
+                or_(MechanicTimeSession.ended_at.is_(None), MechanicTimeSession.ended_at > day_start_utc),
+            )
+        ).order_by(MechanicTimeSession.started_at.desc())
+    )
+    sessions = sessions_result.scalars().all()
+    rows = [
+        {
+            "id": str(s.id),
+            "session_type": s.session_type.value if hasattr(s.session_type, "value") else s.session_type,
+            "repair_order_id": str(s.repair_order_id) if s.repair_order_id else None,
+            "misc_category": s.misc_category.value if getattr(s, "misc_category", None) else None,
+            "note": s.note,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "ended_at": s.ended_at.isoformat() if s.ended_at else None,
+            "stop_reason": s.stop_reason,
+            "timezone": str(tz),
+        }
+        for s in sessions
+    ]
+    return MechanicBoardDetailResponse(mechanic=item, today_sessions=rows)
+
+
+@router.post("/mechanics/{mechanic_id}/timer/start", response_model=TimerActionResponse)
+async def manager_start_mechanic_timer(
+    mechanic_id: UUID,
+    body: ManagerTimerStartRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+    if body.session_type not in (MechanicSessionType.REPAIR_ORDER.value, MechanicSessionType.MISC.value):
+        raise HTTPException(status_code=400, detail="Invalid session_type")
+    if body.session_type == MechanicSessionType.REPAIR_ORDER.value and not body.repair_order_id:
+        raise HTTPException(status_code=400, detail="repair_order_id is required for repair_order session")
+    if body.session_type == MechanicSessionType.MISC.value:
+        if body.misc_category not in [m.value for m in MiscWorkCategory]:
+            raise HTTPException(status_code=400, detail="Invalid misc_category")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    repair_order_uuid = body.repair_order_id
+    if repair_order_uuid:
+        ro_result = await db.execute(
+            select(RepairOrder).where(
+                and_(
+                    RepairOrder.id == repair_order_uuid,
+                    RepairOrder.tenant_id == current_user.tenant_id,
+                )
+            )
+        )
+        order = ro_result.scalar_one_or_none()
+        if not order:
+            raise HTTPException(status_code=404, detail="Repair order not found")
+
+    session, auto_clocked_in, attendance_session_id = await start_session(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        actor_user=current_user,
+        session_type=body.session_type,
+        repair_order_id=repair_order_uuid,
+        misc_category=body.misc_category,
+        note=body.note,
+        manager_reason=body.manager_reason,
+        stop_previous_reason="manager_control",
+    )
+    await db.commit()
+    await db.refresh(session)
+    await broadcast_mechanic_timer_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(mechanic.id),
+        session_id=str(session.id),
+        action="manager_start",
+    )
+    if auto_clocked_in:
+        await broadcast_mechanic_attendance_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(mechanic.id),
+            attendance_session_id=attendance_session_id,
+            action="auto_clock_in",
+        )
+    return TimerActionResponse(
+        success=True,
+        session_id=str(session.id),
+        attendance_session_id=attendance_session_id if auto_clocked_in else None,
+        auto_clocked_in=auto_clocked_in,
+        message="Timer started",
+    )
+
+
+@router.post("/mechanics/{mechanic_id}/timer/stop", response_model=TimerActionResponse)
+async def manager_stop_mechanic_timer(
+    mechanic_id: UUID,
+    body: ManagerTimerStopRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    _, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    session = await stop_active_session(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic.id,
+        actor_user=current_user,
+        stop_reason="manager_control",
+        manager_reason=body.manager_reason,
+    )
+    if not session:
+        raise HTTPException(status_code=400, detail="No active timer to stop")
+    await db.commit()
+    await broadcast_mechanic_timer_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(mechanic.id),
+        session_id=str(session.id),
+        action="manager_stop",
+    )
+    return TimerActionResponse(success=True, session_id=str(session.id), message="Timer stopped")
+
+
+@router.post("/mechanics/{mechanic_id}/attendance/clock-in", response_model=TimerActionResponse)
+async def manager_clock_in_mechanic(
+    mechanic_id: UUID,
+    body: ManagerClockActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    try:
+        attendance = await clock_in(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            manager_reason=body.manager_reason,
+            start_source="manager_clock_in",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    await broadcast_mechanic_attendance_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(mechanic.id),
+        attendance_session_id=str(attendance.id),
+        action="manager_clock_in",
+    )
+    return TimerActionResponse(
+        success=True,
+        session_id=str(attendance.id),
+        attendance_session_id=str(attendance.id),
+        message="Mechanic clocked in",
+    )
+
+
+@router.post("/mechanics/{mechanic_id}/attendance/clock-out", response_model=TimerActionResponse)
+async def manager_clock_out_mechanic(
+    mechanic_id: UUID,
+    body: ManagerClockActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    try:
+        result = await clock_out(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            manager_reason=body.manager_reason,
+            end_source="manager_clock_out",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    await broadcast_mechanic_attendance_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(mechanic.id),
+        attendance_session_id=str(result.attendance_session.id),
+        action="manager_clock_out",
+    )
+    if result.ended_break_session:
+        await broadcast_mechanic_break_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(mechanic.id),
+            break_session_id=str(result.ended_break_session.id),
+            action="manager_break_end",
+        )
+    if result.stopped_timer_session:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(mechanic.id),
+            session_id=str(result.stopped_timer_session.id),
+            action="manager_stop_from_clock_out",
+        )
+    return TimerActionResponse(
+        success=True,
+        session_id=str(result.attendance_session.id),
+        attendance_session_id=str(result.attendance_session.id),
+        auto_stopped_timer_session_id=str(result.stopped_timer_session.id) if result.stopped_timer_session else None,
+        auto_ended_break_session_id=str(result.ended_break_session.id) if result.ended_break_session else None,
+        message="Mechanic clocked out",
+    )
+
+
+@router.post("/mechanics/{mechanic_id}/break/start", response_model=TimerActionResponse)
+async def manager_start_mechanic_break(
+    mechanic_id: UUID,
+    body: ManagerBreakActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    try:
+        result = await start_break(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            manager_reason=body.manager_reason,
+            start_source="manager_break_start",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    await broadcast_mechanic_break_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(mechanic.id),
+        break_session_id=str(result.break_session.id),
+        action="manager_break_start",
+    )
+    if result.stopped_timer_session:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(mechanic.id),
+            session_id=str(result.stopped_timer_session.id),
+            action="manager_stop_from_break_start",
+        )
+    return TimerActionResponse(
+        success=True,
+        session_id=str(result.break_session.id),
+        break_session_id=str(result.break_session.id),
+        auto_stopped_timer_session_id=str(result.stopped_timer_session.id) if result.stopped_timer_session else None,
+        message="Break started",
+    )
+
+
+@router.post("/mechanics/{mechanic_id}/break/end", response_model=TimerActionResponse)
+async def manager_end_mechanic_break(
+    mechanic_id: UUID,
+    body: ManagerBreakActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=mechanic_id,
+    )
+    try:
+        break_session = await end_break(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            manager_reason=body.manager_reason,
+            note=body.note,
+            end_source="manager_break_end",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    await broadcast_mechanic_break_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(mechanic.id),
+        break_session_id=str(break_session.id),
+        action="manager_break_end",
+    )
+    return TimerActionResponse(
+        success=True,
+        session_id=str(break_session.id),
+        break_session_id=str(break_session.id),
+        message="Break ended",
+    )
+
+
+@router.patch("/mechanics/time-sessions/{session_id}", response_model=TimerActionResponse)
+async def manager_edit_time_session(
+    session_id: UUID,
+    body: SessionEditRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    session_result = await db.execute(
+        select(MechanicTimeSession).where(
+            and_(
+                MechanicTimeSession.id == session_id,
+                MechanicTimeSession.tenant_id == current_user.tenant_id,
+                MechanicTimeSession.deleted_at.is_(None),
+            )
+        )
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Time session not found")
+    try:
+        await edit_session(
+            db,
+            session=session,
+            actor_user=current_user,
+            started_at=body.started_at,
+            ended_at=body.ended_at,
+            note=body.note,
+            misc_category=body.misc_category,
+            manager_reason=body.manager_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await db.commit()
+    await broadcast_mechanic_timer_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(session.mechanic_id),
+        session_id=str(session.id),
+        action="manager_edit",
+    )
+    return TimerActionResponse(success=True, session_id=str(session.id), message="Time session updated")
+
+
+@router.post("/mechanics/time-sessions/{session_id}/delete", response_model=TimerActionResponse)
+async def manager_delete_time_session(
+    session_id: UUID,
+    body: SessionDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+    if not body.manager_reason.strip():
+        raise HTTPException(status_code=400, detail="manager_reason is required")
+
+    session_result = await db.execute(
+        select(MechanicTimeSession).where(
+            and_(
+                MechanicTimeSession.id == session_id,
+                MechanicTimeSession.tenant_id == current_user.tenant_id,
+                MechanicTimeSession.deleted_at.is_(None),
+            )
+        )
+    )
+    session = session_result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Time session not found")
+    await delete_session(
+        db,
+        session=session,
+        actor_user=current_user,
+        manager_reason=body.manager_reason,
+    )
+    await db.commit()
+    await broadcast_mechanic_timer_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(session.mechanic_id),
+        session_id=str(session.id),
+        action="manager_delete",
+    )
+    return TimerActionResponse(success=True, session_id=str(session.id), message="Time session deleted")

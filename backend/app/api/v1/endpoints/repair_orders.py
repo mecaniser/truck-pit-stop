@@ -26,6 +26,10 @@ from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
 from app.core.phone import normalize_phone
 from app.core.websocket import broadcast_repair_order_update
+from app.core.websocket import broadcast_mechanic_timer_update
+from app.core.websocket import broadcast_mechanic_attendance_update
+from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
+from app.db.models.mechanic_time import MechanicSessionType
 from app.schemas.repair_order import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -37,6 +41,7 @@ from app.schemas.repair_order import (
     LaborUpdate,
     LaborResponse,
     QuickRepairOrderCreate,
+    RepairOrderStartWorkResponse,
 )
 
 logger = get_logger(__name__)
@@ -703,7 +708,7 @@ async def acknowledge_job(
     return RepairOrderResponse.model_validate(order)
 
 
-@router.post("/{order_id}/start-work", response_model=RepairOrderResponse)
+@router.post("/{order_id}/start-work", response_model=RepairOrderStartWorkResponse)
 async def start_work(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -723,14 +728,43 @@ async def start_work(
     if order.assigned_mechanic_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
     
-    if order.status not in (RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED):
+    resume_existing = False
+    if order.status in (RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED):
+        order.status = RepairOrderStatus.IN_PROGRESS
+        order.work_started_at = datetime.now(timezone.utc)
+    elif order.status == RepairOrderStatus.IN_PROGRESS:
+        resume_existing = True
+        if order.work_started_at is None:
+            order.work_started_at = datetime.now(timezone.utc)
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot start work on job in '{order.status.value}' status",
         )
-    
-    order.status = RepairOrderStatus.IN_PROGRESS
-    order.work_started_at = datetime.now(timezone.utc)
+
+    # Auto-start mechanic repair-order timer (single active timer policy).
+    started_session = None
+    auto_clocked_in = False
+    attendance_session_id: Optional[str] = None
+    try:
+        tenant, mechanic = await fetch_tenant_and_mechanic(
+            db,
+            tenant_id=order.tenant_id,
+            mechanic_id=current_user.id,
+        )
+        started_session, auto_clocked_in, attendance_session_id = await start_session(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            session_type=MechanicSessionType.REPAIR_ORDER.value,
+            repair_order_id=order.id,
+            stop_previous_reason="auto_switch",
+        )
+    except Exception:
+        # Don't block workflow transition if timer start fails.
+        pass
+
     await db.commit()
     await db.refresh(order)
     
@@ -743,69 +777,89 @@ async def start_work(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
-    
-    # Notify customer that work has started
-    customer = order.customer
-    if customer and customer.email:
-        vehicle = order.vehicle
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
-        
-        html_body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
-            </div>
-            
-            <h2 style="color: #333;">Work Has Started!</h2>
-            <p>Hi {customer.first_name},</p>
-            <p>Great news! Work has begun on your vehicle.</p>
-            
-            <div style="background: #f0fdf4; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #bbf7d0;">
-                <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
-                <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
-                <p style="margin: 0; font-size: 18px; color: #16a34a;"><strong>Status: In Progress</strong></p>
-            </div>
-            
-            <p>We'll notify you when the work is complete. You can also check your customer portal for updates.</p>
-            
-            <p style="margin: 30px 0; text-align: center;">
-                <a href="{settings.FRONTEND_URL}/portal" 
-                   style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                    View in Portal
-                </a>
-            </p>
-        </body>
-        </html>
-        """
-        
-        await send_email(
-            db=db,
+    try:
+        await broadcast_mechanic_timer_update(
             tenant_id=str(order.tenant_id),
-            to=customer.email,
-            subject=f"Work Started on {order.order_number} - Truck Pit Stop",
-            body=html_body,
-            template_name="work_started",
+            mechanic_id=str(current_user.id),
+            session_id=str(started_session.id) if started_session else str(order.id),
+            action="resume_from_repair_order" if resume_existing else "start_from_repair_order",
         )
-    
-    # SMS notification
-    if customer and customer.phone:
-        vehicle = order.vehicle
-        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
-        try:
-            await send_sms(
-                db,
-                str(order.tenant_id),
-                customer.phone,
-                f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - Truck Pit Stop",
-                template_name="work_started_sms",
-                customer_id=customer.id,
-                source="automated",
+        if auto_clocked_in and attendance_session_id:
+            await broadcast_mechanic_attendance_update(
+                tenant_id=str(order.tenant_id),
+                mechanic_id=str(current_user.id),
+                attendance_session_id=attendance_session_id,
+                action="auto_clock_in",
             )
-        except Exception:
-            pass  # Don't fail the request if SMS fails
+    except Exception:
+        pass
     
-    return RepairOrderResponse.model_validate(order)
+    if not resume_existing:
+        # Notify customer that work has started
+        customer = order.customer
+        if customer and customer.email:
+            vehicle = order.vehicle
+            vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+            
+            html_body = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+                </div>
+                
+                <h2 style="color: #333;">Work Has Started!</h2>
+                <p>Hi {customer.first_name},</p>
+                <p>Great news! Work has begun on your vehicle.</p>
+                
+                <div style="background: #f0fdf4; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #bbf7d0;">
+                    <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
+                    <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
+                    <p style="margin: 0; font-size: 18px; color: #16a34a;"><strong>Status: In Progress</strong></p>
+                </div>
+                
+                <p>We'll notify you when the work is complete. You can also check your customer portal for updates.</p>
+                
+                <p style="margin: 30px 0; text-align: center;">
+                    <a href="{settings.FRONTEND_URL}/portal" 
+                       style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                        View in Portal
+                    </a>
+                </p>
+            </body>
+            </html>
+            """
+            
+            await send_email(
+                db=db,
+                tenant_id=str(order.tenant_id),
+                to=customer.email,
+                subject=f"Work Started on {order.order_number} - Truck Pit Stop",
+                body=html_body,
+                template_name="work_started",
+            )
+        
+        # SMS notification
+        if customer and customer.phone:
+            vehicle = order.vehicle
+            vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+            try:
+                await send_sms(
+                    db,
+                    str(order.tenant_id),
+                    customer.phone,
+                    f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - Truck Pit Stop",
+                    template_name="work_started_sms",
+                    customer_id=customer.id,
+                    source="automated",
+                )
+            except Exception:
+                pass  # Don't fail the request if SMS fails
+    
+    return RepairOrderStartWorkResponse(
+        **RepairOrderResponse.model_validate(order).model_dump(),
+        auto_clocked_in=auto_clocked_in,
+    )
 
 
 @router.post("/{order_id}/complete-work", response_model=RepairOrderResponse)
@@ -836,6 +890,30 @@ async def complete_work(
     
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_completed_at = datetime.now(timezone.utc)
+
+    # Auto-stop active repair-order timer for this work order when work completes.
+    stopped_session = None
+    try:
+        active_session = await get_active_session(
+            db,
+            tenant_id=order.tenant_id,
+            mechanic_id=current_user.id,
+        )
+        if (
+            active_session
+            and (active_session.session_type.value if hasattr(active_session.session_type, "value") else active_session.session_type)
+            == MechanicSessionType.REPAIR_ORDER.value
+            and active_session.repair_order_id == order.id
+        ):
+            stopped_session = await stop_active_session(
+                db,
+                tenant_id=order.tenant_id,
+                mechanic_id=current_user.id,
+                actor_user=current_user,
+                stop_reason="auto_complete_work",
+            )
+    except Exception:
+        pass
     
     # ============ AWARD POINTS ============
     # Points = job value (1 point per $1)
@@ -943,6 +1021,15 @@ async def complete_work(
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
+    try:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(order.tenant_id),
+            mechanic_id=str(current_user.id),
+            session_id=str(stopped_session.id) if stopped_session else str(order.id),
+            action="stop_from_repair_order",
+        )
+    except Exception:
+        pass
     
     # Notify managers that work is ready for review
     result = await db.execute(

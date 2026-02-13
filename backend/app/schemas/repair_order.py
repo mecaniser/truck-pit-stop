@@ -108,6 +108,10 @@ class RepairOrderDetailResponse(RepairOrderResponse):
     labor_items: List[LaborResponse] = []
 
 
+class RepairOrderStartWorkResponse(RepairOrderResponse):
+    auto_clocked_in: bool = False
+
+
 class QuickRepairOrderCreate(BaseModel):
     phone: Optional[str] = None
     vehicle_description: Optional[str] = None

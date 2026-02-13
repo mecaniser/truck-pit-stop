@@ -15,14 +15,33 @@ from app.core.password_policy import validate_password
 from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
 from app.db.models.work_photo import WorkPhoto
+from app.db.models.mechanic_time import MechanicSessionType, MiscWorkCategory
 from app.schemas.auth import UserResponse
 from app.schemas.mechanic import MechanicCreate
 from app.schemas.mechanic_update import MechanicUpdate
 from app.services.cloudinary_service import upload_work_photo, is_cloudinary_configured
+from app.services.mechanic_time_service import (
+    compute_7day_trend,
+    compute_day_summary,
+    clock_in,
+    clock_out,
+    end_break,
+    fetch_tenant_and_mechanic,
+    start_break,
+    start_session,
+    stop_active_session,
+    validate_local_time_str,
+)
+from app.core.websocket import (
+    broadcast_mechanic_attendance_update,
+    broadcast_mechanic_break_update,
+    broadcast_mechanic_timer_update,
+)
 from pydantic import BaseModel, Field
 
 logger = get_logger(__name__)
@@ -41,6 +60,28 @@ def require_role(*allowed_roles: UserRole):
     return role_checker
 
 
+def _normalize_local_time(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _validate_shift_fields(start_local: Optional[str], end_local: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    normalized_start = _normalize_local_time(start_local)
+    normalized_end = _normalize_local_time(end_local)
+    try:
+        if normalized_start is not None:
+            validate_local_time_str(normalized_start)
+        if normalized_end is not None:
+            validate_local_time_str(normalized_end)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Shift overrides must use HH:MM format")
+    if normalized_start and normalized_end and normalized_start >= normalized_end:
+        raise HTTPException(status_code=400, detail="shift_start_local_override must be before shift_end_local_override")
+    return normalized_start, normalized_end
+
+
 class MechanicWithPoints(BaseModel):
     id: str
     email: str
@@ -52,6 +93,9 @@ class MechanicWithPoints(BaseModel):
     total_earned: int = 0
     streak_days: int = 0
     pending_requests: int = 0
+    core_hours_target_minutes_override: Optional[int] = None
+    shift_start_local_override: Optional[str] = None
+    shift_end_local_override: Optional[str] = None
 
 
 @router.get("", response_model=List[MechanicWithPoints])
@@ -136,6 +180,9 @@ async def list_mechanics(
             total_earned=balance.total_earned if balance else 0,
             streak_days=balance.current_streak_days if balance else 0,
             pending_requests=pending_count,
+            core_hours_target_minutes_override=mechanic.core_hours_target_minutes_override,
+            shift_start_local_override=mechanic.shift_start_local_override,
+            shift_end_local_override=mechanic.shift_end_local_override,
         ))
     
     return paginated_or_list(mechanics_with_points, total, skip, limit, paginated)
@@ -149,6 +196,15 @@ async def create_mechanic(
 ):
     # Validate password complexity
     validate_password(mechanic_data.password)
+    normalized_shift_start, normalized_shift_end = _validate_shift_fields(
+        mechanic_data.shift_start_local_override,
+        mechanic_data.shift_end_local_override,
+    )
+    if (
+        mechanic_data.core_hours_target_minutes_override is not None
+        and not 1 <= mechanic_data.core_hours_target_minutes_override <= 1440
+    ):
+        raise HTTPException(status_code=400, detail="core_hours_target_minutes_override must be between 1 and 1440")
     
     if not current_user.tenant_id:
         raise HTTPException(
@@ -176,6 +232,9 @@ async def create_mechanic(
         tenant_id=current_user.tenant_id,
         is_active=True,
         is_verified=True,
+        core_hours_target_minutes_override=mechanic_data.core_hours_target_minutes_override,
+        shift_start_local_override=normalized_shift_start,
+        shift_end_local_override=normalized_shift_end,
     )
 
     db.add(mechanic)
@@ -271,6 +330,61 @@ class RedeemResponse(BaseModel):
     remaining_points: int
 
 
+class StartMiscTimerRequest(BaseModel):
+    misc_category: str
+    note: Optional[str] = None
+
+
+class TimerActionResponse(BaseModel):
+    success: bool
+    session_id: Optional[str] = None
+    attendance_session_id: Optional[str] = None
+    break_session_id: Optional[str] = None
+    auto_clocked_in: Optional[bool] = None
+    auto_stopped_timer_session_id: Optional[str] = None
+    auto_ended_break_session_id: Optional[str] = None
+    message: str
+
+
+class ClockActionRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class BreakActionRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class MechanicDaySummaryResponse(BaseModel):
+    date: str
+    timezone: str
+    core_target_minutes: int
+    tracked_minutes: int
+    ro_minutes: int
+    misc_minutes: int
+    overtime_minutes: int
+    utilization_percent: float
+    efficiency_percent: Optional[float] = None
+    book_hours: float
+    actual_ro_hours: float
+    active_session: Optional[dict] = None
+    attendance_active: bool = False
+    attendance_started_at: Optional[str] = None
+    attendance_ended_at: Optional[str] = None
+    break_active: bool = False
+    break_started_at: Optional[str] = None
+    attendance_minutes: int = 0
+    break_minutes: int = 0
+    idle_minutes: int = 0
+    late_arrival_minutes: int = 0
+    early_leave_minutes: int = 0
+    flex_budget_minutes: int = 0
+    flex_used_minutes: int = 0
+    flex_remaining_minutes: int = 0
+    flex_overrun_minutes: int = 0
+    core_gap_minutes: int = 0
+    trend_7_days: List[dict] = []
+
+
 # Points constants
 POINTS_PER_PTO_DAY = 8000  # 8000 points = 1 day off (~$300)
 CASH_PER_POINT = 0.0375   # $0.0375 per point (8000 pts = $300)
@@ -357,6 +471,300 @@ async def get_my_stats(
         streak_multiplier=streak_multiplier,
         pto_days_available=round(pto_days, 2),
         cash_value=round(cash_value, 2),
+    )
+
+
+@router.post("/me/attendance/clock-in", response_model=TimerActionResponse)
+async def clock_in_mechanic(
+    body: ClockActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+    )
+    try:
+        attendance = await clock_in(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            start_source="manual_clock_in",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await db.commit()
+    await broadcast_mechanic_attendance_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(current_user.id),
+        attendance_session_id=str(attendance.id),
+        action="clock_in",
+    )
+    return TimerActionResponse(
+        success=True,
+        attendance_session_id=str(attendance.id),
+        message="Clocked in",
+    )
+
+
+@router.post("/me/attendance/clock-out", response_model=TimerActionResponse)
+async def clock_out_mechanic(
+    body: ClockActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+    )
+    try:
+        result = await clock_out(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            end_source="manual_clock_out",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await db.commit()
+    await broadcast_mechanic_attendance_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(current_user.id),
+        attendance_session_id=str(result.attendance_session.id),
+        action="clock_out",
+    )
+    if result.ended_break_session:
+        await broadcast_mechanic_break_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(current_user.id),
+            break_session_id=str(result.ended_break_session.id),
+            action="end",
+        )
+    if result.stopped_timer_session:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(current_user.id),
+            session_id=str(result.stopped_timer_session.id),
+            action="stop_from_clock_out",
+        )
+    return TimerActionResponse(
+        success=True,
+        attendance_session_id=str(result.attendance_session.id),
+        auto_stopped_timer_session_id=str(result.stopped_timer_session.id) if result.stopped_timer_session else None,
+        auto_ended_break_session_id=str(result.ended_break_session.id) if result.ended_break_session else None,
+        message="Clocked out",
+    )
+
+
+@router.post("/me/break/start", response_model=TimerActionResponse)
+async def start_mechanic_break(
+    body: BreakActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+    )
+    try:
+        result = await start_break(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            start_source="manual_break_start",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await db.commit()
+    await broadcast_mechanic_break_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(current_user.id),
+        break_session_id=str(result.break_session.id),
+        action="start",
+    )
+    if result.stopped_timer_session:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(current_user.id),
+            session_id=str(result.stopped_timer_session.id),
+            action="stop_from_break_start",
+        )
+    return TimerActionResponse(
+        success=True,
+        break_session_id=str(result.break_session.id),
+        auto_stopped_timer_session_id=str(result.stopped_timer_session.id) if result.stopped_timer_session else None,
+        message="Break started",
+    )
+
+
+@router.post("/me/break/end", response_model=TimerActionResponse)
+async def end_mechanic_break(
+    body: BreakActionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+    )
+    try:
+        break_session = await end_break(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            note=body.note,
+            end_source="manual_break_end",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await db.commit()
+    await broadcast_mechanic_break_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(current_user.id),
+        break_session_id=str(break_session.id),
+        action="end",
+    )
+    return TimerActionResponse(
+        success=True,
+        break_session_id=str(break_session.id),
+        message="Break ended",
+    )
+
+
+@router.post("/me/timer/start-misc", response_model=TimerActionResponse)
+async def start_misc_timer(
+    body: StartMiscTimerRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if body.misc_category not in [m.value for m in MiscWorkCategory]:
+        raise HTTPException(status_code=400, detail="Invalid misc category")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    session, auto_clocked_in, attendance_session_id = await start_session(
+        db,
+        tenant=tenant,
+        mechanic=current_user,
+        actor_user=current_user,
+        session_type=MechanicSessionType.MISC.value,
+        misc_category=body.misc_category,
+        note=body.note,
+    )
+    await db.commit()
+    await db.refresh(session)
+
+    await broadcast_mechanic_timer_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(current_user.id),
+        session_id=str(session.id),
+        action="start",
+    )
+    if auto_clocked_in:
+        await broadcast_mechanic_attendance_update(
+            tenant_id=str(current_user.tenant_id),
+            mechanic_id=str(current_user.id),
+            attendance_session_id=attendance_session_id,
+            action="auto_clock_in",
+        )
+
+    return TimerActionResponse(
+        success=True,
+        session_id=str(session.id),
+        auto_clocked_in=auto_clocked_in,
+        message="Misc timer started",
+    )
+
+
+@router.post("/me/timer/stop", response_model=TimerActionResponse)
+async def stop_my_timer(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    stopped = await stop_active_session(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+        actor_user=current_user,
+        stop_reason="manual",
+    )
+    if not stopped:
+        raise HTTPException(status_code=400, detail="No active timer to stop")
+
+    await db.commit()
+    await broadcast_mechanic_timer_update(
+        tenant_id=str(current_user.tenant_id),
+        mechanic_id=str(current_user.id),
+        session_id=str(stopped.id),
+        action="stop",
+    )
+    return TimerActionResponse(success=True, session_id=str(stopped.id), message="Timer stopped")
+
+
+@router.get("/me/day-summary", response_model=MechanicDaySummaryResponse)
+async def get_my_day_summary(
+    date_value: Optional[date] = Query(None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="Mechanic has no tenant")
+
+    tenant, mechanic = await fetch_tenant_and_mechanic(
+        db,
+        tenant_id=current_user.tenant_id,
+        mechanic_id=current_user.id,
+    )
+    summary = await compute_day_summary(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        target_date=date_value,
+    )
+    trend = await compute_7day_trend(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        end_date=date_value,
+    )
+    return MechanicDaySummaryResponse(
+        **summary,
+        trend_7_days=trend,
     )
 
 
@@ -746,6 +1154,18 @@ async def update_mechanic(
         if email_check.scalar_one_or_none():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
+    provided_fields = mechanic_update.model_fields_set
+    merged_shift_start, merged_shift_end = _validate_shift_fields(
+        mechanic_update.shift_start_local_override if "shift_start_local_override" in provided_fields else mechanic.shift_start_local_override,
+        mechanic_update.shift_end_local_override if "shift_end_local_override" in provided_fields else mechanic.shift_end_local_override,
+    )
+    if "core_hours_target_minutes_override" in provided_fields:
+        if (
+            mechanic_update.core_hours_target_minutes_override is not None
+            and not 1 <= mechanic_update.core_hours_target_minutes_override <= 1440
+        ):
+            raise HTTPException(status_code=400, detail="core_hours_target_minutes_override must be between 1 and 1440")
+
     if mechanic_update.first_name is not None:
         mechanic.first_name = mechanic_update.first_name
     if mechanic_update.last_name is not None:
@@ -759,6 +1179,12 @@ async def update_mechanic(
     if mechanic_update.password:
         validate_password(mechanic_update.password)
         mechanic.hashed_password = get_password_hash(mechanic_update.password)
+    if "core_hours_target_minutes_override" in provided_fields:
+        mechanic.core_hours_target_minutes_override = mechanic_update.core_hours_target_minutes_override
+    if "shift_start_local_override" in provided_fields:
+        mechanic.shift_start_local_override = merged_shift_start
+    if "shift_end_local_override" in provided_fields:
+        mechanic.shift_end_local_override = merged_shift_end
 
     db.add(mechanic)
     await db.commit()

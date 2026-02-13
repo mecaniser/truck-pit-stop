@@ -42,6 +42,12 @@ class Tenant(BaseModel):
     shop_supplies_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of labor
     service_fee_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of total
     labor_rate = Column(Numeric(10, 2), default=Decimal("100.00"), nullable=False)  # Default hourly rate
+
+    # Workforce settings (mechanic utilization tracking)
+    timezone = Column(String(64), default="America/New_York", nullable=False)
+    default_core_hours_minutes = Column(Integer, default=480, nullable=False)  # 8 hours
+    default_shift_start_local = Column(String(5), default="08:00", nullable=False)
+    default_shift_end_local = Column(String(5), default="18:00", nullable=False)
     
     # Enrollment fields
     enrollment_status = Column(String(20), default="pending", nullable=False)  # pending, approved, rejected
@@ -54,4 +60,3 @@ class Tenant(BaseModel):
     approved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     approved_by = relationship("User", foreign_keys=[approved_by_id])
     rejection_reason = Column(Text, nullable=True)
-

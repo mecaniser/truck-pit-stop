@@ -24,6 +24,10 @@ export type WSEventType =
   | 'payment_received'
   | 'sms_message_created'
   | 'sms_thread_updated'
+  | 'mechanic_timer_update'
+  | 'mechanic_attendance_update'
+  | 'mechanic_break_update'
+  | 'mechanic_idle_alert'
 
 export interface WSMessage {
   type: WSEventType
@@ -40,6 +44,14 @@ export interface WSMessage {
   message_id?: string
   customer_id?: string
   delivery_status?: string
+  mechanic_id?: string
+  session_id?: string
+  attendance_session_id?: string
+  break_session_id?: string
+  action?: string
+  idle_minutes?: number
+  local_date?: string
+  mechanic_name?: string
 }
 
 interface UseWebSocketOptions {
@@ -186,6 +198,37 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'sms_thread_updated':
           queryClient.invalidateQueries({ queryKey: ['message-threads'] })
           queryClient.invalidateQueries({ queryKey: ['thread-messages'] })
+          break
+
+        case 'mechanic_timer_update':
+          queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          break
+
+        case 'mechanic_attendance_update':
+        case 'mechanic_break_update':
+          queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          break
+
+        case 'mechanic_idle_alert':
+          if (onNotification) {
+            onNotification({
+              type: 'mechanic_idle_alert',
+              mechanicId: data.mechanic_id,
+              mechanicName: data.mechanic_name,
+              idleMinutes: data.idle_minutes,
+              localDate: data.local_date,
+            })
+          }
+          queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+          queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
           break
       }
     } catch (err) {

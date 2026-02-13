@@ -1,0 +1,374 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import uuid4
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.db.models.mechanic_time import (
+    MechanicAttendanceSession,
+    MechanicSessionType,
+    MechanicTimeSession,
+)
+from app.db.models.tenant import Tenant
+from app.db.models.user import User, UserRole
+from app.services import mechanic_time_service
+
+
+class _ScalarListResult:
+    def __init__(self, values):
+        self._values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+
+class _RowResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return self._rows
+
+
+class _FakeDB:
+    def __init__(self, execute_result=None):
+        self._execute_result = execute_result
+        self.added: list[object] = []
+        self.flush_count = 0
+
+    async def execute(self, _statement):
+        if callable(self._execute_result):
+            return self._execute_result(_statement)
+        return self._execute_result
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def flush(self):
+        self.flush_count += 1
+        for obj in self.added:
+            if getattr(obj, "id", None) is None:
+                obj.id = uuid4()
+
+
+def _build_tenant_and_users():
+    tenant_id = uuid4()
+    tenant = Tenant(
+        id=tenant_id,
+        name="Test Garage",
+        slug=f"tenant-{tenant_id.hex[:8]}",
+        timezone="America/New_York",
+        default_core_hours_minutes=480,
+        default_shift_start_local="08:00",
+        default_shift_end_local="18:00",
+    )
+    mechanic = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.MECHANIC,
+        email="mechanic@example.com",
+        hashed_password="hashed-password",
+        first_name="Manny",
+        last_name="Mechanic",
+        is_active=True,
+        is_verified=True,
+    )
+    manager = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.GARAGE_OWNER,
+        email="owner@example.com",
+        hashed_password="hashed-password",
+        first_name="Olive",
+        last_name="Owner",
+        is_active=True,
+        is_verified=True,
+    )
+    return tenant, mechanic, manager
+
+
+def test_validate_timezone_name_rejects_invalid_value():
+    assert mechanic_time_service.validate_timezone_name("America/New_York") == "America/New_York"
+    with pytest.raises(ValueError):
+        mechanic_time_service.validate_timezone_name("Mars/Olympus")
+
+
+@pytest.mark.asyncio
+async def test_start_session_requires_manager_reason_for_manager_actor():
+    tenant, mechanic, manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    with pytest.raises(ValueError) as exc:
+        await mechanic_time_service.start_session(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=manager,
+            session_type=MechanicSessionType.MISC.value,
+            misc_category="shop_support",
+            manager_reason=None,
+        )
+
+    assert str(exc.value) == "Manager reason is required for this action"
+
+
+@pytest.mark.asyncio
+async def test_start_session_auto_switches_existing_active_timer(monkeypatch):
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    current = MechanicTimeSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        session_type=MechanicSessionType.MISC.value,
+        misc_category="shop_support",
+        started_at=datetime(2026, 2, 13, 13, 0, tzinfo=timezone.utc),
+        started_by_user_id=mechanic.id,
+    )
+
+    stop_calls: list[dict] = []
+
+    async def _fake_get_active_session(_db, *, tenant_id, mechanic_id):
+        assert tenant_id == tenant.id
+        assert mechanic_id == mechanic.id
+        return current
+
+    async def _fake_stop_active_session(_db, **kwargs):
+        stop_calls.append(kwargs)
+        return current
+
+    async def _noop_resolve_idle_streak(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(mechanic_time_service, "get_active_session", _fake_get_active_session)
+    monkeypatch.setattr(mechanic_time_service, "stop_active_session", _fake_stop_active_session)
+    monkeypatch.setattr(mechanic_time_service, "resolve_idle_streak", _noop_resolve_idle_streak)
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "ensure_attendance_started",
+        AsyncMock(return_value=(
+            MechanicAttendanceSession(
+                id=uuid4(),
+                tenant_id=tenant.id,
+                mechanic_id=mechanic.id,
+                local_date=datetime(2026, 2, 13, tzinfo=timezone.utc).date(),
+                started_at=datetime(2026, 2, 13, 12, 0, tzinfo=timezone.utc),
+                started_by_user_id=mechanic.id,
+                start_source="auto_first_timer",
+                snapshot_timezone="America/New_York",
+                snapshot_core_target_minutes=480,
+                snapshot_shift_start_local="08:00",
+                snapshot_shift_end_local="18:00",
+            ),
+            False,
+        )),
+    )
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "get_active_break_session",
+        AsyncMock(return_value=None),
+    )
+
+    new_session, auto_clocked_in, _attendance_session_id = await mechanic_time_service.start_session(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        actor_user=mechanic,
+        session_type=MechanicSessionType.REPAIR_ORDER.value,
+        repair_order_id=uuid4(),
+        stop_previous_reason="auto_switch",
+    )
+
+    assert new_session.mechanic_id == mechanic.id
+    assert auto_clocked_in is False
+    assert len(stop_calls) == 1
+    assert stop_calls[0]["stop_reason"] == "auto_switch"
+    assert db.flush_count == 1
+
+
+@pytest.mark.asyncio
+async def test_clock_in_rejects_duplicate_active_attendance(monkeypatch):
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+    active_attendance = MechanicAttendanceSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        local_date=datetime(2026, 2, 13, tzinfo=timezone.utc).date(),
+        started_at=datetime(2026, 2, 13, 13, 0, tzinfo=timezone.utc),
+        started_by_user_id=mechanic.id,
+        start_source="manual_clock_in",
+        snapshot_timezone="America/New_York",
+        snapshot_core_target_minutes=480,
+        snapshot_shift_start_local="08:00",
+        snapshot_shift_end_local="18:00",
+    )
+
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "get_active_attendance_session",
+        AsyncMock(return_value=active_attendance),
+    )
+
+    with pytest.raises(ValueError) as exc:
+        await mechanic_time_service.clock_in(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=mechanic,
+        )
+    assert str(exc.value) == "Mechanic is already clocked in"
+
+
+@pytest.mark.asyncio
+async def test_clock_out_stops_timer_and_break(monkeypatch):
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+    attendance = MechanicAttendanceSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        local_date=datetime(2026, 2, 13, tzinfo=timezone.utc).date(),
+        started_at=datetime(2026, 2, 13, 13, 0, tzinfo=timezone.utc),
+        started_by_user_id=mechanic.id,
+        start_source="manual_clock_in",
+        snapshot_timezone="America/New_York",
+        snapshot_core_target_minutes=480,
+        snapshot_shift_start_local="08:00",
+        snapshot_shift_end_local="18:00",
+    )
+    stopped_timer = MechanicTimeSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        session_type=MechanicSessionType.MISC.value,
+        misc_category="shop_support",
+        started_at=datetime(2026, 2, 13, 14, 0, tzinfo=timezone.utc),
+        started_by_user_id=mechanic.id,
+    )
+
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "get_active_attendance_session",
+        AsyncMock(return_value=attendance),
+    )
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "stop_active_session",
+        AsyncMock(return_value=stopped_timer),
+    )
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "end_active_break_session",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "resolve_idle_streak",
+        AsyncMock(return_value=None),
+    )
+
+    result = await mechanic_time_service.clock_out(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        actor_user=mechanic,
+    )
+
+    assert result.attendance_session.id == attendance.id
+    assert result.stopped_timer_session.id == stopped_timer.id
+
+
+@pytest.mark.asyncio
+async def test_compute_day_summary_caps_utilization_and_computes_overtime(monkeypatch):
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    now = datetime(2026, 2, 13, 18, 0, tzinfo=timezone.utc)
+    ro_id = uuid4()
+    session = MechanicTimeSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        repair_order_id=ro_id,
+        session_type=MechanicSessionType.REPAIR_ORDER.value,
+        started_at=datetime(2026, 2, 13, 9, 0, tzinfo=timezone.utc),
+        ended_at=now,
+        started_by_user_id=mechanic.id,
+    )
+    db = _FakeDB(execute_result=_ScalarListResult([session]))
+
+    async def _fake_book_hours(*_args, **_kwargs):
+        return 4.0
+
+    monkeypatch.setattr(mechanic_time_service, "_compute_book_hours_for_orders", _fake_book_hours)
+
+    summary = await mechanic_time_service.compute_day_summary(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        target_date=now.date(),
+        now_utc=now,
+    )
+
+    assert summary["tracked_minutes"] == 540
+    assert summary["ro_minutes"] == 540
+    assert summary["misc_minutes"] == 0
+    assert summary["overtime_minutes"] == 60
+    assert summary["utilization_percent"] == 100.0
+    assert summary["book_hours"] == 4.0
+    assert summary["actual_ro_hours"] == 9.0
+    assert summary["efficiency_percent"] == 44.44
+
+
+@pytest.mark.asyncio
+async def test_close_sessions_crossing_midnight_uses_local_midnight_boundary():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    session = MechanicTimeSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        session_type=MechanicSessionType.MISC.value,
+        misc_category="shop_support",
+        started_at=datetime(2026, 2, 14, 3, 0, tzinfo=timezone.utc),  # 10 PM local previous day
+        ended_at=None,
+        started_by_user_id=mechanic.id,
+    )
+    db = _FakeDB(execute_result=_RowResult([(session, tenant)]))
+
+    closed = await mechanic_time_service.close_sessions_crossing_midnight(
+        db,
+        now_utc=datetime(2026, 2, 14, 5, 10, tzinfo=timezone.utc),  # 12:10 AM local
+    )
+
+    assert len(closed) == 1
+    assert session.stop_reason == "auto_midnight"
+    assert session.ended_at == datetime(2026, 2, 14, 5, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_close_sessions_crossing_midnight_uses_first_boundary_after_start():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    session = MechanicTimeSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        session_type=MechanicSessionType.MISC.value,
+        misc_category="shop_support",
+        started_at=datetime(2026, 2, 13, 1, 0, tzinfo=timezone.utc),  # 8 PM local on Feb 12
+        ended_at=None,
+        started_by_user_id=mechanic.id,
+    )
+    db = _FakeDB(execute_result=_RowResult([(session, tenant)]))
+
+    closed = await mechanic_time_service.close_sessions_crossing_midnight(
+        db,
+        now_utc=datetime(2026, 2, 15, 12, 0, tzinfo=timezone.utc),  # much later
+    )
+
+    assert len(closed) == 1
+    assert session.ended_at == datetime(2026, 2, 13, 5, 0, tzinfo=timezone.utc)  # first midnight after local start date

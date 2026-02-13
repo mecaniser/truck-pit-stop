@@ -25,6 +25,9 @@ export interface User {
   is_active: boolean
   tenant_id: string | null
   customer_id: string | null
+  core_hours_target_minutes_override?: number | null
+  shift_start_local_override?: string | null
+  shift_end_local_override?: string | null
 }
 
 export interface Customer {

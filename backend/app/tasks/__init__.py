@@ -19,6 +19,7 @@ celery_app.conf.update(
         "app.tasks.notifications",
         "app.tasks.invoice_reminders",
         "app.tasks.pending_zelle_reminders",
+        "app.tasks.mechanic_timer_maintenance",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
@@ -29,6 +30,10 @@ celery_app.conf.update(
         "process-pending-zelle-reminders-hourly": {
             "task": "process_pending_zelle_reminders",
             "schedule": crontab(minute=15),  # Run hourly at :15 UTC
+        },
+        "process-mechanic-timer-maintenance": {
+            "task": "process_mechanic_timer_maintenance",
+            "schedule": crontab(minute="*/5"),  # Every 5 minutes
         },
     },
 )

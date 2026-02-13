@@ -9,7 +9,7 @@ import api from '../../lib/api'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
 import { 
-  User, Lock, CreditCard, Bell, Percent, QrCode,
+  User, Lock, CreditCard, Bell, Percent, QrCode, Globe,
   CheckCircle, AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
@@ -43,7 +43,7 @@ type ProfileFormData = z.infer<typeof profileSchema>
 type PasswordFormData = z.infer<typeof passwordSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'zelle' | 'notifications' | 'fees'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'zelle' | 'notifications' | 'fees' | 'workforce'
 
 interface ConnectStatus {
   is_connected: boolean
@@ -70,6 +70,13 @@ interface TaxFeeSettings {
   shop_supplies_rate: number
   service_fee_rate: number
   labor_rate: number
+}
+
+interface WorkforceSettings {
+  timezone: string
+  default_core_hours_minutes: number
+  default_shift_start_local: string
+  default_shift_end_local: string
 }
 
 // ============ SECTION COMPONENTS ============
@@ -943,6 +950,191 @@ function FeesSection() {
   )
 }
 
+function WorkforceSection() {
+  const queryClient = useQueryClient()
+  const [timezone, setTimezone] = useState('America/New_York')
+  const [coreMinutes, setCoreMinutes] = useState('480')
+  const [shiftStart, setShiftStart] = useState('08:00')
+  const [shiftEnd, setShiftEnd] = useState('18:00')
+  const [isEditing, setIsEditing] = useState(false)
+
+  const timezoneOptions = (() => {
+    const fallback = [
+      'America/New_York',
+      'America/Chicago',
+      'America/Denver',
+      'America/Phoenix',
+      'America/Los_Angeles',
+      'America/Anchorage',
+      'Pacific/Honolulu',
+      'UTC',
+    ]
+    try {
+      const intlAny = Intl as any
+      if (typeof intlAny.supportedValuesOf === 'function') {
+        const values = intlAny.supportedValuesOf('timeZone') as string[]
+        if (Array.isArray(values) && values.length > 0) return values
+      }
+    } catch {}
+    return fallback
+  })()
+
+  const { data: workforceSettings } = useQuery<WorkforceSettings>({
+    queryKey: ['workforce-settings'],
+    queryFn: async () => {
+      const response = await api.get('/admin/workforce-settings')
+      return response.data
+    },
+  })
+
+  useEffect(() => {
+    if (workforceSettings) {
+      setTimezone(workforceSettings.timezone || 'America/New_York')
+      setCoreMinutes((workforceSettings.default_core_hours_minutes || 480).toString())
+      setShiftStart(workforceSettings.default_shift_start_local || '08:00')
+      setShiftEnd(workforceSettings.default_shift_end_local || '18:00')
+      setIsEditing(false)
+    }
+  }, [workforceSettings])
+
+  const hasChanges = workforceSettings && (
+    timezone !== workforceSettings.timezone ||
+    coreMinutes !== String(workforceSettings.default_core_hours_minutes) ||
+    shiftStart !== workforceSettings.default_shift_start_local ||
+    shiftEnd !== workforceSettings.default_shift_end_local
+  )
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        timezone,
+        default_core_hours_minutes: parseInt(coreMinutes, 10),
+        default_shift_start_local: shiftStart,
+        default_shift_end_local: shiftEnd,
+      }
+      const response = await api.put('/admin/workforce-settings', payload)
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success('Workforce settings saved')
+      queryClient.invalidateQueries({ queryKey: ['workforce-settings'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      setIsEditing(false)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to save workforce settings')
+    },
+  })
+
+  const cancelEdit = () => {
+    if (!workforceSettings) return
+    setTimezone(workforceSettings.timezone)
+    setCoreMinutes(String(workforceSettings.default_core_hours_minutes))
+    setShiftStart(workforceSettings.default_shift_start_local)
+    setShiftEnd(workforceSettings.default_shift_end_local)
+    setIsEditing(false)
+  }
+
+  const handleSave = () => {
+    const core = parseInt(coreMinutes, 10)
+    if (Number.isNaN(core) || core < 1 || core > 1440) {
+      toast.error('Core minutes must be between 1 and 1440')
+      return
+    }
+    if (!/^\d{2}:\d{2}$/.test(shiftStart) || !/^\d{2}:\d{2}$/.test(shiftEnd)) {
+      toast.error('Shift times must use HH:MM')
+      return
+    }
+    if (shiftStart >= shiftEnd) {
+      toast.error('Shift start must be before shift end')
+      return
+    }
+    saveMutation.mutate()
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-2">Workforce</h3>
+        <p className="text-sm text-gray-400">Set timezone, daily core target, and default shift window for mechanics.</p>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Timezone</label>
+          <select
+            value={timezone}
+            onChange={(e) => { setTimezone(e.target.value); setIsEditing(true) }}
+            className="w-full max-w-md px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            {timezoneOptions.map((tz) => (
+              <option key={tz} value={tz} className="bg-slate-900 text-white">
+                {tz}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Core Minutes</label>
+            <input
+              type="number"
+              min={1}
+              max={1440}
+              value={coreMinutes}
+              onChange={(e) => { setCoreMinutes(e.target.value); setIsEditing(true) }}
+              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Shift Start (HH:MM)</label>
+            <input
+              type="text"
+              value={shiftStart}
+              onChange={(e) => { setShiftStart(e.target.value); setIsEditing(true) }}
+              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="08:00"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Shift End (HH:MM)</label>
+            <input
+              type="text"
+              value={shiftEnd}
+              onChange={(e) => { setShiftEnd(e.target.value); setIsEditing(true) }}
+              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="18:00"
+            />
+          </div>
+        </div>
+
+        {isEditing && (
+          <div className="flex gap-3 pt-4 border-t border-white/10">
+            <button
+              onClick={cancelEdit}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            {hasChanges && (
+              <button
+                onClick={handleSave}
+                disabled={saveMutation.isPending}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AppearanceSection() {
   const { accent, setAccent, fontFamily, setFontFamily, fontSize, setFontSize, accentColors, resetToDefaults } = useTheme()
 
@@ -1116,6 +1308,7 @@ const GARAGE_SECTIONS = [
   { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode },
   { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell },
   { id: 'fees' as const, label: 'Tax & Fees', shortLabel: 'Fees', icon: Percent },
+  { id: 'workforce' as const, label: 'Workforce', shortLabel: 'Workforce', icon: Globe },
 ]
 
 function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean }) {
@@ -1205,6 +1398,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
         {activeSection === 'zelle' && <ZelleSection />}
         {activeSection === 'notifications' && <NotificationsSection />}
         {activeSection === 'fees' && <FeesSection />}
+        {activeSection === 'workforce' && <WorkforceSection />}
       </div>
     </div>
   )

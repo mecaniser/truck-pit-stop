@@ -40,6 +40,9 @@ class UserResponse(BaseModel):
     is_active: bool
     tenant_id: Optional[UUID] = None
     customer_id: Optional[UUID] = None
+    core_hours_target_minutes_override: Optional[int] = None
+    shift_start_local_override: Optional[str] = None
+    shift_end_local_override: Optional[str] = None
     
     model_config = {"from_attributes": True}
     

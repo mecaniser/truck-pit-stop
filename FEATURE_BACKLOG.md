@@ -148,6 +148,7 @@ These features were identified from competitor analysis and have been built:
 ### Core Workflow
 - Per-job time tracking (`work_started_at`, `work_completed_at`)
 - Live timer in mechanic portal
+- Mechanic Timer V1.1: attendance clock in/out, break mode, flex tracking, idle alerts, manager controls
 - Auto-approval thresholds for customers
 - SMS quote notifications with approval links
 - Quote decline workflow with shop notifications
@@ -210,5 +211,5 @@ These features were identified from competitor analysis and have been built:
 
 ---
 
-*Last updated: February 12, 2026*
+*Last updated: February 13, 2026*
 *Based on analysis of Fullbay and Easy Truck Shop platforms*

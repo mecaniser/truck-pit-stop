@@ -170,6 +170,31 @@ Response:
 }
 ```
 
+## 4. Mechanic Workforce Timing (Platform Capability)
+
+Garages now have workforce timing controls for mechanic attendance and utilization:
+
+- Attendance: mechanic clock in/out sessions
+- Break mode: break start/end sessions linked to attendance
+- Work timers: repair-order + misc work timers
+- Idle alerting: in-app + SMS when idle threshold is crossed during core hours
+
+### Configuration Model
+
+Garage owners/admins configure workforce defaults per tenant:
+- `timezone`
+- `default_core_hours_minutes` (default 480)
+- `default_shift_start_local` / `default_shift_end_local` (default `08:00`–`18:00`)
+
+Per-mechanic overrides are also supported for:
+- core target minutes
+- shift start/end
+
+### Important Platform Note
+
+As SUPER_ADMIN, you do not run day-to-day mechanic attendance actions for a garage.  
+Garage owner/admin users operate these controls inside their garage dashboard.
+
 ## What You CANNOT Do
 
 As SUPER_ADMIN, you **do not have access** to:

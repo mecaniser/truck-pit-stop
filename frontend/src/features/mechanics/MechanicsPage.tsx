@@ -55,9 +55,36 @@ const mechanicSchema = z.object({
         message: 'Must be 8+ chars with upper, lower, number',
       }
     ),
+  core_hours_target_minutes_override: z
+    .string()
+    .optional()
+    .refine((val) => {
+      if (!val || !val.trim()) return true
+      const n = Number(val)
+      return Number.isInteger(n) && n >= 1 && n <= 1440
+    }, { message: 'Core hours must be 1-1440 minutes' }),
+  shift_start_local_override: z
+    .string()
+    .optional()
+    .refine((val) => !val || !val.trim() || /^\d{2}:\d{2}$/.test(val), { message: 'Use HH:MM format' }),
+  shift_end_local_override: z
+    .string()
+    .optional()
+    .refine((val) => !val || !val.trim() || /^\d{2}:\d{2}$/.test(val), { message: 'Use HH:MM format' }),
 })
 
 type MechanicFormData = z.infer<typeof mechanicSchema>
+type MechanicApiPayload = {
+  first_name: string
+  last_name: string
+  email: string
+  phone?: string
+  address?: string
+  password?: string
+  core_hours_target_minutes_override?: number | null
+  shift_start_local_override?: string | null
+  shift_end_local_override?: string | null
+}
 type MechanicWithCounts = User & { 
   assigned_count?: number
   in_progress_count?: number
@@ -148,11 +175,14 @@ export default function MechanicsPage() {
       address: '',
       phone: '',
       password: '',
+      core_hours_target_minutes_override: '',
+      shift_start_local_override: '',
+      shift_end_local_override: '',
     },
   })
 
   const createMechanicMutation = useMutation({
-    mutationFn: async (data: MechanicFormData) => {
+    mutationFn: async (data: MechanicApiPayload) => {
       const response = await api.post('/mechanics', data)
       return response.data
     },
@@ -170,7 +200,7 @@ export default function MechanicsPage() {
   })
 
   const updateMechanicMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<MechanicFormData> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<MechanicApiPayload> }) => {
       const response = await api.put(`/mechanics/${id}`, data)
       return response.data
     },
@@ -260,6 +290,9 @@ export default function MechanicsPage() {
       address: '',
       phone: '',
       password: '',
+      core_hours_target_minutes_override: '',
+      shift_start_local_override: '',
+      shift_end_local_override: '',
     })
   }
   const handleCloseDrawer = () => {
@@ -288,6 +321,9 @@ export default function MechanicsPage() {
         address: editingMechanic.address || '',
         phone: editingMechanic.phone || '',
         password: '',
+        core_hours_target_minutes_override: editingMechanic.core_hours_target_minutes_override?.toString() || '',
+        shift_start_local_override: editingMechanic.shift_start_local_override || '',
+        shift_end_local_override: editingMechanic.shift_end_local_override || '',
       })
       setShowPassword(false)
     }
@@ -296,13 +332,21 @@ export default function MechanicsPage() {
   const onSubmit = (data: MechanicFormData) => {
     setFormError(null)
     const normalizedAddress = data.address?.trim() || undefined
+    const coreHoursOverride = data.core_hours_target_minutes_override?.trim()
+      ? Number(data.core_hours_target_minutes_override.trim())
+      : null
+    const shiftStartOverride = data.shift_start_local_override?.trim() || null
+    const shiftEndOverride = data.shift_end_local_override?.trim() || null
     if (editingMechanic) {
-      const payload: Partial<MechanicFormData> = {
+      const payload: Record<string, unknown> = {
         first_name: data.first_name,
         last_name: data.last_name,
         email: data.email,
         phone: data.phone || '',
         address: normalizedAddress,
+        core_hours_target_minutes_override: coreHoursOverride,
+        shift_start_local_override: shiftStartOverride,
+        shift_end_local_override: shiftEndOverride,
       }
       if (data.password) {
         payload.password = data.password
@@ -313,24 +357,16 @@ export default function MechanicsPage() {
         setError('password', { type: 'manual', message: 'Password is required' })
         return
       }
-      createMechanicMutation.mutate({ ...data, address: normalizedAddress, password: data.password })
+      createMechanicMutation.mutate({
+        ...data,
+        address: normalizedAddress,
+        password: data.password,
+        core_hours_target_minutes_override: coreHoursOverride,
+        shift_start_local_override: shiftStartOverride,
+        shift_end_local_override: shiftEndOverride,
+      })
     }
   }
-
-  useEffect(() => {
-    if (editingMechanic) {
-      setIsAdding(true)
-      reset({
-        first_name: editingMechanic.first_name || '',
-        last_name: editingMechanic.last_name || '',
-        email: editingMechanic.email || '',
-        phone: editingMechanic.phone || '',
-        address: '',
-        password: '',
-      })
-      setShowPassword(false)
-    }
-  }, [editingMechanic, reset])
 
   return (
     <>
@@ -780,6 +816,53 @@ export default function MechanicsPage() {
                     placeholder="123 Main St, City"
                   />
                   {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Core Minutes (override)</label>
+                    <input
+                      {...register('core_hours_target_minutes_override')}
+                      type="number"
+                      min={1}
+                      max={1440}
+                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                        errors.core_hours_target_minutes_override ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
+                      }`}
+                      placeholder="480"
+                    />
+                    {errors.core_hours_target_minutes_override && (
+                      <p className="mt-1 text-sm text-red-600">{errors.core_hours_target_minutes_override.message}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift Start (HH:MM)</label>
+                    <input
+                      {...register('shift_start_local_override')}
+                      type="text"
+                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                        errors.shift_start_local_override ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
+                      }`}
+                      placeholder="08:00"
+                    />
+                    {errors.shift_start_local_override && (
+                      <p className="mt-1 text-sm text-red-600">{errors.shift_start_local_override.message}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Shift End (HH:MM)</label>
+                    <input
+                      {...register('shift_end_local_override')}
+                      type="text"
+                      className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
+                        errors.shift_end_local_override ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
+                      }`}
+                      placeholder="18:00"
+                    />
+                    {errors.shift_end_local_override && (
+                      <p className="mt-1 text-sm text-red-600">{errors.shift_end_local_override.message}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div>

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -37,3 +37,7 @@ class User(BaseModel):
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, unique=True)
     customer = relationship("Customer", backref="user", uselist=False)
 
+    # Optional per-mechanic workforce overrides
+    core_hours_target_minutes_override = Column(Integer, nullable=True)
+    shift_start_local_override = Column(String(5), nullable=True)  # HH:MM
+    shift_end_local_override = Column(String(5), nullable=True)  # HH:MM

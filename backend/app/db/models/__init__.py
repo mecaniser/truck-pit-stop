@@ -24,6 +24,16 @@ from app.db.models.sms_message import (
     SMSMessageSource,
     SMSDeliveryStatus,
 )
+from app.db.models.mechanic_time import (
+    MechanicAttendanceAudit,
+    MechanicAttendanceSession,
+    MechanicBreakSession,
+    MechanicTimeSession,
+    MechanicTimeSessionAudit,
+    MechanicIdleAlertStreak,
+    MechanicSessionType,
+    MiscWorkCategory,
+)
 
 __all__ = [
     "Tenant",
@@ -58,4 +68,12 @@ __all__ = [
     "SMSMessageDirection",
     "SMSMessageSource",
     "SMSDeliveryStatus",
+    "MechanicAttendanceSession",
+    "MechanicBreakSession",
+    "MechanicAttendanceAudit",
+    "MechanicTimeSession",
+    "MechanicTimeSessionAudit",
+    "MechanicIdleAlertStreak",
+    "MechanicSessionType",
+    "MiscWorkCategory",
 ]
