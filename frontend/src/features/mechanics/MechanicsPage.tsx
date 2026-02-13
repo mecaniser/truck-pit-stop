@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useTheme } from '@/contexts/ThemeContext'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
+import { getPasswordValidationError } from '@/lib/passwordPolicy'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { Eye, EyeOff, Calendar, DollarSign, Check, X, Wrench } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -41,20 +42,16 @@ const mechanicSchema = z.object({
   password: z
     .string()
     .optional()
-    .refine(
-      (val) => {
-        if (!val) return true
-        return (
-          val.length >= 8 &&
-          /[A-Z]/.test(val) &&
-          /[a-z]/.test(val) &&
-          /[0-9]/.test(val)
-        )
-      },
-      {
-        message: 'Must be 8+ chars with upper, lower, number',
+    .superRefine((value, ctx) => {
+      if (!value) return
+      const validationError = getPasswordValidationError(value)
+      if (validationError) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: validationError,
+        })
       }
-    ),
+    }),
   core_hours_target_minutes_override: z
     .string()
     .optional()
@@ -874,7 +871,7 @@ export default function MechanicsPage() {
                       className={`w-full pr-11 pl-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.password ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
-                      placeholder="At least 8 chars, 1 upper, 1 number"
+                      placeholder="At least 8 chars, upper/lower, number, special"
                     />
                     <button
                       type="button"
@@ -905,7 +902,7 @@ export default function MechanicsPage() {
                     </div>
                   ) : (
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-2">
-                      <p className="text-xs text-gray-500">First name + last 4 of phone.</p>
+                      <p className="text-xs text-gray-500">First name + @ + last 4 of phone.</p>
                       <div className="flex items-center gap-3">
                         {suggestedPassword ? (
                           <button
