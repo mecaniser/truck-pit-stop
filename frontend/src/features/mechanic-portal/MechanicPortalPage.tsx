@@ -491,7 +491,7 @@ export default function MechanicPortalPage() {
 
   const clockInMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post<TimerActionResponse>('/mechanics/me/attendance/clock-in')
+      const response = await api.post<TimerActionResponse>('/mechanics/me/attendance/clock-in', {})
       return response.data
     },
     onSuccess: () => {
@@ -505,7 +505,7 @@ export default function MechanicPortalPage() {
 
   const clockOutMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post<TimerActionResponse>('/mechanics/me/attendance/clock-out')
+      const response = await api.post<TimerActionResponse>('/mechanics/me/attendance/clock-out', {})
       return response.data
     },
     onSuccess: () => {
@@ -520,7 +520,7 @@ export default function MechanicPortalPage() {
 
   const startBreakMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post<TimerActionResponse>('/mechanics/me/break/start')
+      const response = await api.post<TimerActionResponse>('/mechanics/me/break/start', {})
       return response.data
     },
     onSuccess: () => {
@@ -535,7 +535,7 @@ export default function MechanicPortalPage() {
 
   const endBreakMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post<TimerActionResponse>('/mechanics/me/break/end')
+      const response = await api.post<TimerActionResponse>('/mechanics/me/break/end', {})
       return response.data
     },
     onSuccess: () => {

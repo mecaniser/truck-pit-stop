@@ -476,7 +476,7 @@ async def get_my_stats(
 
 @router.post("/me/attendance/clock-in", response_model=TimerActionResponse)
 async def clock_in_mechanic(
-    body: ClockActionRequest,
+    body: Optional[ClockActionRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
@@ -494,7 +494,7 @@ async def clock_in_mechanic(
             tenant=tenant,
             mechanic=mechanic,
             actor_user=current_user,
-            note=body.note,
+            note=body.note if body else None,
             start_source="manual_clock_in",
         )
     except ValueError as exc:
@@ -516,7 +516,7 @@ async def clock_in_mechanic(
 
 @router.post("/me/attendance/clock-out", response_model=TimerActionResponse)
 async def clock_out_mechanic(
-    body: ClockActionRequest,
+    body: Optional[ClockActionRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
@@ -534,7 +534,7 @@ async def clock_out_mechanic(
             tenant=tenant,
             mechanic=mechanic,
             actor_user=current_user,
-            note=body.note,
+            note=body.note if body else None,
             end_source="manual_clock_out",
         )
     except ValueError as exc:
@@ -572,7 +572,7 @@ async def clock_out_mechanic(
 
 @router.post("/me/break/start", response_model=TimerActionResponse)
 async def start_mechanic_break(
-    body: BreakActionRequest,
+    body: Optional[BreakActionRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
@@ -590,7 +590,7 @@ async def start_mechanic_break(
             tenant=tenant,
             mechanic=mechanic,
             actor_user=current_user,
-            note=body.note,
+            note=body.note if body else None,
             start_source="manual_break_start",
         )
     except ValueError as exc:
@@ -620,7 +620,7 @@ async def start_mechanic_break(
 
 @router.post("/me/break/end", response_model=TimerActionResponse)
 async def end_mechanic_break(
-    body: BreakActionRequest,
+    body: Optional[BreakActionRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.MECHANIC)),
 ):
@@ -638,7 +638,7 @@ async def end_mechanic_break(
             tenant=tenant,
             mechanic=mechanic,
             actor_user=current_user,
-            note=body.note,
+            note=body.note if body else None,
             end_source="manual_break_end",
         )
     except ValueError as exc:
