@@ -477,7 +477,7 @@ function AppearanceSection() {
       {/* Font Size */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6">
         <label className="block text-sm font-medium text-gray-300 mb-4">Font Size</label>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {FONT_SIZE_OPTIONS.map((option) => (
             <button
               key={option.id}
@@ -492,7 +492,7 @@ function AppearanceSection() {
                 {option.label}
               </span>
               <span className="hidden sm:block text-xs text-gray-500 mt-1">
-                {option.scale === 1 ? '16px' : option.scale < 1 ? '14px' : '18px'}
+                {option.previewPx}px
               </span>
             </button>
           ))}

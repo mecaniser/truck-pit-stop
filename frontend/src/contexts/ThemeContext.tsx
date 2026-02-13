@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 // ============ TYPES ============
 export type AccentColor = 'cyan' | 'indigo' | 'emerald' | 'rose' | 'amber'
 export type FontFamily = 'system' | 'inter' | 'source'
-export type FontSize = 'compact' | 'default' | 'comfortable'
+export type FontSize = 'compact' | 'default' | 'comfortable' | 'large'
 
 export interface ThemeConfig {
   accent: AccentColor
@@ -26,10 +26,11 @@ export const FONT_FAMILY_OPTIONS: { id: FontFamily; label: string; stack: string
   { id: 'source', label: 'Source Sans', stack: "'Source Sans 3', sans-serif" },
 ]
 
-export const FONT_SIZE_OPTIONS: { id: FontSize; label: string; scale: number }[] = [
-  { id: 'compact', label: 'Compact', scale: 0.875 },
-  { id: 'default', label: 'Default', scale: 1 },
-  { id: 'comfortable', label: 'Comfortable', scale: 1.125 },
+export const FONT_SIZE_OPTIONS: { id: FontSize; label: string; scale: number; previewPx: number }[] = [
+  { id: 'compact', label: 'Compact', scale: 0.875, previewPx: 14 },
+  { id: 'default', label: 'Default', scale: 1, previewPx: 16 },
+  { id: 'comfortable', label: 'Comfortable', scale: 1.125, previewPx: 18 },
+  { id: 'large', label: 'Large', scale: 1.2, previewPx: 19 },
 ]
 
 // ============ DEFAULTS ============

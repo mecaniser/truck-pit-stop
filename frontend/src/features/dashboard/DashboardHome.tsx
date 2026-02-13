@@ -146,34 +146,34 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-white/5 rounded-lg p-3 hover:bg-white/10 transition-colors border border-white/5 group"
+      className="w-full text-left bg-white/5 rounded-lg p-3 2xl:p-2.5 hover:bg-white/10 transition-colors border border-white/5 group"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-white text-sm">{order.order_number}</span>
+            <span className="font-medium text-white text-sm 2xl:text-base">{order.order_number}</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[statusKey] || 'bg-gray-100 text-gray-700'}`}
+              className={`px-2 py-0.5 rounded-full text-xs 2xl:text-[13px] font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[statusKey] || 'bg-gray-100 text-gray-700'}`}
             >
               {statusLabel}
             </span>
             {elapsed && (
-              <span className="text-xs font-mono" style={{ color: accentColor }}>{elapsed}</span>
+              <span className="text-xs 2xl:text-sm font-mono" style={{ color: accentColor }}>{elapsed}</span>
             )}
           </div>
-          <p className="text-gray-400 text-xs truncate mt-1">
+          <p className="text-gray-400 text-xs 2xl:text-sm truncate mt-1">
             {order.customer_name} &bull; {order.vehicle_info}
           </p>
           {order.mechanic_name && (
-            <p className="text-xs mt-0.5" style={{ color: accentColor, opacity: 0.7 }}>&rarr; {order.mechanic_name}</p>
+            <p className="text-xs 2xl:text-sm mt-0.5" style={{ color: accentColor, opacity: 0.7 }}>&rarr; {order.mechanic_name}</p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <div className="text-right">
-            <div className="text-xs font-medium text-white">
+            <div className="text-xs 2xl:text-sm font-medium text-white">
               ${parseFloat(order.total_cost).toFixed(2)}
             </div>
-            <div className="text-xs text-gray-500">{timeAgo(order.updated_at)}</div>
+            <div className="text-xs 2xl:text-[13px] text-gray-500">{timeAgo(order.updated_at)}</div>
           </div>
           <ChevronRight className="w-4 h-4 text-gray-500 group-hover:opacity-100 transition-colors" style={{ color: accentColor }} />
         </div>
@@ -184,7 +184,7 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
 
 export default function DashboardHome() {
   const { user } = useAuthStore()
-  const { accentColors } = useTheme()
+  const { accentColors, fontSize } = useTheme()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -199,6 +199,7 @@ export default function DashboardHome() {
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const isExpandedFont = fontSize === 'comfortable' || fontSize === 'large'
   
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
@@ -322,13 +323,17 @@ export default function DashboardHome() {
   ]
 
   return (
-    <div className="flex flex-col gap-5 flex-1 min-h-0">
+    <div
+      className={`flex flex-col flex-1 min-h-0 2xl:h-[calc(100vh-7.5rem)] 2xl:overflow-hidden ${
+        isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'
+      }`}
+    >
       {/* Header */}
       <div className="flex-shrink-0">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">
+        <h1 className="text-2xl sm:text-3xl 2xl:text-[2.15rem] font-bold text-white">
           {isMechanic ? 'My Workbench' : 'Garage Cockpit'}
         </h1>
-        <p className="text-gray-400 mt-1">
+        <p className="text-gray-400 mt-1 2xl:text-[1.02rem]">
           {isMechanic
             ? `You have ${stats?.my_in_progress || 0} jobs in progress`
             : `Welcome back, ${user?.first_name || user?.email}`}
@@ -503,16 +508,16 @@ export default function DashboardHome() {
       )}
 
       {/* Swimlanes Section - Expands to fill space */}
-      <div className="flex-1 flex flex-col gap-3 min-h-0">
+      <div className="flex-1 flex flex-col gap-2.5 2xl:gap-2 min-h-0">
         {/* Swimlanes Header with Live Indicator */}
         <div className="flex items-center justify-between flex-shrink-0">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+          <h2 className="text-sm 2xl:text-base font-semibold text-gray-400 uppercase tracking-wide">
             Work Queue
           </h2>
           <button
             onClick={handleManualRefresh}
             disabled={isRefreshing}
-            className="flex items-center gap-2 px-2 py-1 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+            className="flex items-center gap-2 px-2 py-1 2xl:px-2.5 text-xs 2xl:text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
             title="Refresh dashboard"
           >
             <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -522,21 +527,21 @@ export default function DashboardHome() {
         </div>
 
         {/* Work Queue Swimlanes */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 2xl:gap-2.5 flex-1 min-h-0">
         {/* Lane 1: Needs Action */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[200px]">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[190px] 2xl:min-h-[180px]">
+          <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-400" />
-              <h3 className="text-sm font-semibold text-white">Needs Action</h3>
+              <h3 className="text-sm 2xl:text-base font-semibold text-white">Needs Action</h3>
             </div>
-            <span className="text-xs font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+            <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
               {stats?.orders_needing_action?.length || 0}
             </span>
           </div>
-          <div className="p-3 space-y-2 overflow-y-auto flex-1">
+          <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
             {!stats?.orders_needing_action?.length ? (
-              <p className="text-gray-500 text-sm text-center py-6">All clear</p>
+              <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">All clear</p>
             ) : (
               stats.orders_needing_action.map((order) => (
                 <OrderCard
@@ -551,19 +556,19 @@ export default function DashboardHome() {
         </div>
 
         {/* Lane 2: On the Floor */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[200px]">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[190px] 2xl:min-h-[180px]">
+          <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
               <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
-              <h3 className="text-sm font-semibold text-white">On the Floor</h3>
+              <h3 className="text-sm 2xl:text-base font-semibold text-white">On the Floor</h3>
             </div>
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
+            <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
               {stats?.orders_on_floor?.length || 0}
             </span>
           </div>
-          <div className="p-3 space-y-2 overflow-y-auto flex-1">
+          <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
             {!stats?.orders_on_floor?.length ? (
-              <p className="text-gray-500 text-sm text-center py-6">No active work</p>
+              <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No active work</p>
             ) : (
               stats.orders_on_floor.map((order) => (
                 <OrderCard
@@ -578,19 +583,19 @@ export default function DashboardHome() {
         </div>
 
         {/* Lane 3: Ready to Close */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[200px]">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[190px] 2xl:min-h-[180px]">
+          <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
             <div className="flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-semibold text-white">Ready to Close</h3>
+              <h3 className="text-sm 2xl:text-base font-semibold text-white">Ready to Close</h3>
             </div>
-            <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+            <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
               {stats?.orders_ready_to_close?.length || 0}
             </span>
           </div>
-          <div className="p-3 space-y-2 overflow-y-auto flex-1">
+          <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
             {!stats?.orders_ready_to_close?.length ? (
-              <p className="text-gray-500 text-sm text-center py-6">Nothing pending</p>
+              <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">Nothing pending</p>
             ) : (
               stats.orders_ready_to_close.map((order) => (
                 <OrderCard
@@ -608,43 +613,43 @@ export default function DashboardHome() {
 
       {/* Bottom Bar: Revenue + Team Workload (managers only) */}
       {isManager && (
-        <div className="grid grid-cols-1 xl:grid-cols-[1.9fr_1.1fr] gap-4 flex-shrink-0">
+        <div className="grid grid-cols-1 xl:grid-cols-[1.9fr_1.1fr] gap-3 2xl:gap-2.5 flex-shrink-0">
           {/* Revenue KPIs */}
-          <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Revenue KPIs</h3>
-              <span className="text-xs text-gray-400 bg-white/5 border border-white/10 rounded-full px-2 py-0.5">
+          <div className="bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
+            <div className="flex items-center justify-between gap-3 mb-2.5">
+              <h3 className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider">Revenue KPIs</h3>
+              <span className="text-xs 2xl:text-sm text-gray-400 bg-white/5 border border-white/10 rounded-full px-2 py-0.5">
                 {stats?.revenue?.total_paid_orders || 0} paid orders
               </span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
               {revenueCards.map((card) => (
-                <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
-                  <div className="text-[11px] uppercase tracking-wide text-gray-500">{card.label}</div>
-                  <div className={`mt-1 text-base font-semibold ${card.tone}`}>
+                <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2">
+                  <div className="text-[11px] 2xl:text-xs uppercase tracking-wide text-gray-500">{card.label}</div>
+                  <div className={`mt-1 text-base 2xl:text-lg font-semibold ${card.tone}`}>
                     ${card.value.toLocaleString()}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-gray-500">{card.note}</div>
+                  <div className="mt-0.5 text-[11px] 2xl:text-xs text-gray-500">{card.note}</div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Team Workload */}
-          <div className="bg-white/5 rounded-xl p-3 border border-white/10">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Team Capacity</h3>
-              <div className="text-[11px] text-gray-500">
+          <div className="bg-white/5 rounded-xl p-3 2xl:p-2.5 border border-white/10">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <h3 className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider">Team Capacity</h3>
+              <div className="text-[11px] 2xl:text-xs text-gray-500">
                 {teamAssignedTotal} assigned
               </div>
             </div>
 
             {!teamMembers.length ? (
-              <span className="text-xs text-gray-500">No mechanics</span>
+              <span className="text-xs 2xl:text-sm text-gray-500">No mechanics</span>
             ) : (
-              <div className="space-y-2">
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wide text-gray-500">
+              <div className="space-y-1.5">
+                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5">
+                  <div className="flex items-center justify-between gap-2 text-[11px] 2xl:text-xs uppercase tracking-wide text-gray-500">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="truncate">Team Utilization</span>
                       <span className="text-gray-400 normal-case tracking-normal">
@@ -664,7 +669,7 @@ export default function DashboardHome() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 max-h-44 overflow-y-auto pr-1">
+                <div className={`grid grid-cols-1 lg:grid-cols-3 gap-2 overflow-y-auto pr-1 ${isExpandedFont ? 'max-h-40 2xl:max-h-36' : 'max-h-44 2xl:max-h-40'}`}>
                   {teamMembers.slice(0, 9).map((m) => {
                     const loadPct = m.assigned_count > 0
                       ? Math.round((m.in_progress_count / m.assigned_count) * 100)
@@ -673,7 +678,7 @@ export default function DashboardHome() {
                     return (
                       <div
                         key={m.mechanic_id}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2"
+                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 2xl:px-2"
                         title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
@@ -683,9 +688,9 @@ export default function DashboardHome() {
                           >
                             {m.mechanic_name.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-xs text-white truncate">{m.mechanic_name}</span>
+                          <span className="text-xs 2xl:text-[13px] text-white truncate">{m.mechanic_name}</span>
                         </div>
-                        <div className="mt-1 text-[11px] text-gray-400">
+                        <div className="mt-1 text-[11px] 2xl:text-xs text-gray-400">
                           {m.in_progress_count} active · {queued} queued
                         </div>
                         <div className="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -698,7 +703,7 @@ export default function DashboardHome() {
                     )
                   })}
                   {teamMembers.length > 9 && (
-                    <div className="text-[11px] text-gray-500 px-1 col-span-full">
+                    <div className="text-[11px] 2xl:text-xs text-gray-500 px-1 col-span-full">
                       +{teamMembers.length - 9} more mechanics
                     </div>
                   )}
