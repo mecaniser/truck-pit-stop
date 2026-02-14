@@ -862,6 +862,169 @@ async def start_work(
     )
 
 
+HOLD_REASONS = [
+    "waiting_for_parts",
+    "waiting_for_customer_approval",
+    "need_more_info",
+    "other",
+]
+
+
+class HoldRequest(BaseModel):
+    reason: str
+
+
+@router.post("/{order_id}/hold", response_model=RepairOrderResponse)
+async def hold_repair_order(
+    order_id: UUID,
+    body: HoldRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Mechanic puts an in-progress RO on hold (waiting for parts, customer approval, etc.)"""
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id)
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    if order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    if order.status != RepairOrderStatus.IN_PROGRESS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot hold job in '{order.status.value}' status")
+    if order.hold_reason:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job is already on hold")
+
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Hold reason is required")
+
+    order.hold_reason = reason
+    order.held_at = datetime.now(timezone.utc)
+
+    # Auto-stop the active RO timer for this order.
+    stopped_session = None
+    try:
+        active_session = await get_active_session(db, tenant_id=order.tenant_id, mechanic_id=current_user.id)
+        if (
+            active_session
+            and (active_session.session_type.value if hasattr(active_session.session_type, "value") else active_session.session_type)
+            == MechanicSessionType.REPAIR_ORDER.value
+            and active_session.repair_order_id == order.id
+        ):
+            stopped_session = await stop_active_session(
+                db,
+                tenant_id=order.tenant_id,
+                mechanic_id=current_user.id,
+                actor_user=current_user,
+                stop_reason=f"hold:{reason}",
+            )
+    except Exception:
+        pass
+
+    await db.commit()
+    await db.refresh(order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    try:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(order.tenant_id),
+            mechanic_id=str(current_user.id),
+            session_id=str(stopped_session.id) if stopped_session else str(order.id),
+            action="hold_repair_order",
+        )
+    except Exception:
+        pass
+
+    return RepairOrderResponse.model_validate(order)
+
+
+@router.post("/{order_id}/resume", response_model=RepairOrderStartWorkResponse)
+async def resume_repair_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MECHANIC)),
+):
+    """Mechanic resumes a held RO — clears hold state and restarts the timer."""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    if order.assigned_mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    if order.status != RepairOrderStatus.IN_PROGRESS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot resume job in '{order.status.value}' status")
+    if not order.hold_reason:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Job is not on hold")
+
+    order.hold_reason = None
+    order.held_at = None
+
+    # Restart the RO timer.
+    started_session = None
+    auto_clocked_in = False
+    attendance_session_id: Optional[str] = None
+    try:
+        tenant, mechanic = await fetch_tenant_and_mechanic(db, tenant_id=order.tenant_id, mechanic_id=current_user.id)
+        started_session, auto_clocked_in, attendance_session_id = await start_session(
+            db,
+            tenant=tenant,
+            mechanic=mechanic,
+            actor_user=current_user,
+            session_type=MechanicSessionType.REPAIR_ORDER.value,
+            repair_order_id=order.id,
+            stop_previous_reason="resume_from_hold",
+        )
+    except Exception:
+        pass
+
+    await db.commit()
+    await db.refresh(order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+    try:
+        await broadcast_mechanic_timer_update(
+            tenant_id=str(order.tenant_id),
+            mechanic_id=str(current_user.id),
+            session_id=str(started_session.id) if started_session else str(order.id),
+            action="resume_from_hold",
+        )
+        if auto_clocked_in and attendance_session_id:
+            await broadcast_mechanic_attendance_update(
+                tenant_id=str(order.tenant_id),
+                mechanic_id=str(current_user.id),
+                attendance_session_id=attendance_session_id,
+                action="auto_clock_in",
+            )
+    except Exception:
+        pass
+
+    return RepairOrderStartWorkResponse(
+        **RepairOrderResponse.model_validate(order).model_dump(),
+        auto_clocked_in=auto_clocked_in,
+    )
+
+
 @router.post("/{order_id}/complete-work", response_model=RepairOrderResponse)
 async def complete_work(
     order_id: UUID,
@@ -890,6 +1053,9 @@ async def complete_work(
     
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_completed_at = datetime.now(timezone.utc)
+    # Clear hold state if completing from hold
+    order.hold_reason = None
+    order.held_at = None
 
     # Auto-stop active repair-order timer for this work order when work completes.
     stopped_session = None

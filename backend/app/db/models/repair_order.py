@@ -55,6 +55,10 @@ class RepairOrder(BaseModel):
     # Per-job time tracking
     work_started_at = Column(DateTime(timezone=True), nullable=True)
     work_completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Hold / pause sub-state (while status remains IN_PROGRESS)
+    hold_reason = Column(String(100), nullable=True)
+    held_at = Column(DateTime(timezone=True), nullable=True)
     
     # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 from unittest.mock import AsyncMock
 
@@ -11,6 +12,7 @@ from app.db.models.mechanic_time import (
     MechanicSessionType,
     MechanicTimeSession,
 )
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services import mechanic_time_service
@@ -323,6 +325,10 @@ async def test_compute_day_summary_caps_utilization_and_computes_overtime(monkey
     assert summary["book_hours"] == 4.0
     assert summary["actual_ro_hours"] == 9.0
     assert summary["efficiency_percent"] == 44.44
+    assert summary["core_countdown_elapsed_minutes"] == 480
+    assert summary["core_countdown_remaining_minutes"] == 0
+    assert summary["tracked_vs_attendance_gap_minutes"] == 0
+    assert summary["work_coverage_percent"] == 100.0
 
 
 @pytest.mark.asyncio
@@ -372,3 +378,391 @@ async def test_close_sessions_crossing_midnight_uses_first_boundary_after_start(
 
     assert len(closed) == 1
     assert session.ended_at == datetime(2026, 2, 13, 5, 0, tzinfo=timezone.utc)  # first midnight after local start date
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_prioritizes_stop_misc_pick_ro():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    assigned_order = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=uuid4(),
+        vehicle_id=uuid4(),
+        order_number="RO-READY-1",
+        status=RepairOrderStatus.ACKNOWLEDGED,
+        assigned_mechanic_id=mechanic.id,
+    )
+    in_progress_order = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=uuid4(),
+        vehicle_id=uuid4(),
+        order_number="RO-IP-1",
+        status=RepairOrderStatus.IN_PROGRESS,
+        assigned_mechanic_id=mechanic.id,
+    )
+    db = _FakeDB(execute_result=_ScalarListResult([assigned_order, in_progress_order]))
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session={
+            "id": str(uuid4()),
+            "session_type": MechanicSessionType.MISC.value,
+            "repair_order_id": None,
+            "misc_category": "shop_cleanup",
+        },
+    )
+
+    assert recommendation["suggested_next_action"] == "stop_misc_pick_ro"
+    assert recommendation["assigned_ready_orders_count"] == 1
+    assert recommendation["untimed_in_progress_orders_count"] == 1
+    assert recommendation["recommended_order_id"] == str(assigned_order.id)
+    assert recommendation["recommended_order_number"] == assigned_order.order_number
+
+
+def _build_repair_order(
+    tenant_id,
+    mechanic_id,
+    *,
+    status: RepairOrderStatus,
+    order_number: str,
+    updated_at: datetime | None = None,
+) -> RepairOrder:
+    return RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        customer_id=uuid4(),
+        vehicle_id=uuid4(),
+        order_number=order_number,
+        status=status,
+        assigned_mechanic_id=mechanic_id,
+        updated_at=updated_at,
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_clock_in_when_not_attendance_active():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=False,
+        break_active=False,
+        active_session=None,
+        prefetched_orders=[],
+        core_countdown_remaining_minutes=480,
+    )
+
+    assert recommendation["suggested_next_action"] == "clock_in"
+    assert recommendation["recommended_order_id"] is None
+    assert recommendation["recommended_order_number"] is None
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_end_break_when_break_active():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=True,
+        active_session=None,
+        prefetched_orders=[],
+        core_countdown_remaining_minutes=420,
+    )
+
+    assert recommendation["suggested_next_action"] == "end_break"
+    assert recommendation["recommended_order_id"] is None
+    assert recommendation["recommended_order_number"] is None
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_continue_ro_for_active_repair_timer():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+    in_progress_order = _build_repair_order(
+        tenant.id,
+        mechanic.id,
+        status=RepairOrderStatus.IN_PROGRESS,
+        order_number="RO-IP-CONTINUE",
+    )
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session={
+            "id": str(uuid4()),
+            "session_type": MechanicSessionType.REPAIR_ORDER.value,
+            "repair_order_id": str(in_progress_order.id),
+        },
+        prefetched_orders=[in_progress_order],
+        core_countdown_remaining_minutes=240,
+    )
+
+    assert recommendation["suggested_next_action"] == "continue_ro"
+    assert recommendation["recommended_order_id"] == str(in_progress_order.id)
+    assert recommendation["recommended_order_number"] == in_progress_order.order_number
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_start_assigned_ro_prefers_untimed_in_progress():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+    untimed_in_progress = _build_repair_order(
+        tenant.id,
+        mechanic.id,
+        status=RepairOrderStatus.IN_PROGRESS,
+        order_number="RO-IP-UNTIMED",
+        updated_at=datetime(2026, 2, 13, 13, 0, tzinfo=timezone.utc),
+    )
+    acknowledged_ready = _build_repair_order(
+        tenant.id,
+        mechanic.id,
+        status=RepairOrderStatus.ACKNOWLEDGED,
+        order_number="RO-ACK-READY",
+        updated_at=datetime(2026, 2, 13, 14, 0, tzinfo=timezone.utc),
+    )
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session=None,
+        prefetched_orders=[acknowledged_ready, untimed_in_progress],
+        core_countdown_remaining_minutes=300,
+    )
+
+    assert recommendation["suggested_next_action"] == "start_assigned_ro"
+    assert recommendation["recommended_order_id"] == str(untimed_in_progress.id)
+    assert recommendation["recommended_order_number"] == untimed_in_progress.order_number
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_start_assigned_ro_with_ready_orders_only():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+    assigned_order = _build_repair_order(
+        tenant.id,
+        mechanic.id,
+        status=RepairOrderStatus.ASSIGNED,
+        order_number="RO-ASSIGNED-1",
+        updated_at=datetime(2026, 2, 13, 12, 0, tzinfo=timezone.utc),
+    )
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session=None,
+        prefetched_orders=[assigned_order],
+        core_countdown_remaining_minutes=360,
+    )
+
+    assert recommendation["suggested_next_action"] == "start_assigned_ro"
+    assert recommendation["recommended_order_id"] == str(assigned_order.id)
+    assert recommendation["recommended_order_number"] == assigned_order.order_number
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_start_misc_when_no_orders_and_no_active_session():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session=None,
+        prefetched_orders=[],
+        core_countdown_remaining_minutes=120,
+    )
+
+    assert recommendation["suggested_next_action"] == "start_misc"
+    assert recommendation["recommended_order_id"] is None
+    assert recommendation["recommended_order_number"] is None
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_start_misc_when_misc_active_and_no_orders():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session={
+            "id": str(uuid4()),
+            "session_type": MechanicSessionType.MISC.value,
+            "repair_order_id": None,
+            "misc_category": "shop_cleanup",
+        },
+        prefetched_orders=[],
+        core_countdown_remaining_minutes=180,
+    )
+
+    assert recommendation["suggested_next_action"] == "start_misc"
+    assert recommendation["recommended_order_id"] is None
+    assert recommendation["recommended_order_number"] is None
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_clock_out_when_core_complete_and_no_work():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session=None,
+        prefetched_orders=[],
+        core_countdown_remaining_minutes=0,
+    )
+
+    assert recommendation["suggested_next_action"] == "clock_out"
+    assert recommendation["recommended_order_id"] is None
+    assert recommendation["recommended_order_number"] is None
+
+
+# ---------------------------------------------------------------------------
+# compute_attention_priority tests
+# ---------------------------------------------------------------------------
+
+def _base_summary(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "attendance_active": True,
+        "break_active": False,
+        "idle_minutes": 0,
+        "attendance_minutes": 60,
+        "break_minutes": 0,
+        "work_coverage_percent": 85.0,
+        "active_session": {"id": "s1", "session_type": "repair_order"},
+        "core_countdown_remaining_minutes": 420,
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+def _base_recommendation(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "suggested_next_action": "continue_ro",
+        "untimed_in_progress_orders_count": 0,
+        "assigned_ready_orders_count": 0,
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+def test_attention_priority_green_when_on_track():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(),
+        recommendation=_base_recommendation(),
+    )
+    assert result["attention_priority"] == "green"
+    assert result["attention_reasons"] == []
+
+
+def test_attention_priority_red_idle_extended():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(idle_minutes=20, active_session=None),
+        recommendation=_base_recommendation(suggested_next_action="start_misc"),
+    )
+    assert result["attention_priority"] == "red"
+    assert "idle_extended" in result["attention_reasons"]
+
+
+def test_attention_priority_red_untimed_in_progress():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(),
+        recommendation=_base_recommendation(untimed_in_progress_orders_count=2),
+    )
+    assert result["attention_priority"] == "red"
+    assert "untimed_in_progress" in result["attention_reasons"]
+
+
+def test_attention_priority_red_clocked_out_during_shift():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(attendance_active=False, core_countdown_remaining_minutes=300),
+        recommendation=_base_recommendation(suggested_next_action="clock_in"),
+    )
+    assert result["attention_priority"] == "red"
+    assert "clocked_out_during_shift" in result["attention_reasons"]
+
+
+def test_attention_priority_yellow_misc_with_ro_waiting():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(active_session={"id": "s1", "session_type": "misc"}),
+        recommendation=_base_recommendation(suggested_next_action="stop_misc_pick_ro"),
+    )
+    assert result["attention_priority"] == "yellow"
+    assert "misc_with_ro_waiting" in result["attention_reasons"]
+
+
+def test_attention_priority_yellow_break_extended():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(break_active=True, break_minutes=25, active_session=None),
+        recommendation=_base_recommendation(suggested_next_action="end_break"),
+    )
+    assert result["attention_priority"] == "yellow"
+    assert "break_extended" in result["attention_reasons"]
+
+
+def test_attention_priority_yellow_low_coverage():
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(work_coverage_percent=45.0, attendance_minutes=120),
+        recommendation=_base_recommendation(),
+    )
+    assert result["attention_priority"] == "yellow"
+    assert "low_coverage" in result["attention_reasons"]
+
+
+def test_attention_priority_low_coverage_ignored_when_warming_up():
+    """Coverage below 60% is ignored during the first 15 minutes of attendance."""
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(work_coverage_percent=30.0, attendance_minutes=10),
+        recommendation=_base_recommendation(),
+    )
+    assert result["attention_priority"] == "green"
+
+
+def test_attention_priority_red_trumps_yellow():
+    """When both red and yellow conditions exist, priority is red."""
+    result = mechanic_time_service.compute_attention_priority(
+        summary=_base_summary(
+            idle_minutes=20,
+            active_session=None,
+            work_coverage_percent=40.0,
+            attendance_minutes=120,
+        ),
+        recommendation=_base_recommendation(
+            suggested_next_action="start_misc",
+            untimed_in_progress_orders_count=1,
+        ),
+    )
+    assert result["attention_priority"] == "red"
+    assert "idle_extended" in result["attention_reasons"]
+    assert "untimed_in_progress" in result["attention_reasons"]

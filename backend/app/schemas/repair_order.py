@@ -96,6 +96,8 @@ class RepairOrderResponse(RepairOrderBase):
     updated_at: datetime
     work_started_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
+    hold_reason: Optional[str] = None
+    held_at: Optional[datetime] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
     pending_zelle_confirmation: bool = False
 

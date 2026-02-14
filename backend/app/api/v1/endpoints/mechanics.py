@@ -274,6 +274,8 @@ class MechanicJobDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     work_started_at: Optional[datetime] = None
+    hold_reason: Optional[str] = None
+    held_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
 
 
@@ -288,6 +290,8 @@ class MechanicJobSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     work_started_at: Optional[datetime] = None
+    hold_reason: Optional[str] = None
+    held_at: Optional[datetime] = None
 
 
 class MechanicHistoryItem(BaseModel):
@@ -357,6 +361,8 @@ class BreakActionRequest(BaseModel):
 class MechanicDaySummaryResponse(BaseModel):
     date: str
     timezone: str
+    shift_start_local: str
+    shift_end_local: str
     core_target_minutes: int
     tracked_minutes: int
     ro_minutes: int
@@ -382,6 +388,10 @@ class MechanicDaySummaryResponse(BaseModel):
     flex_remaining_minutes: int = 0
     flex_overrun_minutes: int = 0
     core_gap_minutes: int = 0
+    core_countdown_elapsed_minutes: int = 0
+    core_countdown_remaining_minutes: int = 0
+    tracked_vs_attendance_gap_minutes: int = 0
+    work_coverage_percent: Optional[float] = None
     trend_7_days: List[dict] = []
 
 
@@ -908,6 +918,8 @@ async def get_my_jobs(
             created_at=order.created_at,
             updated_at=order.updated_at,
             work_started_at=getattr(order, 'work_started_at', None),
+            hold_reason=order.hold_reason,
+            held_at=order.held_at,
         ))
     
     return paginated_or_list(jobs, total, skip, limit, paginated)
@@ -1059,6 +1071,8 @@ async def get_my_job_detail(
         updated_at=order.updated_at,
         work_started_at=getattr(order, 'work_started_at', None),
         work_completed_at=getattr(order, 'work_completed_at', None),
+        hold_reason=order.hold_reason,
+        held_at=order.held_at,
     )
 
 

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, cast, Date, or_
+from sqlalchemy import select, func, and_, cast, Date, or_, case
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, date, timezone
@@ -25,10 +25,13 @@ from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession, MiscWorkCategory
 from app.services.pricing import get_order_labor_total, get_order_subtotal
 from app.services.mechanic_time_service import (
+    ATTENTION_REASON_LABELS,
     clock_in,
     clock_out,
     compute_7day_trend,
+    compute_attention_priority,
     compute_day_summary,
+    compute_next_action_recommendation,
     delete_session,
     end_break,
     edit_session,
@@ -287,7 +290,7 @@ async def get_dashboard_stats(
             work_started_at=getattr(order, 'work_started_at', None),
         )
 
-    # Lane 1: Needs Action (draft, pending_review, completed, or overdue quoted)
+    # Lane 1: Needs Action (draft, pending_review, completed, quoted, declined)
     needs_action_statuses = [
         RepairOrderStatus.DRAFT,
         RepairOrderStatus.QUOTED,
@@ -295,6 +298,23 @@ async def get_dashboard_stats(
         RepairOrderStatus.PENDING_REVIEW,
         RepairOrderStatus.COMPLETED,
     ]
+    # Newly created full/lightning orders are drafts and should float to the top briefly.
+    new_order_float_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    needs_action_priority = case(
+        (
+            and_(
+                RepairOrder.status == RepairOrderStatus.DRAFT,
+                RepairOrder.created_at >= new_order_float_cutoff,
+            ),
+            0,
+        ),
+        (RepairOrder.status == RepairOrderStatus.PENDING_REVIEW, 1),
+        (RepairOrder.status == RepairOrderStatus.COMPLETED, 2),
+        (RepairOrder.status == RepairOrderStatus.QUOTED, 3),
+        (RepairOrder.status == RepairOrderStatus.DRAFT, 4),
+        (RepairOrder.status == RepairOrderStatus.DECLINED, 5),
+        else_=6,
+    )
     result = await db.execute(
         select(RepairOrder, Customer, Vehicle, Mechanic)
         .join(Customer, RepairOrder.customer_id == Customer.id)
@@ -306,7 +326,11 @@ async def get_dashboard_stats(
                 RepairOrder.status.in_(needs_action_statuses),
             )
         )
-        .order_by(RepairOrder.updated_at.asc())  # oldest first = most urgent
+        .order_by(
+            needs_action_priority.asc(),
+            RepairOrder.created_at.desc(),
+            RepairOrder.updated_at.desc(),
+        )
         .limit(10)
     )
     orders_needing_action = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
@@ -692,6 +716,18 @@ class MechanicBoardItem(BaseModel):
     flex_remaining_minutes: int = 0
     flex_overrun_minutes: int = 0
     core_gap_minutes: int = 0
+    core_countdown_elapsed_minutes: int = 0
+    core_countdown_remaining_minutes: int = 0
+    tracked_vs_attendance_gap_minutes: int = 0
+    work_coverage_percent: Optional[float] = None
+    assigned_ready_orders_count: int = 0
+    untimed_in_progress_orders_count: int = 0
+    held_orders_count: int = 0
+    recommended_order_id: Optional[str] = None
+    recommended_order_number: Optional[str] = None
+    suggested_next_action: str = "start_misc"
+    attention_priority: str = "green"
+    attention_reasons: List[str] = []
     trend_7_days: List[dict] = []
 
 
@@ -751,6 +787,29 @@ async def get_team_mechanics_board(
     team_core = 0
     team_tracked = 0
     team_overtime = 0
+    tenant_orders_result = await db.execute(
+        select(RepairOrder).where(
+            and_(
+                RepairOrder.tenant_id == tenant.id,
+                RepairOrder.deleted_at.is_(None),
+                RepairOrder.assigned_mechanic_id.is_not(None),
+                RepairOrder.status.in_(
+                    [
+                        RepairOrderStatus.ASSIGNED,
+                        RepairOrderStatus.ACKNOWLEDGED,
+                        RepairOrderStatus.IN_PROGRESS,
+                    ]
+                ),
+            )
+        )
+    )
+    tenant_active_orders = tenant_orders_result.scalars().all()
+    orders_by_mechanic: Dict[str, List[RepairOrder]] = {}
+    for order in tenant_active_orders:
+        if not order.assigned_mechanic_id:
+            continue
+        mechanic_key = str(order.assigned_mechanic_id)
+        orders_by_mechanic.setdefault(mechanic_key, []).append(order)
 
     for mechanic in mechanics:
         summary = await compute_day_summary(
@@ -759,6 +818,17 @@ async def get_team_mechanics_board(
             mechanic=mechanic,
             target_date=date_value,
         )
+        recommendation = await compute_next_action_recommendation(
+            db,
+            tenant_id=tenant.id,
+            mechanic_id=mechanic.id,
+            attendance_active=bool(summary.get("attendance_active")),
+            break_active=bool(summary.get("break_active")),
+            active_session=summary.get("active_session"),
+            core_countdown_remaining_minutes=int(summary.get("core_countdown_remaining_minutes") or 0),
+            prefetched_orders=orders_by_mechanic.get(str(mechanic.id), []),
+        )
+        attention = compute_attention_priority(summary=summary, recommendation=recommendation)
         trend = await compute_7day_trend(
             db,
             tenant=tenant,
@@ -771,6 +841,8 @@ async def get_team_mechanics_board(
                 mechanic_name=f"{mechanic.first_name} {mechanic.last_name}".strip(),
                 trend_7_days=trend,
                 **summary,
+                **recommendation,
+                **attention,
             )
         )
         team_core += summary["core_target_minutes"]
@@ -814,6 +886,16 @@ async def get_mechanic_board_detail(
         mechanic=mechanic,
         target_date=date_value,
     )
+    recommendation = await compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=bool(summary.get("attendance_active")),
+        break_active=bool(summary.get("break_active")),
+        active_session=summary.get("active_session"),
+        core_countdown_remaining_minutes=int(summary.get("core_countdown_remaining_minutes") or 0),
+    )
+    attention = compute_attention_priority(summary=summary, recommendation=recommendation)
     trend = await compute_7day_trend(
         db,
         tenant=tenant,
@@ -825,6 +907,8 @@ async def get_mechanic_board_detail(
         mechanic_name=f"{mechanic.first_name} {mechanic.last_name}".strip(),
         trend_7_days=trend,
         **summary,
+        **recommendation,
+        **attention,
     )
 
     tz = ZoneInfo(tenant.timezone or "America/New_York")

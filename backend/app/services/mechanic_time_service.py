@@ -20,7 +20,7 @@ from app.db.models.mechanic_time import (
     MechanicTimeSessionAudit,
     MiscWorkCategory,
 )
-from app.db.models.repair_order import RepairOrder
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
@@ -50,6 +50,16 @@ BREAK_END_SOURCES = {
     "clock_out",
     "auto_midnight",
     "auto_timer_start",
+}
+
+SUGGESTED_NEXT_ACTIONS = {
+    "clock_in",
+    "end_break",
+    "continue_ro",
+    "stop_misc_pick_ro",
+    "start_assigned_ro",
+    "start_misc",
+    "clock_out",
 }
 
 
@@ -1156,12 +1166,20 @@ async def compute_day_summary(
     flex_remaining_minutes = max(flex_budget_minutes - flex_used_minutes, 0)
     flex_overrun_minutes = max(flex_used_minutes - flex_budget_minutes, 0)
     core_gap_minutes = max(core_target_minutes - int(tracked_seconds // 60), 0)
+    attendance_minutes_int = int(attendance_seconds // 60)
+    tracked_minutes_int = int(tracked_seconds // 60)
+    core_countdown_elapsed_minutes = min(attendance_minutes_int, core_target_minutes)
+    core_countdown_remaining_minutes = max(core_target_minutes - attendance_minutes_int, 0)
+    tracked_vs_attendance_gap_minutes = max(attendance_minutes_int - tracked_minutes_int, 0)
+    work_coverage_percent = round((tracked_minutes_int / attendance_minutes_int) * 100.0, 1) if attendance_minutes_int > 0 else None
 
     return {
         "date": window.local_date.isoformat(),
         "timezone": tenant.timezone or "America/New_York",
+        "shift_start_local": shift_start_raw,
+        "shift_end_local": shift_end_raw,
         "core_target_minutes": core_target_minutes,
-        "tracked_minutes": int(tracked_seconds // 60),
+        "tracked_minutes": tracked_minutes_int,
         "ro_minutes": int(ro_seconds // 60),
         "misc_minutes": int(misc_seconds // 60),
         "overtime_minutes": int(overtime_seconds // 60),
@@ -1175,7 +1193,7 @@ async def compute_day_summary(
         "attendance_ended_at": None if active_attendance else (last_attendance_end.isoformat() if last_attendance_end else None),
         "break_active": active_break is not None,
         "break_started_at": active_break.started_at.isoformat() if active_break else None,
-        "attendance_minutes": int(attendance_seconds // 60),
+        "attendance_minutes": attendance_minutes_int,
         "break_minutes": int(break_seconds // 60),
         "idle_minutes": int(idle_seconds // 60),
         "late_arrival_minutes": int(max(late_arrival_seconds, 0) // 60),
@@ -1185,6 +1203,210 @@ async def compute_day_summary(
         "flex_remaining_minutes": int(flex_remaining_minutes),
         "flex_overrun_minutes": int(flex_overrun_minutes),
         "core_gap_minutes": int(core_gap_minutes),
+        "core_countdown_elapsed_minutes": int(core_countdown_elapsed_minutes),
+        "core_countdown_remaining_minutes": int(core_countdown_remaining_minutes),
+        "tracked_vs_attendance_gap_minutes": int(tracked_vs_attendance_gap_minutes),
+        "work_coverage_percent": work_coverage_percent,
+    }
+
+
+def _status_value(status: Any) -> str:
+    if hasattr(status, "value"):
+        return status.value
+    return str(status)
+
+
+def _oldest_order_first_key(order: RepairOrder) -> datetime:
+    return order.updated_at or order.created_at or datetime.min.replace(tzinfo=timezone.utc)
+
+
+async def compute_next_action_recommendation(
+    db: AsyncSession,
+    *,
+    tenant_id,
+    mechanic_id,
+    attendance_active: bool,
+    break_active: bool,
+    active_session: Optional[dict[str, Any]],
+    core_countdown_remaining_minutes: Optional[int] = None,
+    prefetched_orders: Optional[list[RepairOrder]] = None,
+) -> dict[str, Any]:
+    # Keep logic in sync with frontend recommendation derivation used in MechanicPortalPage.
+    if prefetched_orders is None:
+        ro_result = await db.execute(
+            select(RepairOrder).where(
+                and_(
+                    RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.assigned_mechanic_id == mechanic_id,
+                    RepairOrder.deleted_at.is_(None),
+                    RepairOrder.status.in_(
+                        [
+                            RepairOrderStatus.ASSIGNED,
+                            RepairOrderStatus.ACKNOWLEDGED,
+                            RepairOrderStatus.IN_PROGRESS,
+                        ]
+                    ),
+                )
+            )
+        )
+        orders = ro_result.scalars().all()
+    else:
+        orders = prefetched_orders
+
+    active_session_type = (active_session or {}).get("session_type")
+    active_ro_id = str((active_session or {}).get("repair_order_id")) if (active_session or {}).get("repair_order_id") else None
+
+    assigned_ready_orders = sorted(
+        [
+            order
+            for order in orders
+            if _status_value(order.status) in (RepairOrderStatus.ASSIGNED.value, RepairOrderStatus.ACKNOWLEDGED.value)
+        ],
+        key=lambda order: (
+            0 if _status_value(order.status) == RepairOrderStatus.ACKNOWLEDGED.value else 1,
+            _oldest_order_first_key(order),
+        ),
+    )
+    untimed_in_progress_orders = sorted(
+        [
+            order
+            for order in orders
+            if _status_value(order.status) == RepairOrderStatus.IN_PROGRESS.value
+            and str(order.id) != active_ro_id
+            and not getattr(order, "hold_reason", None)  # exclude held ROs
+        ],
+        key=_oldest_order_first_key,
+    )
+    orders_by_id = {str(order.id): order for order in orders}
+
+    suggested_next_action = "start_misc"
+    recommended_order: Optional[RepairOrder] = None
+
+    if not attendance_active:
+        suggested_next_action = "clock_in"
+    elif break_active:
+        suggested_next_action = "end_break"
+    elif active_session_type == MechanicSessionType.REPAIR_ORDER.value:
+        suggested_next_action = "continue_ro"
+        if active_ro_id:
+            recommended_order = orders_by_id.get(active_ro_id)
+    elif active_session_type == MechanicSessionType.MISC.value and assigned_ready_orders:
+        suggested_next_action = "stop_misc_pick_ro"
+        recommended_order = assigned_ready_orders[0]
+    elif not active_session and untimed_in_progress_orders:
+        suggested_next_action = "start_assigned_ro"
+        recommended_order = untimed_in_progress_orders[0]
+    elif not active_session and assigned_ready_orders:
+        suggested_next_action = "start_assigned_ro"
+        recommended_order = assigned_ready_orders[0]
+    elif (
+        not active_session
+        and not untimed_in_progress_orders
+        and not assigned_ready_orders
+        and core_countdown_remaining_minutes is not None
+        and core_countdown_remaining_minutes <= 0
+    ):
+        suggested_next_action = "clock_out"
+    else:
+        suggested_next_action = "start_misc"
+
+    if suggested_next_action not in SUGGESTED_NEXT_ACTIONS:
+        suggested_next_action = "start_misc"
+
+    held_orders_count = sum(
+        1 for order in orders
+        if _status_value(order.status) == RepairOrderStatus.IN_PROGRESS.value
+        and getattr(order, "hold_reason", None)
+    )
+
+    return {
+        "assigned_ready_orders_count": len(assigned_ready_orders),
+        "untimed_in_progress_orders_count": len(untimed_in_progress_orders),
+        "held_orders_count": held_orders_count,
+        "recommended_order_id": str(recommended_order.id) if recommended_order else None,
+        "recommended_order_number": recommended_order.order_number if recommended_order else None,
+        "suggested_next_action": suggested_next_action,
+    }
+
+
+ATTENTION_PRIORITY_RED = "red"
+ATTENTION_PRIORITY_YELLOW = "yellow"
+ATTENTION_PRIORITY_GREEN = "green"
+
+ATTENTION_REASON_LABELS: dict[str, str] = {
+    "idle_extended": "Idle over 15 min — no active timer",
+    "untimed_in_progress": "In-progress RO has no timer running",
+    "clocked_out_during_shift": "Clocked out during shift window",
+    "misc_with_ro_waiting": "On misc timer with assigned RO waiting",
+    "break_extended": "On break over 20 min",
+    "low_coverage": "Work coverage below 60%",
+    "ro_on_hold": "Repair order on hold",
+}
+
+
+def compute_attention_priority(
+    *,
+    summary: dict[str, Any],
+    recommendation: dict[str, Any],
+) -> dict[str, Any]:
+    """Derive a red/yellow/green attention priority from already-computed summary + recommendation.
+
+    No DB access needed — purely derived from the two dicts.
+    """
+    reasons: list[str] = []
+    attendance_active = bool(summary.get("attendance_active"))
+    break_active = bool(summary.get("break_active"))
+    idle_minutes = int(summary.get("idle_minutes") or 0)
+    attendance_minutes = int(summary.get("attendance_minutes") or 0)
+    work_coverage = summary.get("work_coverage_percent")
+    active_session = summary.get("active_session")
+    core_countdown_remaining = int(summary.get("core_countdown_remaining_minutes") or 0)
+    suggested = recommendation.get("suggested_next_action", "start_misc")
+    untimed_count = int(recommendation.get("untimed_in_progress_orders_count") or 0)
+    break_minutes = int(summary.get("break_minutes") or 0)
+
+    # --- Red conditions ---
+    # Clocked out during shift (has core time remaining, never clocked in or already clocked out)
+    if not attendance_active and core_countdown_remaining > 0:
+        reasons.append("clocked_out_during_shift")
+
+    # Idle > 15 min (clocked in, no active timer, not on break)
+    if attendance_active and not break_active and not active_session and idle_minutes >= 15:
+        reasons.append("idle_extended")
+
+    # Untimed in-progress RO (work is happening without time tracking)
+    if untimed_count > 0:
+        reasons.append("untimed_in_progress")
+
+    if reasons:
+        return {
+            "attention_priority": ATTENTION_PRIORITY_RED,
+            "attention_reasons": reasons,
+        }
+
+    # --- Yellow conditions ---
+    held_count = int(recommendation.get("held_orders_count") or 0)
+    if held_count > 0:
+        reasons.append("ro_on_hold")
+
+    if suggested == "stop_misc_pick_ro":
+        reasons.append("misc_with_ro_waiting")
+
+    if break_active and break_minutes >= 20:
+        reasons.append("break_extended")
+
+    if attendance_active and attendance_minutes >= 15 and work_coverage is not None and work_coverage < 60.0:
+        reasons.append("low_coverage")
+
+    if reasons:
+        return {
+            "attention_priority": ATTENTION_PRIORITY_YELLOW,
+            "attention_reasons": reasons,
+        }
+
+    return {
+        "attention_priority": ATTENTION_PRIORITY_GREEN,
+        "attention_reasons": [],
     }
 
 

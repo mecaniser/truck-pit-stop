@@ -14,6 +14,7 @@ from twilio.rest import Client
 
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.phone import normalize_phone
 from app.core.pagination import paginated_or_list
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
@@ -43,6 +44,14 @@ class ProvisionSMSNumberResponse(BaseModel):
     phone_number: str
     phone_sid: str
     sms_enabled: bool
+
+
+class AttachSMSNumberRequest(BaseModel):
+    phone_sid: str
+    phone_number: Optional[str] = None
+    enable_sms: bool = True
+    configure_webhooks: bool = True
+    replace_existing: bool = False
 
 
 def require_super_admin():
@@ -397,6 +406,96 @@ async def provision_tenant_sms_number(
     except Exception:
         await _release_sms_provision_cooldown(cooldown_key)
         raise
+
+    return ProvisionSMSNumberResponse(
+        tenant_id=tenant.id,
+        phone_number=tenant.sms_phone_number or "",
+        phone_sid=tenant.sms_phone_sid or "",
+        sms_enabled=tenant.sms_enabled,
+    )
+
+
+@router.post("/tenants/{tenant_id}/attach-sms-number", response_model=ProvisionSMSNumberResponse)
+async def attach_existing_sms_number(
+    tenant_id: UUID,
+    body: AttachSMSNumberRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """Attach an already-provisioned Twilio number to a tenant."""
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    phone_sid = (body.phone_sid or "").strip()
+    if not phone_sid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="phone_sid is required")
+
+    if tenant.sms_phone_sid and tenant.sms_phone_sid != phone_sid and not body.replace_existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tenant already has an SMS number. Set replace_existing=true to replace it.",
+        )
+
+    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Twilio account credentials are not configured",
+        )
+
+    try:
+        twilio_number = twilio_client.incoming_phone_numbers(phone_sid).fetch()
+    except TwilioRestException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unable to fetch Twilio number for SID {phone_sid}: {exc.msg}",
+        )
+
+    twilio_phone_number = (getattr(twilio_number, "phone_number", None) or "").strip()
+    if not twilio_phone_number:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Twilio number lookup succeeded but returned no phone number",
+        )
+
+    if body.phone_number:
+        input_phone = normalize_phone(body.phone_number)
+        twilio_phone = normalize_phone(twilio_phone_number)
+        if input_phone and twilio_phone and input_phone != twilio_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Provided phone_number does not match the Twilio number for this SID",
+            )
+
+    if body.configure_webhooks:
+        base_url = (settings.PUBLIC_API_BASE_URL or "").strip().rstrip("/")
+        if not base_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="PUBLIC_API_BASE_URL must be configured to set Twilio webhooks",
+            )
+
+        sms_url = f"{base_url}/api/v1/webhooks/twilio/sms/inbound"
+        status_callback = f"{base_url}/api/v1/webhooks/twilio/sms/status"
+        try:
+            twilio_client.incoming_phone_numbers(phone_sid).update(
+                sms_url=sms_url,
+                sms_method="POST",
+                status_callback=status_callback,
+                status_callback_method="POST",
+            )
+        except TwilioRestException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Failed to configure Twilio webhooks: {exc.msg}",
+            )
+
+    tenant.sms_phone_sid = phone_sid
+    tenant.sms_phone_number = twilio_phone_number
+    tenant.sms_enabled = body.enable_sms
+    await db.commit()
+    await db.refresh(tenant)
 
     return ProvisionSMSNumberResponse(
         tenant_id=tenant.id,
