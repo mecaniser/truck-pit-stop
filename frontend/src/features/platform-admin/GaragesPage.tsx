@@ -26,6 +26,8 @@ interface Tenant {
   updated_at: string
 }
 
+type SMSModalMode = 'provision' | 'attach'
+
 export default function GaragesPage() {
   const [garages, setGarages] = useState<Tenant[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +36,11 @@ export default function GaragesPage() {
   const [showActiveOnly, setShowActiveOnly] = useState(false)
   const [smsDetailsOpenByGarageId, setSmsDetailsOpenByGarageId] = useState<Record<string, boolean>>({})
   const [smsModalGarage, setSmsModalGarage] = useState<Tenant | null>(null)
+  const [smsModalMode, setSmsModalMode] = useState<SMSModalMode>('provision')
   const [smsAreaCode, setSmsAreaCode] = useState('')
+  const [attachPhoneSid, setAttachPhoneSid] = useState('')
+  const [attachEnableSMS, setAttachEnableSMS] = useState(true)
+  const [attachConfigureWebhooks, setAttachConfigureWebhooks] = useState(true)
   const [replaceConfirmation, setReplaceConfirmation] = useState(false)
   const [smsProvisioning, setSmsProvisioning] = useState(false)
   const [smsProvisionError, setSmsProvisionError] = useState<string | null>(null)
@@ -100,7 +106,11 @@ export default function GaragesPage() {
 
   const openSMSProvisionModal = (garage: Tenant) => {
     setSmsModalGarage(garage)
+    setSmsModalMode('provision')
     setSmsAreaCode('')
+    setAttachPhoneSid('')
+    setAttachEnableSMS(true)
+    setAttachConfigureWebhooks(true)
     setReplaceConfirmation(false)
     setSmsProvisionError(null)
   }
@@ -108,7 +118,11 @@ export default function GaragesPage() {
   const closeSMSProvisionModal = (force = false) => {
     if (smsProvisioning && !force) return
     setSmsModalGarage(null)
+    setSmsModalMode('provision')
     setSmsAreaCode('')
+    setAttachPhoneSid('')
+    setAttachEnableSMS(true)
+    setAttachConfigureWebhooks(true)
     setReplaceConfirmation(false)
     setSmsProvisionError(null)
   }
@@ -166,16 +180,6 @@ export default function GaragesPage() {
     e.preventDefault()
     if (!smsModalGarage) return
 
-    const trimmedAreaCode = smsAreaCode.trim()
-    let areaCode: number | undefined
-    if (trimmedAreaCode) {
-      if (!/^\d{3}$/.test(trimmedAreaCode)) {
-        setSmsProvisionError('Area code must be exactly 3 digits (US only).')
-        return
-      }
-      areaCode = Number.parseInt(trimmedAreaCode, 10)
-    }
-
     const replacingExistingNumber = Boolean(smsModalGarage.sms_phone_sid)
     if (replacingExistingNumber && !replaceConfirmation) {
       setSmsProvisionError('Please confirm that you want to replace the existing SMS number.')
@@ -186,21 +190,52 @@ export default function GaragesPage() {
       setSmsProvisioning(true)
       setSmsProvisionError(null)
 
-      const payload: { area_code?: number; replace_existing: boolean; country_code: string } = {
-        replace_existing: replacingExistingNumber,
-        country_code: 'US',
-      }
-      if (areaCode) {
-        payload.area_code = areaCode
-      }
+      if (smsModalMode === 'provision') {
+        const trimmedAreaCode = smsAreaCode.trim()
+        let areaCode: number | undefined
+        if (trimmedAreaCode) {
+          if (!/^\d{3}$/.test(trimmedAreaCode)) {
+            setSmsProvisionError('Area code must be exactly 3 digits (US only).')
+            return
+          }
+          areaCode = Number.parseInt(trimmedAreaCode, 10)
+        }
 
-      await api.post(`/admin/tenants/${smsModalGarage.id}/provision-sms-number`, payload)
+        const payload: { area_code?: number; replace_existing: boolean; country_code: string } = {
+          replace_existing: replacingExistingNumber,
+          country_code: 'US',
+        }
+        if (areaCode) {
+          payload.area_code = areaCode
+        }
 
-      toast.success(
-        replacingExistingNumber
-          ? `Replaced SMS number for ${smsModalGarage.name}`
-          : `Provisioned SMS number for ${smsModalGarage.name}`
-      )
+        await api.post(`/admin/tenants/${smsModalGarage.id}/provision-sms-number`, payload)
+
+        toast.success(
+          replacingExistingNumber
+            ? `Replaced SMS number for ${smsModalGarage.name}`
+            : `Provisioned SMS number for ${smsModalGarage.name}`
+        )
+      } else {
+        const sid = attachPhoneSid.trim()
+        if (!sid) {
+          setSmsProvisionError('Twilio Phone SID is required.')
+          return
+        }
+
+        await api.post(`/admin/tenants/${smsModalGarage.id}/attach-sms-number`, {
+          phone_sid: sid,
+          enable_sms: attachEnableSMS,
+          configure_webhooks: attachConfigureWebhooks,
+          replace_existing: replacingExistingNumber,
+        })
+
+        toast.success(
+          replacingExistingNumber
+            ? `Attached and replaced SMS number for ${smsModalGarage.name}`
+            : `Attached existing SMS number for ${smsModalGarage.name}`
+        )
+      }
 
       closeSMSProvisionModal(true)
       await fetchGarages('refresh')
@@ -421,7 +456,7 @@ export default function GaragesPage() {
                   disabled={Boolean(smsStateUpdatingGarageId)}
                   onClick={() => openSMSProvisionModal(garage)}
                 >
-                  {hasProvisionedSMSNumber(garage) ? 'Replace SMS Number' : 'Provision SMS Number'}
+                  {hasProvisionedSMSNumber(garage) ? 'Manage SMS Number' : 'Set Up SMS Number'}
                 </GlassNoirButton>
                 {hasProvisionedSMSNumber(garage) && !garage.sms_enabled && (
                   <GlassNoirButton
@@ -479,7 +514,13 @@ export default function GaragesPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gold-500/20">
               <div>
                 <h2 id="sms-modal-title" className="text-lg font-semibold text-white">
-                  {smsModalGarage.sms_phone_sid ? 'Replace SMS Number' : 'Provision SMS Number'}
+                  {smsModalMode === 'attach'
+                    ? smsModalGarage.sms_phone_sid
+                      ? 'Attach / Replace Existing SMS Number'
+                      : 'Attach Existing SMS Number'
+                    : smsModalGarage.sms_phone_sid
+                      ? 'Replace SMS Number'
+                      : 'Provision SMS Number'}
                 </h2>
                 <p className="text-sm text-gray-400">{smsModalGarage.name}</p>
               </div>
@@ -494,6 +535,33 @@ export default function GaragesPage() {
             </div>
 
             <form onSubmit={handleProvisionSMSNumber} className="px-6 py-5 space-y-4">
+              <div className="flex items-center gap-2 rounded-lg border border-gold-500/20 bg-black/30 p-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSmsModalMode('provision')
+                    setSmsProvisionError(null)
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                    smsModalMode === 'provision' ? 'bg-gold-500 text-black font-semibold' : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  Provision New
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSmsModalMode('attach')
+                    setSmsProvisionError(null)
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+                    smsModalMode === 'attach' ? 'bg-gold-500 text-black font-semibold' : 'text-gray-300 hover:bg-white/10'
+                  }`}
+                >
+                  Attach Existing
+                </button>
+              </div>
+
               {smsModalGarage.sms_phone_number && (
                 <div className="rounded-lg border border-gold-500/20 bg-black/30 p-3">
                   <p className="text-xs text-gold-400/80 uppercase tracking-wide">Current Number</p>
@@ -501,41 +569,90 @@ export default function GaragesPage() {
                 </div>
               )}
 
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-                <p className="text-sm text-amber-200">
-                  This will purchase a new phone number from Twilio. Standard Twilio rates apply.
-                </p>
-              </div>
-
-              {smsModalGarage.sms_phone_sid && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-                  <p className="text-xs text-red-300">
-                    Replacing SMS will purchase another number and keep the old one unless it is released separately.
+              {smsModalMode === 'provision' ? (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                  <p className="text-sm text-amber-200">
+                    This will purchase a new phone number from Twilio. Standard Twilio rates apply.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+                  <p className="text-sm text-blue-200">
+                    Attach an already-purchased Twilio number by SID. The system will validate it and can configure webhooks automatically.
                   </p>
                 </div>
               )}
 
-              <div>
-                <label htmlFor="areaCode" className="block text-sm text-gray-300 mb-1">
-                  Area Code (optional)
-                </label>
-                <input
-                  ref={areaCodeInputRef}
-                  id="areaCode"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]{3}"
-                  maxLength={3}
-                  value={smsAreaCode}
-                  onChange={(e) => {
-                    setSmsAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))
-                    if (smsProvisionError) setSmsProvisionError(null)
-                  }}
-                  placeholder="e.g. 305"
-                  className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">Applies to US numbers only. Leave blank for any available US number.</p>
-              </div>
+              {smsModalGarage.sms_phone_sid && (
+                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                  <p className="text-xs text-red-300">
+                    {smsModalMode === 'attach'
+                      ? 'Replacing SMS will switch this garage to the attached Twilio number.'
+                      : 'Replacing SMS will purchase another number and keep the old one unless it is released separately.'}
+                  </p>
+                </div>
+              )}
+
+              {smsModalMode === 'provision' ? (
+                <div>
+                  <label htmlFor="areaCode" className="block text-sm text-gray-300 mb-1">
+                    Area Code (optional)
+                  </label>
+                  <input
+                    ref={areaCodeInputRef}
+                    id="areaCode"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{3}"
+                    maxLength={3}
+                    value={smsAreaCode}
+                    onChange={(e) => {
+                      setSmsAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))
+                      if (smsProvisionError) setSmsProvisionError(null)
+                    }}
+                    placeholder="e.g. 305"
+                    className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Applies to US numbers only. Leave blank for any available US number.</p>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label htmlFor="attachPhoneSid" className="block text-sm text-gray-300 mb-1">
+                      Twilio Phone SID
+                    </label>
+                    <input
+                      id="attachPhoneSid"
+                      type="text"
+                      value={attachPhoneSid}
+                      onChange={(e) => {
+                        setAttachPhoneSid(e.target.value)
+                        if (smsProvisionError) setSmsProvisionError(null)
+                      }}
+                      placeholder="PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      className="w-full px-3 py-2 bg-black/40 border border-gold-500/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-gold-500 font-mono text-xs"
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={attachConfigureWebhooks}
+                      onChange={(e) => setAttachConfigureWebhooks(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-gold-500/50 bg-black/40 text-gold-500 focus:ring-gold-500 focus:ring-offset-0"
+                    />
+                    <span>Configure inbound/status webhook URLs on this Twilio number</span>
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={attachEnableSMS}
+                      onChange={(e) => setAttachEnableSMS(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-gold-500/50 bg-black/40 text-gold-500 focus:ring-gold-500 focus:ring-offset-0"
+                    />
+                    <span>Enable SMS immediately after attach</span>
+                  </label>
+                </>
+              )}
 
               {smsModalGarage.sms_phone_sid && (
                 <label className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
@@ -575,8 +692,10 @@ export default function GaragesPage() {
                     {smsProvisioning ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Provisioning...
+                        {smsModalMode === 'attach' ? 'Attaching...' : 'Provisioning...'}
                       </>
+                    ) : smsModalMode === 'attach' ? (
+                      smsModalGarage.sms_phone_sid ? 'Attach & Replace' : 'Attach Existing Number'
                     ) : smsModalGarage.sms_phone_sid ? (
                       'Replace SMS Number'
                     ) : (
