@@ -587,6 +587,8 @@ async def assign_mechanic(
         order_number=order.order_number,
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at.isoformat() if order.held_at else None,
     )
     
     # Send email notification to MECHANIC (not customer - customer notified when work starts)
@@ -703,6 +705,8 @@ async def acknowledge_job(
         order_number=order.order_number,
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at.isoformat() if order.held_at else None,
     )
     
     return RepairOrderResponse.model_validate(order)
@@ -776,6 +780,8 @@ async def start_work(
         order_number=order.order_number,
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at.isoformat() if order.held_at else None,
     )
     try:
         await broadcast_mechanic_timer_update(
@@ -905,23 +911,20 @@ async def hold_repair_order(
 
     # Auto-stop the active RO timer for this order.
     stopped_session = None
-    try:
-        active_session = await get_active_session(db, tenant_id=order.tenant_id, mechanic_id=current_user.id)
-        if (
-            active_session
-            and (active_session.session_type.value if hasattr(active_session.session_type, "value") else active_session.session_type)
-            == MechanicSessionType.REPAIR_ORDER.value
-            and active_session.repair_order_id == order.id
-        ):
-            stopped_session = await stop_active_session(
-                db,
-                tenant_id=order.tenant_id,
-                mechanic_id=current_user.id,
-                actor_user=current_user,
-                stop_reason=f"hold:{reason}",
-            )
-    except Exception:
-        pass
+    active_session = await get_active_session(db, tenant_id=order.tenant_id, mechanic_id=current_user.id)
+    if (
+        active_session
+        and (active_session.session_type.value if hasattr(active_session.session_type, "value") else active_session.session_type)
+        == MechanicSessionType.REPAIR_ORDER.value
+        and active_session.repair_order_id == order.id
+    ):
+        stopped_session = await stop_active_session(
+            db,
+            tenant_id=order.tenant_id,
+            mechanic_id=current_user.id,
+            actor_user=current_user,
+            stop_reason="hold",
+        )
 
     await db.commit()
     await db.refresh(order)
@@ -933,6 +936,8 @@ async def hold_repair_order(
         order_number=order.order_number,
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at.isoformat() if order.held_at else None,
     )
     try:
         await broadcast_mechanic_timer_update(
@@ -1001,6 +1006,8 @@ async def resume_repair_order(
         order_number=order.order_number,
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at.isoformat() if order.held_at else None,
     )
     try:
         await broadcast_mechanic_timer_update(

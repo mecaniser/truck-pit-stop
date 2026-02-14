@@ -338,6 +338,8 @@ async def broadcast_repair_order_update(
     order_number: str,
     status: str,
     updated_at: Optional[str] = None,
+    hold_reason: Optional[str] = None,
+    held_at: Optional[str] = None,
 ) -> None:
     """
     Broadcast a repair order status update to relevant parties.
@@ -352,6 +354,8 @@ async def broadcast_repair_order_update(
         "order_number": order_number,
         "status": status,
         "updated_at": updated_at,
+        "hold_reason": hold_reason,
+        "held_at": held_at,
     }
     
     # Broadcast to tenant staff

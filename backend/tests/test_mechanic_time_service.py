@@ -100,6 +100,11 @@ def test_validate_timezone_name_rejects_invalid_value():
         mechanic_time_service.validate_timezone_name("Mars/Olympus")
 
 
+def test_timer_stop_reasons_include_hold_and_resume_from_hold():
+    assert "hold" in mechanic_time_service.TIMER_STOP_REASONS
+    assert "resume_from_hold" in mechanic_time_service.TIMER_STOP_REASONS
+
+
 @pytest.mark.asyncio
 async def test_start_session_requires_manager_reason_for_manager_actor():
     tenant, mechanic, manager = _build_tenant_and_users()
@@ -625,6 +630,36 @@ async def test_compute_next_action_recommendation_start_misc_when_misc_active_an
     assert recommendation["suggested_next_action"] == "start_misc"
     assert recommendation["recommended_order_id"] is None
     assert recommendation["recommended_order_number"] is None
+
+
+@pytest.mark.asyncio
+async def test_compute_next_action_recommendation_includes_held_orders_metadata():
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    db = _FakeDB()
+    held_order = _build_repair_order(
+        tenant.id,
+        mechanic.id,
+        status=RepairOrderStatus.IN_PROGRESS,
+        order_number="RO-HOLD-1",
+    )
+    held_order.hold_reason = "waiting_for_parts"
+    held_order.held_at = datetime(2026, 2, 14, 15, 30, tzinfo=timezone.utc)
+
+    recommendation = await mechanic_time_service.compute_next_action_recommendation(
+        db,
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        attendance_active=True,
+        break_active=False,
+        active_session=None,
+        prefetched_orders=[held_order],
+        core_countdown_remaining_minutes=240,
+    )
+
+    assert recommendation["suggested_next_action"] == "start_misc"
+    assert recommendation["held_orders_count"] == 1
+    assert recommendation["held_orders"][0]["order_number"] == "RO-HOLD-1"
+    assert recommendation["held_orders"][0]["hold_reason"] == "waiting_for_parts"
 
 
 @pytest.mark.asyncio

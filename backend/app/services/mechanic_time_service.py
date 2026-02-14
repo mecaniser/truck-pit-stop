@@ -31,6 +31,8 @@ TIMER_STOP_REASONS = {
     "auto_switch",
     "auto_complete_work",
     "auto_midnight",
+    "hold",
+    "resume_from_hold",
     "clock_out",
     "break_start",
     "manager_control",
@@ -1313,16 +1315,30 @@ async def compute_next_action_recommendation(
     if suggested_next_action not in SUGGESTED_NEXT_ACTIONS:
         suggested_next_action = "start_misc"
 
-    held_orders_count = sum(
-        1 for order in orders
-        if _status_value(order.status) == RepairOrderStatus.IN_PROGRESS.value
-        and getattr(order, "hold_reason", None)
+    held_orders = sorted(
+        [
+            order
+            for order in orders
+            if _status_value(order.status) == RepairOrderStatus.IN_PROGRESS.value
+            and getattr(order, "hold_reason", None)
+        ],
+        key=_oldest_order_first_key,
     )
+    held_orders_count = len(held_orders)
 
     return {
         "assigned_ready_orders_count": len(assigned_ready_orders),
         "untimed_in_progress_orders_count": len(untimed_in_progress_orders),
         "held_orders_count": held_orders_count,
+        "held_orders": [
+            {
+                "id": str(order.id),
+                "order_number": order.order_number,
+                "hold_reason": order.hold_reason,
+                "held_at": order.held_at.isoformat() if getattr(order, "held_at", None) else None,
+            }
+            for order in held_orders
+        ],
         "recommended_order_id": str(recommended_order.id) if recommended_order else None,
         "recommended_order_number": recommended_order.order_number if recommended_order else None,
         "suggested_next_action": suggested_next_action,

@@ -71,6 +71,8 @@ class RecentOrder(BaseModel):
     updated_at: datetime
     mechanic_name: Optional[str] = None
     work_started_at: Optional[datetime] = None
+    hold_reason: Optional[str] = None
+    held_at: Optional[datetime] = None
 
 
 class LowStockItem(BaseModel):
@@ -288,6 +290,8 @@ async def get_dashboard_stats(
             updated_at=order.updated_at,
             mechanic_name=mech_name,
             work_started_at=getattr(order, 'work_started_at', None),
+            hold_reason=getattr(order, 'hold_reason', None),
+            held_at=getattr(order, 'held_at', None),
         )
 
     # Lane 1: Needs Action (draft, pending_review, completed, quoted, declined)
@@ -686,6 +690,13 @@ class TimerActionResponse(BaseModel):
     message: str
 
 
+class HeldOrderSummary(BaseModel):
+    id: str
+    order_number: str
+    hold_reason: Optional[str] = None
+    held_at: Optional[str] = None
+
+
 class MechanicBoardItem(BaseModel):
     mechanic_id: str
     mechanic_name: str
@@ -723,6 +734,7 @@ class MechanicBoardItem(BaseModel):
     assigned_ready_orders_count: int = 0
     untimed_in_progress_orders_count: int = 0
     held_orders_count: int = 0
+    held_orders: List[HeldOrderSummary] = []
     recommended_order_id: Optional[str] = None
     recommended_order_number: Optional[str] = None
     suggested_next_action: str = "start_misc"
