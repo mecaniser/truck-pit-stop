@@ -731,7 +731,7 @@ async def start_misc_timer(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    session, auto_clocked_in, attendance_session_id = await start_session(
+    session, auto_clocked_in, attendance_session_id, _auto_held_ro = await start_session(
         db,
         tenant=tenant,
         mechanic=current_user,

@@ -92,6 +92,7 @@ const HOLD_REASON_LABELS: Record<string, string> = {
   waiting_for_customer_approval: 'Waiting for customer approval',
   need_more_info: 'Need more information',
   other: 'Other',
+  switched_to_other_ro: 'Switched to another job',
 }
 
 // Events that mechanics should NOT see (financial/administrative)

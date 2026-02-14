@@ -995,7 +995,7 @@ async def manager_start_mechanic_timer(
         if not order:
             raise HTTPException(status_code=404, detail="Repair order not found")
 
-    session, auto_clocked_in, attendance_session_id = await start_session(
+    session, auto_clocked_in, attendance_session_id, auto_held_ro = await start_session(
         db,
         tenant=tenant,
         mechanic=mechanic,
@@ -1009,6 +1009,19 @@ async def manager_start_mechanic_timer(
     )
     await db.commit()
     await db.refresh(session)
+    # Broadcast auto-held RO if one was held
+    if auto_held_ro:
+        from app.services.websocket_service import broadcast_repair_order_update
+        await broadcast_repair_order_update(
+            tenant_id=str(auto_held_ro.tenant_id),
+            customer_id=str(auto_held_ro.customer_id),
+            order_id=str(auto_held_ro.id),
+            order_number=auto_held_ro.order_number,
+            status=auto_held_ro.status.value,
+            updated_at=auto_held_ro.updated_at.isoformat() if auto_held_ro.updated_at else None,
+            hold_reason=auto_held_ro.hold_reason,
+            held_at=auto_held_ro.held_at.isoformat() if auto_held_ro.held_at else None,
+        )
     await broadcast_mechanic_timer_update(
         tenant_id=str(current_user.tenant_id),
         mechanic_id=str(mechanic.id),

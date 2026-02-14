@@ -208,6 +208,15 @@ const HOLD_REASONS = [
   { value: 'other', label: 'Other' },
 ] as const
 
+// Includes system-generated hold reasons for display (not user-selectable)
+const HOLD_REASON_LABELS: Record<string, string> = {
+  waiting_for_parts: 'Waiting for Parts',
+  waiting_for_customer_approval: 'Waiting for Customer Approval',
+  need_more_info: 'Need More Info',
+  other: 'Other',
+  switched_to_other_ro: 'Switched to another job',
+}
+
 type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request' | 'profile'
 
 function formatSecondsAsClock(totalSeconds: number): string {
@@ -1014,7 +1023,7 @@ export default function MechanicPortalPage() {
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center gap-2">
                   <PauseCircle className="w-5 h-5 text-amber-400 shrink-0" />
                   <span className="text-amber-200 font-medium">
-                    On hold: {HOLD_REASONS.find((r) => r.value === jobDetail.hold_reason)?.label || jobDetail.hold_reason}
+                    On hold: {HOLD_REASON_LABELS[jobDetail.hold_reason || ''] || jobDetail.hold_reason}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -2521,7 +2530,7 @@ export default function MechanicPortalPage() {
                                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
                                   <PauseCircle className="w-4 h-4 text-amber-400 shrink-0" />
                                   <span className="text-sm text-amber-200">
-                                    On hold: {HOLD_REASONS.find((r) => r.value === job.hold_reason)?.label || job.hold_reason}
+                                    On hold: {HOLD_REASON_LABELS[job.hold_reason || ''] || job.hold_reason}
                                   </span>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2">

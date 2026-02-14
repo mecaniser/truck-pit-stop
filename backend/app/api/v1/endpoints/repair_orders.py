@@ -763,13 +763,14 @@ async def start_work(
     started_session = None
     auto_clocked_in = False
     attendance_session_id: Optional[str] = None
+    auto_held_ro = None
     try:
         tenant, mechanic = await fetch_tenant_and_mechanic(
             db,
             tenant_id=order.tenant_id,
             mechanic_id=current_user.id,
         )
-        started_session, auto_clocked_in, attendance_session_id = await start_session(
+        started_session, auto_clocked_in, attendance_session_id, auto_held_ro = await start_session(
             db,
             tenant=tenant,
             mechanic=mechanic,
@@ -796,6 +797,18 @@ async def start_work(
         hold_reason=order.hold_reason,
         held_at=order.held_at.isoformat() if order.held_at else None,
     )
+    # Broadcast auto-held RO if one was held
+    if auto_held_ro:
+        await broadcast_repair_order_update(
+            tenant_id=str(auto_held_ro.tenant_id),
+            customer_id=str(auto_held_ro.customer_id),
+            order_id=str(auto_held_ro.id),
+            order_number=auto_held_ro.order_number,
+            status=auto_held_ro.status.value,
+            updated_at=auto_held_ro.updated_at.isoformat() if auto_held_ro.updated_at else None,
+            hold_reason=auto_held_ro.hold_reason,
+            held_at=auto_held_ro.held_at.isoformat() if auto_held_ro.held_at else None,
+        )
     try:
         await broadcast_mechanic_timer_update(
             tenant_id=str(order.tenant_id),
@@ -887,6 +900,11 @@ HOLD_REASONS = [
     "need_more_info",
     "other",
 ]
+
+# System-generated hold reasons (not user-selectable)
+SYSTEM_HOLD_REASONS = {
+    "switched_to_other_ro": "Switched to another repair order",
+}
 
 
 class HoldRequest(BaseModel):
@@ -995,9 +1013,10 @@ async def resume_repair_order(
     started_session = None
     auto_clocked_in = False
     attendance_session_id: Optional[str] = None
+    auto_held_ro = None
     try:
         tenant, mechanic = await fetch_tenant_and_mechanic(db, tenant_id=order.tenant_id, mechanic_id=current_user.id)
-        started_session, auto_clocked_in, attendance_session_id = await start_session(
+        started_session, auto_clocked_in, attendance_session_id, auto_held_ro = await start_session(
             db,
             tenant=tenant,
             mechanic=mechanic,
@@ -1022,6 +1041,18 @@ async def resume_repair_order(
         hold_reason=order.hold_reason,
         held_at=order.held_at.isoformat() if order.held_at else None,
     )
+    # Broadcast auto-held RO if one was held
+    if auto_held_ro:
+        await broadcast_repair_order_update(
+            tenant_id=str(auto_held_ro.tenant_id),
+            customer_id=str(auto_held_ro.customer_id),
+            order_id=str(auto_held_ro.id),
+            order_number=auto_held_ro.order_number,
+            status=auto_held_ro.status.value,
+            updated_at=auto_held_ro.updated_at.isoformat() if auto_held_ro.updated_at else None,
+            hold_reason=auto_held_ro.hold_reason,
+            held_at=auto_held_ro.held_at.isoformat() if auto_held_ro.held_at else None,
+        )
     try:
         await broadcast_mechanic_timer_update(
             tenant_id=str(order.tenant_id),

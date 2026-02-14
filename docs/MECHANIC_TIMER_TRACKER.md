@@ -77,6 +77,9 @@ Execution tracker for attendance, break mode, timer orchestration, hold/resume, 
 | MT-48 | Mobile-first: header points badge & clock-out icon enlarged; back buttons `p-3` | TBC | done | — | 2026-02-14 | 2026-02-14 |
 | MT-49 | Mobile-first: clock-in button upgraded to `py-5 text-xl font-bold rounded-2xl` with shadow | TBC | done | — | 2026-02-14 | 2026-02-14 |
 | MT-50 | Mobile-first: clock-out modal buttons enlarged to `py-3.5 text-base rounded-xl` | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-51 | Auto-hold previous RO when switching RO→RO: `start_session` sets `hold_reason=switched_to_other_ro` on previous RO | TBC | done | MT-11 | 2026-02-14 | 2026-02-14 |
+| MT-52 | WebSocket broadcast for auto-held RO state change | TBC | done | MT-51 | 2026-02-14 | 2026-02-14 |
+| MT-53 | Frontend: `switched_to_other_ro` hold reason label in all hold reason displays | TBC | done | MT-51 | 2026-02-14 | 2026-02-14 |
 
 ## Notes
 - Status vocabulary: `todo`, `in_progress`, `blocked`, `done`.
@@ -87,3 +90,4 @@ Execution tracker for attendance, break mode, timer orchestration, hold/resume, 
 - Clock-in cutoff is configurable per tenant (`minimum_clock_in_remaining_minutes`, default 60). Managers can bypass.
 - Single attendance session per day enforced: re-clock-in reopens the most recent ended session rather than creating a new row.
 - Mechanic portal is mobile-only: all touch targets ≥ 44px, `touch-manipulation` enabled, `safe-area-inset-bottom` respected, `active:` states used instead of `hover:`.
+- Auto-hold on RO switch: when mechanic switches from one in-progress RO to another, the previous RO is automatically placed on hold with reason `switched_to_other_ro`.

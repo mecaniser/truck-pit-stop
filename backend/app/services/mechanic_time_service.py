@@ -748,7 +748,7 @@ async def start_session(
     manager_reason: Optional[str] = None,
     started_at: Optional[datetime] = None,
     stop_previous_reason: str = "auto_switch",
-) -> tuple[MechanicTimeSession, bool, str]:
+) -> tuple[MechanicTimeSession, bool, str, Optional[RepairOrder]]:
     if session_type not in {MechanicSessionType.REPAIR_ORDER.value, MechanicSessionType.MISC.value}:
         raise ValueError("Invalid session type")
     if session_type == MechanicSessionType.REPAIR_ORDER.value and not repair_order_id:
@@ -791,6 +791,7 @@ async def start_session(
         tenant_id=tenant.id,
         mechanic_id=mechanic.id,
     )
+    auto_held_ro: Optional[RepairOrder] = None
     if current:
         # Reject starting the exact same job that's already running
         same_misc = (
@@ -805,6 +806,23 @@ async def start_session(
         )
         if same_misc or same_ro:
             raise ValueError("This job is already being timed")
+
+        # Auto-hold previous RO when switching RO → RO
+        if (
+            current.session_type == MechanicSessionType.REPAIR_ORDER.value
+            and session_type == MechanicSessionType.REPAIR_ORDER.value
+            and current.repair_order_id
+        ):
+            prev_ro = await db.get(RepairOrder, current.repair_order_id)
+            if (
+                prev_ro
+                and prev_ro.status == RepairOrderStatus.IN_PROGRESS
+                and not prev_ro.hold_reason
+            ):
+                prev_ro.hold_reason = "switched_to_other_ro"
+                prev_ro.held_at = now_utc
+                auto_held_ro = prev_ro
+
         await stop_active_session(
             db,
             tenant_id=tenant.id,
@@ -849,7 +867,7 @@ async def start_session(
         local_date=day_window.local_date,
         resolved_at=now_utc,
     )
-    return session, auto_clocked_in, str(attendance_session.id)
+    return session, auto_clocked_in, str(attendance_session.id), auto_held_ro
 
 
 async def stop_active_session(
