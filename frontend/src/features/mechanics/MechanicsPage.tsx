@@ -11,7 +11,8 @@ import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import { getPasswordValidationError } from '@/lib/passwordPolicy'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
-import { Eye, EyeOff, Calendar, DollarSign, Check, X, Wrench } from 'lucide-react'
+import { Eye, EyeOff, Calendar, DollarSign, Check, X, Wrench, Clock } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import SlidePanel from '@/components/SlidePanel'
 import ViewToggle from '@/components/ViewToggle'
 import SearchAddBar from '@/components/SearchAddBar'
@@ -96,6 +97,7 @@ const formatStatus = (status?: RepairOrderStatus | string | null) =>
 
 export default function MechanicsPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { user } = useAuthStore()
   const { accentColors } = useTheme()
   const [isAdding, setIsAdding] = useState(false)
@@ -434,16 +436,25 @@ export default function MechanicsPage() {
         </div>
       )}
 
-      <SearchAddBar
-        value={search}
-        onChange={setSearch}
-        placeholder="Search mechanics by name, email, phone, or address..."
-        onAdd={handleStartAdd}
-        addLabel="Add mechanic"
-        addLabelMobile="Add"
-        className="mb-4"
-        inputWidthClass="sm:min-w-[320px] md:max-w-xl"
-      />
+      <div className="flex items-center gap-3 mb-4">
+        <SearchAddBar
+          value={search}
+          onChange={setSearch}
+          placeholder="Search mechanics by name, email, phone, or address..."
+          onAdd={handleStartAdd}
+          addLabel="Add mechanic"
+          addLabelMobile="Add"
+          className="flex-1"
+          inputWidthClass="sm:min-w-[320px] md:max-w-xl"
+        />
+        <button
+          onClick={() => navigate('/dashboard/mechanics')}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-gray-200 text-sm font-medium transition-colors shrink-0"
+        >
+          <Clock className="w-4 h-4" />
+          <span className="hidden sm:inline">Time Board</span>
+        </button>
+      </div>
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {isLoading ? (
           <div className="text-gray-400 text-sm p-6">Loading mechanics...</div>
