@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
+import { useCoreCountdown } from '@/hooks/useCoreCountdown'
+import { useMechanicSuggestion } from '@/hooks/useMechanicSuggestion'
+import { useSuggestionToasts } from '@/hooks/useSuggestionToasts'
+import { useTimerPanelPersistence } from '@/hooks/useTimerPanelPersistence'
 import NotificationBanner from '../../components/NotificationBanner'
-import LiveElapsedTimer from '@/components/LiveElapsedTimer'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -33,10 +36,12 @@ import {
   RotateCcw,
   ChevronDown,
   Camera,
-  X
+  X,
+  PauseCircle
 } from 'lucide-react'
 import { ACCENT_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
-import { MISC_WORK_OPTIONS, formatMiscCategory } from '@/lib/mechanicWorkLabels'
+import { MISC_WORK_OPTIONS } from '@/lib/mechanicWorkLabels'
+import { formatSuggestedNextAction, getSuggestedActionButtonLabel } from '@/lib/mechanicSuggestions'
 
 interface MechanicJob {
   id: string
@@ -48,6 +53,8 @@ interface MechanicJob {
   created_at: string
   updated_at: string
   work_started_at: string | null
+  hold_reason: string | null
+  held_at: string | null
 }
 
 interface ServiceItem {
@@ -72,6 +79,8 @@ interface MechanicJobDetail {
   updated_at: string
   work_started_at: string | null
   work_completed_at: string | null
+  hold_reason: string | null
+  held_at: string | null
 }
 
 interface WorkHistoryItem {
@@ -124,6 +133,8 @@ interface WorkPhoto {
 interface MechanicDaySummary {
   date: string
   timezone: string
+  shift_start_local: string
+  shift_end_local: string
   core_target_minutes: number
   tracked_minutes: number
   ro_minutes: number
@@ -155,6 +166,10 @@ interface MechanicDaySummary {
   flex_remaining_minutes: number
   flex_overrun_minutes: number
   core_gap_minutes: number
+  core_countdown_elapsed_minutes: number
+  core_countdown_remaining_minutes: number
+  tracked_vs_attendance_gap_minutes: number
+  work_coverage_percent: number | null
   trend_7_days: Array<{
     date: string
     tracked_minutes: number
@@ -184,13 +199,27 @@ const STATUS_LABELS: Record<string, string> = {
   paid: 'Completed',
 }
 
+const HOLD_REASONS = [
+  { value: 'waiting_for_parts', label: 'Waiting for Parts' },
+  { value: 'waiting_for_customer_approval', label: 'Waiting for Customer Approval' },
+  { value: 'need_more_info', label: 'Need More Info' },
+  { value: 'other', label: 'Other' },
+] as const
+
 type ViewType = 'list' | 'detail' | 'history' | 'stats' | 'request' | 'profile'
 
-function formatMinutesAsClock(totalMinutes: number): string {
-  const safeMinutes = Math.max(0, Math.floor(totalMinutes))
-  const hours = Math.floor(safeMinutes / 60)
-  const minutes = safeMinutes % 60
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`
+function formatSecondsAsClock(totalSeconds: number): string {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds))
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const seconds = safeSeconds % 60
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+}
+
+function formatCoverageLabel(coverage: number | null, attendanceMinutes: number): string {
+  if (coverage == null) return 'n/a'
+  if (attendanceMinutes < 15) return 'warming up'
+  return `${coverage.toFixed(1)}%`
 }
 
 function LiveTimer({ startedAt }: { startedAt: string }) {
@@ -274,6 +303,10 @@ export default function MechanicPortalPage() {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const originalEmail = user?.email || ''
 
+  // Hold state
+  const [holdTarget, setHoldTarget] = useState<string | null>(null)
+  const [holdReason, setHoldReason] = useState('')
+
   // Active jobs
   const { data: jobs, isLoading } = useQuery<MechanicJob[]>({
     queryKey: ['mechanic-jobs'],
@@ -355,6 +388,8 @@ export default function MechanicPortalPage() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [photoCaption, setPhotoCaption] = useState('')
   const [showPhotoPreview, setShowPhotoPreview] = useState<string | null>(null)
+  const [showClockOutModal, setShowClockOutModal] = useState(false)
+  const [isTimerPanelExpanded, handleTimerPanelToggle] = useTimerPanelPersistence(user?.id)
   const fileInputRef = useCallback((node: HTMLInputElement | null) => {
     // Store ref for triggering file input
     if (node) {
@@ -395,7 +430,32 @@ export default function MechanicPortalPage() {
     },
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed'),
   })
-  
+
+  const holdOrderMutation = useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+      api.post(`/repair-orders/${orderId}/hold`, { reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      setHoldTarget(null)
+      setHoldReason('')
+      toast.success('Job put on hold')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to hold job'),
+  })
+
+  const resumeOrderMutation = useMutation({
+    mutationFn: (orderId: string) => api.post(`/repair-orders/${orderId}/resume`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-job-detail'] })
+      queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
+      toast.success('Job resumed — timer started')
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to resume job'),
+  })
+
   const uploadPhotoMutation = useMutation({
     mutationFn: async ({ jobId, image, caption }: { jobId: string; image: string; caption?: string }) => {
       const response = await api.post(`/mechanics/my-jobs/${jobId}/photos`, { image, caption })
@@ -624,9 +684,36 @@ export default function MechanicPortalPage() {
   const isClockedIn = !!daySummary?.attendance_active
   const isOnBreak = !!daySummary?.break_active
   const hasActiveDayTimer = !!daySummary?.active_session
+  const isActiveRoTimer = daySummary?.active_session?.session_type === 'repair_order'
   const timerToggleBusy = startMiscTimerMutation.isPending || stopTimerMutation.isPending
   const attendanceToggleBusy = clockInMutation.isPending || clockOutMutation.isPending
   const breakToggleBusy = startBreakMutation.isPending || endBreakMutation.isPending
+  const { countdownNowMs, liveCountdownSeconds } = useCoreCountdown(daySummary)
+  // Keep this frontend recommendation layer aligned with backend `compute_next_action_recommendation`.
+  const {
+    mechanicSuggestion,
+    isMiscSuggestion,
+    highlightedJobId,
+    shouldPulseTimerToggle,
+  } = useMechanicSuggestion(daySummary, jobs)
+  const breakStartedMs = daySummary?.break_started_at ? new Date(daySummary.break_started_at).getTime() : NaN
+  const breakElapsedSeconds = isOnBreak
+    ? (Number.isNaN(breakStartedMs)
+      ? (daySummary?.break_minutes || 0) * 60
+      : Math.max(Math.floor((countdownNowMs - breakStartedMs) / 1000), 0))
+    : (daySummary?.break_minutes || 0) * 60
+  const activeSessionStartedMs = daySummary?.active_session?.started_at
+    ? new Date(daySummary.active_session.started_at).getTime()
+    : NaN
+  const activeSessionElapsedSeconds = hasActiveDayTimer && !Number.isNaN(activeSessionStartedMs)
+    ? Math.max(Math.floor((countdownNowMs - activeSessionStartedMs) / 1000), 0)
+    : 0
+  const collapsedInlineTimerLabel = isOnBreak
+    ? `Break ${formatSecondsAsClock(breakElapsedSeconds)}`
+    : hasActiveDayTimer
+      ? `Active ${formatSecondsAsClock(activeSessionElapsedSeconds)}`
+      : `Core ${formatSecondsAsClock(liveCountdownSeconds)}`
+  const showPanelBreakControl = isClockedIn && !isOnBreak
 
   const handleTimerToggle = () => {
     if (hasActiveDayTimer) {
@@ -652,6 +739,87 @@ export default function MechanicPortalPage() {
     startBreakMutation.mutate()
   }
 
+  const handleHeaderClockOutAction = () => {
+    if (isClockedIn) {
+      setShowClockOutModal(true)
+      return
+    }
+    setView('profile')
+  }
+
+  const handleConfirmClockOut = () => {
+    clockOutMutation.mutate(undefined, {
+      onSuccess: () => setShowClockOutModal(false),
+    })
+  }
+
+  useEffect(() => {
+    if (!isClockedIn && showClockOutModal) {
+      setShowClockOutModal(false)
+    }
+  }, [isClockedIn, showClockOutModal])
+
+  useSuggestionToasts({
+    userId: user?.id,
+    view,
+    isClockedIn,
+    suggestion: mechanicSuggestion,
+  })
+
+  // B3: Auto-scroll to suggested job card
+  const suggestedJobRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (view !== 'list' || !highlightedJobId) return
+    const timeout = setTimeout(() => {
+      suggestedJobRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [highlightedJobId, view])
+
+  // B1: Sticky action bar handler
+  const handleStickyAction = () => {
+    switch (mechanicSuggestion.action) {
+      case 'clock_in':
+        clockInMutation.mutate()
+        break
+      case 'end_break':
+        endBreakMutation.mutate()
+        break
+      case 'clock_out':
+        setShowClockOutModal(true)
+        break
+      case 'start_misc':
+        startMiscTimerMutation.mutate({ misc_category: miscCategory, note: miscNote || undefined })
+        break
+      case 'stop_misc_pick_ro':
+        stopTimerMutation.mutate(undefined, {
+          onSuccess: () => {
+            if (mechanicSuggestion.recommendedJob) {
+              setExpandedJobId(mechanicSuggestion.recommendedJob.id)
+            }
+          },
+        })
+        break
+      case 'start_assigned_ro':
+        if (mechanicSuggestion.recommendedJob) {
+          acceptAndStartMutation.mutate({
+            orderId: mechanicSuggestion.recommendedJob.id,
+            currentStatus: mechanicSuggestion.recommendedJob.status,
+          })
+        }
+        break
+      case 'continue_ro':
+        if (mechanicSuggestion.recommendedJob) {
+          setExpandedJobId(mechanicSuggestion.recommendedJob.id)
+          setTimeout(() => {
+            suggestedJobRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }, 150)
+        }
+        break
+    }
+  }
+  const stickyActionBusy = clockInMutation.isPending || endBreakMutation.isPending || stopTimerMutation.isPending || startMiscTimerMutation.isPending || acceptAndStartMutation.isPending
+
   const formatCreatedAt = (createdAt?: string | null) => {
     if (!createdAt) return 'Unknown'
     const parsed = new Date(createdAt)
@@ -659,11 +827,53 @@ export default function MechanicPortalPage() {
     return format(parsed, 'MMM d, yyyy h:mm a')
   }
 
-  // Bottom Navigation Component - defined here so it's available in all views
+  // Sticky action bar + Bottom Navigation Component
+  const showStickyBar = isClockedIn && !isOnBreak && view === 'list'
+  const stickyIsLiveTimer = mechanicSuggestion.action === 'continue_ro' && hasActiveDayTimer
+
   const BottomNav = () => {
     const currentView = view as ViewType
     return (
       <div className="fixed bottom-0 left-0 right-0 z-10">
+        {showStickyBar ? (
+          <div className="max-w-lg mx-auto bg-gray-900/95 border-t border-gray-700 px-4 py-2.5 backdrop-blur-sm">
+            {stickyIsLiveTimer ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm text-cyan-200 min-w-0 truncate">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
+                  <span className="font-mono">{mechanicSuggestion.recommendedJob?.order_number}</span>
+                  <span className="font-mono text-green-200">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
+                </div>
+                <button
+                  onClick={() => completeWorkMutation.mutate(mechanicSuggestion.recommendedJob?.id || '')}
+                  disabled={completeWorkMutation.isPending}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:bg-gray-600 shrink-0"
+                >
+                  {completeWorkMutation.isPending ? 'Completing...' : 'Job Done'}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0 text-sm text-gray-300 truncate">
+                  {mechanicSuggestion.action === 'start_misc'
+                    ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'misc'} timer`
+                    : formatSuggestedNextAction(mechanicSuggestion.action)}
+                </div>
+                <button
+                  onClick={handleStickyAction}
+                  disabled={stickyActionBusy}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:bg-gray-600 shrink-0"
+                >
+                  {stickyActionBusy
+                    ? '...'
+                    : mechanicSuggestion.action === 'start_misc'
+                      ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'Misc'}`
+                      : getSuggestedActionButtonLabel(mechanicSuggestion.action)}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null}
         <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-around">
           <button
             onClick={() => setView('list')}
@@ -786,26 +996,103 @@ export default function MechanicPortalPage() {
               </button>
             )}
 
-            {jobDetail.status === 'in_progress' && (
-              <div className={`grid gap-3 ${isTimedForDetail ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                {!isTimedForDetail && (
+            {jobDetail.status === 'in_progress' && jobDetail.hold_reason && (
+              <div className="space-y-3">
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center gap-2">
+                  <PauseCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-amber-200 font-medium">
+                    On hold: {HOLD_REASONS.find((r) => r.value === jobDetail.hold_reason)?.label || jobDetail.hold_reason}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <button
-                    onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
+                    onClick={() => resumeOrderMutation.mutate(jobDetail.id)}
                     disabled={isPending}
                     className="w-full py-5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25"
                   >
                     {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
                     RESUME
                   </button>
+                  <button
+                    onClick={() => completeWorkMutation.mutate(jobDetail.id)}
+                    disabled={isPending}
+                    className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
+                  >
+                    {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
+                    JOB DONE ✓
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {jobDetail.status === 'in_progress' && !jobDetail.hold_reason && (
+              <div className="space-y-3">
+                {holdTarget === jobDetail.id ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-gray-400 font-medium">Why are you pausing?</p>
+                    <div className="flex flex-wrap gap-2">
+                      {HOLD_REASONS.map((r) => (
+                        <button
+                          key={r.value}
+                          type="button"
+                          onClick={() => setHoldReason(r.value)}
+                          className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
+                            holdReason === r.value
+                              ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                              : 'bg-gray-700/60 border-gray-600 text-gray-300 hover:bg-gray-600'
+                          }`}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => { setHoldTarget(null); setHoldReason('') }}
+                        className="py-4 bg-gray-700 hover:bg-gray-600 text-gray-300 text-lg font-semibold rounded-2xl transition-all"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => holdReason && holdOrderMutation.mutate({ orderId: jobDetail.id, reason: holdReason })}
+                        disabled={!holdReason || holdOrderMutation.isPending}
+                        className="py-4 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-700 text-white text-lg font-semibold rounded-2xl transition-all"
+                      >
+                        {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className={`grid gap-3 ${isTimedForDetail ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                      {!isTimedForDetail && (
+                        <button
+                          onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
+                          disabled={isPending}
+                          className="w-full py-5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25"
+                        >
+                          {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
+                          RESUME
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setHoldTarget(jobDetail.id)}
+                        className="w-full py-5 bg-amber-600/80 hover:bg-amber-600 active:bg-amber-700 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3"
+                      >
+                        <PauseCircle className="w-7 h-7" />
+                        HOLD
+                      </button>
+                      <button
+                        onClick={() => completeWorkMutation.mutate(jobDetail.id)}
+                        disabled={isPending}
+                        className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
+                      >
+                        {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
+                        DONE ✓
+                      </button>
+                    </div>
+                  </div>
                 )}
-                <button
-                  onClick={() => completeWorkMutation.mutate(jobDetail.id)}
-                  disabled={isPending}
-                  className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
-                >
-                  {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
-                  JOB DONE ✓
-                </button>
               </div>
             )}
 
@@ -1644,6 +1931,18 @@ export default function MechanicPortalPage() {
               </div>
             </div>
           </div>
+
+          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+            <h2 className="text-white font-semibold">Session</h2>
+            <p className="text-sm text-gray-400 mt-1">Sign out from this device.</p>
+            <button
+              onClick={handleLogout}
+              className="w-full mt-4 py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </button>
+          </div>
         </div>
         {/* Spacer for bottom nav */}
         <div className="h-20" />
@@ -1674,32 +1973,36 @@ export default function MechanicPortalPage() {
               <Star className="w-4 h-4" style={{ color: accentColors[400] }} />
               <span className="font-bold" style={{ color: accentColors[400] }}>{stats?.available_points || 0}</span>
             </button>
-            <button
-              onClick={handleLogout}
-              className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-lg"
-              title="Logout"
-            >
-              <LogOut className="w-5 h-5" />
-            </button>
+            {isClockedIn ? (
+              <button
+                onClick={handleHeaderClockOutAction}
+                className="p-2 text-gray-400 hover:text-amber-300 hover:bg-gray-700 rounded-lg"
+                title="Clock Out"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            ) : null}
           </div>
         </div>
       </header>
 
       {/* Quick Stats Bar */}
-      <div className="bg-gray-800/50 px-4 py-2 flex items-center gap-4 border-b border-gray-700/50">
-        <div className="flex items-center gap-1.5 text-sm">
-          <span className="text-gray-500">Today:</span>
-          <span className="text-white font-medium">{stats?.jobs_completed_today || 0} done</span>
-        </div>
-        {(stats?.streak_days || 0) > 0 && (
+      {isClockedIn && !isOnBreak && (
+        <div className="bg-gray-800/50 px-4 py-2 flex items-center gap-4 border-b border-gray-700/50">
           <div className="flex items-center gap-1.5 text-sm">
-            <Zap className="w-4 h-4 text-orange-400" />
-            <span className="text-orange-400 font-medium">{stats?.streak_days} day streak</span>
+            <span className="text-gray-500">Today:</span>
+            <span className="text-white font-medium">{stats?.jobs_completed_today || 0} done</span>
           </div>
-        )}
-      </div>
+          {(stats?.streak_days || 0) > 0 && (
+            <div className="flex items-center gap-1.5 text-sm">
+              <Zap className="w-4 h-4 text-orange-400" />
+              <span className="text-orange-400 font-medium">{stats?.streak_days} day streak</span>
+            </div>
+          )}
+        </div>
+      )}
 
-      <main className="p-4 space-y-4 pb-24">
+      <main className="p-4 space-y-4 pb-44">
         {/* Real-time notification banners */}
         <NotificationBanner
           banners={banners}
@@ -1708,169 +2011,184 @@ export default function MechanicPortalPage() {
           autoDismissMs={8000}
         />
 
-        {/* Daily Utilization + Misc Controls */}
-        {daySummary && (
-          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-white">Daily Core Timer</p>
-                <SectionInfoTooltip text="Your daily progress against core target hours. This includes repair-order and misc shop time, with overtime tracked separately." />
-              </div>
-              <span className="text-xs text-gray-400">
-                {(daySummary.tracked_minutes / 60).toFixed(1)}h / {(daySummary.core_target_minutes / 60).toFixed(1)}h
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <span className={`px-2 py-1 rounded-full ${isClockedIn ? 'bg-emerald-500/20 text-emerald-300' : 'bg-gray-700 text-gray-300'}`}>
-                {isClockedIn ? 'Clocked In' : 'Clocked Out'}
-              </span>
-              <span className={`px-2 py-1 rounded-full ${isOnBreak ? 'bg-amber-500/20 text-amber-300' : 'bg-gray-700 text-gray-300'}`}>
-                {isOnBreak ? 'On Break' : 'No Break'}
-              </span>
-              <span className="px-2 py-1 rounded-full bg-sky-500/20 text-sky-300">
-                Idle {daySummary.idle_minutes}m
-              </span>
-            </div>
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
-              <p className="text-xs uppercase tracking-wide text-emerald-300 mb-2">Live Timer</p>
-              {daySummary.active_session?.started_at ? (
-                <LiveElapsedTimer startedAt={daySummary.active_session.started_at} className="font-mono text-5xl leading-none font-semibold text-emerald-100" />
-              ) : (
-                <p className="font-mono text-5xl leading-none font-semibold text-gray-300">
-                  {formatMinutesAsClock(daySummary.tracked_minutes)}
-                </p>
-              )}
-              <p className="text-xs mt-2 text-gray-300">
-                {daySummary.active_session ? 'Running now' : 'No active timer'}
+        {!daySummary ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-7 h-7 text-amber-500 animate-spin" />
+          </div>
+        ) : null}
+
+        {daySummary && !isClockedIn ? (
+          <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-400">Morning Start</p>
+              <h2 className="text-2xl font-semibold text-white mt-1">Clock in to start your day</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Shift {daySummary.shift_start_local} - {daySummary.shift_end_local} · Core target {(daySummary.core_target_minutes / 60).toFixed(1)}h
               </p>
             </div>
-            <div className="h-2 rounded-full bg-gray-700 overflow-hidden">
-              <div
-                className="h-2 rounded-full bg-amber-500"
-                style={{ width: `${Math.min(daySummary.utilization_percent, 100)}%` }}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
-              <div>RO: <span className="text-white">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
-              <div>Misc: <span className="text-white">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
-              <div>Overtime: <span className="text-white">{(daySummary.overtime_minutes / 60).toFixed(1)}h</span></div>
-              <div>Efficiency: <span className="text-white">{daySummary.efficiency_percent == null ? 'n/a' : `${daySummary.efficiency_percent.toFixed(1)}%`}</span></div>
-              <div>Break: <span className="text-white">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
-              <div>Core Gap: <span className="text-white">{(daySummary.core_gap_minutes / 60).toFixed(1)}h</span></div>
-            </div>
-            <div className="rounded-lg border border-white/10 bg-gray-900/40 p-2 text-xs">
-              <div className="flex items-center justify-between text-gray-300">
-                <span>Flex Budget</span>
-                <span>
-                  {daySummary.flex_used_minutes}m / {daySummary.flex_budget_minutes}m
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 rounded-full bg-gray-700 overflow-hidden">
-                <div
-                  className={`h-1.5 rounded-full ${daySummary.flex_overrun_minutes > 0 ? 'bg-rose-500' : 'bg-cyan-400'}`}
-                  style={{
-                    width: `${Math.min(
-                      daySummary.flex_budget_minutes > 0
-                        ? (daySummary.flex_used_minutes / daySummary.flex_budget_minutes) * 100
-                        : 0,
-                      100,
-                    )}%`,
-                  }}
-                />
-              </div>
-              <div className="mt-1 flex items-center justify-between text-[11px] text-gray-400">
-                <span>Remaining: {daySummary.flex_remaining_minutes}m</span>
-                {daySummary.flex_overrun_minutes > 0 ? (
-                  <span className="text-rose-300">Overrun: {daySummary.flex_overrun_minutes}m</span>
-                ) : null}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={handleAttendanceToggle}
-                disabled={attendanceToggleBusy}
-                className={`w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
-                  isClockedIn ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                }`}
-              >
-                {attendanceToggleBusy
-                  ? (isClockedIn ? 'Clocking Out...' : 'Clocking In...')
-                  : (isClockedIn ? 'Clock Out' : 'Clock In')}
-              </button>
-              <button
-                onClick={handleBreakToggle}
-                disabled={!isClockedIn || breakToggleBusy}
-                className={`w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
-                  isOnBreak ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-600 hover:bg-amber-700'
-                }`}
-              >
-                {breakToggleBusy
-                  ? (isOnBreak ? 'Ending Break...' : 'Starting Break...')
-                  : (isOnBreak ? 'End Break' : 'Start Break')}
-              </button>
-            </div>
-
-            <div className="pt-1">
-              <div className="flex items-center gap-2 mb-2">
-                <p className="text-xs text-gray-400">Quick Picks</p>
-                <SectionInfoTooltip text="Choose the misc task category before starting a non-repair-order timer." />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {MISC_WORK_OPTIONS.map((option) => {
-                  const isSelected = miscCategory === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      disabled={hasActiveDayTimer || isOnBreak}
-                      onClick={() => setMiscCategory(option.value)}
-                      className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                        isSelected
-                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                          : 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-            <input
-              value={miscNote}
-              onChange={(e) => setMiscNote(e.target.value)}
-              placeholder="Misc note (optional)"
-              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
-              disabled={hasActiveDayTimer || isOnBreak}
-            />
             <button
-              onClick={handleTimerToggle}
-              disabled={timerToggleBusy || isOnBreak}
-              className={`w-full py-3 text-white text-base font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
-                hasActiveDayTimer ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
+              onClick={handleAttendanceToggle}
+              disabled={attendanceToggleBusy}
+              className="w-full py-3 text-white text-base font-semibold rounded-lg transition-colors disabled:bg-gray-600 bg-emerald-600 hover:bg-emerald-700"
             >
-              {timerToggleBusy
-                ? (hasActiveDayTimer ? 'Stopping...' : 'Starting...')
-                : (hasActiveDayTimer ? 'Stop Active Timer' : `Start ${formatMiscCategory(miscCategory)} Timer`)}
+              {attendanceToggleBusy ? 'Clocking In...' : 'Clock In'}
             </button>
-            <div className="text-xs text-gray-400">
-              Active source:{' '}
-              {daySummary.active_session
-                ? daySummary.active_session.session_type === 'repair_order'
-                  ? `Repair Order ${daySummary.active_session.repair_order_id || ''}`.trim()
-                  : `Misc (${formatMiscCategory(daySummary.active_session.misc_category)})`
-                : 'No active timer'}
+          </div>
+        ) : null}
+
+        {daySummary && isClockedIn ? (
+          <>
+            <div className="flex items-center justify-between px-1">
+              <p className="text-xs uppercase tracking-wide text-gray-400">
+                {isTimerPanelExpanded ? 'Timer Panel' : 'Status'}
+              </p>
+              <button
+                onClick={handleTimerPanelToggle}
+                className="text-xs text-cyan-300 hover:text-cyan-200 font-medium"
+              >
+                {isTimerPanelExpanded ? 'Hide Timer' : 'Show Timer'}
+              </button>
             </div>
-            {daySummary.active_session?.started_at ? (
-              <div className="text-xs text-emerald-300">
-                Running timer: <LiveElapsedTimer startedAt={daySummary.active_session.started_at} className="font-mono text-emerald-200" />
-              </div>
-            ) : null}
+            {isTimerPanelExpanded ? (
+              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-3">
+            {isOnBreak ? (
+              <>
+                <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs uppercase tracking-wide text-amber-300">Break Time</span>
+                    <span className="font-mono text-lg font-semibold text-amber-100">{formatSecondsAsClock(breakElapsedSeconds)}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleBreakToggle}
+                  disabled={breakToggleBusy}
+                  className="w-full py-3 text-white text-base font-semibold rounded-lg transition-colors disabled:bg-gray-600 bg-blue-600 hover:bg-blue-700"
+                >
+                  {breakToggleBusy ? 'Ending Break...' : 'End Break'}
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Core Remaining — inline bar */}
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-gray-400">Core Remaining</span>
+                    <span className="font-mono text-sm font-semibold text-cyan-200">{formatSecondsAsClock(liveCountdownSeconds)}</span>
+                  </div>
+                  <div className="h-2.5 bg-gray-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-2.5 bg-cyan-500 rounded-full transition-all"
+                      style={{ width: `${daySummary.core_target_minutes > 0 ? Math.min(((daySummary.core_target_minutes - (daySummary.core_countdown_remaining_minutes ?? 0)) / daySummary.core_target_minutes) * 100, 100) : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 mt-1">
+                    <span>Tracked {(daySummary.tracked_minutes / 60).toFixed(1)}h / {(daySummary.core_target_minutes / 60).toFixed(1)}h</span>
+                    <span>Coverage {formatCoverageLabel(daySummary.work_coverage_percent, daySummary.attendance_minutes)}</span>
+                  </div>
+                </div>
+
+                {/* Misc task pills — horizontal scroll */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+                  {MISC_WORK_OPTIONS.map((option) => {
+                    const isSelected = miscCategory === option.value
+                    const isSuggestedPick = isMiscSuggestion && !hasActiveDayTimer && isSelected
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={isActiveRoTimer}
+                        onClick={() => setMiscCategory(option.value)}
+                        className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors whitespace-nowrap ${
+                          isSuggestedPick
+                            ? 'bg-indigo-500/20 border-indigo-400 text-indigo-100 ring-1 ring-indigo-300/60 animate-pulse'
+                            : isSelected
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                            : 'bg-gray-700/60 border-gray-600 text-gray-300 hover:bg-gray-600'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Timer toggle — shows selected category */}
+                <button
+                  onClick={handleTimerToggle}
+                  disabled={timerToggleBusy || (isActiveRoTimer && !hasActiveDayTimer)}
+                  className={`w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
+                    hasActiveDayTimer ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                  } ${shouldPulseTimerToggle ? 'ring-2 ring-indigo-300/70 animate-pulse' : ''}`}
+                >
+                  {timerToggleBusy
+                    ? (hasActiveDayTimer ? 'Stopping...' : 'Starting...')
+                    : hasActiveDayTimer
+                      ? 'Stop Active Timer'
+                      : `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'Misc'} Timer`}
+                </button>
+
+                {/* Break button */}
+                {showPanelBreakControl ? (
+                  <button
+                    onClick={handleBreakToggle}
+                    disabled={breakToggleBusy}
+                    className="w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 bg-amber-600 hover:bg-amber-700"
+                  >
+                    {breakToggleBusy ? 'Starting Break...' : 'Start Break'}
+                  </button>
+                ) : null}
+
+                {/* Collapsible details */}
+                <details className="rounded-lg border border-white/10 bg-gray-900/40 p-2 text-xs">
+                  <summary className="cursor-pointer text-gray-300 font-medium">Details</summary>
+                  <div className="pt-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-2 text-gray-300">
+                      <div>RO: <span className="text-white">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
+                      <div>Misc: <span className="text-white">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
+                      <div>Break: <span className="text-white">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
+                      <div>Idle: <span className="text-white">{(daySummary.idle_minutes / 60).toFixed(1)}h</span></div>
+                      <div>Gap: <span className="text-white">{(daySummary.tracked_vs_attendance_gap_minutes / 60).toFixed(1)}h</span></div>
+                    </div>
+                    <div className="h-2 rounded-full bg-gray-700 overflow-hidden">
+                      <div className="h-2 rounded-full bg-amber-500" style={{ width: `${Math.min(daySummary.utilization_percent, 100)}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-gray-400">
+                      <span>Utilization: {daySummary.utilization_percent.toFixed(1)}%</span>
+                      <span>Efficiency: {daySummary.efficiency_percent == null ? 'n/a' : `${daySummary.efficiency_percent.toFixed(1)}%`}</span>
+                    </div>
+                    <input
+                      value={miscNote}
+                      onChange={(e) => setMiscNote(e.target.value)}
+                      placeholder="Misc note (optional)"
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
+                      disabled={isActiveRoTimer}
+                    />
+                  </div>
+                </details>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-300">Clocked In</span>
+                    {isOnBreak ? (
+                      <span className="px-2 py-1 rounded-full bg-amber-500/20 text-amber-300">On Break</span>
+                    ) : daySummary.active_session ? (
+                      <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-300">Timer On</span>
+                    ) : null}
+                  </div>
+                  <span className={`font-mono text-2xl font-semibold leading-none ${isOnBreak ? 'text-amber-200' : 'text-cyan-200'}`}>
+                    {collapsedInlineTimerLabel}
+                  </span>
+                </div>
           </div>
         )}
+          </>
+        ) : null}
 
-        {isLoading ? (
+        {isClockedIn && !isOnBreak && (isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
           </div>
@@ -1938,26 +2256,6 @@ export default function MechanicPortalPage() {
               </div>
             )}
 
-            {/* Points Highlight */}
-            {stats && stats.available_points > 0 && (
-              <div className="bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 rounded-2xl p-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center">
-                    <Trophy className="w-6 h-6 text-amber-400" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-amber-200 text-sm">Available Points</p>
-                    <p className="text-2xl font-bold text-white">{stats.available_points.toLocaleString()}</p>
-                  </div>
-                  <button
-                    onClick={() => setView('stats')}
-                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg"
-                  >
-                    Redeem
-                  </button>
-                </div>
-              </div>
-            )}
           </>
         ) : (
           <>
@@ -1972,19 +2270,21 @@ export default function MechanicPortalPage() {
               const isNew = job.status === 'assigned'
               const isWorking = job.status === 'in_progress'
               const isExpanded = expandedJobId === job.id
+              const isSuggestedJob = highlightedJobId === job.id
               const detail = isExpanded ? expandedJobDetail : null
               const isTimedForThisJob = daySummary?.active_session?.session_type === 'repair_order'
                 && daySummary.active_session.repair_order_id === job.id
               const timedStartForJob = daySummary?.active_session?.started_at || detail?.work_started_at || null
               
               // Status-based accent color
-              const borderColor = isWorking ? 'border-purple-500' : isNew ? 'border-blue-500' : 'border-gray-700'
+              const borderColor = isSuggestedJob ? 'border-indigo-400' : isWorking ? 'border-purple-500' : isNew ? 'border-blue-500' : 'border-gray-700'
               const statusBg = isWorking ? 'bg-purple-500' : isNew ? 'bg-blue-500' : 'bg-gray-600'
               
               return (
                 <div 
-                  key={job.id} 
-                  className={`rounded-2xl overflow-hidden bg-gray-800/50 border-2 ${borderColor} transition-all`}
+                  key={job.id}
+                  ref={isSuggestedJob ? suggestedJobRef : undefined}
+                  className={`rounded-2xl overflow-hidden bg-gray-800/50 border-2 ${borderColor} transition-all ${isSuggestedJob ? 'shadow-[0_0_0_2px_rgba(99,102,241,0.35)]' : ''}`}
                 >
                   {/* Header - Always visible */}
                   <button
@@ -1994,7 +2294,7 @@ export default function MechanicPortalPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {/* Status indicator dot */}
-                        <div className={`w-3 h-3 rounded-full shrink-0 ${statusBg} ${isWorking ? 'animate-pulse' : ''}`} />
+                        <div className={`w-3 h-3 rounded-full shrink-0 ${statusBg} ${(isWorking || isSuggestedJob) ? 'animate-pulse' : ''}`} />
                         <div className="min-w-0 flex-1">
                           <h3 className="text-white font-semibold truncate">{job.vehicle_info}</h3>
                           <p className="text-sm text-gray-400">
@@ -2004,9 +2304,20 @@ export default function MechanicPortalPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-2 py-1 rounded-md text-xs font-medium text-white ${statusBg}`}>
-                          {STATUS_LABELS[job.status]}
-                        </span>
+                        {isSuggestedJob ? (
+                          <span className="px-2 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wide text-indigo-100 bg-indigo-500/70 animate-pulse">
+                            Next
+                          </span>
+                        ) : null}
+                        {job.hold_reason ? (
+                          <span className="px-2 py-1 rounded-md text-xs font-medium text-amber-200 bg-amber-600/70">
+                            On Hold
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-1 rounded-md text-xs font-medium text-white ${statusBg}`}>
+                            {STATUS_LABELS[job.status]}
+                          </span>
+                        )}
                         <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                       </div>
                     </div>
@@ -2166,13 +2477,19 @@ export default function MechanicPortalPage() {
                               </button>
                             )}
                             
-                            {job.status === 'in_progress' && (
-                              <div className={`grid gap-2 ${isTimedForThisJob ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                                {!isTimedForThisJob && (
+                            {job.status === 'in_progress' && job.hold_reason && (
+                              <div className="space-y-2">
+                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
+                                  <PauseCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                                  <span className="text-sm text-amber-200">
+                                    On hold: {HOLD_REASONS.find((r) => r.value === job.hold_reason)?.label || job.hold_reason}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
+                                      resumeOrderMutation.mutate(job.id)
                                     }}
                                     disabled={isPending}
                                     className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
@@ -2180,18 +2497,96 @@ export default function MechanicPortalPage() {
                                     {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
                                     RESUME
                                   </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      completeWorkMutation.mutate(job.id)
+                                    }}
+                                    disabled={isPending}
+                                    className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                  >
+                                    {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                    JOB DONE
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {job.status === 'in_progress' && !job.hold_reason && (
+                              <div className="space-y-2">
+                                {holdTarget === job.id ? (
+                                  <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                                    <p className="text-xs text-gray-400 font-medium">Why are you pausing?</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {HOLD_REASONS.map((r) => (
+                                        <button
+                                          key={r.value}
+                                          type="button"
+                                          onClick={() => setHoldReason(r.value)}
+                                          className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                                            holdReason === r.value
+                                              ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                                              : 'bg-gray-700/60 border-gray-600 text-gray-300 hover:bg-gray-600'
+                                          }`}
+                                        >
+                                          {r.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <button
+                                        onClick={() => { setHoldTarget(null); setHoldReason('') }}
+                                        className="py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-semibold rounded-xl transition-all"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        onClick={() => holdReason && holdOrderMutation.mutate({ orderId: job.id, reason: holdReason })}
+                                        disabled={!holdReason || holdOrderMutation.isPending}
+                                        className="py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-all"
+                                      >
+                                        {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className={`grid gap-2 ${isTimedForThisJob ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                                    {!isTimedForThisJob && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
+                                        }}
+                                        disabled={isPending}
+                                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                      >
+                                        {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
+                                        RESUME
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setHoldTarget(job.id)
+                                      }}
+                                      className="w-full py-3 bg-amber-600/80 hover:bg-amber-600 active:bg-amber-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                    >
+                                      <PauseCircle className="w-5 h-5" />
+                                      HOLD
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        completeWorkMutation.mutate(job.id)
+                                      }}
+                                      disabled={isPending}
+                                      className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                    >
+                                      {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                      DONE
+                                    </button>
+                                  </div>
                                 )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    completeWorkMutation.mutate(job.id)
-                                  }}
-                                  disabled={isPending}
-                                  className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
-                                >
-                                  {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-                                  JOB DONE
-                                </button>
                               </div>
                             )}
                           </div>
@@ -2229,11 +2624,48 @@ export default function MechanicPortalPage() {
               </div>
             )}
           </>
-        )}
+        ))}
       </main>
 
-      {/* Spacer for bottom nav */}
-      <div className="h-20" />
+      {showClockOutModal ? (
+        <div className="fixed inset-0 z-30 bg-black/70 flex items-center justify-center px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-800 p-4 space-y-3">
+            <h3 className="text-white text-lg font-semibold">Clock Out</h3>
+            <p className="text-sm text-gray-300">
+              End your shift now? Any active timer or break will be closed automatically.
+            </p>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                onClick={() => setShowClockOutModal(false)}
+                disabled={attendanceToggleBusy}
+                className="w-full py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmClockOut}
+                disabled={attendanceToggleBusy}
+                className="w-full py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold disabled:opacity-60"
+              >
+                {attendanceToggleBusy ? 'Clocking Out...' : 'Clock Out'}
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setShowClockOutModal(false)
+                setView('profile')
+              }}
+              disabled={attendanceToggleBusy}
+              className="w-full py-2 text-xs text-gray-400 hover:text-white disabled:opacity-60"
+            >
+              Need to sign out too? Go to Profile.
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Spacer for bottom nav + sticky action bar */}
+      <div className={showStickyBar ? 'h-32' : 'h-20'} />
 
       {/* Bottom Nav */}
       <BottomNav />

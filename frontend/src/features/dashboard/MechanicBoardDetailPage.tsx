@@ -5,8 +5,12 @@ import toast from 'react-hot-toast'
 import { ArrowLeft, Loader2, PlayCircle, Square, Pencil, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
 import { MISC_WORK_OPTIONS, formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
+import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
 import LiveElapsedTimer from '@/components/LiveElapsedTimer'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
+import { useWebSocket } from '@/hooks/useWebSocket'
+import type { AttentionPriority } from '@/types'
+import { ATTENTION_REASON_LABELS } from '@/types'
 
 interface SessionRow {
   id: string
@@ -46,6 +50,17 @@ interface MechanicSummary {
   flex_remaining_minutes: number
   flex_overrun_minutes: number
   core_gap_minutes: number
+  core_countdown_elapsed_minutes: number
+  core_countdown_remaining_minutes: number
+  tracked_vs_attendance_gap_minutes: number
+  work_coverage_percent: number | null
+  assigned_ready_orders_count: number
+  untimed_in_progress_orders_count: number
+  recommended_order_id: string | null
+  recommended_order_number: string | null
+  suggested_next_action: 'clock_in' | 'end_break' | 'continue_ro' | 'stop_misc_pick_ro' | 'start_assigned_ro' | 'start_misc' | 'clock_out'
+  attention_priority: AttentionPriority
+  attention_reasons: string[]
   active_session: {
     id: string
     session_type: 'repair_order' | 'misc'
@@ -67,11 +82,17 @@ interface BoardDetailResponse {
 }
 
 type EditMode = 'edit' | 'delete' | null
+const formatCoverageLabel = (coverage: number | null, attendanceMinutes: number) => {
+  if (coverage == null) return 'n/a'
+  if (attendanceMinutes < 15) return 'warming up'
+  return `${coverage.toFixed(1)}%`
+}
 
 export default function MechanicBoardDetailPage() {
   const { mechanicId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  useWebSocket()
 
   const [sessionType, setSessionType] = useState<'repair_order' | 'misc'>('misc')
   const [repairOrderId, setRepairOrderId] = useState('')
@@ -242,6 +263,10 @@ export default function MechanicBoardDetailPage() {
     if (Number.isNaN(parsed.getTime())) return isoDate
     return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
+  const openRecommendedOrder = () => {
+    if (!m.recommended_order_id) return
+    navigate(`/dashboard/repair-orders?selected=${m.recommended_order_id}`)
+  }
 
   return (
     <div className="space-y-4">
@@ -254,6 +279,12 @@ export default function MechanicBoardDetailPage() {
           <p className="text-xs text-gray-400">{m.date} · {m.timezone}</p>
         </div>
       </div>
+
+      {m.attention_priority !== 'green' && m.attention_reasons.length > 0 ? (
+        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${m.attention_priority === 'red' ? 'bg-rose-500/15 border border-rose-500/30 text-rose-200' : 'bg-amber-500/15 border border-amber-400/30 text-amber-200'}`}>
+          {m.attention_reasons.map((r) => ATTENTION_REASON_LABELS[r] || r).join(' · ')}
+        </div>
+      ) : null}
 
       <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
         <div className="flex items-center gap-2">
@@ -269,6 +300,17 @@ export default function MechanicBoardDetailPage() {
           <div className="text-gray-400">Utilization<br /><span className="text-amber-300 font-semibold">{m.utilization_percent.toFixed(1)}%</span></div>
           <div className="text-gray-400">Efficiency<br /><span className="text-white font-semibold">{m.efficiency_percent == null ? 'n/a' : `${m.efficiency_percent.toFixed(1)}%`}</span></div>
           <div className="text-gray-400">Core Gap<br /><span className="text-white font-semibold">{(m.core_gap_minutes / 60).toFixed(1)}h</span></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+          <div className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-2 text-cyan-100">
+            Core Countdown Remaining: <span className="font-semibold">{(m.core_countdown_remaining_minutes / 60).toFixed(1)}h</span>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-200">
+            Tracked Progress: <span className="font-semibold">{(m.tracked_minutes / 60).toFixed(1)}h / {(m.core_target_minutes / 60).toFixed(1)}h</span>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-200">
+            Work Coverage: <span className="font-semibold">{formatCoverageLabel(m.work_coverage_percent, m.attendance_minutes)}</span>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
           <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-300">
@@ -301,6 +343,41 @@ export default function MechanicBoardDetailPage() {
           ) : (
             <span className="text-gray-300">idle</span>
           )}
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+          <div className="text-xs text-gray-400">
+            Suggested next action:{' '}
+            <span className="text-gray-200">{formatSuggestedNextAction(m.suggested_next_action)}</span>
+          </div>
+          <div className="mt-1 text-[11px] text-gray-500">
+            Ready assigned: <span className="text-gray-200">{m.assigned_ready_orders_count}</span>
+            {' · '}
+            Untimed in-progress: <span className="text-gray-200">{m.untimed_in_progress_orders_count}</span>
+            {m.recommended_order_number ? (
+              <>
+                {' · '}
+                Recommended RO: <span className="text-gray-200">{m.recommended_order_number}</span>
+              </>
+            ) : null}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            {m.recommended_order_id ? (
+              <button
+                onClick={openRecommendedOrder}
+                className="px-2.5 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
+              >
+                Open Recommended RO
+              </button>
+            ) : null}
+            {m.suggested_next_action === 'stop_misc_pick_ro' && m.active_session?.session_type === 'misc' ? (
+              <button
+                onClick={() => setStopReason('Stopping misc to pick up assigned repair order')}
+                className="px-2.5 py-1.5 rounded bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-semibold"
+              >
+                Prefill Stop Reason
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
 

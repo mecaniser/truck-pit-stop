@@ -14,6 +14,27 @@ export type RepairOrderStatus =
   | 'paid'
   | 'cancelled'
 
+export type SuggestedNextAction =
+  | 'clock_in'
+  | 'end_break'
+  | 'continue_ro'
+  | 'stop_misc_pick_ro'
+  | 'start_assigned_ro'
+  | 'start_misc'
+  | 'clock_out'
+
+export type AttentionPriority = 'red' | 'yellow' | 'green'
+
+export const ATTENTION_REASON_LABELS: Record<string, string> = {
+  idle_extended: 'Idle over 15 min — no active timer',
+  untimed_in_progress: 'In-progress RO has no timer running',
+  clocked_out_during_shift: 'Clocked out during shift window',
+  misc_with_ro_waiting: 'On misc timer with assigned RO waiting',
+  break_extended: 'On break over 20 min',
+  low_coverage: 'Work coverage below 60%',
+  ro_on_hold: 'Repair order on hold',
+}
+
 export interface User {
   id: string
   email: string
@@ -199,6 +220,8 @@ export interface RepairOrder {
   updated_at: string
   quote_sent?: boolean | null
   pending_zelle_confirmation?: boolean
+  hold_reason?: string | null
+  held_at?: string | null
 }
 
 export interface RepairOrderDetail extends RepairOrder {
