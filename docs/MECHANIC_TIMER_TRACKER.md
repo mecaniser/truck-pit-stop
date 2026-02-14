@@ -39,8 +39,51 @@ Execution tracker for attendance, break mode, timer orchestration, hold/resume, 
 | MT-20 | Today Sessions: computed duration badge per session row; time-only display (toLocaleTimeString) | TBC | done | MT-19 | 2026-02-14 | 2026-02-14 |
 | MT-21 | Session summary footer: Total RO / Misc / Break / Idle aggregation below session list | TBC | done | MT-20 | 2026-02-14 | 2026-02-14 |
 
+## V1.4 — Dynamic Core Target, Clock-In Cutoff & RO Time Stamping
+
+| Task ID | Scope | Owner | Status | Dependency | Started | Finished |
+|---|---|---|---|---|---|---|
+| MT-22 | Migration 036: `minimum_clock_in_remaining_minutes` (default 60) on `tenants` table | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-23 | Migration 037: `estimated_labor_minutes`, `actual_tracked_minutes`, `total_hold_minutes`, `assigned_at`, `acknowledged_at` on `repair_orders` | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-24 | Tenant model: add `minimum_clock_in_remaining_minutes` column | TBC | done | MT-22 | 2026-02-14 | 2026-02-14 |
+| MT-25 | RepairOrder model: add 5 new fields (estimated/actual/hold minutes + transition timestamps) | TBC | done | MT-23 | 2026-02-14 | 2026-02-14 |
+| MT-26 | Dynamic core target: `clock_in` computes `min(full_core, remaining_shift)` and snapshots adjusted value | TBC | done | MT-24 | 2026-02-14 | 2026-02-14 |
+| MT-27 | Clock-in cutoff: reject clock-in when remaining shift < tenant cutoff (managers bypass) | TBC | done | MT-24, MT-26 | 2026-02-14 | 2026-02-14 |
+| MT-28 | `compute_day_summary`: prefer attendance session `snapshot_core_target_minutes` over full core target | TBC | done | MT-26 | 2026-02-14 | 2026-02-14 |
+| MT-29 | Auto-populate `estimated_labor_minutes` from `selected_services.duration_minutes` on RO update | TBC | done | MT-25 | 2026-02-14 | 2026-02-14 |
+| MT-30 | Stamp `actual_tracked_minutes` + `total_hold_minutes` at `complete_work` endpoint | TBC | done | MT-25 | 2026-02-14 | 2026-02-14 |
+| MT-31 | Set `assigned_at` in `assign_mechanic`, `acknowledged_at` in `acknowledge_job` endpoints | TBC | done | MT-25 | 2026-02-14 | 2026-02-14 |
+| MT-32 | Frontend: add new fields to `RepairOrder` TypeScript interface | TBC | done | MT-25 | 2026-02-14 | 2026-02-14 |
+| MT-33 | Frontend: Time Tracking section in RO detail panel (Est / Actual / Non-work + transition timeline) | TBC | done | MT-32 | 2026-02-14 | 2026-02-14 |
+| MT-34 | Backend schema: add new fields to `RepairOrderResponse` Pydantic model | TBC | done | MT-25 | 2026-02-14 | 2026-02-14 |
+
+## V1.5 — Bug Fixes & Mobile-First UX
+
+| Task ID | Scope | Owner | Status | Dependency | Started | Finished |
+|---|---|---|---|---|---|---|
+| MT-35 | Single attendance session per day: `clock_in` reopens the most recent completed session instead of creating duplicates | TBC | done | MT-26 | 2026-02-14 | 2026-02-14 |
+| MT-36 | `compute_day_summary`: filter attendance sessions strictly to current day before resolving `snapshot_core_target_minutes` | TBC | done | MT-28 | 2026-02-14 | 2026-02-14 |
+| MT-37 | Prevent misc timer reset: `start_session` raises error when starting an already-active identical job | TBC | done | MT-05 | 2026-02-14 | 2026-02-14 |
+| MT-38 | Recommendation engine: handle active misc session explicitly so `start_misc` is not suggested when misc is running | TBC | done | MT-37 | 2026-02-14 | 2026-02-14 |
+| MT-39 | Hide "Start Misc" sticky bar when misc timer is already active (`isActiveMisc` guard) | TBC | done | MT-38 | 2026-02-14 | 2026-02-14 |
+| MT-40 | Collapsed timer panel: tappable tile expands panel (removed separate "Show/Hide Timer" link) | TBC | done | MT-08 | 2026-02-14 | 2026-02-14 |
+| MT-41 | Collapsed timer tile: two-row layout — status badges top, prominent `text-3xl` timer below | TBC | done | MT-40 | 2026-02-14 | 2026-02-14 |
+| MT-42 | Collapsed panel: quick action buttons (Start Misc, Break, End Break) below tap-to-expand area | TBC | done | MT-40 | 2026-02-14 | 2026-02-14 |
+| MT-43 | Mobile-first: `touch-manipulation` on Container (eliminates 300ms iOS tap delay) | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-44 | Mobile-first: `safe-area-inset-bottom` on Container + bottom nav for notched phones | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-45 | Mobile-first: bottom nav targets enlarged to `min-h-[48px] min-w-[64px]`, icons `w-7 h-7` | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-46 | Mobile-first: all buttons upgraded to `py-3`–`py-5` with `active:` states replacing `hover:` | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-47 | Mobile-first: misc category pills, hold reason chips, camera button enlarged to 44px+ targets | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-48 | Mobile-first: header points badge & clock-out icon enlarged; back buttons `p-3` | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-49 | Mobile-first: clock-in button upgraded to `py-5 text-xl font-bold rounded-2xl` with shadow | TBC | done | — | 2026-02-14 | 2026-02-14 |
+| MT-50 | Mobile-first: clock-out modal buttons enlarged to `py-3.5 text-base rounded-xl` | TBC | done | — | 2026-02-14 | 2026-02-14 |
+
 ## Notes
 - Status vocabulary: `todo`, `in_progress`, `blocked`, `done`.
 - Backfill policy remains disabled by design.
 - Required manager reason is enforced for manager attendance/break actions.
 - `hold` and `resume_from_hold` are valid `TIMER_STOP_REASONS` — timers auto-stop on hold and can auto-start on resume.
+- Dynamic core target: late clock-in adjusts core hours to remaining shift time. Full core target only applies when mechanic clocks in with enough shift remaining.
+- Clock-in cutoff is configurable per tenant (`minimum_clock_in_remaining_minutes`, default 60). Managers can bypass.
+- Single attendance session per day enforced: re-clock-in reopens the most recent ended session rather than creating a new row.
+- Mechanic portal is mobile-only: all touch targets ≥ 44px, `touch-manipulation` enabled, `safe-area-inset-bottom` respected, `active:` states used instead of `hover:`.
