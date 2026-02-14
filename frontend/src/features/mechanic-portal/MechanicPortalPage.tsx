@@ -261,8 +261,8 @@ function LiveTimer({ startedAt, totalMinutesToday = 0 }: { startedAt: string; to
 
 // Responsive container - full width on mobile, max 512px on larger screens, centered
 const Container = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`min-h-screen bg-gray-900 ${className}`}>
-    <div className="w-full sm:max-w-lg sm:mx-auto bg-gray-900 min-h-screen relative sm:shadow-2xl sm:shadow-black/50">
+  <div className={`min-h-screen bg-gray-900 touch-manipulation ${className}`}>
+    <div className="w-full sm:max-w-lg sm:mx-auto bg-gray-900 min-h-screen relative sm:shadow-2xl sm:shadow-black/50 pb-[env(safe-area-inset-bottom)]">
       {children}
     </div>
   </div>
@@ -840,7 +840,8 @@ export default function MechanicPortalPage() {
   }
 
   // Sticky action bar + Bottom Navigation Component
-  const showStickyBar = isClockedIn && !isOnBreak && view === 'list'
+  const isActiveMisc = hasActiveDayTimer && daySummary?.active_session?.session_type === 'misc'
+  const showStickyBar = isClockedIn && !isOnBreak && view === 'list' && !(mechanicSuggestion.action === 'start_misc' && isActiveMisc)
   const stickyIsLiveTimer = mechanicSuggestion.action === 'continue_ro' && hasActiveDayTimer
 
   const BottomNav = () => {
@@ -848,25 +849,25 @@ export default function MechanicPortalPage() {
     return (
       <div className="fixed bottom-0 left-0 right-0 z-10">
         {showStickyBar ? (
-          <div className="max-w-lg mx-auto bg-gray-900/95 border-t border-gray-700 px-4 py-2.5 backdrop-blur-sm">
+          <div className="max-w-lg mx-auto bg-gray-900/95 border-t border-gray-700 px-4 py-3 backdrop-blur-sm">
             {stickyIsLiveTimer ? (
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-sm text-cyan-200 min-w-0 truncate">
-                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />
+                <div className="flex items-center gap-2 text-base text-cyan-200 min-w-0 truncate">
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse shrink-0" />
                   <span className="font-mono">{mechanicSuggestion.recommendedJob?.order_number}</span>
                   <span className="font-mono text-green-200">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
                 </div>
                 <button
                   onClick={() => mechanicSuggestion.recommendedJob && completeWorkMutation.mutate(mechanicSuggestion.recommendedJob.id)}
                   disabled={completeWorkMutation.isPending || !mechanicSuggestion.recommendedJob}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:bg-gray-600 shrink-0"
+                  className="px-5 py-3 rounded-xl bg-emerald-600 active:bg-emerald-700 text-white text-base font-semibold disabled:bg-gray-600 shrink-0"
                 >
                   {completeWorkMutation.isPending ? 'Completing...' : 'Job Done'}
                 </button>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0 text-sm text-gray-300 truncate">
+                <div className="flex-1 min-w-0 text-base text-gray-300 truncate">
                   {mechanicSuggestion.action === 'start_misc'
                     ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'misc'} timer`
                     : formatSuggestedNextAction(mechanicSuggestion.action)}
@@ -874,7 +875,7 @@ export default function MechanicPortalPage() {
                 <button
                   onClick={handleStickyAction}
                   disabled={stickyActionBusy}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:bg-gray-600 shrink-0"
+                  className="px-5 py-3 rounded-xl bg-indigo-600 active:bg-indigo-700 text-white text-base font-semibold disabled:bg-gray-600 shrink-0"
                 >
                   {stickyActionBusy
                     ? '...'
@@ -886,38 +887,38 @@ export default function MechanicPortalPage() {
             )}
           </div>
         ) : null}
-        <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-4 py-3 flex justify-around">
+        <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-around">
           <button
             onClick={() => setView('list')}
-            className={`flex flex-col items-center gap-1 ${currentView !== 'list' && currentView !== 'detail' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'list' && currentView !== 'detail' ? 'text-gray-500' : ''}`}
             style={(currentView === 'list' || currentView === 'detail') ? { color: accentColors[500] } : undefined}
           >
-            <Wrench className="w-6 h-6" />
-            <span className="text-xs">Jobs</span>
+            <Wrench className="w-7 h-7" />
+            <span className="text-[11px] font-medium">Jobs</span>
           </button>
           <button
             onClick={() => setView('history')}
-            className={`flex flex-col items-center gap-1 ${currentView !== 'history' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'history' ? 'text-gray-500' : ''}`}
             style={currentView === 'history' ? { color: accentColors[500] } : undefined}
           >
-            <History className="w-6 h-6" />
-            <span className="text-xs">History</span>
+            <History className="w-7 h-7" />
+            <span className="text-[11px] font-medium">History</span>
           </button>
           <button
             onClick={() => setView('stats')}
-            className={`flex flex-col items-center gap-1 ${currentView !== 'stats' && currentView !== 'request' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'stats' && currentView !== 'request' ? 'text-gray-500' : ''}`}
             style={(currentView === 'stats' || currentView === 'request') ? { color: accentColors[500] } : undefined}
           >
-            <Trophy className="w-6 h-6" />
-            <span className="text-xs">Rewards</span>
+            <Trophy className="w-7 h-7" />
+            <span className="text-[11px] font-medium">Rewards</span>
           </button>
           <button
             onClick={() => setView('profile')}
-            className={`flex flex-col items-center gap-1 ${currentView !== 'profile' ? 'text-gray-500 hover:text-gray-300' : ''}`}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'profile' ? 'text-gray-500' : ''}`}
             style={currentView === 'profile' ? { color: accentColors[500] } : undefined}
           >
-            <User className="w-6 h-6" />
-            <span className="text-xs">Profile</span>
+            <User className="w-7 h-7" />
+            <span className="text-[11px] font-medium">Profile</span>
           </button>
         </div>
       </div>
@@ -935,7 +936,7 @@ export default function MechanicPortalPage() {
         <div className="flex flex-col min-h-screen">
           {/* Header */}
           <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-            <button onClick={goBack} className="p-2 -ml-2 hover:bg-gray-700 rounded-lg">
+            <button onClick={goBack} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
               <ArrowLeft className="w-6 h-6 text-gray-400" />
             </button>
             <div className="flex-1">
@@ -1048,10 +1049,10 @@ export default function MechanicPortalPage() {
                           key={r.value}
                           type="button"
                           onClick={() => setHoldReason(r.value)}
-                          className={`px-4 py-2 rounded-full border text-sm font-medium transition-colors ${
+                          className={`px-4 py-2.5 rounded-full border text-sm font-medium transition-colors ${
                             holdReason === r.value
                               ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                              : 'bg-gray-700/60 border-gray-600 text-gray-300 hover:bg-gray-600'
+                              : 'bg-gray-700/60 border-gray-600 text-gray-300 active:bg-gray-600'
                           }`}
                         >
                           {r.label}
@@ -1061,14 +1062,14 @@ export default function MechanicPortalPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
-                        className="py-4 bg-gray-700 hover:bg-gray-600 text-gray-300 text-lg font-semibold rounded-2xl transition-all"
+                        className="py-4 bg-gray-700 active:bg-gray-600 text-gray-300 text-lg font-semibold rounded-2xl transition-all"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={() => holdReason && holdOrderMutation.mutate({ orderId: jobDetail.id, reason: holdReason })}
                         disabled={!holdReason || holdOrderMutation.isPending}
-                        className="py-4 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-700 text-white text-lg font-semibold rounded-2xl transition-all"
+                        className="py-4 bg-amber-600 active:bg-amber-700 disabled:bg-gray-700 text-white text-lg font-semibold rounded-2xl transition-all"
                       >
                         {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
                       </button>
@@ -1128,7 +1129,7 @@ export default function MechanicPortalPage() {
             )}
           </div>
           {/* Spacer for bottom nav */}
-          <div className="h-20" />
+          <div className="h-24" />
         </div>
         <BottomNav />
       </Container>
@@ -1140,7 +1141,7 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('list')} className="p-2 -ml-2 hover:bg-gray-700 rounded-lg">
+          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-gray-400" />
           </button>
           <h1 className="text-lg font-bold text-white">Work History</h1>
@@ -1185,7 +1186,7 @@ export default function MechanicPortalPage() {
           )}
         </div>
         {/* Spacer for bottom nav */}
-        <div className="h-20" />
+        <div className="h-24" />
         <BottomNav />
       </Container>
     )
@@ -1201,7 +1202,7 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('list')} className="p-2 -ml-2 hover:bg-gray-700 rounded-lg">
+          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-gray-400" />
           </button>
           <h1 className="text-lg font-bold text-white">My Stats & Rewards</h1>
@@ -1353,7 +1354,7 @@ export default function MechanicPortalPage() {
           </div>
         </div>
         {/* Spacer for bottom nav */}
-        <div className="h-20" />
+        <div className="h-24" />
         <BottomNav />
       </Container>
     )
@@ -1372,7 +1373,7 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('stats')} className="p-2 -ml-2 hover:bg-gray-700 rounded-lg">
+          <button onClick={() => setView('stats')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-gray-400" />
           </button>
           <h1 className="text-lg font-bold text-white">Request Rewards</h1>
@@ -1587,7 +1588,7 @@ export default function MechanicPortalPage() {
           )}
         </div>
         {/* Spacer for bottom nav */}
-        <div className="h-20" />
+        <div className="h-24" />
         <BottomNav />
       </Container>
     )
@@ -1644,7 +1645,7 @@ export default function MechanicPortalPage() {
     return (
       <Container>
         <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('list')} className="p-2 -ml-2 hover:bg-gray-700 rounded-lg">
+          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
             <ArrowLeft className="w-6 h-6 text-gray-400" />
           </button>
           <h1 className="text-lg font-bold text-white">Profile Settings</h1>
@@ -1949,7 +1950,7 @@ export default function MechanicPortalPage() {
             <p className="text-sm text-gray-400 mt-1">Sign out from this device.</p>
             <button
               onClick={handleLogout}
-              className="w-full mt-4 py-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full mt-4 py-4 bg-rose-600 active:bg-rose-700 text-white text-base font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4" />
               Sign Out
@@ -1957,7 +1958,7 @@ export default function MechanicPortalPage() {
           </div>
         </div>
         {/* Spacer for bottom nav */}
-        <div className="h-20" />
+        <div className="h-24" />
         <BottomNav />
       </Container>
     )
@@ -1976,22 +1977,22 @@ export default function MechanicPortalPage() {
             <p className="text-sm text-gray-400">Hey, {user?.first_name}!</p>
             <h1 className="text-xl font-bold text-white">My Jobs</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setView('stats')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-full transition-colors active:opacity-70"
               style={{ backgroundColor: accentColors[500] + '30' }}
             >
-              <Star className="w-4 h-4" style={{ color: accentColors[400] }} />
-              <span className="font-bold" style={{ color: accentColors[400] }}>{stats?.available_points || 0}</span>
+              <Star className="w-5 h-5" style={{ color: accentColors[400] }} />
+              <span className="font-bold text-base" style={{ color: accentColors[400] }}>{stats?.available_points || 0}</span>
             </button>
             {isClockedIn ? (
               <button
                 onClick={handleHeaderClockOutAction}
-                className="p-2 text-gray-400 hover:text-amber-300 hover:bg-gray-700 rounded-lg"
+                className="p-3 text-gray-400 active:text-amber-300 active:bg-gray-700 rounded-xl"
                 title="Clock Out"
               >
-                <LogOut className="w-5 h-5" />
+                <LogOut className="w-6 h-6" />
               </button>
             ) : null}
           </div>
@@ -2041,7 +2042,7 @@ export default function MechanicPortalPage() {
             <button
               onClick={handleAttendanceToggle}
               disabled={attendanceToggleBusy}
-              className="w-full py-3 text-white text-base font-semibold rounded-lg transition-colors disabled:bg-gray-600 bg-emerald-600 hover:bg-emerald-700"
+              className="w-full py-5 text-white text-xl font-bold rounded-2xl transition-colors disabled:bg-gray-600 bg-emerald-600 active:bg-emerald-700 shadow-lg shadow-emerald-500/25"
             >
               {attendanceToggleBusy ? 'Clocking In...' : 'Clock In'}
             </button>
@@ -2050,19 +2051,12 @@ export default function MechanicPortalPage() {
 
         {daySummary && isClockedIn ? (
           <>
-            <div className="flex items-center justify-between px-1">
-              <p className="text-xs uppercase tracking-wide text-gray-400">
-                {isTimerPanelExpanded ? 'Timer Panel' : 'Status'}
-              </p>
-              <button
-                onClick={handleTimerPanelToggle}
-                className="text-xs text-cyan-300 hover:text-cyan-200 font-medium"
-              >
-                {isTimerPanelExpanded ? 'Hide Timer' : 'Show Timer'}
-              </button>
-            </div>
             {isTimerPanelExpanded ? (
               <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-3">
+                <button onClick={handleTimerPanelToggle} className="flex items-center justify-between w-full active:opacity-70">
+                  <span className="text-xs uppercase tracking-wide text-gray-400">Timer Panel</span>
+                  <span className="text-sm text-cyan-300 font-medium">▲ Collapse</span>
+                </button>
             {isOnBreak ? (
               <>
                 <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5">
@@ -2074,7 +2068,7 @@ export default function MechanicPortalPage() {
                 <button
                   onClick={handleBreakToggle}
                   disabled={breakToggleBusy}
-                  className="w-full py-3 text-white text-base font-semibold rounded-lg transition-colors disabled:bg-gray-600 bg-blue-600 hover:bg-blue-700"
+                  className="w-full py-4 text-white text-base font-semibold rounded-xl transition-colors disabled:bg-gray-600 bg-blue-600 active:bg-blue-700"
                 >
                   {breakToggleBusy ? 'Ending Break...' : 'End Break'}
                 </button>
@@ -2100,7 +2094,7 @@ export default function MechanicPortalPage() {
                 </div>
 
                 {/* Misc task pills — horizontal scroll */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-hide">
                   {MISC_WORK_OPTIONS.map((option) => {
                     const isSelected = miscCategory === option.value
                     const isSuggestedPick = isMiscSuggestion && !hasActiveDayTimer && isSelected
@@ -2110,12 +2104,12 @@ export default function MechanicPortalPage() {
                         type="button"
                         disabled={isActiveRoTimer}
                         onClick={() => setMiscCategory(option.value)}
-                        className={`shrink-0 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors whitespace-nowrap ${
+                        className={`shrink-0 px-4 py-2.5 rounded-full border text-sm font-medium transition-colors whitespace-nowrap ${
                           isSuggestedPick
                             ? 'bg-indigo-500/20 border-indigo-400 text-indigo-100 ring-1 ring-indigo-300/60 animate-pulse'
                             : isSelected
                             ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                            : 'bg-gray-700/60 border-gray-600 text-gray-300 hover:bg-gray-600'
+                            : 'bg-gray-700/60 border-gray-600 text-gray-300 active:bg-gray-600'
                         } disabled:opacity-40 disabled:cursor-not-allowed`}
                       >
                         {option.label}
@@ -2128,8 +2122,8 @@ export default function MechanicPortalPage() {
                 <button
                   onClick={handleTimerToggle}
                   disabled={timerToggleBusy || (isActiveRoTimer && !hasActiveDayTimer)}
-                  className={`w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 ${
-                    hasActiveDayTimer ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                  className={`w-full py-4 text-white text-base font-semibold rounded-xl transition-colors disabled:bg-gray-600 ${
+                    hasActiveDayTimer ? 'bg-rose-600 active:bg-rose-700' : 'bg-blue-600 active:bg-blue-700'
                   } ${shouldPulseTimerToggle ? 'ring-2 ring-indigo-300/70 animate-pulse' : ''}`}
                 >
                   {timerToggleBusy
@@ -2144,7 +2138,7 @@ export default function MechanicPortalPage() {
                   <button
                     onClick={handleBreakToggle}
                     disabled={breakToggleBusy}
-                    className="w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-colors disabled:bg-gray-600 bg-amber-600 hover:bg-amber-700"
+                    className="w-full py-4 text-white text-base font-semibold rounded-xl transition-colors disabled:bg-gray-600 bg-amber-600 active:bg-amber-700"
                   >
                     {breakToggleBusy ? 'Starting Break...' : 'Start Break'}
                   </button>
@@ -2181,20 +2175,64 @@ export default function MechanicPortalPage() {
             )}
           </div>
         ) : (
-          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-300">Clocked In</span>
+          <div className="bg-gray-800 rounded-xl border border-gray-700">
+                {/* Tappable status + timer area */}
+                <button
+                  onClick={handleTimerPanelToggle}
+                  className="w-full p-4 active:opacity-70"
+                >
+                  {/* Row 1: status badges */}
+                  <div className="flex items-center gap-2 text-xs mb-2">
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-medium">Clocked In</span>
                     {isOnBreak ? (
-                      <span className="px-2 py-1 rounded-full bg-amber-500/20 text-amber-300">On Break</span>
+                      <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 font-medium">On Break</span>
                     ) : daySummary.active_session ? (
-                      <span className="px-2 py-1 rounded-full bg-green-500/20 text-green-300">Timer On</span>
-                    ) : null}
+                      <span className="px-2.5 py-1 rounded-full bg-green-500/20 text-green-300 font-medium">Timer On</span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-gray-700 text-gray-400 font-medium">Idle</span>
+                    )}
+                    <span className="ml-auto text-[11px] text-cyan-400 font-medium">▼ Expand</span>
                   </div>
-                  <span className={`font-mono text-2xl font-semibold leading-none ${isOnBreak ? 'text-amber-200' : 'text-cyan-200'}`}>
+                  {/* Row 2: prominent timer */}
+                  <div className={`font-mono text-3xl font-bold tracking-tight ${isOnBreak ? 'text-amber-200' : hasActiveDayTimer ? 'text-cyan-200' : 'text-gray-300'}`}>
                     {collapsedInlineTimerLabel}
-                  </span>
-                </div>
+                  </div>
+                </button>
+
+                {/* Quick actions below the tappable area */}
+                {(!hasActiveDayTimer && !isOnBreak) || isOnBreak ? (
+                  <div className="px-4 pb-4 pt-0">
+                    {/* Quick actions when idle (no active timer, not on break) */}
+                    {!hasActiveDayTimer && !isOnBreak && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleTimerToggle}
+                          disabled={timerToggleBusy}
+                          className="flex-1 py-3 text-white text-sm font-semibold rounded-xl bg-blue-600 active:bg-blue-700 disabled:bg-gray-600 transition-colors"
+                        >
+                          {timerToggleBusy ? 'Starting...' : 'Start Misc Timer'}
+                        </button>
+                        <button
+                          onClick={handleBreakToggle}
+                          disabled={breakToggleBusy}
+                          className="py-3 px-5 text-white text-sm font-semibold rounded-xl bg-amber-600 active:bg-amber-700 disabled:bg-gray-600 transition-colors"
+                        >
+                          Break
+                        </button>
+                      </div>
+                    )}
+                    {/* End break button when on break */}
+                    {isOnBreak && (
+                      <button
+                        onClick={handleBreakToggle}
+                        disabled={breakToggleBusy}
+                        className="w-full py-3 text-white text-sm font-semibold rounded-xl bg-blue-600 active:bg-blue-700 disabled:bg-gray-600 transition-colors"
+                      >
+                        {breakToggleBusy ? 'Ending Break...' : 'End Break'}
+                      </button>
+                    )}
+                  </div>
+                ) : null}
           </div>
         )}
           </>
@@ -2382,8 +2420,8 @@ export default function MechanicPortalPage() {
                             <div>
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-xs text-gray-500 uppercase tracking-wide">Photos</p>
-                                <label className="p-1.5 rounded-md bg-gray-700 hover:bg-gray-600 cursor-pointer transition-colors">
-                                  <Camera className="w-4 h-4 text-gray-300" />
+                                <label className="p-2.5 rounded-lg bg-gray-700 active:bg-gray-600 cursor-pointer transition-colors">
+                                  <Camera className="w-5 h-5 text-gray-300" />
                                   <input
                                     type="file"
                                     accept="image/*"
@@ -2518,16 +2556,16 @@ export default function MechanicPortalPage() {
                                 {holdTarget === job.id ? (
                                   <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
                                     <p className="text-xs text-gray-400 font-medium">Why are you pausing?</p>
-                                    <div className="flex flex-wrap gap-1.5">
+                                    <div className="flex flex-wrap gap-2">
                                       {HOLD_REASONS.map((r) => (
                                         <button
                                           key={r.value}
                                           type="button"
                                           onClick={() => setHoldReason(r.value)}
-                                          className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                                          className={`px-4 py-2.5 rounded-full border text-sm font-medium transition-colors ${
                                             holdReason === r.value
                                               ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                                              : 'bg-gray-700/60 border-gray-600 text-gray-300 hover:bg-gray-600'
+                                              : 'bg-gray-700/60 border-gray-600 text-gray-300 active:bg-gray-600'
                                           }`}
                                         >
                                           {r.label}
@@ -2537,14 +2575,14 @@ export default function MechanicPortalPage() {
                                     <div className="grid grid-cols-2 gap-2">
                                       <button
                                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
-                                        className="py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm font-semibold rounded-xl transition-all"
+                                        className="py-3 bg-gray-700 active:bg-gray-600 text-gray-300 text-sm font-semibold rounded-xl transition-all"
                                       >
                                         Cancel
                                       </button>
                                       <button
                                         onClick={() => holdReason && holdOrderMutation.mutate({ orderId: job.id, reason: holdReason })}
                                         disabled={!holdReason || holdOrderMutation.isPending}
-                                        className="py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-all"
+                                        className="py-3 bg-amber-600 active:bg-amber-700 disabled:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-all"
                                       >
                                         {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
                                       </button>
@@ -2635,18 +2673,18 @@ export default function MechanicPortalPage() {
             <p className="text-sm text-gray-300">
               End your shift now? Any active timer or break will be closed automatically.
             </p>
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <button
                 onClick={() => setShowClockOutModal(false)}
                 disabled={attendanceToggleBusy}
-                className="w-full py-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium disabled:opacity-60"
+                className="w-full py-3.5 rounded-xl bg-gray-700 active:bg-gray-600 text-white text-base font-medium disabled:opacity-60"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmClockOut}
                 disabled={attendanceToggleBusy}
-                className="w-full py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold disabled:opacity-60"
+                className="w-full py-3.5 rounded-xl bg-rose-600 active:bg-rose-700 text-white text-base font-semibold disabled:opacity-60"
               >
                 {attendanceToggleBusy ? 'Clocking Out...' : 'Clock Out'}
               </button>
@@ -2657,7 +2695,7 @@ export default function MechanicPortalPage() {
                 setView('profile')
               }}
               disabled={attendanceToggleBusy}
-              className="w-full py-2 text-xs text-gray-400 hover:text-white disabled:opacity-60"
+              className="w-full py-3 text-sm text-gray-400 active:text-white disabled:opacity-60"
             >
               Need to sign out too? Go to Profile.
             </button>
@@ -2666,7 +2704,7 @@ export default function MechanicPortalPage() {
       ) : null}
 
       {/* Spacer for bottom nav + sticky action bar */}
-      <div className={showStickyBar ? 'h-32' : 'h-20'} />
+      <div className={showStickyBar ? 'h-36' : 'h-24'} />
 
       {/* Bottom Nav */}
       <BottomNav />
