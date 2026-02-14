@@ -16,8 +16,6 @@ import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
-import { useNotificationManager } from '../../hooks/useNotificationManager'
-import NotificationBanner from '../../components/NotificationBanner'
 
 interface NewCustomerForm {
   first_name: string
@@ -78,12 +76,9 @@ const truncateWithEllipsis = (value: string, maxLength = 36): string => {
 export default function RepairOrdersPage() {
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
-  
-  // Notification manager for queued, deduplicated notifications
-  const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
-  
-  // Connect to WebSocket for real-time updates
-  useWebSocket({ onNotification: notify })
+
+  // Connect to WebSocket for real-time updates (cache/status refresh only on this page).
+  useWebSocket()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -121,6 +116,7 @@ export default function RepairOrdersPage() {
   const [addLaborRate, setAddLaborRate] = useState('100')
   const laborRateInitialized = useRef(false)
   const [isEditingLaborRate, setIsEditingLaborRate] = useState(false)
+  const [showPartComposer, setShowPartComposer] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showResendInvoice, setShowResendInvoice] = useState(false)
@@ -761,6 +757,8 @@ export default function RepairOrdersPage() {
     if (statusFilter !== 'all') {
       if (statusFilter === 'pending_zelle') {
         filtered = filtered.filter((order) => !!order.pending_zelle_confirmation)
+      } else if (statusFilter === 'on_hold') {
+        filtered = filtered.filter((order) => order.status === 'in_progress' && !!order.hold_reason)
       } else {
         filtered = filtered.filter((order) => order.status === statusFilter)
       }
@@ -791,6 +789,7 @@ export default function RepairOrdersPage() {
       assigned: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
       acknowledged: { bg: 'bg-cyan-100', text: 'text-cyan-700', dot: 'bg-cyan-500' },
       in_progress: { bg: 'bg-yellow-100', text: 'text-yellow-700', dot: 'bg-yellow-500' },
+      on_hold: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
       pending_review: { bg: 'bg-orange-100', text: 'text-orange-700', dot: 'bg-orange-500' },
       completed: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' },
       invoiced: { bg: 'bg-indigo-100', text: 'text-indigo-700', dot: 'bg-indigo-500' },
@@ -800,9 +799,38 @@ export default function RepairOrdersPage() {
     return styles[status] || styles.draft
   }
 
+  const resolveOrderDisplayStatus = (order: Pick<RepairOrder, 'status' | 'quote_sent' | 'pending_zelle_confirmation' | 'hold_reason'>) => {
+    const isAwaitingApproval = order.status === 'quoted' && !!order.quote_sent
+    const isPendingZelle = !!order.pending_zelle_confirmation && order.status !== 'paid'
+    const isOnHold = order.status === 'in_progress' && !!order.hold_reason
+    if (isAwaitingApproval) {
+      return {
+        label: 'Awaiting Approval',
+        style: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
+      }
+    }
+    if (isPendingZelle) {
+      return {
+        label: 'Pending Zelle',
+        style: { bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' },
+      }
+    }
+    if (isOnHold) {
+      return {
+        label: 'On Hold',
+        style: getStatusStyle('on_hold'),
+      }
+    }
+    return {
+      label: order.status.replace(/_/g, ' '),
+      style: getStatusStyle(order.status),
+    }
+  }
+
   const statusOptions = [
     { value: 'all', label: 'All' },
     { value: 'pending_zelle', label: 'Pending Zelle' },
+    { value: 'on_hold', label: 'On Hold' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'quoted', label: 'Quoted' },
     { value: 'declined', label: 'Declined' },
@@ -841,6 +869,9 @@ export default function RepairOrdersPage() {
     setShowReviewNotes(false)
     setQuoteNeedsUpdate(false)
     setShowDangerActions(false)
+    setShowPartComposer(false)
+    setAddPartInventoryId('')
+    setAddPartQuantity(1)
   }
 
   const closeDetail = () => {
@@ -849,6 +880,9 @@ export default function RepairOrdersPage() {
     setQuoteSent(false)
     setQuoteNeedsUpdate(false)
     setShowDangerActions(false)
+    setShowPartComposer(false)
+    setAddPartInventoryId('')
+    setAddPartQuantity(1)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -981,14 +1015,6 @@ export default function RepairOrdersPage() {
         </button>
       </div>
 
-      {/* Real-time notification banners */}
-      <NotificationBanner
-        banners={banners}
-        onDismiss={dismissBanner}
-        onDismissAll={clearBanners}
-        autoDismissMs={10000}
-      />
-
       {/* Search Bar */}
       <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -1061,18 +1087,7 @@ export default function RepairOrdersPage() {
                 </thead>
                 <tbody className="divide-y divide-white/10">
                   {filteredOrders?.map((order) => {
-                    const isAwaitingApproval = order.status === 'quoted' && order.quote_sent
-                    const isPendingZelle = !!order.pending_zelle_confirmation && order.status !== 'paid'
-                    const statusStyle = isAwaitingApproval 
-                      ? { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' }
-                      : isPendingZelle
-                        ? { bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' }
-                        : getStatusStyle(order.status)
-                    const displayStatus = isAwaitingApproval
-                      ? 'Awaiting Approval'
-                      : isPendingZelle
-                        ? 'Pending Zelle'
-                        : order.status.replace('_', ' ')
+                    const { label: displayStatus, style: statusStyle } = resolveOrderDisplayStatus(order)
                     const parsedServices = parseServiceNotes(order.internal_notes)
                     const serviceTotal = parsedServices?.reduce(
                       (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
@@ -1134,18 +1149,7 @@ export default function RepairOrdersPage() {
             /* Cards View */
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredOrders?.map((order) => {
-                const isAwaitingApproval = order.status === 'quoted' && order.quote_sent
-                const isPendingZelle = !!order.pending_zelle_confirmation && order.status !== 'paid'
-                const statusStyle = isAwaitingApproval 
-                  ? { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' }
-                  : isPendingZelle
-                    ? { bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' }
-                    : getStatusStyle(order.status)
-                const displayStatus = isAwaitingApproval
-                  ? 'Awaiting Approval'
-                  : isPendingZelle
-                    ? 'Pending Zelle'
-                    : order.status.replace('_', ' ')
+                const { label: displayStatus, style: statusStyle } = resolveOrderDisplayStatus(order)
                 const parsedServices = parseServiceNotes(order.internal_notes)
                 const serviceTotal = parsedServices?.reduce(
                   (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
@@ -1660,16 +1664,19 @@ export default function RepairOrdersPage() {
         width="max-w-2xl"
         headerExtra={
           selectedOrder && (() => {
-            const status = (orderDetail ?? selectedOrder).status
-            const isAwaitingApproval = status === 'quoted' && (quoteForOrder?.sent_to_customer || quoteSent)
-            const displayStatus = isAwaitingApproval ? 'Awaiting Approval' : status.replace('_', ' ')
-            const statusStyle = isAwaitingApproval 
-              ? { dot: 'bg-amber-500' } 
-              : getStatusStyle(status)
+            const detailOrder = orderDetail ?? selectedOrder
+            const display = resolveOrderDisplayStatus({
+              status: detailOrder.status,
+              hold_reason: detailOrder.hold_reason,
+              pending_zelle_confirmation: detailOrder.pending_zelle_confirmation,
+              quote_sent: detailOrder.status === 'quoted'
+                ? (quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent)
+                : detailOrder.quote_sent,
+            })
             return (
-              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${isAwaitingApproval ? 'bg-amber-500/30' : 'bg-white/20'}`}>
-                <span className={`w-2 h-2 rounded-full ${statusStyle.dot}`}></span>
-                {displayStatus}
+              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${display.style.bg} ${display.style.text}`}>
+                <span className={`w-2 h-2 rounded-full ${display.style.dot}`}></span>
+                {display.label}
               </div>
             )
           })()
@@ -1725,6 +1732,293 @@ export default function RepairOrdersPage() {
       >
         {selectedOrder && (
           <div className="p-6 space-y-6">
+
+                {/* Quote Workflow */}
+                {(() => {
+                  const hasQuote = !!quoteForOrder
+                  const isApproved = quoteForOrder?.is_approved
+                  const isSent = quoteForOrder?.sent_to_customer || quoteSent
+                  const hasMechanic = !!selectedOrder.assigned_mechanic_id
+                  const mechanicName = mechanics?.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
+
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Workflow</h3>
+                      <div className="bg-gray-50 rounded-xl p-4 space-y-4">
+                        {/* Quote details if exists */}
+                        {quoteForOrder && (
+                          <div className="space-y-1 text-sm text-gray-800 pb-3 border-b border-gray-200">
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">Quote #</span>
+                              <span className="font-mono font-medium">{quoteForOrder.quote_number}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Workflow steps */}
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {/* Step 1: Create/Update Quote Draft */}
+                          {quoteNeedsUpdate && hasQuote ? (
+                            <button
+                              type="button"
+                              onClick={() => quoteForOrder && updateQuoteMutation.mutate(quoteForOrder.id)}
+                              disabled={updateQuoteMutation.isPending}
+                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                            >
+                              {updateQuoteMutation.isPending ? 'Updating...' : 'Update'}
+                            </button>
+                          ) : (
+                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                              hasQuote 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-amber-500 text-white'
+                            }`}>
+                              {hasQuote ? (
+                                <span className="flex items-center gap-1">✓ Draft Ready</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
+                                  disabled={createQuoteMutation.isPending}
+                                  className="bg-transparent"
+                                >
+                                  {createQuoteMutation.isPending ? 'Creating...' : 'Create Draft'}
+                                </button>
+                              )}
+                            </span>
+                          )}
+
+                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasQuote && !quoteNeedsUpdate ? 'text-amber-500' : 'text-gray-300'}`} />
+
+                          {/* Step 2: Send to Customer */}
+                          {hasQuote && !isApproved && !quoteNeedsUpdate ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (quoteForOrder) {
+                                  sendQuoteMutation.mutate(quoteForOrder.id)
+                                  setQuoteSent(true)
+                                }
+                              }}
+                              disabled={sendQuoteMutation.isPending}
+                              className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                                isSent 
+                                  ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                                  : 'bg-amber-500 hover:bg-amber-600 text-white'
+                              }`}
+                            >
+                              {sendQuoteMutation.isPending ? 'Sending...' : (isSent ? '⏳ Resend' : 'Send')}
+                            </button>
+                          ) : (
+                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                              isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
+                            }`}>
+                              {isApproved ? '✓ Sent' : 'Send'}
+                            </span>
+                          )}
+
+                          <ArrowRight className={`w-4 h-4 shrink-0 ${isApproved ? 'text-amber-500' : 'text-gray-300'}`} />
+
+                          {/* Step 3: Customer Approved */}
+                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                            isApproved 
+                              ? 'bg-green-100 text-green-700' 
+                              : isSent 
+                                ? 'bg-amber-100 text-amber-700 animate-pulse' 
+                                : 'bg-gray-200 text-gray-400'
+                          }`}>
+                            {isApproved ? '✓ Approved' : isSent ? 'Awaiting Approval' : 'Approved'}
+                          </span>
+
+                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
+
+                          {/* Step 4: Mechanic Assigned */}
+                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                            hasMechanic 
+                              ? 'bg-green-100 text-green-700' 
+                              : isApproved 
+                                ? 'bg-amber-100 text-amber-700' 
+                                : 'bg-gray-200 text-gray-400'
+                          }`}>
+                            {hasMechanic ? `✓ ${mechanicName}` : isApproved ? 'Assign ↓' : 'Mechanic'}
+                          </span>
+                        </div>
+
+                        {/* Status messages */}
+                        {quoteNeedsUpdate && hasQuote && (
+                          <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            Quote needs to be updated before sending.
+                          </p>
+                        )}
+                        {isSent && !isApproved && !quoteNeedsUpdate && (orderDetail ?? selectedOrder).status !== 'declined' && (
+                          <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                            Waiting for customer approval...
+                          </p>
+                        )}
+                        {isApproved && !hasMechanic && (
+                          <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                            Customer approved! Assign a mechanic to start work.
+                          </p>
+                        )}
+                        {/* Declined quote alert */}
+                        {(orderDetail ?? selectedOrder).status === 'declined' && quoteForOrder?.is_declined && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
+                            <p className="text-sm font-medium text-red-700">Customer Declined Quote</p>
+                            {quoteForOrder.decline_notes && (
+                              <p className="text-sm text-red-600">
+                                <span className="font-medium">Reason:</span> {quoteForOrder.decline_notes}
+                              </p>
+                            )}
+                            <p className="text-xs text-red-500">Update the quote and resend to customer.</p>
+                          </div>
+                        )}
+
+                        {/* Mechanic Assignment - shown inline when approved but no mechanic */}
+                        {isApproved && !hasMechanic && mechanics && mechanics.length > 0 && (
+                          <div className="pt-3 border-t border-gray-200 space-y-3">
+                            <p className="text-xs font-medium text-gray-500 uppercase">Available Mechanics</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {[...(mechanics || [])]
+                                .map((m) => {
+                                  const inProgress = m.in_progress_count ?? 0
+                                  const assigned = m.assigned_count ?? 0
+                                  const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                  return { ...m, load, inProgress, assigned }
+                                })
+                                .sort((a, b) => a.load - b.load)
+                                .map((m) => (
+                                  <button
+                                    key={m.mechanic_id}
+                                    type="button"
+                                    onClick={() =>
+                                      selectedOrder.id &&
+                                      assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
+                                    }
+                                    disabled={assignMechanicMutation.isPending}
+                                    className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
+                                      <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                                        {m.load.toFixed(0)}%
+                                      </span>
+                                    </div>
+                                    <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                      <div
+                                        className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                        style={{ width: `${m.load}%` }}
+                                      />
+                                    </div>
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Reassign Mechanic - shown when mechanic is already assigned and work not yet done */}
+                        {hasMechanic && mechanics && mechanics.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) && (
+                          <div className="pt-3 border-t border-gray-200">
+                            {!showReassignMechanic ? (
+                              <button
+                                type="button"
+                                onClick={() => setShowReassignMechanic(true)}
+                                className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1.5"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                                </svg>
+                                Reassign Mechanic
+                              </button>
+                            ) : (
+                              <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-medium text-gray-500 uppercase">Select New Mechanic</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowReassignMechanic(false)}
+                                    className="text-xs text-gray-500 hover:text-gray-700"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                  {[...(mechanics || [])]
+                                    .filter(m => m.mechanic_id !== selectedOrder.assigned_mechanic_id)
+                                    .map((m) => {
+                                      const inProgress = m.in_progress_count ?? 0
+                                      const assigned = m.assigned_count ?? 0
+                                      const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                      return { ...m, load, inProgress, assigned }
+                                    })
+                                    .sort((a, b) => a.load - b.load)
+                                    .map((m) => (
+                                      <button
+                                        key={m.mechanic_id}
+                                        type="button"
+                                        onClick={() => {
+                                          if (selectedOrder.id) {
+                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
+                                            setShowReassignMechanic(false)
+                                          }
+                                        }}
+                                        disabled={assignMechanicMutation.isPending}
+                                        className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
+                                          <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                                            {m.load.toFixed(0)}%
+                                          </span>
+                                        </div>
+                                        <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                          <div
+                                            className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                            style={{ width: `${m.load}%` }}
+                                          />
+                                        </div>
+                                      </button>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {(() => {
+                  const detailServices = parseServiceNotes(selectedOrder?.internal_notes) || []
+                  const normalizedDescription = (selectedOrder.description || '').trim().toLowerCase().replace(/\s+/g, ' ')
+                  const normalizedServiceNames = detailServices
+                    .map((svc) => svc.name.trim().toLowerCase().replace(/\s+/g, ' '))
+                    .filter(Boolean)
+                  const servicesAsCsv = normalizedServiceNames.join(', ')
+                  const shouldHideWorkRequested = Boolean(
+                    normalizedDescription &&
+                    normalizedServiceNames.length > 0 &&
+                    (normalizedServiceNames.includes(normalizedDescription) || servicesAsCsv === normalizedDescription)
+                  )
+                  if (shouldHideWorkRequested) {
+                    return null
+                  }
+
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Work Requested</h3>
+                      <div className="bg-gray-50 rounded-xl p-4">
+                        <p className="text-gray-800 whitespace-pre-wrap">
+                          {selectedOrder.description || 'No description provided'}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Estimate</h3>
+                  <div className="bg-gray-50 rounded-xl">
                 {(() => {
                   const detailServices = parseServiceNotes(selectedOrder.internal_notes) || []
                   const laborFromServices = detailServices.reduce(
@@ -1753,12 +2047,8 @@ export default function RepairOrdersPage() {
                   }
 
                   return (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Services</h3>
-                      {detailServices.length > 0 && (
-                        <p className="text-xs text-gray-500 mb-3">Price includes parts and labor</p>
-                      )}
-                      <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-800">
+                    <div className="p-4 space-y-2 text-sm text-gray-800">
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Services</p>
                         {detailServices.length > 0 ? (
                           <>
                             {detailServices.map((svc) => (
@@ -1804,7 +2094,6 @@ export default function RepairOrdersPage() {
                             />
                           </div>
                         )}
-                      </div>
                     </div>
                   )
                 })()}
@@ -1816,101 +2105,117 @@ export default function RepairOrdersPage() {
                   const laborItems = orderDetail?.labor_items ?? []
                   const canEditLineItems = displayOrder && ['draft', 'quoted'].includes(displayOrder.status)
                   const hasSelectedServices = !!parseServiceNotes(selectedOrder?.internal_notes)?.length
+                  const hasPartsUsage = partsUsage.length > 0
+                  const showLaborSection = !hasSelectedServices || laborItems.length > 0
                   return (
                     <>
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Parts</h3>
-                        <div className="bg-gray-50 rounded-xl p-4">
-                          {partsUsage.length > 0 && (
-                            <div className="space-y-2 mb-3">
-                              {partsUsage.map((pu) => (
-                                <div key={pu.id} className="flex items-center justify-between gap-2 text-sm text-gray-800">
-                                  <div className="flex-1 min-w-0" title={`${pu.inventory_name} (${pu.inventory_sku}) × ${pu.quantity}`}>
-                                    <span className="font-medium truncate block">{pu.inventory_name}</span>
-                                    <span className="text-gray-500 text-xs">({pu.inventory_sku}) × {pu.quantity}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
-                                    {canEditLineItems && (
-                                      <button
-                                        type="button"
-                                        onClick={() => selectedOrder?.id && removePartMutation.mutate({ orderId: selectedOrder.id, partsUsageId: pu.id })}
-                                        className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                        aria-label="Remove part"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {canEditLineItems && inventory && inventory.length > 0 && (
-                            <div className="flex items-center gap-2">
-                              <div className="min-w-[200px] flex-1 max-w-xs">
-                                <BaseSelect
-                                  options={inventory
-                                    .filter((i) => i.stock_quantity > 0)
-                                    .map((i) => ({
-                                      value: i.id,
-                                      label: i.name,
-                                      subLabel: `${i.sku} — ${i.stock_quantity} in stock`,
-                                    }))}
-                                  value={addPartInventoryId}
-                                  onChange={setAddPartInventoryId}
-                                  placeholder="Select part"
-                                  allowAddNew={false}
-                                />
-                              </div>
-                              <input
-                                type="number"
-                                min={1}
-                                value={addPartQuantity}
-                                onChange={(e) => setAddPartQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                className="h-[42px] rounded-lg border border-gray-300 px-3 text-sm w-20"
-                              />
-                              <button
-                                type="button"
-                                disabled={!addPartInventoryId || addPartMutation.isPending}
-                                onClick={() => {
-                                  if (!selectedOrder?.id || !addPartInventoryId) return
-                                  addPartMutation.mutate({ orderId: selectedOrder.id, inventory_id: addPartInventoryId, quantity: addPartQuantity })
-                                  setAddPartInventoryId('')
-                                  setAddPartQuantity(1)
-                                }}
-                                className="h-[42px] px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
-                              >
-                                Add
-                              </button>
-                            </div>
-                          )}
+                      {canEditLineItems && !hasPartsUsage && !showPartComposer && (
+                        <div className="px-4 py-3 border-t border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => setShowPartComposer(true)}
+                            className="text-sm font-medium text-amber-700 hover:text-amber-800"
+                          >
+                            + Add part
+                          </button>
                         </div>
-                      </div>
-                      {/* Labor/Services section */}
-                      <div>
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                          {hasSelectedServices ? 'Services (Labor)' : 'Labor'}
-                        </h3>
-                        <div className="bg-gray-50 rounded-xl p-4">
-                          {/* Show services if selected */}
-                          {hasSelectedServices && (() => {
-                            const services = parseServiceNotes(selectedOrder?.internal_notes) || []
-                            return (
-                              <div className="space-y-2">
-                                {services.map((svc, idx) => (
-                                  <div key={idx} className="flex items-center justify-between text-sm text-gray-800">
-                                    <span className="font-medium">{svc.name}</span>
-                                    <span className="font-semibold">${parseFloat(svc.base_price || '0').toFixed(2)}</span>
+                      )}
+
+                      {(hasPartsUsage || showPartComposer) && (
+                        <div className="p-4 border-t border-gray-200">
+                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Parts</p>
+                            {hasPartsUsage && (
+                              <div className="space-y-2 mb-3">
+                                {partsUsage.map((pu) => (
+                                  <div key={pu.id} className="flex items-center justify-between gap-2 text-sm text-gray-800">
+                                    <div className="flex-1 min-w-0" title={`${pu.inventory_name} (${pu.inventory_sku}) × ${pu.quantity}`}>
+                                      <span className="font-medium truncate block">{pu.inventory_name}</span>
+                                      <span className="text-gray-500 text-xs">({pu.inventory_sku}) × {pu.quantity}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="font-semibold">${parseFloat(pu.total_price).toFixed(2)}</span>
+                                      {canEditLineItems && (
+                                        <button
+                                          type="button"
+                                          onClick={() => selectedOrder?.id && removePartMutation.mutate({ orderId: selectedOrder.id, partsUsageId: pu.id })}
+                                          className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                          aria-label="Remove part"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                 ))}
                               </div>
-                            )
-                          })()}
-                          {/* Show manual labor items if no services */}
-                          {!hasSelectedServices && (
+                            )}
+                            {canEditLineItems && inventory && inventory.length > 0 && (
+                              <div className="space-y-3">
+                                {!hasPartsUsage && (
+                                  <div className="flex items-center justify-between text-xs text-gray-500">
+                                    <span>No parts added</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setShowPartComposer(false)
+                                        setAddPartInventoryId('')
+                                        setAddPartQuantity(1)
+                                      }}
+                                      className="font-medium text-gray-600 hover:text-gray-800"
+                                    >
+                                      Hide
+                                    </button>
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <BaseSelect
+                                      options={inventory
+                                        .filter((i) => i.stock_quantity > 0)
+                                        .map((i) => ({
+                                          value: i.id,
+                                          label: i.name,
+                                          subLabel: `${i.sku} — ${i.stock_quantity} in stock`,
+                                        }))}
+                                      value={addPartInventoryId}
+                                      onChange={setAddPartInventoryId}
+                                      placeholder="Select part"
+                                      allowAddNew={false}
+                                    />
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={addPartQuantity}
+                                    onChange={(e) => setAddPartQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                                    className="h-[42px] rounded-lg border border-gray-300 px-3 text-sm w-16 shrink-0"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={!addPartInventoryId || addPartMutation.isPending}
+                                    onClick={() => {
+                                      if (!selectedOrder?.id || !addPartInventoryId) return
+                                      addPartMutation.mutate({ orderId: selectedOrder.id, inventory_id: addPartInventoryId, quantity: addPartQuantity })
+                                      setAddPartInventoryId('')
+                                      setAddPartQuantity(1)
+                                    }}
+                                    className="h-[42px] px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg shrink-0"
+                                  >
+                                    Add
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                        </div>
+                      )}
+
+                      {showLaborSection && (
+                        <div className="p-4 border-t border-gray-200">
+                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+                            {hasSelectedServices ? 'Additional Labor' : 'Labor'}
+                          </p>
                             <>
-                              {laborItems.length > 0 && (
+                              {laborItems.length > 0 ? (
                                 <div className="space-y-2 mb-3">
                                   {laborItems.map((li) => (
                                     <div key={li.id} className="flex items-center justify-between text-sm text-gray-800">
@@ -1937,6 +2242,8 @@ export default function RepairOrdersPage() {
                                     </div>
                                   ))}
                                 </div>
+                              ) : (
+                                !canEditLineItems && <p className="text-sm text-gray-500">No labor items added</p>
                               )}
                               {canEditLineItems && (
                                 <div className="flex flex-col gap-2">
@@ -2007,12 +2314,119 @@ export default function RepairOrdersPage() {
                                 </div>
                               )}
                             </>
-                          )}
                         </div>
-                      </div>
+                      )}
                     </>
                   )
                 })()}
+
+                {(() => {
+                  const totalsOrder = orderDetail ?? selectedOrder
+                  const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
+                  const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
+                  const detailServices = parseServiceNotes(selectedOrder?.internal_notes)
+                  const hasServices = detailServices && detailServices.length > 0
+                  const serviceTotal = detailServices?.reduce(
+                    (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                    0
+                  ) || 0
+                  
+                  // Services = Labor (service prices are labor costs)
+                  // Parts = Separate (always from backend, priced individually)
+                  // Total = Services/Labor + Parts
+                  const partsVal = backendParts
+                  const laborVal = hasServices ? serviceTotal : backendLabor
+                  const totalVal = partsVal + laborVal
+                  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
+
+                  return (
+                    <div className="px-4 py-3 border-t-2 border-gray-200">
+                      {partsVal > 0 ? (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                          <span className="text-gray-500">Parts</span>
+                          <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
+                          <span className="text-gray-400">·</span>
+                          <span className="text-gray-500">{hasServices ? 'Services' : 'Labor'}</span>
+                          <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
+                          <span className="text-gray-400">·</span>
+                          <span className="text-gray-500">Total</span>
+                          <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-gray-500">Total</span>
+                          <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+                  </div>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerSectionExpanded((prev) => !prev)}
+                    className="w-full flex items-center justify-between text-left bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors"
+                  >
+                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer & Vehicle</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-900 font-medium truncate max-w-[200px]">
+                        {customerLookup.get(selectedOrder.customer_id)
+                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                          : 'Unknown'}
+                      </span>
+                      {customerSectionExpanded ? (
+                        <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
+                      )}
+                    </div>
+                  </button>
+                  {customerSectionExpanded && (
+                    <div className="bg-gray-50 rounded-b-xl p-4 border-t border-gray-200 -mt-1 pt-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm shrink-0">
+                            {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
+                            {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-gray-900 font-semibold text-sm truncate">
+                              {customerLookup.get(selectedOrder.customer_id)
+                                ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
+                                : 'Unknown customer'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
+                            {customerLookup.get(selectedOrder.customer_id)?.phone && (
+                              <p className="text-xs text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.phone}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-sm text-gray-700 sm:border-l sm:border-gray-200 sm:pl-4">
+                          {vehicleLookup.get(selectedOrder.vehicle_id) ? (
+                            <>
+                              <p className="font-semibold text-gray-900 text-sm">
+                                {vehicleLookup.get(selectedOrder.vehicle_id)?.year || 'Year'}{' '}
+                                {vehicleLookup.get(selectedOrder.vehicle_id)?.make}{' '}
+                                {vehicleLookup.get(selectedOrder.vehicle_id)?.model}
+                              </p>
+                              <p className="text-xs text-gray-600 mt-0.5">
+                                VIN: {vehicleLookup.get(selectedOrder.vehicle_id)?.vin || '—'}
+                              </p>
+                              <p className="text-xs text-gray-600">
+                                Plate: {vehicleLookup.get(selectedOrder.vehicle_id)?.license_plate || '—'}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-gray-500 text-sm">Vehicle not found</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
 
                 {/* Approve Completion Button for pending_review status */}
@@ -2432,371 +2846,6 @@ export default function RepairOrdersPage() {
                     )}
                   </div>
                 )}
-
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setCustomerSectionExpanded((prev) => !prev)}
-                    className="w-full flex items-center justify-between text-left bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors"
-                  >
-                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer & Vehicle</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-gray-900 font-medium truncate max-w-[200px]">
-                        {customerLookup.get(selectedOrder.customer_id)
-                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                          : 'Unknown'}
-                      </span>
-                      {customerSectionExpanded ? (
-                        <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-5 h-5 text-gray-500 shrink-0" />
-                      )}
-                    </div>
-                  </button>
-                  {customerSectionExpanded && (
-                    <div className="bg-gray-50 rounded-b-xl p-4 border-t border-gray-200 -mt-1 pt-4 space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold">
-                          {(customerLookup.get(selectedOrder.customer_id)?.first_name || 'C').charAt(0)}
-                          {(customerLookup.get(selectedOrder.customer_id)?.last_name || 'U').charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-gray-900 font-semibold">
-                            {customerLookup.get(selectedOrder.customer_id)
-                              ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                              : 'Unknown customer'}
-                          </p>
-                          <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
-                          {customerLookup.get(selectedOrder.customer_id)?.phone && (
-                            <p className="text-sm text-gray-500">{customerLookup.get(selectedOrder.customer_id)?.phone}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="border-t border-gray-200 pt-3 text-sm text-gray-700">
-                        {vehicleLookup.get(selectedOrder.vehicle_id) ? (
-                          <>
-                            <p className="font-semibold text-gray-900">
-                              {vehicleLookup.get(selectedOrder.vehicle_id)?.year || 'Year'}{' '}
-                              {vehicleLookup.get(selectedOrder.vehicle_id)?.make}{' '}
-                              {vehicleLookup.get(selectedOrder.vehicle_id)?.model}
-                            </p>
-                            <p className="text-gray-600 mt-1">
-                              VIN: {vehicleLookup.get(selectedOrder.vehicle_id)?.vin || '—'}
-                            </p>
-                            <p className="text-gray-600">
-                              Plate: {vehicleLookup.get(selectedOrder.vehicle_id)?.license_plate || '—'}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-gray-500">Vehicle not found</p>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Work Requested</h3>
-                  <div className="bg-gray-50 rounded-xl p-4">
-                    <p className="text-gray-800 whitespace-pre-wrap">
-                      {selectedOrder.description || 'No description provided'}
-                    </p>
-                  </div>
-                </div>
-
-                {(() => {
-                  const totalsOrder = orderDetail ?? selectedOrder
-                  const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
-                  const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
-                  const detailServices = parseServiceNotes(selectedOrder?.internal_notes)
-                  const hasServices = detailServices && detailServices.length > 0
-                  const serviceTotal = detailServices?.reduce(
-                    (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
-                    0
-                  ) || 0
-                  
-                  // Services = Labor (service prices are labor costs)
-                  // Parts = Separate (always from backend, priced individually)
-                  // Total = Services/Labor + Parts
-                  const partsVal = backendParts
-                  const laborVal = hasServices ? serviceTotal : backendLabor
-                  const totalVal = partsVal + laborVal
-                  const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2 })
-
-                  return (
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                        <span className="text-gray-500">Parts</span>
-                        <span className="font-semibold text-blue-700">${fmt(partsVal)}</span>
-                        <span className="text-gray-400">·</span>
-                        <span className="text-gray-500">{hasServices ? 'Services' : 'Labor'}</span>
-                        <span className="font-semibold text-amber-700">${fmt(laborVal)}</span>
-                        <span className="text-gray-400">·</span>
-                        <span className="text-gray-500">Total</span>
-                        <span className="text-base font-bold text-gray-900">${fmt(totalVal)}</span>
-                      </div>
-                    </div>
-                  )
-                })()}
-
-                {/* Quote Workflow */}
-                {(() => {
-                  const hasQuote = !!quoteForOrder
-                  const isApproved = quoteForOrder?.is_approved
-                  const isSent = quoteForOrder?.sent_to_customer || quoteSent
-                  const hasMechanic = !!selectedOrder.assigned_mechanic_id
-                  const mechanicName = mechanics?.find(m => m.mechanic_id === selectedOrder.assigned_mechanic_id)?.mechanic_name || 'Assigned'
-
-                  return (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Workflow</h3>
-                      <div className="bg-gray-50 rounded-xl p-4 space-y-4">
-                        {/* Quote details if exists */}
-                        {quoteForOrder && (
-                          <div className="space-y-1 text-sm text-gray-800 pb-3 border-b border-gray-200">
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">Quote #</span>
-                              <span className="font-mono font-medium">{quoteForOrder.quote_number}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-500">Amount</span>
-                              <span className="font-semibold">${parseFloat(quoteForOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Workflow steps */}
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {/* Step 1: Create/Update Quote Draft */}
-                          {quoteNeedsUpdate && hasQuote ? (
-                            <button
-                              type="button"
-                              onClick={() => quoteForOrder && updateQuoteMutation.mutate(quoteForOrder.id)}
-                              disabled={updateQuoteMutation.isPending}
-                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
-                            >
-                              {updateQuoteMutation.isPending ? 'Updating...' : 'Update'}
-                            </button>
-                          ) : (
-                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                              hasQuote 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-amber-500 text-white'
-                            }`}>
-                              {hasQuote ? (
-                                <span className="flex items-center gap-1">✓ Draft Ready</span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => selectedOrder.id && createQuoteMutation.mutate(selectedOrder.id)}
-                                  disabled={createQuoteMutation.isPending}
-                                  className="bg-transparent"
-                                >
-                                  {createQuoteMutation.isPending ? 'Creating...' : 'Create Draft'}
-                                </button>
-                              )}
-                            </span>
-                          )}
-
-                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasQuote && !quoteNeedsUpdate ? 'text-amber-500' : 'text-gray-300'}`} />
-
-                          {/* Step 2: Send to Customer */}
-                          {hasQuote && !isApproved && !quoteNeedsUpdate ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (quoteForOrder) {
-                                  sendQuoteMutation.mutate(quoteForOrder.id)
-                                  setQuoteSent(true)
-                                }
-                              }}
-                              disabled={sendQuoteMutation.isPending}
-                              className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                                isSent 
-                                  ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
-                                  : 'bg-amber-500 hover:bg-amber-600 text-white'
-                              }`}
-                            >
-                              {sendQuoteMutation.isPending ? 'Sending...' : (isSent ? '⏳ Resend' : 'Send')}
-                            </button>
-                          ) : (
-                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                              isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
-                            }`}>
-                              {isApproved ? '✓ Sent' : 'Send'}
-                            </span>
-                          )}
-
-                          <ArrowRight className={`w-4 h-4 shrink-0 ${isApproved ? 'text-amber-500' : 'text-gray-300'}`} />
-
-                          {/* Step 3: Customer Approved */}
-                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                            isApproved 
-                              ? 'bg-green-100 text-green-700' 
-                              : isSent 
-                                ? 'bg-amber-100 text-amber-700 animate-pulse' 
-                                : 'bg-gray-200 text-gray-400'
-                          }`}>
-                            {isApproved ? '✓ Approved' : isSent ? 'Awaiting Approval' : 'Approved'}
-                          </span>
-
-                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
-
-                          {/* Step 4: Mechanic Assigned */}
-                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                            hasMechanic 
-                              ? 'bg-green-100 text-green-700' 
-                              : isApproved 
-                                ? 'bg-amber-100 text-amber-700' 
-                                : 'bg-gray-200 text-gray-400'
-                          }`}>
-                            {hasMechanic ? `✓ ${mechanicName}` : isApproved ? 'Assign ↓' : 'Mechanic'}
-                          </span>
-                        </div>
-
-                        {/* Status messages */}
-                        {quoteNeedsUpdate && hasQuote && (
-                          <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                            Quote needs to be updated before sending.
-                          </p>
-                        )}
-                        {isSent && !isApproved && !quoteNeedsUpdate && (orderDetail ?? selectedOrder).status !== 'declined' && (
-                          <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                            Waiting for customer approval...
-                          </p>
-                        )}
-                        {isApproved && !hasMechanic && (
-                          <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                            Customer approved! Assign a mechanic to start work.
-                          </p>
-                        )}
-                        {/* Declined quote alert */}
-                        {(orderDetail ?? selectedOrder).status === 'declined' && quoteForOrder?.is_declined && (
-                          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
-                            <p className="text-sm font-medium text-red-700">Customer Declined Quote</p>
-                            {quoteForOrder.decline_notes && (
-                              <p className="text-sm text-red-600">
-                                <span className="font-medium">Reason:</span> {quoteForOrder.decline_notes}
-                              </p>
-                            )}
-                            <p className="text-xs text-red-500">Update the quote and resend to customer.</p>
-                          </div>
-                        )}
-
-                        {/* Mechanic Assignment - shown inline when approved but no mechanic */}
-                        {isApproved && !hasMechanic && mechanics && mechanics.length > 0 && (
-                          <div className="pt-3 border-t border-gray-200 space-y-3">
-                            <p className="text-xs font-medium text-gray-500 uppercase">Available Mechanics</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {[...(mechanics || [])]
-                                .map((m) => {
-                                  const inProgress = m.in_progress_count ?? 0
-                                  const assigned = m.assigned_count ?? 0
-                                  const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                                  return { ...m, load, inProgress, assigned }
-                                })
-                                .sort((a, b) => a.load - b.load)
-                                .map((m) => (
-                                  <button
-                                    key={m.mechanic_id}
-                                    type="button"
-                                    onClick={() =>
-                                      selectedOrder.id &&
-                                      assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
-                                    }
-                                    disabled={assignMechanicMutation.isPending}
-                                    className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
-                                      <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
-                                        {m.load.toFixed(0)}%
-                                      </span>
-                                    </div>
-                                    <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                                      <div
-                                        className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                        style={{ width: `${m.load}%` }}
-                                      />
-                                    </div>
-                                  </button>
-                                ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Reassign Mechanic - shown when mechanic is already assigned and work not yet done */}
-                        {hasMechanic && mechanics && mechanics.length > 1 && !['pending_review', 'completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) && (
-                          <div className="pt-3 border-t border-gray-200">
-                            {!showReassignMechanic ? (
-                              <button
-                                type="button"
-                                onClick={() => setShowReassignMechanic(true)}
-                                className="text-sm text-amber-600 hover:text-amber-700 font-medium flex items-center gap-1.5"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                                </svg>
-                                Reassign Mechanic
-                              </button>
-                            ) : (
-                              <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                  <p className="text-xs font-medium text-gray-500 uppercase">Select New Mechanic</p>
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowReassignMechanic(false)}
-                                    className="text-xs text-gray-500 hover:text-gray-700"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                  {[...(mechanics || [])]
-                                    .filter(m => m.mechanic_id !== selectedOrder.assigned_mechanic_id)
-                                    .map((m) => {
-                                      const inProgress = m.in_progress_count ?? 0
-                                      const assigned = m.assigned_count ?? 0
-                                      const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                                      return { ...m, load, inProgress, assigned }
-                                    })
-                                    .sort((a, b) => a.load - b.load)
-                                    .map((m) => (
-                                      <button
-                                        key={m.mechanic_id}
-                                        type="button"
-                                        onClick={() => {
-                                          if (selectedOrder.id) {
-                                            assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
-                                            setShowReassignMechanic(false)
-                                          }
-                                        }}
-                                        disabled={assignMechanicMutation.isPending}
-                                        className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
-                                          <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
-                                            {m.load.toFixed(0)}%
-                                          </span>
-                                        </div>
-                                        <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                                          <div
-                                            className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                            style={{ width: `${m.load}%` }}
-                                          />
-                                        </div>
-                                      </button>
-                                    ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })()}
               </div>
             )}
       </SlidePanel>

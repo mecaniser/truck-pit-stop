@@ -13,6 +13,7 @@ import { useAuthStore } from '../stores/authStore'
 import { requestTokenRefresh } from '../lib/authRefresh'
 import { isTokenExpiredOrNearExpiry } from '../lib/authTokens'
 import type { NotificationEvent } from './useNotificationManager'
+import type { RepairOrder, RepairOrderDetail } from '../types'
 
 // Event types from backend
 export type WSEventType = 
@@ -34,6 +35,8 @@ export interface WSMessage {
   order_id?: string
   order_number?: string
   status?: string
+  hold_reason?: string | null
+  held_at?: string | null
   quote_id?: string
   quote_number?: string
   invoice_id?: string
@@ -110,6 +113,35 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       // Notifications are routed through onNotification callback for centralized handling.
       switch (data.type) {
         case 'repair_order_update':
+          if (data.order_id && data.status) {
+            queryClient.setQueryData<RepairOrder[] | undefined>(['repair-orders'], (previous) => {
+              if (!previous) return previous
+              return previous.map((order) => {
+                if (order.id !== data.order_id) return order
+                const shouldSetHoldReason = Object.prototype.hasOwnProperty.call(data, 'hold_reason')
+                const shouldSetHeldAt = Object.prototype.hasOwnProperty.call(data, 'held_at')
+                return {
+                  ...order,
+                  status: data.status as RepairOrder['status'],
+                  updated_at: data.updated_at || order.updated_at,
+                  hold_reason: shouldSetHoldReason ? (data.hold_reason ?? null) : (order.hold_reason ?? null),
+                  held_at: shouldSetHeldAt ? (data.held_at ?? null) : (order.held_at ?? null),
+                }
+              })
+            })
+            queryClient.setQueriesData<RepairOrderDetail | undefined>({ queryKey: ['repair-order-detail'] }, (previous) => {
+              if (!previous || previous.id !== data.order_id) return previous
+              const shouldSetHoldReason = Object.prototype.hasOwnProperty.call(data, 'hold_reason')
+              const shouldSetHeldAt = Object.prototype.hasOwnProperty.call(data, 'held_at')
+              return {
+                ...previous,
+                status: data.status as RepairOrderDetail['status'],
+                updated_at: data.updated_at || previous.updated_at,
+                hold_reason: shouldSetHoldReason ? (data.hold_reason ?? null) : (previous.hold_reason ?? null),
+                held_at: shouldSetHeldAt ? (data.held_at ?? null) : (previous.held_at ?? null),
+              }
+            })
+          }
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
@@ -123,6 +155,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
               orderId: data.order_id,
               orderNumber: data.order_number,
               status: data.status,
+              holdReason: data.hold_reason ?? null,
+              heldAt: data.held_at ?? null,
             })
           }
           break

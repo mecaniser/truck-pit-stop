@@ -27,6 +27,8 @@ export interface NotificationEvent {
   orderId?: string
   orderNumber?: string
   status?: string
+  holdReason?: string | null
+  heldAt?: string | null
   quoteNumber?: string
   invoiceNumber?: string
   totalAmount?: string
@@ -80,8 +82,16 @@ const STATUS_LABELS: Record<string, string> = {
   assigned: 'Job assigned',
   acknowledged: 'Job acknowledged',
   in_progress: 'Work started',
+  on_hold: 'Job on hold',
   pending_review: 'Work completed',
   completed: 'Work approved',
+}
+
+const HOLD_REASON_LABELS: Record<string, string> = {
+  waiting_for_parts: 'Waiting for parts',
+  waiting_for_customer_approval: 'Waiting for customer approval',
+  need_more_info: 'Need more information',
+  other: 'Other',
 }
 
 // Events that mechanics should NOT see (financial/administrative)
@@ -207,11 +217,18 @@ export function useNotificationManager(
     switch (event.type) {
       case 'repair_order_update': {
         if (!event.orderNumber || !event.status) return
-        
-        const label = STATUS_LABELS[event.status]
+
+        const isHoldUpdate = event.status === 'in_progress' && !!event.holdReason
+        const statusKey = isHoldUpdate ? 'on_hold' : event.status
+        const label = STATUS_LABELS[statusKey]
         if (!label) return // Skip statuses without labels (invoiced, paid, etc.)
-        
-        const message = `${event.orderNumber}: ${label}`
+
+        const holdReasonLabel = event.holdReason
+          ? HOLD_REASON_LABELS[event.holdReason] || event.holdReason.replace(/_/g, ' ')
+          : null
+        const message = isHoldUpdate && holdReasonLabel
+          ? `${event.orderNumber}: ${label} (${holdReasonLabel})`
+          : `${event.orderNumber}: ${label}`
         
         // For mechanics: all job updates are high priority toasts
         // For owners: assigned/completed are toasts, others are banners
@@ -225,10 +242,10 @@ export function useNotificationManager(
           })
         } else {
           // Owner/admin: assigned and completed are toasts
-          const isHighPriority = ['assigned', 'completed', 'pending_review'].includes(event.status)
+          const isHighPriority = ['assigned', 'completed', 'pending_review'].includes(statusKey)
           if (isHighPriority) {
             addToQueue({
-              id: `${orderId}-${event.status}`,
+              id: `${orderId}-${statusKey}`,
               message,
               priority: 'high',
               orderId,
@@ -239,9 +256,9 @@ export function useNotificationManager(
             addBanner({
               orderId: orderId || '',
               orderNumber: event.orderNumber,
-              message: label,
+              message: isHoldUpdate && holdReasonLabel ? `${label} (${holdReasonLabel})` : label,
               type: event.type,
-              status: event.status,
+              status: statusKey,
             })
           }
         }

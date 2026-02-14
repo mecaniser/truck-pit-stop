@@ -35,6 +35,13 @@ interface MechanicBoardItem {
   work_coverage_percent: number | null
   assigned_ready_orders_count: number
   untimed_in_progress_orders_count: number
+  held_orders_count: number
+  held_orders: Array<{
+    id: string
+    order_number: string
+    hold_reason: string | null
+    held_at: string | null
+  }>
   recommended_order_id: string | null
   recommended_order_number: string | null
   suggested_next_action: 'clock_in' | 'end_break' | 'continue_ro' | 'stop_misc_pick_ro' | 'start_assigned_ro' | 'start_misc' | 'clock_out'
@@ -77,6 +84,18 @@ const PRIORITY_DOT: Record<AttentionPriority, string> = {
   red: 'bg-rose-500',
   yellow: 'bg-amber-400',
   green: 'bg-emerald-500',
+}
+
+const HOLD_REASON_LABELS: Record<string, string> = {
+  waiting_for_parts: 'Waiting for parts',
+  waiting_for_customer_approval: 'Waiting for customer approval',
+  need_more_info: 'Need more information',
+  other: 'Other',
+}
+
+const formatHoldReason = (reason?: string | null) => {
+  if (!reason) return 'On hold'
+  return HOLD_REASON_LABELS[reason] || reason.replace(/_/g, ' ')
 }
 
 function sortByAttention(mechanics: MechanicBoardItem[]): MechanicBoardItem[] {
@@ -301,6 +320,18 @@ export default function MechanicsBoardPage() {
                 <div className="mt-2 text-xs text-gray-400">
                   Tracked {toHours(m.tracked_minutes)}h · RO {toHours(m.ro_minutes)}h · Misc {toHours(m.misc_minutes)}h
                 </div>
+
+                {m.held_orders_count > 0 ? (
+                  <div className="mt-2 text-xs text-amber-300">
+                    On hold: <span className="text-amber-200">{m.held_orders?.[0]?.order_number || `${m.held_orders_count} job(s)`}</span>
+                    {m.held_orders?.[0]?.hold_reason ? (
+                      <span className="text-amber-100"> · {formatHoldReason(m.held_orders[0].hold_reason)}</span>
+                    ) : null}
+                    {m.held_orders_count > 1 ? (
+                      <span className="text-amber-200"> · +{m.held_orders_count - 1} more</span>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {/* Row 6: Active timer (only if running) */}
                 {m.active_session?.started_at ? (

@@ -43,6 +43,8 @@ interface RecentOrder {
   updated_at: string
   mechanic_name: string | null
   work_started_at: string | null
+  hold_reason: string | null
+  held_at: string | null
 }
 
 interface MechanicWorkload {
@@ -97,6 +99,7 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
   assigned: 'bg-cyan-100 text-cyan-700',
   acknowledged: 'bg-cyan-100 text-cyan-700',
   in_progress: 'bg-amber-100 text-amber-700',
+  on_hold: 'bg-orange-100 text-orange-700',
   pending_review: 'bg-orange-100 text-orange-700',
   completed: 'bg-green-100 text-green-700',
   invoiced: 'bg-purple-100 text-purple-700',
@@ -137,12 +140,13 @@ function useElapsedTime(startedAt: string | null) {
 }
 
 function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClick: () => void; accentColor: string }) {
+  const isOnHold = order.status === 'in_progress' && !!order.hold_reason
   const elapsed = useElapsedTime(
-    order.status === 'in_progress' ? order.work_started_at : null,
+    order.status === 'in_progress' && !isOnHold ? order.work_started_at : null,
   )
   const isPendingZelle = order.status === 'invoiced' && !!order.pending_zelle_confirmation
-  const statusKey = isPendingZelle ? 'pending_zelle' : order.status
-  const statusLabel = isPendingZelle ? 'awaiting zelle' : order.status.replace(/_/g, ' ')
+  const statusKey = isOnHold ? 'on_hold' : isPendingZelle ? 'pending_zelle' : order.status
+  const statusLabel = isOnHold ? 'on hold' : isPendingZelle ? 'awaiting zelle' : order.status.replace(/_/g, ' ')
 
   return (
     <button
@@ -167,6 +171,11 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
           </p>
           {order.mechanic_name && (
             <p className="text-xs 2xl:text-sm mt-0.5" style={{ color: accentColor, opacity: 0.7 }}>&rarr; {order.mechanic_name}</p>
+          )}
+          {isOnHold && order.hold_reason && (
+            <p className="text-xs mt-0.5 text-orange-400 truncate">
+              Hold: {order.hold_reason.replace(/_/g, ' ')}
+            </p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">

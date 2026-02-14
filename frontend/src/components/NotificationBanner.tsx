@@ -41,6 +41,8 @@ function getBannerIcon(type: string, status?: string) {
       case 'acknowledged':
       case 'in_progress':
         return <Clock className="w-4 h-4" />
+      case 'on_hold':
+        return <AlertTriangle className="w-4 h-4" />
       case 'pending_review':
       case 'completed':
         return <CheckCircle className="w-4 h-4" />
@@ -77,6 +79,8 @@ function getBannerColors(type: string, status?: string): string {
         return 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
       case 'in_progress':
         return 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+      case 'on_hold':
+        return 'bg-amber-500/10 border-amber-500/30 text-amber-300'
       default:
         return 'bg-purple-500/10 border-purple-500/30 text-purple-300'
     }
