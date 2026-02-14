@@ -845,8 +845,8 @@ export default function MechanicPortalPage() {
                   <span className="font-mono text-green-200">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
                 </div>
                 <button
-                  onClick={() => completeWorkMutation.mutate(mechanicSuggestion.recommendedJob?.id || '')}
-                  disabled={completeWorkMutation.isPending}
+                  onClick={() => mechanicSuggestion.recommendedJob && completeWorkMutation.mutate(mechanicSuggestion.recommendedJob.id)}
+                  disabled={completeWorkMutation.isPending || !mechanicSuggestion.recommendedJob}
                   className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:bg-gray-600 shrink-0"
                 >
                   {completeWorkMutation.isPending ? 'Completing...' : 'Job Done'}

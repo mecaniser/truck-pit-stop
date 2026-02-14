@@ -6,6 +6,7 @@ export interface MechanicSuggestionJob {
   order_number: string
   status: string
   updated_at: string
+  hold_reason?: string | null
 }
 
 interface DaySummarySuggestionState {
@@ -44,7 +45,7 @@ export function deriveMechanicSuggestion(
   const activeRoId = activeSession?.session_type === 'repair_order' ? activeSession.repair_order_id : null
   const untimedInProgressJob =
     [...activeJobs]
-      .filter((job) => job.status === 'in_progress' && job.id !== activeRoId)
+      .filter((job) => job.status === 'in_progress' && job.id !== activeRoId && !job.hold_reason)
       .sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime())[0] || null
 
   if (!daySummary?.attendance_active) {
