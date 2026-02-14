@@ -87,6 +87,8 @@ export interface MessageThread {
   unread_count_staff: number
   last_message_at: string | null
   last_message_preview: string | null
+  archived_at?: string | null
+  archived_by_user_id?: string | null
   created_at: string
   updated_at: string
   customer: {

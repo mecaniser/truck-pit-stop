@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import type {
@@ -11,8 +11,10 @@ import type {
 } from '@/types'
 import { useTheme } from '@/contexts/ThemeContext'
 import { formatUSPhone } from '@/utils/phone'
+import { useAuthStore } from '@/stores/authStore'
+import { useWebSocket } from '@/hooks/useWebSocket'
 import toast from 'react-hot-toast'
-import { Loader2, MessageSquare, Send } from 'lucide-react'
+import { Archive, ArchiveRestore, Loader2, MessageSquare, Send, Trash2 } from 'lucide-react'
 
 interface PaginatedCustomersResponse {
   items: Customer[]
@@ -22,9 +24,28 @@ interface PaginatedCustomersResponse {
   has_more: boolean
 }
 
+interface SmsRealtimeEvent {
+  type: 'sms_message_created' | 'sms_thread_updated'
+  thread_id?: string
+  action?: string
+  unread_count_staff?: number
+  last_message_at?: string | null
+  last_message_preview?: string | null
+  customer_id?: string
+}
+
+const sortThreads = (rows: MessageThread[]) =>
+  [...rows].sort((a, b) => {
+    const aTs = a.last_message_at ? new Date(a.last_message_at).getTime() : 0
+    const bTs = b.last_message_at ? new Date(b.last_message_at).getTime() : 0
+    return bTs - aTs
+  })
+
 export default function MessagesInboxPage() {
   const { accentColors } = useTheme()
   const queryClient = useQueryClient()
+  const { user } = useAuthStore()
+  useWebSocket()
   const [threads, setThreads] = useState<MessageThread[]>([])
   const [threadsCursor, setThreadsCursor] = useState<string | null>(null)
   const [threadsHasMore, setThreadsHasMore] = useState(false)
@@ -36,37 +57,41 @@ export default function MessagesInboxPage() {
   const [messagesHasMore, setMessagesHasMore] = useState(false)
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [sending, setSending] = useState(false)
+  const [threadActionBusy, setThreadActionBusy] = useState(false)
+  const [includeArchived, setIncludeArchived] = useState(false)
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [newCustomerId, setNewCustomerId] = useState('')
   const [newThreadBody, setNewThreadBody] = useState('')
   const [replyBody, setReplyBody] = useState('')
+  const smsEventQueueRef = useRef<Promise<void>>(Promise.resolve())
 
   const selectedThread = useMemo(
     () => threads.find((thread) => thread.id === selectedThreadId) || null,
     [threads, selectedThreadId]
   )
+  const canHardDeleteThread = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
-  const loadThreads = async (cursor: string | null = null, append = false) => {
+  const loadThreads = useCallback(async (cursor: string | null = null, append = false) => {
     try {
       if (!append) setThreadsLoading(true)
       const { data } = await api.get<CursorPageMessageThreads>('/messages/threads', {
-        params: { limit: 20, cursor: cursor || undefined },
+        params: { limit: 20, cursor: cursor || undefined, include_archived: includeArchived || undefined },
       })
       setThreads((prev) => (append ? [...prev, ...data.items] : data.items))
       setThreadsCursor(data.next_cursor)
       setThreadsHasMore(data.has_more)
-      if (!selectedThreadId && data.items.length > 0) {
-        setSelectedThreadId(data.items[0].id)
+      if (data.items.length > 0) {
+        setSelectedThreadId((prev) => prev || data.items[0].id)
       }
     } catch (error: any) {
       toast.error(error?.response?.data?.detail || 'Failed to load message threads')
     } finally {
       setThreadsLoading(false)
     }
-  }
+  }, [includeArchived])
 
-  const loadMessages = async (threadId: string, cursor: string | null = null, appendOlder = false) => {
+  const loadMessages = useCallback(async (threadId: string, cursor: string | null = null, appendOlder = false) => {
     try {
       setMessagesLoading(true)
       const { data } = await api.get<CursorPageSmsMessages>(`/messages/threads/${threadId}/messages`, {
@@ -95,9 +120,9 @@ export default function MessagesInboxPage() {
     } finally {
       setMessagesLoading(false)
     }
-  }
+  }, [queryClient])
 
-  const loadCustomers = async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       const pageSize = 100
       let skip = 0
@@ -122,7 +147,13 @@ export default function MessagesInboxPage() {
       toast.error(error?.response?.data?.detail || 'Failed to load customers')
       setCustomers([])
     }
-  }
+  }, [])
+
+  const enqueueSmsRefresh = useCallback((task: () => Promise<void>) => {
+    smsEventQueueRef.current = smsEventQueueRef.current
+      .then(task)
+      .catch(() => {})
+  }, [])
 
   const sendReply = async () => {
     if (!selectedThread || !replyBody.trim()) return
@@ -162,22 +193,164 @@ export default function MessagesInboxPage() {
     }
   }
 
+  const archiveSelectedThread = async () => {
+    if (!selectedThread) return
+    setThreadActionBusy(true)
+    try {
+      await api.post(`/messages/threads/${selectedThread.id}/archive`)
+      toast.success('Thread archived')
+      setSelectedThreadId(null)
+      setMessages([])
+      await loadThreads()
+      queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to archive thread')
+    } finally {
+      setThreadActionBusy(false)
+    }
+  }
+
+  const deleteSelectedThread = async () => {
+    if (!selectedThread) return
+    const confirmed = window.confirm(
+      `Delete this thread for ${selectedThread.customer.first_name} ${selectedThread.customer.last_name}? This hides it from inbox and keeps audit history.`,
+    )
+    if (!confirmed) return
+    const hardDelete = window.confirm(
+      'Hard delete local records permanently? Click OK for hard delete, or Cancel for soft delete.',
+    )
+
+    setThreadActionBusy(true)
+    try {
+      await api.delete(`/messages/threads/${selectedThread.id}`, {
+        params: { hard_delete: hardDelete || undefined },
+      })
+      toast.success(hardDelete ? 'Thread permanently deleted' : 'Thread deleted')
+      setSelectedThreadId(null)
+      setMessages([])
+      await loadThreads()
+      queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to delete thread')
+    } finally {
+      setThreadActionBusy(false)
+    }
+  }
+
+  const unarchiveSelectedThread = async () => {
+    if (!selectedThread) return
+    setThreadActionBusy(true)
+    try {
+      await api.post(`/messages/threads/${selectedThread.id}/unarchive`)
+      toast.success('Thread unarchived')
+      await loadThreads()
+      queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || 'Failed to unarchive thread')
+    } finally {
+      setThreadActionBusy(false)
+    }
+  }
+
   useEffect(() => {
-    loadThreads()
-    loadCustomers()
-  }, [])
+    void loadCustomers()
+  }, [loadCustomers])
+
+  useEffect(() => {
+    setSelectedThreadId(null)
+    setMessages([])
+    void loadThreads()
+  }, [loadThreads])
 
   useEffect(() => {
     if (selectedThreadId) {
-      loadMessages(selectedThreadId)
+      void loadMessages(selectedThreadId)
     }
-  }, [selectedThreadId])
+  }, [selectedThreadId, loadMessages])
+
+  useEffect(() => {
+    const onSmsEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<SmsRealtimeEvent>
+      const payload = customEvent.detail
+      if (!payload?.thread_id) return
+
+      if (
+        selectedThreadId
+        && selectedThreadId === payload.thread_id
+        && (payload.action === 'hard_deleted' || payload.action === 'soft_deleted' || (payload.action === 'archived' && !includeArchived))
+      ) {
+        setSelectedThreadId(null)
+        setMessages([])
+      }
+
+      if (payload.type === 'sms_thread_updated') {
+        let found = false
+        setThreads((prev) => {
+          const next = prev
+            .map((thread) => {
+              if (thread.id !== payload.thread_id) return thread
+              found = true
+
+              if (payload.action === 'hard_deleted' || payload.action === 'soft_deleted') {
+                return null
+              }
+              if (payload.action === 'archived' && !includeArchived) {
+                return null
+              }
+
+              let archivedAt = thread.archived_at ?? null
+              if (payload.action === 'archived') archivedAt = new Date().toISOString()
+              if (payload.action === 'unarchived') archivedAt = null
+
+              return {
+                ...thread,
+                unread_count_staff: typeof payload.unread_count_staff === 'number' ? payload.unread_count_staff : thread.unread_count_staff,
+                last_message_at: payload.last_message_at ?? thread.last_message_at,
+                last_message_preview: payload.last_message_preview ?? thread.last_message_preview,
+                archived_at: archivedAt,
+              }
+            })
+            .filter((thread): thread is MessageThread => thread !== null)
+
+          return sortThreads(next)
+        })
+
+        if (!found) {
+          enqueueSmsRefresh(async () => {
+            await loadThreads()
+          })
+        }
+      }
+
+      if (payload.type === 'sms_message_created' && selectedThreadId && selectedThreadId === payload.thread_id) {
+        enqueueSmsRefresh(async () => {
+          await loadMessages(selectedThreadId)
+        })
+      }
+    }
+
+    window.addEventListener('truckpitstop:sms-event', onSmsEvent as EventListener)
+    return () => {
+      window.removeEventListener('truckpitstop:sms-event', onSmsEvent as EventListener)
+    }
+  }, [enqueueSmsRefresh, includeArchived, loadMessages, loadThreads, selectedThreadId])
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <MessageSquare className="w-5 h-5" style={{ color: accentColors[400] }} />
         <h1 className="text-xl font-semibold text-white">Messages</h1>
+        <button
+          className={`ml-2 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+            includeArchived
+              ? 'border-amber-400/40 bg-amber-500/15 text-amber-200'
+              : 'border-white/20 bg-white/10 text-gray-300'
+          }`}
+          onClick={() => setIncludeArchived((prev) => !prev)}
+        >
+          <Archive className="w-3.5 h-3.5" />
+          {includeArchived ? 'Hide Archived' : 'Include Archived'}
+        </button>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
@@ -237,6 +410,9 @@ export default function MessagesInboxPage() {
                     <p className="text-xs text-gray-400">
                       {thread.customer.phone ? formatUSPhone(thread.customer.phone) : 'No phone'}
                     </p>
+                    {thread.archived_at ? (
+                      <p className="text-[10px] text-amber-300 mt-0.5">Archived</p>
+                    ) : null}
                   </div>
                   {thread.unread_count_staff > 0 && (
                     <span className="text-xs rounded-full px-2 py-0.5 text-white" style={{ backgroundColor: accentColors[600] }}>
@@ -264,12 +440,53 @@ export default function MessagesInboxPage() {
           ) : (
             <div className="flex flex-col h-[520px]">
               <div className="pb-3 border-b border-white/10">
-                <p className="text-white font-medium">
-                  {selectedThread.customer.first_name} {selectedThread.customer.last_name}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {selectedThread.customer.phone ? formatUSPhone(selectedThread.customer.phone) : 'No phone'}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-white font-medium">
+                      {selectedThread.customer.first_name} {selectedThread.customer.last_name}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {selectedThread.customer.phone ? formatUSPhone(selectedThread.customer.phone) : 'No phone'}
+                    </p>
+                    {selectedThread.archived_at ? (
+                      <p className="text-[11px] text-amber-300 mt-1">Archived</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedThread.archived_at ? (
+                      <button
+                        onClick={unarchiveSelectedThread}
+                        disabled={threadActionBusy}
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-400/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
+                        title="Unarchive thread"
+                      >
+                        <ArchiveRestore className="w-3.5 h-3.5" />
+                        Unarchive
+                      </button>
+                    ) : (
+                      <button
+                        onClick={archiveSelectedThread}
+                        disabled={threadActionBusy}
+                        className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-white/15 disabled:opacity-60"
+                        title="Archive thread"
+                      >
+                        <Archive className="w-3.5 h-3.5" />
+                        Archive
+                      </button>
+                    )}
+                    {canHardDeleteThread ? (
+                      <button
+                        onClick={deleteSelectedThread}
+                        disabled={threadActionBusy}
+                        className="inline-flex items-center gap-1 rounded-md border border-rose-400/40 bg-rose-500/10 px-2.5 py-1.5 text-xs text-rose-200 hover:bg-rose-500/20 disabled:opacity-60"
+                        title="Delete thread from inbox"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto py-3 space-y-2">

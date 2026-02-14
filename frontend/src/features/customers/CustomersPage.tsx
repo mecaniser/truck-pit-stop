@@ -1587,7 +1587,9 @@ export default function CustomersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-white/70 hidden sm:table-cell">{customer.email}</td>
-                      <td className="px-4 py-3 text-white/70 hidden md:table-cell">{customer.phone || '—'}</td>
+                      <td className="px-4 py-3 text-white/70 hidden md:table-cell">
+                        {customer.phone ? formatUSPhone(customer.phone) : '—'}
+                      </td>
                       <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
                         {customer.billing_city && customer.billing_state
                           ? `${customer.billing_city}, ${customer.billing_state}`
@@ -1638,7 +1640,7 @@ export default function CustomersPage() {
                     {customer.phone && (
                       <div className="flex items-center gap-2 text-slate-600">
                         <Phone className="w-4 h-4 flex-shrink-0" />
-                        <span>{customer.phone}</span>
+                        <span>{formatUSPhone(customer.phone)}</span>
                       </div>
                     )}
                     {customer.billing_city && customer.billing_state && (
@@ -1990,7 +1992,7 @@ export default function CustomersPage() {
                           <div>
                             <p className="text-xs text-gray-500">Phone</p>
                             <a href={`tel:${selectedCustomer.phone}`} className="text-gray-900 hover:text-amber-600 font-medium">
-                              {selectedCustomer.phone}
+                              {formatUSPhone(selectedCustomer.phone)}
                             </a>
                           </div>
                         </div>

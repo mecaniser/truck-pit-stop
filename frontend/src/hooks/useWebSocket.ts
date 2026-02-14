@@ -196,9 +196,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
 
         case 'sms_message_created':
         case 'sms_thread_updated':
-          queryClient.invalidateQueries({ queryKey: ['message-threads'] })
-          queryClient.invalidateQueries({ queryKey: ['thread-messages'] })
+          // Inbox pages manage thread/message lists locally; keep global unread summary fresh.
           queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('truckpitstop:sms-event', { detail: data }))
+          }
           break
 
         case 'mechanic_timer_update':

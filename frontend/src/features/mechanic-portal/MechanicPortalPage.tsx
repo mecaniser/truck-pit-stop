@@ -2334,20 +2334,6 @@ export default function MechanicPortalPage() {
                         </div>
                       ) : detail ? (
                         <>
-                          {/* Vehicle Details */}
-                          <div className="flex items-center gap-3 py-2 border-t border-gray-700/50">
-                            <Truck className="w-4 h-4 text-gray-500 shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-white text-sm">
-                                {detail.vehicle_year} {detail.vehicle_make} {detail.vehicle_model}
-                              </p>
-                              {detail.vehicle_license_plate && (
-                                <p className="text-xs text-gray-500">{detail.vehicle_license_plate}</p>
-                              )}
-                              <p className="text-xs text-gray-500 mt-0.5">Created {formatCreatedAt(detail.created_at)}</p>
-                            </div>
-                          </div>
-                          
                           {/* Live Timer */}
                           {isWorking && isTimedForThisJob && timedStartForJob && (
                             <LiveTimer startedAt={timedStartForJob} />

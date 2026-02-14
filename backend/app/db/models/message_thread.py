@@ -18,7 +18,10 @@ class MessageThread(BaseModel):
     last_message_at = Column(DateTime(timezone=True), nullable=True, index=True)
     last_message_preview = Column(Text, nullable=True)
     unread_count_staff = Column(Integer, nullable=False, default=0)
+    archived_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    archived_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
 
     tenant = relationship("Tenant", backref="message_threads")
     customer = relationship("Customer", backref="message_threads")
     messages = relationship("SMSMessage", back_populates="thread", cascade="all, delete-orphan")
+    archived_by_user = relationship("User", foreign_keys=[archived_by_user_id])

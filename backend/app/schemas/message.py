@@ -25,6 +25,8 @@ class MessageThreadResponse(BaseModel):
     unread_count_staff: int
     last_message_at: Optional[datetime] = None
     last_message_preview: Optional[str] = None
+    archived_at: Optional[datetime] = None
+    archived_by_user_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
     customer: MessageCustomerSummary
@@ -83,3 +85,9 @@ class CursorPageSMSMessages(BaseModel):
 
 class UnreadSMSCountResponse(BaseModel):
     unread_count_staff: int = 0
+
+
+class ThreadActionResponse(BaseModel):
+    success: bool = True
+    thread_id: UUID
+    message: str

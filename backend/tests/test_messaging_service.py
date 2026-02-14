@@ -121,3 +121,13 @@ def test_status_callback_url_returns_public_url(monkeypatch):
         messaging_service._status_callback_url()
         == "https://api.example.com/api/v1/webhooks/twilio/sms/status"
     )
+
+
+def test_phone_match_candidates_expands_us_variants():
+    assert messaging_service._phone_match_candidates("+1 (704) 705-0486") == ["17047050486", "7047050486"]
+    assert messaging_service._phone_match_candidates("7047050486") == ["7047050486", "17047050486"]
+
+
+def test_canonical_customer_phone_prefers_10_digit_us():
+    assert messaging_service._canonical_customer_phone("+17047050486") == "7047050486"
+    assert messaging_service._canonical_customer_phone("7047050486") == "7047050486"

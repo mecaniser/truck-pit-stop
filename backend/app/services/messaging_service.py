@@ -66,6 +66,42 @@ def _normalize_for_twilio(phone: str) -> str:
     return f"+{digits}"
 
 
+def _phone_match_candidates(phone: str) -> list[str]:
+    """
+    Return equivalent digit-only variants for matching stored phone numbers.
+
+    For US numbers, treat 10-digit and leading-1 11-digit formats as equivalent.
+    """
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return []
+
+    candidates = [normalized]
+    if len(normalized) == 11 and normalized.startswith("1"):
+        candidates.append(normalized[1:])
+    elif len(normalized) == 10:
+        candidates.append(f"1{normalized}")
+
+    # Preserve order while deduplicating.
+    return list(dict.fromkeys(candidates))
+
+
+def _canonical_customer_phone(phone: str) -> Optional[str]:
+    """
+    Canonical customer phone storage format.
+
+    Prefer 10-digit US format when input is +1/11-digit US; otherwise keep
+    normalized digits as-is.
+    """
+    candidates = _phone_match_candidates(phone)
+    if not candidates:
+        return None
+    first = candidates[0]
+    if len(first) == 11 and first.startswith("1"):
+        return first[1:]
+    return first
+
+
 def _twilio_status_to_delivery_status(raw_status: Optional[str]) -> SMSDeliveryStatus:
     value = (raw_status or "").strip().lower()
     if value == "queued":
@@ -128,8 +164,8 @@ async def _resolve_tenant_by_to_number(db: AsyncSession, to_number: str) -> Opti
     if tenant:
         return tenant
 
-    normalized = normalize_phone(number)
-    if not normalized:
+    candidates = _phone_match_candidates(number)
+    if not candidates:
         return None
 
     result = await db.execute(
@@ -138,7 +174,8 @@ async def _resolve_tenant_by_to_number(db: AsyncSession, to_number: str) -> Opti
         )
     )
     for candidate in result.scalars().all():
-        if normalize_phone(candidate.sms_phone_number) == normalized:
+        candidate_phone = normalize_phone(candidate.sms_phone_number)
+        if candidate_phone and candidate_phone in candidates:
             return candidate
     return None
 
@@ -153,6 +190,7 @@ async def _get_or_create_thread(
             and_(
                 MessageThread.tenant_id == tenant_id,
                 MessageThread.customer_id == customer.id,
+                MessageThread.deleted_at.is_(None),
             )
         )
     )
@@ -160,6 +198,10 @@ async def _get_or_create_thread(
     if thread:
         if customer.phone and thread.customer_phone != customer.phone:
             thread.customer_phone = customer.phone
+        # Archive is a staff-view preference; any new inbound/outbound message should revive the thread.
+        if thread.archived_at is not None:
+            thread.archived_at = None
+            thread.archived_by_user_id = None
         return thread
 
     thread = MessageThread(
@@ -461,15 +503,16 @@ async def handle_inbound_sms(
             customer = customer_result.scalar_one()
             return thread, existing, customer, True
 
-    normalized_sender = normalize_phone(from_number)
-    if not normalized_sender:
+    sender_candidates = _phone_match_candidates(from_number)
+    normalized_sender = _canonical_customer_phone(from_number)
+    if not sender_candidates or not normalized_sender:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inbound sender number")
 
     result = await db.execute(
         select(Customer).where(
             and_(
                 Customer.tenant_id == tenant.id,
-                Customer.phone == normalized_sender,
+                Customer.phone.in_(sender_candidates),
             )
         )
     )

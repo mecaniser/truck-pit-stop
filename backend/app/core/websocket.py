@@ -452,6 +452,7 @@ async def broadcast_sms_thread_event(
     unread_count_staff: int,
     last_message_at: Optional[str],
     last_message_preview: Optional[str],
+    action: Optional[str] = None,
 ) -> None:
     """Broadcast a thread summary update to tenant staff."""
     message = {
@@ -461,6 +462,7 @@ async def broadcast_sms_thread_event(
         "unread_count_staff": unread_count_staff,
         "last_message_at": last_message_at,
         "last_message_preview": last_message_preview,
+        "action": action,
     }
     await manager.broadcast_to_tenant(tenant_id, message)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -21,6 +21,7 @@ from app.schemas.message import (
     SMSMessageResponse,
     SendSMSRequest,
     StartThreadRequest,
+    ThreadActionResponse,
     UnreadSMSCountResponse,
 )
 from app.services.messaging_service import enforce_tenant_send_rate_limit, send_sms_with_tracking
@@ -37,6 +38,15 @@ def require_staff_user():
             UserRole.MECHANIC,
         ):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return current_user
+
+    return role_checker
+
+
+def require_manager_user():
+    async def role_checker(current_user: User = Depends(get_current_active_user)):
+        if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Garage owner/admin permissions required")
         return current_user
 
     return role_checker
@@ -75,6 +85,7 @@ async def _get_customer_for_tenant(db: AsyncSession, tenant_id: UUID, customer_i
 async def list_message_threads(
     limit: int = Query(20, ge=1, le=100),
     cursor: Optional[str] = Query(None),
+    include_archived: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_staff_user()),
 ):
@@ -82,10 +93,17 @@ async def list_message_threads(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
 
     cursor_dt, cursor_id = _decode_cursor(cursor)
+    conditions = [
+        MessageThread.tenant_id == current_user.tenant_id,
+        MessageThread.deleted_at.is_(None),
+    ]
+    if not include_archived:
+        conditions.append(MessageThread.archived_at.is_(None))
+
     query = (
         select(MessageThread)
         .options(selectinload(MessageThread.customer))
-        .where(MessageThread.tenant_id == current_user.tenant_id)
+        .where(and_(*conditions))
     )
     if cursor_dt and cursor_id:
         query = query.where(
@@ -123,7 +141,11 @@ async def get_unread_sms_summary(
 
     result = await db.execute(
         select(func.coalesce(func.sum(MessageThread.unread_count_staff), 0)).where(
-            MessageThread.tenant_id == current_user.tenant_id
+            and_(
+                MessageThread.tenant_id == current_user.tenant_id,
+                MessageThread.deleted_at.is_(None),
+                MessageThread.archived_at.is_(None),
+            )
         )
     )
     unread_total = int(result.scalar() or 0)
@@ -146,6 +168,7 @@ async def list_thread_messages(
             and_(
                 MessageThread.id == thread_id,
                 MessageThread.tenant_id == current_user.tenant_id,
+                MessageThread.deleted_at.is_(None),
             )
         )
     )
@@ -158,6 +181,7 @@ async def list_thread_messages(
         and_(
             SMSMessage.tenant_id == current_user.tenant_id,
             SMSMessage.thread_id == thread_id,
+            SMSMessage.deleted_at.is_(None),
         )
     )
     if cursor_dt and cursor_id:
@@ -225,6 +249,7 @@ async def send_message(
                     MessageThread.id == body.thread_id,
                     MessageThread.tenant_id == current_user.tenant_id,
                     MessageThread.customer_id == body.customer_id,
+                    MessageThread.deleted_at.is_(None),
                 )
             )
         )
@@ -258,3 +283,138 @@ async def start_thread(
         db=db,
         current_user=current_user,
     )
+
+
+@router.post("/threads/{thread_id}/archive", response_model=ThreadActionResponse)
+async def archive_thread(
+    thread_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_user()),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(
+        select(MessageThread).where(
+            and_(
+                MessageThread.id == thread_id,
+                MessageThread.tenant_id == current_user.tenant_id,
+                MessageThread.deleted_at.is_(None),
+            )
+        )
+    )
+    thread = result.scalar_one_or_none()
+    if not thread:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+    thread.archived_at = datetime.now(timezone.utc)
+    thread.archived_by_user_id = current_user.id
+    thread.unread_count_staff = 0
+    await db.commit()
+    await db.refresh(thread)
+
+    await broadcast_sms_thread_event(
+        tenant_id=str(current_user.tenant_id),
+        thread_id=str(thread.id),
+        customer_id=str(thread.customer_id),
+        unread_count_staff=0,
+        last_message_at=thread.last_message_at.isoformat() if thread.last_message_at else None,
+        last_message_preview=thread.last_message_preview,
+        action="archived",
+    )
+
+    return ThreadActionResponse(thread_id=thread.id, message="Thread archived")
+
+
+@router.post("/threads/{thread_id}/unarchive", response_model=ThreadActionResponse)
+async def unarchive_thread(
+    thread_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_user()),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(
+        select(MessageThread).where(
+            and_(
+                MessageThread.id == thread_id,
+                MessageThread.tenant_id == current_user.tenant_id,
+                MessageThread.deleted_at.is_(None),
+            )
+        )
+    )
+    thread = result.scalar_one_or_none()
+    if not thread:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+    thread.archived_at = None
+    thread.archived_by_user_id = None
+    await db.commit()
+    await db.refresh(thread)
+
+    await broadcast_sms_thread_event(
+        tenant_id=str(current_user.tenant_id),
+        thread_id=str(thread.id),
+        customer_id=str(thread.customer_id),
+        unread_count_staff=thread.unread_count_staff,
+        last_message_at=thread.last_message_at.isoformat() if thread.last_message_at else None,
+        last_message_preview=thread.last_message_preview,
+        action="unarchived",
+    )
+
+    return ThreadActionResponse(thread_id=thread.id, message="Thread unarchived")
+
+
+@router.delete("/threads/{thread_id}", response_model=ThreadActionResponse)
+async def delete_thread(
+    thread_id: UUID,
+    hard_delete: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager_user()),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(
+        select(MessageThread)
+        .options(selectinload(MessageThread.messages))
+        .where(
+            and_(
+                MessageThread.id == thread_id,
+                MessageThread.tenant_id == current_user.tenant_id,
+                MessageThread.deleted_at.is_(None),
+            )
+        )
+    )
+    thread = result.scalar_one_or_none()
+    if not thread:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+    deleted_thread_id = thread.id
+    deleted_customer_id = thread.customer_id
+    now = datetime.now(timezone.utc)
+    if hard_delete:
+        await db.delete(thread)
+        action = "hard_deleted"
+        message = "Thread permanently deleted"
+    else:
+        thread.deleted_at = now
+        thread.unread_count_staff = 0
+        for sms in thread.messages:
+            sms.deleted_at = now
+        action = "soft_deleted"
+        message = "Thread deleted from inbox"
+    await db.commit()
+
+    await broadcast_sms_thread_event(
+        tenant_id=str(current_user.tenant_id),
+        thread_id=str(deleted_thread_id),
+        customer_id=str(deleted_customer_id),
+        unread_count_staff=0,
+        last_message_at=None,
+        last_message_preview=None,
+        action=action,
+    )
+
+    return ThreadActionResponse(thread_id=deleted_thread_id, message=message)
