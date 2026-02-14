@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Loader2, PlayCircle, Square, Pencil, Trash2, Settings } from 'lucide-react'
+import { ArrowLeft, Loader2, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '@/lib/api'
 import { MISC_WORK_OPTIONS, formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
@@ -137,6 +137,7 @@ export default function MechanicBoardDetailPage() {
   const [breakReason, setBreakReason] = useState('')
 
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
+  const [sessionsExpanded, setSessionsExpanded] = useState(false)
 
   const [editMode, setEditMode] = useState<EditMode>(null)
   const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null)
@@ -513,82 +514,111 @@ export default function MechanicBoardDetailPage() {
             )}
           </div>
 
-          {/* Today Sessions — enhanced with duration + summary */}
+          {/* Today Sessions — active session prominent, history collapsed */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <h2 className="text-white font-medium">Today Sessions</h2>
               <SectionInfoTooltip text="Chronological record of all timer sessions for the selected day, including active, stopped, edited, and deletable entries." />
             </div>
+
             {!data.today_sessions.length ? (
               <p className="text-gray-400 text-sm">No sessions recorded for this day.</p>
-            ) : (
-              <div className="space-y-2">
-                {data.today_sessions.map((s) => {
-                  const durationMin = computeSessionDurationMinutes(s)
-                  return (
-                    <div key={s.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-white text-sm font-medium">
-                              {formatSessionType(s.session_type)}
-                              {s.misc_category ? ` · ${formatMiscCategory(s.misc_category)}` : ''}
+            ) : (() => {
+              const activeSession = data.today_sessions.find((s) => !s.ended_at)
+              const completedSessions = data.today_sessions.filter((s) => !!s.ended_at)
+
+              const renderSessionRow = (s: SessionRow) => {
+                const durationMin = computeSessionDurationMinutes(s)
+                return (
+                  <div key={s.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white text-sm font-medium">
+                            {formatSessionType(s.session_type)}
+                            {s.misc_category ? ` · ${formatMiscCategory(s.misc_category)}` : ''}
+                          </span>
+                          {s.ended_at ? (
+                            <span className="text-xs font-semibold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                              {formatDuration(durationMin)}
                             </span>
-                            {s.ended_at ? (
-                              <span className="text-xs font-semibold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                                {formatDuration(durationMin)}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="text-xs text-gray-400 mt-0.5">
-                            {new Date(s.started_at).toLocaleTimeString()} – {s.ended_at ? new Date(s.ended_at).toLocaleTimeString() : 'now'}
-                          </div>
-                          {!s.ended_at ? (
-                            <div className="text-xs text-emerald-300 mt-1">
-                              Running: <LiveElapsedTimer startedAt={s.started_at} className="font-mono text-emerald-200" />
-                            </div>
                           ) : null}
-                          {s.note && <div className="text-xs text-gray-300 mt-1 truncate">{s.note}</div>}
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            onClick={() => {
-                              setSelectedSession(s)
-                              setEditNote(s.note || '')
-                              setEditReason('')
-                              setEditMode('edit')
-                            }}
-                            className="p-1.5 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedSession(s)
-                              setEditReason('')
-                              setEditMode('delete')
-                            }}
-                            className="p-1.5 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {new Date(s.started_at).toLocaleTimeString()} – {s.ended_at ? new Date(s.ended_at).toLocaleTimeString() : 'now'}
                         </div>
+                        {!s.ended_at ? (
+                          <div className="text-xs text-emerald-300 mt-1">
+                            Running: <LiveElapsedTimer startedAt={s.started_at} className="font-mono text-emerald-200" />
+                          </div>
+                        ) : null}
+                        {s.note && <div className="text-xs text-gray-300 mt-1 truncate">{s.note}</div>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            setSelectedSession(s)
+                            setEditNote(s.note || '')
+                            setEditReason('')
+                            setEditMode('edit')
+                          }}
+                          className="p-1.5 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedSession(s)
+                            setEditReason('')
+                            setEditMode('delete')
+                          }}
+                          className="p-1.5 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
-                  )
-                })}
-
-                {/* Summary footer */}
-                {sessionTotals && (
-                  <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-300">
-                    <span>Total RO: <span className="text-white font-semibold">{formatDuration(sessionTotals.repair_order || 0)}</span></span>
-                    <span>Total Misc: <span className="text-white font-semibold">{formatDuration(sessionTotals.misc || 0)}</span></span>
-                    <span>Break: <span className="text-white font-semibold">{formatDuration(m.break_minutes)}</span></span>
-                    <span>Idle: <span className="text-white font-semibold">{formatDuration(m.idle_minutes)}</span></span>
                   </div>
-                )}
-              </div>
-            )}
+                )
+              }
+
+              return (
+                <div className="space-y-2">
+                  {/* Active session — always visible */}
+                  {activeSession ? renderSessionRow(activeSession) : (
+                    <div className="text-sm text-gray-400">No active timer</div>
+                  )}
+
+                  {/* Summary footer — always visible */}
+                  {sessionTotals && (
+                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-300">
+                      <span>Total RO: <span className="text-white font-semibold">{formatDuration(sessionTotals.repair_order || 0)}</span></span>
+                      <span>Total Misc: <span className="text-white font-semibold">{formatDuration(sessionTotals.misc || 0)}</span></span>
+                      <span>Break: <span className="text-white font-semibold">{formatDuration(m.break_minutes)}</span></span>
+                      <span>Idle: <span className="text-white font-semibold">{formatDuration(m.idle_minutes)}</span></span>
+                    </div>
+                  )}
+
+                  {/* Completed sessions — collapsed by default */}
+                  {completedSessions.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => setSessionsExpanded(!sessionsExpanded)}
+                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                      >
+                        {sessionsExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        {sessionsExpanded ? 'Hide' : 'Show'} {completedSessions.length} completed session{completedSessions.length !== 1 ? 's' : ''}
+                      </button>
+                      {sessionsExpanded && (
+                        <div className="space-y-2">
+                          {completedSessions.map(renderSessionRow)}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         </>
       )}
