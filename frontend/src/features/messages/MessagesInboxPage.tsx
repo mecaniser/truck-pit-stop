@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
-import type { CursorPageMessageThreads, CursorPageSmsMessages, Customer, MessageThread, SmsMessage } from '@/types'
+import type {
+  CursorPageMessageThreads,
+  CursorPageSmsMessages,
+  Customer,
+  MessageThread,
+  MessagesUnreadSummary,
+  SmsMessage,
+} from '@/types'
 import { useTheme } from '@/contexts/ThemeContext'
 import { formatUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
@@ -16,6 +24,7 @@ interface PaginatedCustomersResponse {
 
 export default function MessagesInboxPage() {
   const { accentColors } = useTheme()
+  const queryClient = useQueryClient()
   const [threads, setThreads] = useState<MessageThread[]>([])
   const [threadsCursor, setThreadsCursor] = useState<string | null>(null)
   const [threadsHasMore, setThreadsHasMore] = useState(false)
@@ -66,6 +75,21 @@ export default function MessagesInboxPage() {
       setMessages((prev) => (appendOlder ? [...data.items, ...prev] : data.items))
       setMessagesCursor(data.next_cursor)
       setMessagesHasMore(data.has_more)
+      if (!appendOlder) {
+        let clearedUnread = 0
+        setThreads((prev) =>
+          prev.map((thread) => {
+            if (thread.id !== threadId) return thread
+            clearedUnread = thread.unread_count_staff || 0
+            return thread.unread_count_staff > 0 ? { ...thread, unread_count_staff: 0 } : thread
+          })
+        )
+        if (clearedUnread > 0) {
+          queryClient.setQueryData<MessagesUnreadSummary>(['messages-unread-summary'], (prev) => ({
+            unread_count_staff: Math.max(0, (prev?.unread_count_staff || 0) - clearedUnread),
+          }))
+        }
+      }
     } catch (error: any) {
       toast.error(error?.response?.data?.detail || 'Failed to load messages')
     } finally {

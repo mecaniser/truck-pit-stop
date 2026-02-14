@@ -198,6 +198,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'sms_thread_updated':
           queryClient.invalidateQueries({ queryKey: ['message-threads'] })
           queryClient.invalidateQueries({ queryKey: ['thread-messages'] })
+          queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
           break
 
         case 'mechanic_timer_update':

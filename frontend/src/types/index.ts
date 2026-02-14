@@ -139,6 +139,10 @@ export interface CursorPageSmsMessages {
   has_more: boolean
 }
 
+export interface MessagesUnreadSummary {
+  unread_count_staff: number
+}
+
 export interface Vehicle {
   id: string
   tenant_id: string

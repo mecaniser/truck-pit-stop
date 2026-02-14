@@ -79,3 +79,7 @@ class CursorPageSMSMessages(BaseModel):
     items: list[SMSMessageResponse]
     next_cursor: Optional[str] = None
     has_more: bool = False
+
+
+class UnreadSMSCountResponse(BaseModel):
+    unread_count_staff: int = 0

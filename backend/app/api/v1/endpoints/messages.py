@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +21,7 @@ from app.schemas.message import (
     SMSMessageResponse,
     SendSMSRequest,
     StartThreadRequest,
+    UnreadSMSCountResponse,
 )
 from app.services.messaging_service import enforce_tenant_send_rate_limit, send_sms_with_tracking
 
@@ -110,6 +111,23 @@ async def list_message_threads(
         next_cursor=next_cursor,
         has_more=has_more,
     )
+
+
+@router.get("/unread-summary", response_model=UnreadSMSCountResponse)
+async def get_unread_sms_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_staff_user()),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(
+        select(func.coalesce(func.sum(MessageThread.unread_count_staff), 0)).where(
+            MessageThread.tenant_id == current_user.tenant_id
+        )
+    )
+    unread_total = int(result.scalar() or 0)
+    return UnreadSMSCountResponse(unread_count_staff=unread_total)
 
 
 @router.get("/threads/{thread_id}/messages", response_model=CursorPageSMSMessages)

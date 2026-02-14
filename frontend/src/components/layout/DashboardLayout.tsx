@@ -1,7 +1,9 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
+import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
 import RepairOrdersPage from '@/features/repair-orders/RepairOrdersPage'
 import MyGaragePage from '@/features/garage/MyGaragePage'
@@ -15,11 +17,26 @@ import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollments
 import MessagesInboxPage from '@/features/messages/MessagesInboxPage'
 import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
 import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
+import type { MessagesUnreadSummary } from '@/types'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
   const { accentColors } = useTheme()
+  const shouldFetchMessagesUnread = Boolean(user && user.role !== 'super_admin')
+  const { data: unreadSummary } = useQuery({
+    queryKey: ['messages-unread-summary'],
+    queryFn: async () => {
+      const { data } = await api.get<MessagesUnreadSummary>('/messages/unread-summary')
+      return data
+    },
+    enabled: shouldFetchMessagesUnread,
+    staleTime: 0,
+    refetchInterval: 45000,
+    refetchIntervalInBackground: true,
+  })
+  const unreadCount = unreadSummary?.unread_count_staff || 0
+  const unreadBadge = unreadCount > 99 ? '99+' : `${unreadCount}`
   
   // Get the hex color for the current accent
   const accentHex = accentColors[500]
@@ -115,7 +132,14 @@ export default function DashboardLayout() {
                   }`}
                   style={!isSuperAdmin && isActive(link.to, link.exact) ? { color: accentHex, borderColor: accentHex } : undefined}
                 >
-                  {link.label}
+                  <span className="inline-flex items-center gap-2">
+                    {link.label}
+                    {link.to === '/dashboard/messages' && unreadCount > 0 && (
+                      <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
+                        {unreadBadge}
+                      </span>
+                    )}
+                  </span>
                 </Link>
               ))}
               <Link
@@ -239,7 +263,14 @@ export default function DashboardLayout() {
                 }`}
                 style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
               >
-                <Icon className="w-5 h-5" />
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {link.to === '/dashboard/messages' && unreadCount > 0 && (
+                    <span className="absolute -top-2 -right-2 inline-flex min-w-[1rem] h-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                      {unreadBadge}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[10px] font-medium">{link.mobileLabel}</span>
               </Link>
             )
