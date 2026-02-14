@@ -1,9 +1,10 @@
 from typing import List, Optional
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, cast, Date
+from sqlalchemy import select, and_, func, cast, Date, or_
 from sqlalchemy.orm import selectinload
 from uuid import UUID
 import json
@@ -20,7 +21,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
 from app.db.models.work_photo import WorkPhoto
-from app.db.models.mechanic_time import MechanicSessionType, MiscWorkCategory
+from app.db.models.mechanic_time import MechanicSessionType, MiscWorkCategory, MechanicTimeSession
 from app.schemas.auth import UserResponse
 from app.schemas.mechanic import MechanicCreate
 from app.schemas.mechanic_update import MechanicUpdate
@@ -277,6 +278,7 @@ class MechanicJobDetail(BaseModel):
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
     work_completed_at: Optional[datetime] = None
+    ro_today_tracked_minutes: int = 0
 
 
 class MechanicJobSummary(BaseModel):
@@ -292,6 +294,7 @@ class MechanicJobSummary(BaseModel):
     work_started_at: Optional[datetime] = None
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
+    ro_today_tracked_minutes: int = 0
 
 
 class MechanicHistoryItem(BaseModel):
@@ -398,6 +401,50 @@ class MechanicDaySummaryResponse(BaseModel):
 # Points constants
 POINTS_PER_PTO_DAY = 8000  # 8000 points = 1 day off (~$300)
 CASH_PER_POINT = 0.0375   # $0.0375 per point (8000 pts = $300)
+
+
+async def _compute_ro_today_tracked_minutes_map(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    mechanic_id: UUID,
+    order_ids: list[UUID],
+) -> dict[UUID, int]:
+    if not order_ids:
+        return {}
+    tz = ZoneInfo(tenant.timezone or "America/New_York")
+    local_today = datetime.now(tz).date()
+    day_start_local = datetime.combine(local_today, datetime.min.time(), tzinfo=tz)
+    day_end_local = day_start_local + timedelta(days=1)
+    day_start_utc = day_start_local.astimezone(timezone.utc)
+    day_end_utc = day_end_local.astimezone(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
+
+    result = await db.execute(
+        select(MechanicTimeSession).where(
+            and_(
+                MechanicTimeSession.tenant_id == tenant.id,
+                MechanicTimeSession.mechanic_id == mechanic_id,
+                MechanicTimeSession.repair_order_id.in_(order_ids),
+                MechanicTimeSession.deleted_at.is_(None),
+                MechanicTimeSession.started_at < day_end_utc,
+                or_(MechanicTimeSession.ended_at.is_(None), MechanicTimeSession.ended_at > day_start_utc),
+            )
+        )
+    )
+    sessions = result.scalars().all()
+
+    totals: dict[UUID, int] = {}
+    for session in sessions:
+        if not session.repair_order_id:
+            continue
+        start = max(session.started_at, day_start_utc)
+        end = min(session.ended_at or now_utc, day_end_utc)
+        if end <= start:
+            continue
+        minutes = int((end - start).total_seconds() // 60)
+        totals[session.repair_order_id] = totals.get(session.repair_order_id, 0) + minutes
+    return totals
 
 
 @router.get("/my-stats", response_model=MechanicStats)
@@ -893,6 +940,16 @@ async def get_my_jobs(
         .limit(limit)
     )
     orders = result.scalars().all()
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    ro_today_minutes = await _compute_ro_today_tracked_minutes_map(
+        db,
+        tenant=tenant,
+        mechanic_id=current_user.id,
+        order_ids=[order.id for order in orders],
+    )
     
     jobs = []
     for order in orders:
@@ -920,6 +977,7 @@ async def get_my_jobs(
             work_started_at=getattr(order, 'work_started_at', None),
             hold_reason=order.hold_reason,
             held_at=order.held_at,
+            ro_today_tracked_minutes=ro_today_minutes.get(order.id, 0),
         ))
     
     return paginated_or_list(jobs, total, skip, limit, paginated)
@@ -1038,6 +1096,16 @@ async def get_my_job_detail(
     
     if order.assigned_mechanic_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This job is not assigned to you")
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    ro_today_minutes = await _compute_ro_today_tracked_minutes_map(
+        db,
+        tenant=tenant,
+        mechanic_id=current_user.id,
+        order_ids=[order.id],
+    )
     
     vehicle = order.vehicle
     
@@ -1073,6 +1141,7 @@ async def get_my_job_detail(
         work_completed_at=getattr(order, 'work_completed_at', None),
         hold_reason=order.hold_reason,
         held_at=order.held_at,
+        ro_today_tracked_minutes=ro_today_minutes.get(order.id, 0),
     )
 
 

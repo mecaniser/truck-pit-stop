@@ -55,6 +55,7 @@ interface MechanicJob {
   work_started_at: string | null
   hold_reason: string | null
   held_at: string | null
+  ro_today_tracked_minutes: number
 }
 
 interface ServiceItem {
@@ -81,6 +82,7 @@ interface MechanicJobDetail {
   work_completed_at: string | null
   hold_reason: string | null
   held_at: string | null
+  ro_today_tracked_minutes: number
 }
 
 interface WorkHistoryItem {
@@ -222,7 +224,14 @@ function formatCoverageLabel(coverage: number | null, attendanceMinutes: number)
   return `${coverage.toFixed(1)}%`
 }
 
-function LiveTimer({ startedAt }: { startedAt: string }) {
+function formatMinutesShort(totalMinutes: number): string {
+  const safeMinutes = Math.max(0, Math.floor(totalMinutes || 0))
+  const h = Math.floor(safeMinutes / 60)
+  const m = safeMinutes % 60
+  return h > 0 ? `${h}h ${m}m` : `${m}m`
+}
+
+function LiveTimer({ startedAt, totalMinutesToday = 0 }: { startedAt: string; totalMinutesToday?: number }) {
   const calc = useCallback(() => {
     const secs = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
     if (secs < 0) return '0m 0s'
@@ -243,6 +252,9 @@ function LiveTimer({ startedAt }: { startedAt: string }) {
     <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-center">
       <p className="text-xs text-amber-400 uppercase tracking-wide mb-1">Time on job</p>
       <p className="text-2xl font-mono font-bold text-amber-400">{display}</p>
+      <p className="mt-1 text-xs text-amber-200">
+        Total time on this RO today: <span className="font-semibold">{formatMinutesShort(totalMinutesToday)}</span>
+      </p>
     </div>
   )
 }
@@ -957,7 +969,7 @@ export default function MechanicPortalPage() {
           {/* Live Timer */}
           {jobDetail.status === 'in_progress' && isTimedForDetail && timedStartForDetail && (
             <div className="px-4">
-              <LiveTimer startedAt={timedStartForDetail} />
+              <LiveTimer startedAt={timedStartForDetail} totalMinutesToday={jobDetail.ro_today_tracked_minutes} />
             </div>
           )}
           {jobDetail.status === 'in_progress' && !isTimedForDetail && (
@@ -2336,7 +2348,10 @@ export default function MechanicPortalPage() {
                         <>
                           {/* Live Timer */}
                           {isWorking && isTimedForThisJob && timedStartForJob && (
-                            <LiveTimer startedAt={timedStartForJob} />
+                            <LiveTimer
+                              startedAt={timedStartForJob}
+                              totalMinutesToday={detail?.ro_today_tracked_minutes ?? job.ro_today_tracked_minutes}
+                            />
                           )}
                           {isWorking && !isTimedForThisJob && (
                             <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
