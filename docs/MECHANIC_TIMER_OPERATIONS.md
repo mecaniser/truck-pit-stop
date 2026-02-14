@@ -71,6 +71,21 @@ SMS behavior:
 7. Midnight maintenance closes all active entities.
 8. Idle alerts appear in-app and via SMS.
 
+## V1.2 KPI Interpretation
+
+Use these together (do not treat as duplicates):
+
+- Core countdown remaining: attendance-driven runway against core target.
+- Tracked progress: RO + misc timer utilization progress.
+- Work coverage: `% of attendance minutes that were tracked`.
+- Tracked vs attendance gap: untracked attendance time requiring coaching/context.
+
+Recommendation semantics on manager boards:
+
+- `stop_misc_pick_ro`: misc timer is active and assigned-ready RO exists.
+- `start_assigned_ro`: no active timer and assigned/in-progress untimed RO exists.
+- `continue_ro`: active RO timer already in progress.
+
 ## Rollback Notes
 
 If rollback required:

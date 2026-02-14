@@ -76,6 +76,7 @@ Features identified from competitor analysis (Fullbay, Easy Truck Shop), with im
 **Implemented in v1 (Feb 2026):**
 - New persistence layer for `message_threads` and `sms_messages` with Twilio SID uniqueness for webhook idempotency.
 - Per-tenant SMS number support (`tenant.sms_phone_number`, `tenant.sms_phone_sid`, `tenant.sms_enabled`) with Super Admin provisioning endpoint.
+- Super Admin manual attach flow for existing Twilio numbers by SID (with optional webhook auto-configuration and replace safeguards).
 - Public Twilio webhook endpoints:
   `POST /api/v1/webhooks/twilio/sms/inbound`
   `POST /api/v1/webhooks/twilio/sms/status`
@@ -149,6 +150,7 @@ These features were identified from competitor analysis and have been built:
 - Per-job time tracking (`work_started_at`, `work_completed_at`)
 - Live timer in mechanic portal
 - Mechanic Timer V1.1: attendance clock in/out, break mode, flex tracking, idle alerts, manager controls
+- Mechanic Timer V1.2: focus-mode mechanic UX, attendance-based core countdown, manager next-action recommendations
 - Auto-approval thresholds for customers
 - SMS quote notifications with approval links
 - Quote decline workflow with shop notifications
@@ -156,6 +158,7 @@ These features were identified from competitor analysis and have been built:
 - Customer portal with quote approval/decline
 - Walk-in customer flow with account linking
 - Two-way SMS shared inbox (Twilio-backed) with compliance controls and delivery tracking
+- Super Admin can provision new SMS numbers or manually attach existing Twilio numbers to a garage
 
 ### Payment Options (Feb 2026)
 - **Cash payments** - Staff can mark invoices as paid with cash

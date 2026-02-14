@@ -186,6 +186,8 @@ This leverages React Query's existing caching and loading states.
 | `mechanic_break_update` | Break lifecycle updates | Break started/ended (manual/manager/auto) |
 | `mechanic_idle_alert` | Idle threshold reached | Mechanic idle >= threshold during core hours |
 
+> UI Note (V1.2): the mechanic focus-mode countdown/suggestion surfaces are driven by these existing attendance/timer/break events plus query invalidation. No additional websocket event type is required.
+
 ### Mechanic Timer Message Examples
 
 ```json

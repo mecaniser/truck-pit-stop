@@ -171,6 +171,29 @@ Timer start responses include `auto_clocked_in` where applicable.
 - Flex used: `late + early + break + idle`.
 - Break does not count as tracked utilization.
 
+## V1.2 Focus UX Fields
+
+`GET /mechanics/me/day-summary` and manager board payloads include additional computed fields for focus-mode UI:
+
+- `core_countdown_elapsed_minutes = min(attendance_minutes, core_target_minutes)`
+- `core_countdown_remaining_minutes = max(core_target_minutes - attendance_minutes, 0)`
+- `tracked_vs_attendance_gap_minutes = max(attendance_minutes - tracked_minutes, 0)`
+- `work_coverage_percent = (tracked_minutes / attendance_minutes) * 100` (or `null` when attendance is zero)
+
+Manager board payloads also include recommendation metadata:
+
+- `assigned_ready_orders_count`
+- `untimed_in_progress_orders_count`
+- `recommended_order_id`
+- `recommended_order_number`
+- `suggested_next_action` (`clock_in|end_break|continue_ro|stop_misc_pick_ro|start_assigned_ro|start_misc`)
+
+Mechanic focus-mode behavior:
+
+- Pre-clock-in: single morning `Clock In` card.
+- Post-clock-in: prominent core countdown + quick picks + one primary timer toggle.
+- Advanced metrics move to collapsed details.
+
 ## Idle Alerts
 
 Idle alert eligibility:
