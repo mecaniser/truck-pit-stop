@@ -48,6 +48,7 @@ class Tenant(BaseModel):
     default_core_hours_minutes = Column(Integer, default=480, nullable=False)  # 8 hours
     default_shift_start_local = Column(String(5), default="08:00", nullable=False)
     default_shift_end_local = Column(String(5), default="18:00", nullable=False)
+    minimum_clock_in_remaining_minutes = Column(Integer, default=60, nullable=False)
     
     # Enrollment fields
     enrollment_status = Column(String(20), default="pending", nullable=False)  # pending, approved, rejected

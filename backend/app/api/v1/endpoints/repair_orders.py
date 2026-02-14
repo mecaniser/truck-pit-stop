@@ -29,7 +29,7 @@ from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
-from app.db.models.mechanic_time import MechanicSessionType
+from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
 from app.schemas.repair_order import (
     RepairOrderCreate,
     RepairOrderUpdate,
@@ -491,6 +491,17 @@ async def update_repair_order(
     update_data = order_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(order, field, value)
+
+    # Auto-populate estimated_labor_minutes from selected_services in internal_notes
+    if "internal_notes" in update_data and order.internal_notes:
+        try:
+            import json
+            parsed = json.loads(order.internal_notes)
+            selected_services = parsed.get("selected_services", [])
+            total_est = sum(svc.get("duration_minutes", 0) for svc in selected_services)
+            order.estimated_labor_minutes = total_est if total_est > 0 else None
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
     
     await db.commit()
     await db.refresh(order)
@@ -572,6 +583,7 @@ async def assign_mechanic(
     
     # Assign mechanic and update status
     order.assigned_mechanic_id = body.mechanic_id
+    order.assigned_at = datetime.now(timezone.utc)
     # Set status to ASSIGNED if still APPROVED (handles edge cases where previous assignment didn't update status)
     if order.status == RepairOrderStatus.APPROVED:
         order.status = RepairOrderStatus.ASSIGNED
@@ -694,6 +706,7 @@ async def acknowledge_job(
         )
     
     order.status = RepairOrderStatus.ACKNOWLEDGED
+    order.acknowledged_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(order)
     
@@ -1085,6 +1098,26 @@ async def complete_work(
                 actor_user=current_user,
                 stop_reason="auto_complete_work",
             )
+    except Exception:
+        pass
+
+    # Stamp actual tracked and hold/idle minutes on the RO
+    try:
+        ro_sessions = await db.execute(
+            select(MechanicTimeSession).where(
+                MechanicTimeSession.repair_order_id == order.id,
+                MechanicTimeSession.deleted_at.is_(None),
+            )
+        )
+        total_tracked = 0
+        for s in ro_sessions.scalars():
+            end = s.ended_at or order.work_completed_at
+            total_tracked += int((end - s.started_at).total_seconds() / 60)
+        order.actual_tracked_minutes = total_tracked
+
+        if order.work_started_at and order.work_completed_at:
+            wall_minutes = int((order.work_completed_at - order.work_started_at).total_seconds() / 60)
+            order.total_hold_minutes = max(0, wall_minutes - total_tracked)
     except Exception:
         pass
     

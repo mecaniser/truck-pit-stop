@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -59,6 +59,15 @@ class RepairOrder(BaseModel):
     # Hold / pause sub-state (while status remains IN_PROGRESS)
     hold_reason = Column(String(100), nullable=True)
     held_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Time tracking: estimated vs actual
+    estimated_labor_minutes = Column(Integer, nullable=True)
+    actual_tracked_minutes = Column(Integer, nullable=True)
+    total_hold_minutes = Column(Integer, nullable=True)
+
+    # Status transition timestamps
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
+    acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     
     # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)

@@ -1988,6 +1988,88 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
+                {/* Time Metrics & Transition Timeline (V1.4) — only for completed+ ROs */}
+                {(() => {
+                  const o = orderDetail ?? selectedOrder
+                  const showStatuses = ['pending_review', 'completed', 'invoiced', 'paid']
+                  if (!showStatuses.includes(o.status)) return null
+                  const fmtMin = (m: number | null | undefined) => {
+                    if (m == null) return '—'
+                    const h = Math.floor(m / 60)
+                    const r = m % 60
+                    return h > 0 ? `${h}h ${r}m` : `${r}m`
+                  }
+                  const hasTimeData = o.estimated_labor_minutes != null || o.actual_tracked_minutes != null
+                  const hasTimeline = o.assigned_at || o.acknowledged_at || o.work_started_at || o.work_completed_at
+
+                  if (!hasTimeData && !hasTimeline) return null
+
+                  // Compute deltas between steps
+                  const diffMin = (a?: string | null, b?: string | null) => {
+                    if (!a || !b) return null
+                    const ms = new Date(b).getTime() - new Date(a).getTime()
+                    return ms > 0 ? Math.round(ms / 60000) : null
+                  }
+
+                  return (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Time Tracking</h3>
+                      <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                        {hasTimeData && (
+                          <div className="flex flex-wrap gap-4 text-sm">
+                            <div>
+                              <span className="text-gray-500">Est:</span>{' '}
+                              <span className="font-medium text-gray-800">{fmtMin(o.estimated_labor_minutes)}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Actual:</span>{' '}
+                              <span className="font-medium text-gray-800">{fmtMin(o.actual_tracked_minutes)}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Non-work:</span>{' '}
+                              <span className="font-medium text-gray-800">{fmtMin(o.total_hold_minutes)}</span>
+                            </div>
+                          </div>
+                        )}
+                        {hasTimeline && (
+                          <div className="flex items-center gap-1 flex-wrap text-xs text-gray-600">
+                            {o.assigned_at && (
+                              <>
+                                <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded font-medium">Assigned</span>
+                                {(() => {
+                                  const d = diffMin(o.assigned_at, o.acknowledged_at)
+                                  return d != null ? <span className="text-gray-400">{fmtMin(d)} →</span> : <span className="text-gray-300">→</span>
+                                })()}
+                              </>
+                            )}
+                            {o.acknowledged_at && (
+                              <>
+                                <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded font-medium">Acknowledged</span>
+                                {(() => {
+                                  const d = diffMin(o.acknowledged_at, o.work_started_at)
+                                  return d != null ? <span className="text-gray-400">{fmtMin(d)} →</span> : <span className="text-gray-300">→</span>
+                                })()}
+                              </>
+                            )}
+                            {o.work_started_at && (
+                              <>
+                                <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded font-medium">Started</span>
+                                {(() => {
+                                  const d = diffMin(o.work_started_at, o.work_completed_at)
+                                  return d != null ? <span className="text-gray-400">{fmtMin(d)} →</span> : <span className="text-gray-300">→</span>
+                                })()}
+                              </>
+                            )}
+                            {o.work_completed_at && (
+                              <span className="px-2 py-1 bg-green-100 text-green-700 rounded font-medium">Completed</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 {(() => {
                   const detailServices = parseServiceNotes(selectedOrder?.internal_notes) || []
                   const normalizedDescription = (selectedOrder.description || '').trim().toLowerCase().replace(/\s+/g, ' ')

@@ -228,6 +228,14 @@ export interface RepairOrder {
   pending_zelle_confirmation?: boolean
   hold_reason?: string | null
   held_at?: string | null
+  // Time tracking fields (V1.4)
+  estimated_labor_minutes?: number | null
+  actual_tracked_minutes?: number | null
+  total_hold_minutes?: number | null
+  assigned_at?: string | null
+  acknowledged_at?: string | null
+  work_started_at?: string | null
+  work_completed_at?: string | null
 }
 
 export interface RepairOrderDetail extends RepairOrder {

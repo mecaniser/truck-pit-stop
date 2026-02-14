@@ -98,6 +98,11 @@ class RepairOrderResponse(RepairOrderBase):
     work_completed_at: Optional[datetime] = None
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
+    estimated_labor_minutes: Optional[int] = None
+    actual_tracked_minutes: Optional[int] = None
+    total_hold_minutes: Optional[int] = None
+    assigned_at: Optional[datetime] = None
+    acknowledged_at: Optional[datetime] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
     pending_zelle_confirmation: bool = False
 

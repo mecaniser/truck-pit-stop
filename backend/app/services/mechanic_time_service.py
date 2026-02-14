@@ -393,9 +393,60 @@ async def clock_in(
     now_utc = started_at or datetime.now(timezone.utc)
     tz_name = tenant.timezone or "America/New_York"
     tz = _safe_zoneinfo(tz_name)
-    local_date = now_utc.astimezone(tz).date()
-    shift_start_local, shift_end_local = _effective_shift_window(mechanic, tenant)
+    now_local = now_utc.astimezone(tz)
+    local_date = now_local.date()
+    shift_start_raw, shift_end_raw = _effective_shift_window(mechanic, tenant)
 
+    # --- Reopen today's completed session instead of creating a new one ---
+    today_completed_result = await db.execute(
+        select(MechanicAttendanceSession).where(
+            and_(
+                MechanicAttendanceSession.tenant_id == tenant.id,
+                MechanicAttendanceSession.mechanic_id == mechanic.id,
+                MechanicAttendanceSession.local_date == local_date,
+                MechanicAttendanceSession.ended_at.isnot(None),
+                MechanicAttendanceSession.deleted_at.is_(None),
+            )
+        ).order_by(MechanicAttendanceSession.started_at.desc()).limit(1)
+    )
+    today_completed = today_completed_result.scalars().first()
+    if today_completed:
+        before = _attendance_snapshot(today_completed)
+        today_completed.ended_at = None
+        today_completed.ended_by_user_id = None
+        today_completed.end_source = None
+        await _create_attendance_audit(
+            db,
+            tenant_id=tenant.id,
+            attendance_session_id=today_completed.id,
+            mechanic_id=mechanic.id,
+            actor_user_id=actor_user.id,
+            actor_role=actor_user.role.value,
+            action="clock_in_reopen",
+            manager_reason=manager_reason,
+            before_snapshot=before,
+            after_snapshot=_attendance_snapshot(today_completed),
+        )
+        return today_completed
+
+    # Compute remaining shift time for dynamic core target & cutoff
+    shift_end_local_dt = datetime.combine(local_date, _parse_local_time(shift_end_raw), tzinfo=tz)
+    remaining_minutes = max(0, int((shift_end_local_dt - now_local).total_seconds() / 60))
+
+    # Clock-in cutoff: reject if too little shift remains (managers and auto-clock-in bypass)
+    is_manager = actor_user.role.value in (UserRole.GARAGE_OWNER.value, UserRole.GARAGE_ADMIN.value)
+    is_auto = start_source not in ("manual_clock_in", "manager_clock_in")
+    if not is_manager and not is_auto:
+        cutoff = tenant.minimum_clock_in_remaining_minutes or 60
+        if remaining_minutes < cutoff:
+            raise ValueError(
+                f"Cannot clock in with less than {cutoff} minutes remaining in shift. "
+                f"Shift ends at {shift_end_raw}."
+            )
+
+    # Dynamic core target: min(full_core, remaining_shift)
+    full_core = _effective_core_target_minutes(mechanic, tenant)
+    adjusted_core = min(full_core, remaining_minutes)
     session = MechanicAttendanceSession(
         tenant_id=tenant.id,
         mechanic_id=mechanic.id,
@@ -405,9 +456,9 @@ async def clock_in(
         start_source=start_source,
         note=note,
         snapshot_timezone=tz_name,
-        snapshot_core_target_minutes=_effective_core_target_minutes(mechanic, tenant),
-        snapshot_shift_start_local=shift_start_local,
-        snapshot_shift_end_local=shift_end_local,
+        snapshot_core_target_minutes=adjusted_core,
+        snapshot_shift_start_local=shift_start_raw,
+        snapshot_shift_end_local=shift_end_raw,
     )
     db.add(session)
     await db.flush()
@@ -741,6 +792,19 @@ async def start_session(
         mechanic_id=mechanic.id,
     )
     if current:
+        # Reject starting the exact same job that's already running
+        same_misc = (
+            session_type == MechanicSessionType.MISC.value
+            and current.session_type == MechanicSessionType.MISC.value
+            and current.misc_category == misc_category
+        )
+        same_ro = (
+            session_type == MechanicSessionType.REPAIR_ORDER.value
+            and current.session_type == MechanicSessionType.REPAIR_ORDER.value
+            and str(current.repair_order_id) == str(repair_order_id)
+        )
+        if same_misc or same_ro:
+            raise ValueError("This job is already being timed")
         await stop_active_session(
             db,
             tenant_id=tenant.id,
@@ -1138,7 +1202,13 @@ async def compute_day_summary(
         covered_seconds = _sum_overlap_seconds(interval, merged_cover)
         idle_seconds += max(interval_seconds - covered_seconds, 0)
 
-    core_target_minutes = _effective_core_target_minutes(mechanic, tenant)
+    # Use snapshot core target from the earliest attendance session FOR TODAY (reflects dynamic late clock-in adjustment)
+    todays_attendance = [a for a in attendance_sessions if a.local_date == window.local_date]
+    earliest_attendance = min(todays_attendance, key=lambda a: a.started_at) if todays_attendance else None
+    if earliest_attendance and earliest_attendance.snapshot_core_target_minutes:
+        core_target_minutes = earliest_attendance.snapshot_core_target_minutes
+    else:
+        core_target_minutes = _effective_core_target_minutes(mechanic, tenant)
     core_target_seconds = max(core_target_minutes, 1) * 60
     utilization = min((tracked_seconds / core_target_seconds) * 100.0, 100.0)
     overtime_seconds = max(tracked_seconds - core_target_seconds, 0)
@@ -1295,6 +1365,9 @@ async def compute_next_action_recommendation(
     elif active_session_type == MechanicSessionType.MISC.value and assigned_ready_orders:
         suggested_next_action = "stop_misc_pick_ro"
         recommended_order = assigned_ready_orders[0]
+    elif active_session_type == MechanicSessionType.MISC.value:
+        # Misc timer running, no ROs to pick up — nothing to suggest
+        suggested_next_action = "start_misc"  # keep label but frontend hides sticky when misc active
     elif not active_session and untimed_in_progress_orders:
         suggested_next_action = "start_assigned_ro"
         recommended_order = untimed_in_progress_orders[0]
