@@ -7,7 +7,7 @@ const ACTION_LABELS: Record<SuggestedNextAction, string> = {
   stop_misc_pick_ro: 'Stop misc and pick up assigned repair order',
   start_assigned_ro: 'Start or resume assigned repair order',
   start_misc: 'Start a misc quick pick task',
-  clock_out: 'Core target complete — clock out when ready',
+  clock_out: 'Great day! You\'ve hit your goal',
 }
 
 const ACTION_BUTTON_LABELS: Record<SuggestedNextAction, string> = {

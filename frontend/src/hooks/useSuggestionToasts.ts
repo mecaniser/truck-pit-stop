@@ -49,7 +49,7 @@ function buildMechanicSuggestionToast(suggestion: MechanicSuggestion): string {
     case 'start_misc':
       return 'No assigned repair order is ready. Start a quick-pick timer.'
     case 'clock_out':
-      return 'Core target complete. Clock out when ready.'
+      return 'Great day! You\'ve hit your goal.'
     default:
       return formatSuggestedNextAction(suggestion.action)
   }

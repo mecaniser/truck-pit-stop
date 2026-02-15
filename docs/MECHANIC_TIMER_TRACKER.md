@@ -81,6 +81,18 @@ Execution tracker for attendance, break mode, timer orchestration, hold/resume, 
 | MT-52 | WebSocket broadcast for auto-held RO state change | TBC | done | MT-51 | 2026-02-14 | 2026-02-14 |
 | MT-53 | Frontend: `switched_to_other_ro` hold reason label in all hold reason displays | TBC | done | MT-51 | 2026-02-14 | 2026-02-14 |
 
+## V1.6 — Timer Language Reframe (Progress vs Surveillance)
+
+| Task ID | Scope | Owner | Status | Dependency | Started | Finished |
+|---|---|---|---|---|---|---|
+| MT-54 | Expanded timer panel: "Core Remaining" → "Today's Progress", countdown → "Xh logged" | TBC | done | — | 2026-02-15 | 2026-02-15 |
+| MT-55 | Progress bar: fill left-to-right (progress made) instead of drain right-to-left | TBC | done | MT-54 | 2026-02-15 | 2026-02-15 |
+| MT-56 | Goal complete message: "Great day! You've hit your Xh goal" (emerald color) | TBC | done | MT-54 | 2026-02-15 | 2026-02-15 |
+| MT-57 | Collapsed timer label: "Core X:XX:XX" → "Xh logged" | TBC | done | MT-54 | 2026-02-15 | 2026-02-15 |
+| MT-58 | Details section: removed Idle, Gap, Utilization, Coverage; renamed to "Time breakdown" | TBC | done | MT-54 | 2026-02-15 | 2026-02-15 |
+| MT-59 | Suggestion messages: "Core target complete. Clock out when ready." → "Great day! You've hit your goal." | TBC | done | MT-54 | 2026-02-15 | 2026-02-15 |
+| MT-60 | Document alternative language approaches (Earnings, Minimal, Gamification) in code comments | TBC | done | — | 2026-02-15 | 2026-02-15 |
+
 ## Notes
 - Status vocabulary: `todo`, `in_progress`, `blocked`, `done`.
 - Backfill policy remains disabled by design.
@@ -91,3 +103,4 @@ Execution tracker for attendance, break mode, timer orchestration, hold/resume, 
 - Single attendance session per day enforced: re-clock-in reopens the most recent ended session rather than creating a new row.
 - Mechanic portal is mobile-only: all touch targets ≥ 44px, `touch-manipulation` enabled, `safe-area-inset-bottom` respected, `active:` states used instead of `hover:`.
 - Auto-hold on RO switch: when mechanic switches from one in-progress RO to another, the previous RO is automatically placed on hold with reason `switched_to_other_ro`.
+- Timer language uses "progress toward goal" framing instead of surveillance terms (Core Remaining, Coverage %, Idle, Gap). Alternative approaches (Earnings, Minimal, Gamification) documented in code comments for future reference.

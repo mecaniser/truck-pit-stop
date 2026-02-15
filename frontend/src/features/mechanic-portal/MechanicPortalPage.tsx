@@ -227,11 +227,6 @@ function formatSecondsAsClock(totalSeconds: number): string {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 }
 
-function formatCoverageLabel(coverage: number | null, attendanceMinutes: number): string {
-  if (coverage == null) return 'n/a'
-  if (attendanceMinutes < 15) return 'warming up'
-  return `${coverage.toFixed(1)}%`
-}
 
 function formatMinutesShort(totalMinutes: number): string {
   const safeMinutes = Math.max(0, Math.floor(totalMinutes || 0))
@@ -709,7 +704,7 @@ export default function MechanicPortalPage() {
   const timerToggleBusy = startMiscTimerMutation.isPending || stopTimerMutation.isPending
   const attendanceToggleBusy = clockInMutation.isPending || clockOutMutation.isPending
   const breakToggleBusy = startBreakMutation.isPending || endBreakMutation.isPending
-  const { countdownNowMs, liveCountdownSeconds } = useCoreCountdown(daySummary)
+  const { countdownNowMs } = useCoreCountdown(daySummary)
   // Keep this frontend recommendation layer aligned with backend `compute_next_action_recommendation`.
   const {
     mechanicSuggestion,
@@ -733,7 +728,7 @@ export default function MechanicPortalPage() {
     ? `Break ${formatSecondsAsClock(breakElapsedSeconds)}`
     : hasActiveDayTimer
       ? `Active ${formatSecondsAsClock(activeSessionElapsedSeconds)}`
-      : `Core ${formatSecondsAsClock(liveCountdownSeconds)}`
+      : `${((daySummary?.tracked_minutes ?? 0) / 60).toFixed(1)}h logged`
   const showPanelBreakControl = isClockedIn && !isOnBreak
 
   const handleTimerToggle = () => {
@@ -2084,21 +2079,48 @@ export default function MechanicPortalPage() {
               </>
             ) : (
               <>
-                {/* Core Remaining — inline bar */}
+                {/*
+                 * Timer Language Alternatives (documented for future reference):
+                 *
+                 * Option A (current): Progress Toward Goal
+                 *   - "Today's Progress", "Xh logged", "Xh toward your Yh goal"
+                 *   - Pro: Supportive, feels like progress tracking not surveillance
+                 *
+                 * Option B: Earnings/Value Focus
+                 *   - "You've logged $480 in billable work today"
+                 *   - Requires: labor rates per service, calculation logic
+                 *   - Pro: Directly ties work to value
+                 *   - Con: May feel transactional; needs rate data
+                 *
+                 * Option C: Minimal Display
+                 *   - Default: Just show active timer (no metrics)
+                 *   - Expand to see day summary
+                 *   - Pro: Least intrusive
+                 *   - Con: Loses at-a-glance progress visibility
+                 *
+                 * Option D: Gamification
+                 *   - "5-day streak! Keep it going"
+                 *   - Daily achievements: "First job done before 9am"
+                 *   - Pro: Engaging, positive reinforcement
+                 *   - Con: May feel patronizing; already have rewards system
+                 */}
+                {/* Today's Progress — positive framing */}
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-gray-400">Core Remaining</span>
-                    <span className="font-mono text-sm font-semibold text-cyan-200">{formatSecondsAsClock(liveCountdownSeconds)}</span>
+                    <span className="text-gray-400">Today's Progress</span>
+                    <span className="font-mono text-sm font-semibold text-cyan-200">{(daySummary.tracked_minutes / 60).toFixed(1)}h logged</span>
                   </div>
                   <div className="h-2.5 bg-gray-700 rounded-full overflow-hidden">
                     <div
                       className="h-2.5 bg-cyan-500 rounded-full transition-all"
-                      style={{ width: `${daySummary.core_target_minutes > 0 ? Math.min(((daySummary.core_target_minutes - (daySummary.core_countdown_remaining_minutes ?? 0)) / daySummary.core_target_minutes) * 100, 100) : 0}%` }}
+                      style={{ width: `${daySummary.core_target_minutes > 0 ? Math.min((daySummary.tracked_minutes / daySummary.core_target_minutes) * 100, 100) : 0}%` }}
                     />
                   </div>
-                  <div className="flex items-center justify-between text-[11px] text-gray-500 mt-1">
-                    <span>Tracked {(daySummary.tracked_minutes / 60).toFixed(1)}h / {(daySummary.core_target_minutes / 60).toFixed(1)}h</span>
-                    <span>Coverage {formatCoverageLabel(daySummary.work_coverage_percent, daySummary.attendance_minutes)}</span>
+                  <div className="text-[11px] text-gray-500 mt-1">
+                    {daySummary.tracked_minutes >= daySummary.core_target_minutes
+                      ? <span className="text-emerald-400">Great day! You've hit your {(daySummary.core_target_minutes / 60).toFixed(1)}h goal</span>
+                      : <span>{(daySummary.tracked_minutes / 60).toFixed(1)}h toward your {(daySummary.core_target_minutes / 60).toFixed(1)}h goal</span>
+                    }
                   </div>
                 </div>
 
@@ -2153,23 +2175,14 @@ export default function MechanicPortalPage() {
                   </button>
                 ) : null}
 
-                {/* Collapsible details */}
+                {/* Collapsible breakdown */}
                 <details className="rounded-lg border border-white/10 bg-gray-900/40 p-2 text-xs">
-                  <summary className="cursor-pointer text-gray-300 font-medium">Details</summary>
+                  <summary className="cursor-pointer text-gray-300 font-medium">Time breakdown</summary>
                   <div className="pt-2 space-y-2">
-                    <div className="grid grid-cols-2 gap-2 text-gray-300">
-                      <div>RO: <span className="text-white">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
+                    <div className="grid grid-cols-3 gap-2 text-gray-300">
+                      <div>Jobs: <span className="text-white">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
                       <div>Misc: <span className="text-white">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
                       <div>Break: <span className="text-white">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
-                      <div>Idle: <span className="text-white">{(daySummary.idle_minutes / 60).toFixed(1)}h</span></div>
-                      <div>Gap: <span className="text-white">{(daySummary.tracked_vs_attendance_gap_minutes / 60).toFixed(1)}h</span></div>
-                    </div>
-                    <div className="h-2 rounded-full bg-gray-700 overflow-hidden">
-                      <div className="h-2 rounded-full bg-amber-500" style={{ width: `${Math.min(daySummary.utilization_percent, 100)}%` }} />
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] text-gray-400">
-                      <span>Utilization: {daySummary.utilization_percent.toFixed(1)}%</span>
-                      <span>Efficiency: {daySummary.efficiency_percent == null ? 'n/a' : `${daySummary.efficiency_percent.toFixed(1)}%`}</span>
                     </div>
                     <input
                       value={miscNote}
