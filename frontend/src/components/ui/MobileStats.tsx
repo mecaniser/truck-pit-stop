@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 
 // ============ Segmented Control ============
 // Touch-friendly filter buttons for mutually exclusive options
+// Updated to match hybrid industrial-organic design system
 
 interface SegmentOption {
   id: string
@@ -10,7 +11,7 @@ interface SegmentOption {
   shortLabel?: string // For mobile
   count?: number
   icon?: ReactNode
-  color?: 'default' | 'gold' | 'green' | 'red' | 'blue'
+  color?: 'default' | 'accent' | 'green' | 'red' | 'blue'
 }
 
 interface SegmentedControlProps {
@@ -22,33 +23,33 @@ interface SegmentedControlProps {
 
 const colorClasses = {
   default: {
-    active: 'bg-white/20 text-white border-white/40',
-    inactive: 'text-gray-400 border-transparent',
+    active: 'bg-zinc-800/80 text-zinc-100 border-zinc-600/50',
+    inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
   },
-  gold: {
-    active: 'bg-gold-500/20 text-gold-400 border-gold-500',
-    inactive: 'text-gray-400 border-transparent',
+  accent: {
+    active: 'bg-[var(--accent-500)]/20 text-[var(--accent-400)] border-[var(--accent-500)]/50',
+    inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
   },
   green: {
-    active: 'bg-green-500/20 text-green-400 border-green-500',
-    inactive: 'text-gray-400 border-transparent',
+    active: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50',
+    inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
   },
   red: {
-    active: 'bg-red-500/20 text-red-400 border-red-500',
-    inactive: 'text-gray-400 border-transparent',
+    active: 'bg-red-500/20 text-red-400 border-red-500/50',
+    inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
   },
   blue: {
-    active: 'bg-blue-500/20 text-blue-400 border-blue-500',
-    inactive: 'text-gray-400 border-transparent',
+    active: 'bg-blue-500/20 text-blue-400 border-blue-500/50',
+    inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
   },
 }
 
 export function SegmentedControl({ options, value, onChange, size = 'md' }: SegmentedControlProps) {
-  const padding = size === 'sm' ? 'px-3 py-2' : 'px-4 py-3'
+  const padding = size === 'sm' ? 'px-3 py-2' : 'px-4 py-2.5'
   const text = size === 'sm' ? 'text-xs' : 'text-sm'
   
   return (
-    <div className="flex bg-black/40 border border-white/10 rounded-xl p-1 overflow-x-auto scrollbar-hide">
+    <div className="flex bg-zinc-900/80 border border-zinc-700/50 rounded-2xl p-1.5 overflow-x-auto scrollbar-hide backdrop-blur-sm">
       {options.map((option) => {
         const isActive = value === option.id
         const color = option.color || 'default'
@@ -58,13 +59,13 @@ export function SegmentedControl({ options, value, onChange, size = 'md' }: Segm
           <button
             key={option.id}
             onClick={() => onChange(option.id)}
-            className={`flex items-center justify-center gap-2 ${padding} ${text} font-medium rounded-lg border transition-all whitespace-nowrap flex-shrink-0 min-w-[80px] ${classes}`}
+            className={`flex items-center justify-center gap-2 ${padding} ${text} font-medium rounded-xl border transition-all whitespace-nowrap flex-shrink-0 min-w-[80px] ${classes}`}
           >
             {option.icon && <span className="flex-shrink-0">{option.icon}</span>}
             <span className="hidden sm:inline">{option.label}</span>
             <span className="sm:hidden">{option.shortLabel || option.label}</span>
             {option.count !== undefined && (
-              <span className={`font-bold ${isActive ? '' : 'text-white'}`}>{option.count}</span>
+              <span className={`font-semibold ${isActive ? '' : 'text-zinc-100'}`}>{option.count}</span>
             )}
           </button>
         )
@@ -81,7 +82,7 @@ interface StatItem {
   label: string
   value: string | number
   icon?: ReactNode
-  color?: 'default' | 'gold' | 'green' | 'red' | 'blue'
+  color?: 'default' | 'accent' | 'green' | 'red' | 'blue'
   sublabel?: string
 }
 
@@ -91,17 +92,17 @@ interface StatScrollRowProps {
 }
 
 const statColorClasses = {
-  default: 'border-white/10',
-  gold: 'border-gold-500/30 bg-gold-500/5',
-  green: 'border-green-500/30 bg-green-500/5',
-  red: 'border-red-500/30 bg-red-500/5',
-  blue: 'border-blue-500/30 bg-blue-500/5',
+  default: 'border-zinc-700/50 bg-zinc-800/40',
+  accent: 'border-[var(--accent-500)]/30 bg-[var(--accent-500)]/10',
+  green: 'border-emerald-500/30 bg-emerald-500/10',
+  red: 'border-red-500/30 bg-red-500/10',
+  blue: 'border-blue-500/30 bg-blue-500/10',
 }
 
 const statValueColors = {
-  default: 'text-white',
-  gold: 'text-gold-400',
-  green: 'text-green-400',
+  default: 'text-zinc-100',
+  accent: 'text-[var(--accent-400)]',
+  green: 'text-emerald-400',
   red: 'text-red-400',
   blue: 'text-blue-400',
 }
@@ -121,17 +122,17 @@ export function StatScrollRow({ stats, size = 'md' }: StatScrollRowProps) {
         return (
           <div
             key={i}
-            className={`flex-shrink-0 snap-start ${padding} rounded-xl border bg-white/5 ${statColorClasses[color]} min-w-[120px] sm:min-w-0 sm:flex-1`}
+            className={`flex-shrink-0 snap-start ${padding} rounded-2xl border ${statColorClasses[color]} min-w-[120px] sm:min-w-0 sm:flex-1`}
           >
             <div className="flex items-center gap-2 mb-1">
-              {stat.icon && <span className="text-gray-400">{stat.icon}</span>}
-              <span className="text-xs text-gray-400 truncate">{stat.label}</span>
+              {stat.icon && <span className="text-zinc-400">{stat.icon}</span>}
+              <span className="text-xs text-zinc-400 truncate">{stat.label}</span>
             </div>
             <div className={`text-lg sm:text-xl font-bold ${statValueColors[color]}`}>
               {stat.value}
             </div>
             {stat.sublabel && (
-              <div className="text-xs text-gray-500 mt-0.5">{stat.sublabel}</div>
+              <div className="text-xs text-zinc-500 mt-0.5">{stat.sublabel}</div>
             )}
           </div>
         )
@@ -155,28 +156,28 @@ export function CollapsibleStats({ title, summary, children, defaultExpanded = f
   const [expanded, setExpanded] = useState(defaultExpanded)
   
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+    <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-2xl overflow-hidden backdrop-blur-sm">
       {/* Summary - always visible */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-800/60 transition-colors"
       >
         <div className="flex items-center gap-3 min-w-0">
-          {title && <span className="text-xs text-gray-500 uppercase tracking-wide flex-shrink-0">{title}</span>}
-          <div className="text-sm text-gray-300 truncate">{summary}</div>
+          {title && <span className="text-xs text-zinc-500 uppercase tracking-wide flex-shrink-0">{title}</span>}
+          <div className="text-sm text-zinc-300 truncate">{summary}</div>
         </div>
         <div className="flex-shrink-0 ml-2">
           {expanded ? (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronDown className="w-4 h-4 text-zinc-400" />
           ) : (
-            <ChevronRight className="w-4 h-4 text-gray-400" />
+            <ChevronRight className="w-4 h-4 text-zinc-400" />
           )}
         </div>
       </button>
       
       {/* Expanded content */}
       {expanded && (
-        <div className="px-4 pb-4 pt-2 border-t border-white/10">
+        <div className="px-4 pb-4 pt-2 border-t border-zinc-800/50">
           {children}
         </div>
       )}
@@ -198,9 +199,9 @@ export function InlineStats({ items, separator = '·' }: InlineStatProps) {
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
       {items.map((item, i) => (
         <span key={i} className="flex items-center gap-1">
-          {i > 0 && <span className="text-gray-600 mr-1">{separator}</span>}
-          <span className="text-gray-400">{item.label}</span>
-          <span className={`font-semibold ${item.color || 'text-white'}`}>{item.value}</span>
+          {i > 0 && <span className="text-zinc-600 mr-1">{separator}</span>}
+          <span className="text-zinc-400">{item.label}</span>
+          <span className={`font-semibold ${item.color || 'text-zinc-100'}`}>{item.value}</span>
         </span>
       ))}
     </div>
@@ -215,16 +216,16 @@ interface StatPillProps {
   label: string
   value: string | number
   icon?: ReactNode
-  color?: 'default' | 'gold' | 'green' | 'red' | 'blue'
+  color?: 'default' | 'accent' | 'green' | 'red' | 'blue'
   onClick?: () => void
   active?: boolean
 }
 
 export function StatPill({ label, value, icon, color = 'default', onClick, active }: StatPillProps) {
-  const baseClasses = 'flex items-center gap-2 px-4 py-3 rounded-xl border transition-all text-sm'
+  const baseClasses = 'flex items-center gap-2 px-4 py-3 rounded-2xl border transition-all text-sm'
   const colorClass = active 
     ? colorClasses[color].active 
-    : `bg-white/5 border-white/10 text-gray-400 ${onClick ? 'hover:bg-white/10 cursor-pointer' : ''}`
+    : `bg-zinc-800/40 border-zinc-700/50 text-zinc-400 ${onClick ? 'hover:bg-zinc-800/60 cursor-pointer' : ''}`
   
   const Component = onClick ? 'button' : 'div'
   
@@ -232,7 +233,7 @@ export function StatPill({ label, value, icon, color = 'default', onClick, activ
     <Component onClick={onClick} className={`${baseClasses} ${colorClass}`}>
       {icon && <span className="flex-shrink-0">{icon}</span>}
       <span>{label}</span>
-      <span className={`font-bold ${active ? '' : 'text-white'}`}>{value}</span>
+      <span className={`font-semibold ${active ? '' : 'text-zinc-100'}`}>{value}</span>
     </Component>
   )
 }

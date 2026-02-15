@@ -1,9 +1,9 @@
 import { ReactNode } from 'react'
 import { ArrowLeft, X } from 'lucide-react'
 
-type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal'
+type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
 
-const headerGradients: Record<Exclude<HeaderVariant, 'minimal'>, string> = {
+const headerGradients: Record<Exclude<HeaderVariant, 'minimal' | 'dark'>, string> = {
   amber: 'from-amber-500 to-amber-600',
   slate: 'from-slate-700 to-slate-800',
   blue: 'from-blue-500 to-blue-600',
@@ -15,7 +15,7 @@ interface SlidePanelProps {
   onClose: () => void
   title: string
   subtitle?: string
-  /** Header style: gradient colors or 'minimal' for simple white header */
+  /** Header style: gradient colors, 'minimal' for simple white header, or 'dark' for dark theme */
   headerVariant?: HeaderVariant
   /** Avatar/icon element to show in header (gradient variants only) */
   headerIcon?: ReactNode
@@ -30,6 +30,8 @@ interface SlidePanelProps {
   footer?: ReactNode
   /** Width class, defaults to max-w-lg */
   width?: string
+  /** Use dark theme for entire panel */
+  dark?: boolean
 }
 
 export default function SlidePanel({
@@ -45,11 +47,78 @@ export default function SlidePanel({
   children,
   footer,
   width = 'max-w-lg',
+  dark = false,
 }: SlidePanelProps) {
   if (!isOpen) return null
 
   const isMinimal = headerVariant === 'minimal'
+  const isDark = headerVariant === 'dark' || dark
 
+  // Dark theme panel
+  if (isDark) {
+    return (
+      <div className="fixed inset-0 z-[60] overflow-hidden">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+          onClick={onClose}
+        />
+
+        {/* Panel */}
+        <div
+          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50`}
+        >
+          {/* Header */}
+          <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
+            <div className="flex items-center gap-3 min-w-0">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="p-2 -ml-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              )}
+              {headerIcon && (
+                <div className="p-2.5 bg-[var(--accent-500)]/10 rounded-xl border border-[var(--accent-500)]/30 flex-shrink-0">
+                  {headerIcon}
+                </div>
+              )}
+              <div className="min-w-0">
+                {subtitle && <p className="text-xs text-zinc-500 mb-0.5">{subtitle}</p>}
+                <h2 className="text-lg font-semibold text-zinc-100 truncate">{title}</h2>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors flex-shrink-0"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {headerExtra && (
+            <div className="px-6 py-3 border-b border-zinc-800/50 bg-zinc-900/80">
+              {headerExtra}
+            </div>
+          )}
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto scrollbar-dark">{children}</div>
+
+          {/* Footer */}
+          {footer && (
+            <div className="border-t border-zinc-800/50 px-6 py-4 bg-zinc-900/95">
+              {footer}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Light theme panel (original)
   return (
     <div className="fixed inset-0 z-[60] overflow-hidden">
       {/* Backdrop */}
@@ -77,7 +146,7 @@ export default function SlidePanel({
             </button>
           </div>
         ) : (
-          <div className={`bg-gradient-to-r ${headerGradients[headerVariant]} px-6 py-8 text-white`}>
+          <div className={`bg-gradient-to-r ${headerGradients[headerVariant as keyof typeof headerGradients]} px-6 py-8 text-white`}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 {onBack && (

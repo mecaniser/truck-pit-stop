@@ -10,9 +10,76 @@ import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe,
-  CheckCircle, AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type
+  AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
+  ChevronRight, Zap, Shield, Settings2
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
+
+// ============ HYBRID DESIGN SYSTEM (Industrial + Organic) ============
+const industrialStyles = {
+  // Base card - rounded with subtle accent glow
+  card: `
+    relative bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl
+    before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/[0.02] before:to-transparent before:pointer-events-none
+    overflow-hidden shadow-xl shadow-black/20
+  `,
+  // Input - softer rounded style
+  input: `
+    w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl
+    text-zinc-100 text-sm
+    placeholder-zinc-500 
+    focus:outline-none focus:border-[var(--accent-500)] focus:bg-zinc-800 focus:ring-2 focus:ring-[var(--accent-500)]/20
+    transition-all duration-200
+    hover:border-zinc-500
+  `,
+  // Primary button - rounded with glow
+  btnPrimary: `
+    relative px-6 py-3 rounded-xl
+    bg-[var(--accent-600)] hover:bg-[var(--accent-500)] 
+    text-white font-semibold text-sm
+    border border-[var(--accent-400)]/50
+    transition-all duration-200
+    hover:shadow-[0_0_24px_var(--accent-500)]
+    active:scale-[0.98]
+    disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none
+  `,
+  // Secondary button
+  btnSecondary: `
+    px-6 py-3 rounded-xl
+    bg-zinc-800/80 hover:bg-zinc-700 
+    text-zinc-300 font-semibold text-sm
+    border border-zinc-600/50 hover:border-zinc-500
+    transition-all duration-200
+  `,
+  // Danger button
+  btnDanger: `
+    px-6 py-3 rounded-xl
+    bg-red-950/80 hover:bg-red-900 
+    text-red-400 font-semibold text-sm
+    border border-red-800/50 hover:border-red-600
+    transition-all duration-200
+  `,
+  // Section header - keep uppercase for structure
+  sectionHeader: `
+    text-xs font-bold uppercase tracking-[0.2em] text-zinc-500
+    border-b border-zinc-800/50 pb-2 mb-6
+    flex items-center gap-3
+  `,
+  // Label - softer, not all caps
+  label: `
+    block text-xs font-medium text-zinc-400 mb-2
+  `,
+  // Status LED - keep the glow effects
+  ledActive: `w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)] animate-pulse`,
+  ledInactive: `w-2.5 h-2.5 rounded-full bg-zinc-600`,
+  ledWarning: `w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)] animate-pulse`,
+  ledError: `w-2.5 h-2.5 rounded-full bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.9)]`,
+}
+
+// Staggered animation helper
+const staggeredReveal = (index: number) => ({
+  animationDelay: `${index * 50}ms`,
+})
 
 // ============ SCHEMAS ============
 const profileSchema = z.object({
@@ -79,6 +146,40 @@ interface WorkforceSettings {
   default_shift_end_local: string
 }
 
+// ============ INDUSTRIAL COMPONENTS ============
+
+function IndustrialCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`${industrialStyles.card} ${className}`}>
+      <div className="relative z-10">{children}</div>
+    </div>
+  )
+}
+
+function StatusLED({ status }: { status: 'active' | 'inactive' | 'warning' | 'error' }) {
+  const styles = {
+    active: industrialStyles.ledActive,
+    inactive: industrialStyles.ledInactive,
+    warning: industrialStyles.ledWarning,
+    error: industrialStyles.ledError,
+  }
+  return <div className={styles[status]} />
+}
+
+function IndustrialBadge({ children, variant = 'default' }: { children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'error' }) {
+  const variants = {
+    default: 'bg-zinc-800/80 text-zinc-300 border-zinc-600/50',
+    success: 'bg-emerald-950/80 text-emerald-400 border-emerald-700/50',
+    warning: 'bg-amber-950/80 text-amber-400 border-amber-700/50',
+    error: 'bg-red-950/80 text-red-400 border-red-700/50',
+  }
+  return (
+    <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border ${variants[variant]}`}>
+      {children}
+    </span>
+  )
+}
+
 // ============ SECTION COMPONENTS ============
 
 function ProfileSection() {
@@ -141,131 +242,143 @@ function ProfileSection() {
   }
 
   const inputClasses = (hasError: boolean) => {
-    const base = "w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors"
     return hasError
-      ? `${base} border-red-500 focus:ring-red-500`
-      : `${base} border-white/20 focus:ring-amber-500 focus:border-amber-500`
+      ? `${industrialStyles.input} border-red-500 focus:border-red-400`
+      : industrialStyles.input
   }
 
   const getRoleBadge = () => {
     switch (user?.role) {
-      case 'super_admin': return { label: 'Super Admin', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' }
-      case 'garage_owner': return { label: 'Garage Owner', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
-      case 'garage_admin': return { label: 'Garage Admin', color: 'bg-amber-500/20 text-amber-400 border-amber-500/30' }
-      default: return { label: 'Staff', color: 'bg-gray-500/20 text-gray-400 border-gray-500/30' }
+      case 'super_admin': return { label: 'SUPER ADMIN', variant: 'warning' as const }
+      case 'garage_owner': return { label: 'GARAGE OWNER', variant: 'success' as const }
+      case 'garage_admin': return { label: 'GARAGE ADMIN', variant: 'default' as const }
+      default: return { label: 'STAFF', variant: 'default' as const }
     }
   }
 
   const roleBadge = getRoleBadge()
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-            <User className="w-6 h-6 sm:w-7 sm:h-7 text-amber-400" />
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      {/* Profile Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          {/* Avatar */}
+          <div className="relative">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-zinc-800/80 border border-zinc-600/50 rounded-2xl flex items-center justify-center">
+              <User className="w-8 h-8 sm:w-10 sm:h-10 text-[var(--accent-400)]" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-zinc-950 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
           </div>
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-xl font-bold text-white truncate">{user?.first_name} {user?.last_name}</h2>
-            <p className="text-xs sm:text-sm text-gray-400 truncate">{user?.email}</p>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-zinc-100">
+              {user?.first_name} {user?.last_name}
+            </h2>
+            <p className="text-sm text-zinc-500 mt-1">{user?.email}</p>
           </div>
         </div>
-        <span className={`text-xs px-2 sm:px-2.5 py-1 rounded-full border whitespace-nowrap flex-shrink-0 ${roleBadge.color}`}>
+        <IndustrialBadge variant={roleBadge.variant}>
+          <StatusLED status={roleBadge.variant === 'success' ? 'active' : roleBadge.variant === 'warning' ? 'warning' : 'inactive'} />
           {roleBadge.label}
-        </span>
+        </IndustrialBadge>
       </div>
 
-      {!isEditing ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="text-xs text-gray-400">First Name</label>
-              <p className="text-white">{user?.first_name}</p>
+      <IndustrialCard className="p-6 sm:p-8">
+        {!isEditing ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {[
+                { label: 'First Name', value: user?.first_name },
+                { label: 'Last Name', value: user?.last_name },
+                { label: 'Email', value: user?.email },
+                { label: 'Phone', value: user?.phone ? formatUSPhone(user.phone) : '—' },
+              ].map((field, i) => (
+                <div key={field.label} style={staggeredReveal(i)} className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0">
+                  <label className={industrialStyles.label}>{field.label}</label>
+                  <p className="text-lg text-zinc-100 border-b border-zinc-800/50 pb-2">
+                    {field.value}
+                  </p>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="text-xs text-gray-400">Last Name</label>
-              <p className="text-white">{user?.last_name}</p>
-            </div>
-            <div>
-              <label className="text-xs text-gray-400">Email</label>
-              <p className="text-white break-all">{user?.email}</p>
-            </div>
-            <div>
-              <label className="text-xs text-gray-400">Phone</label>
-              <p className="text-white">{user?.phone ? formatUSPhone(user.phone) : 'Not set'}</p>
-            </div>
+            <button
+              onClick={() => setIsEditing(true)}
+              className={industrialStyles.btnPrimary}
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4" />
+                Edit Profile
+              </span>
+            </button>
           </div>
-          <button
-            onClick={() => setIsEditing(true)}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Edit Profile
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">First Name</label>
-              <input {...register('first_name')} className={inputClasses(!!errors.first_name)} />
-              {errors.first_name && <p className="mt-1 text-xs text-red-400">{errors.first_name.message}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">Last Name</label>
-              <input {...register('last_name')} className={inputClasses(!!errors.last_name)} />
-              {errors.last_name && <p className="mt-1 text-xs text-red-400">{errors.last_name.message}</p>}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Email</label>
-            <input {...register('email')} type="email" className={inputClasses(!!errors.email)} />
-            {errors.email && <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Phone</label>
-            <input {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
-            {errors.phone && <p className="mt-1 text-xs text-red-400">{errors.phone.message}</p>}
-          </div>
-          
-          {currentEmailValue !== originalEmail && (
-            <div>
-              <label className="block text-xs font-medium text-amber-400 mb-1">Password (required for email change)</label>
-              <div className="relative">
-                <input
-                  {...register('password')}
-                  type={showPassword ? 'text' : 'password'}
-                  className={inputClasses(false)}
-                  placeholder="Enter your password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className={industrialStyles.label}>First Name</label>
+                <input {...register('first_name')} className={inputClasses(!!errors.first_name)} />
+                {errors.first_name && <p className="mt-2 text-xs text-red-400">{errors.first_name.message}</p>}
+              </div>
+              <div>
+                <label className={industrialStyles.label}>Last Name</label>
+                <input {...register('last_name')} className={inputClasses(!!errors.last_name)} />
+                {errors.last_name && <p className="mt-2 text-xs text-red-400">{errors.last_name.message}</p>}
               </div>
             </div>
-          )}
+            <div>
+              <label className={industrialStyles.label}>Email</label>
+              <input {...register('email')} type="email" className={inputClasses(!!errors.email)} />
+              {errors.email && <p className="mt-2 text-xs text-red-400">{errors.email.message}</p>}
+            </div>
+            <div>
+              <label className={industrialStyles.label}>Phone</label>
+              <input {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
+              {errors.phone && <p className="mt-2 text-xs text-red-400">{errors.phone.message}</p>}
+            </div>
+            
+            {currentEmailValue !== originalEmail && (
+              <div className="p-4 bg-amber-950/50 border border-amber-700/50 rounded-xl">
+                <label className={`${industrialStyles.label} text-amber-400`}>
+                  <Zap className="w-3 h-3 inline mr-2" />
+                  Password Required for Email Change
+                </label>
+                <div className="relative mt-2">
+                  <input
+                    {...register('password')}
+                    type={showPassword ? 'text' : 'password'}
+                    className={inputClasses(false)}
+                    placeholder="Enter your password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-zinc-500 hover:text-zinc-300"
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </div>
+            )}
 
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => { setIsEditing(false); reset() }}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={updateMutation.isPending}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
-      )}
+            <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
+              <button
+                type="button"
+                onClick={() => { setIsEditing(false); reset() }}
+                className={industrialStyles.btnSecondary}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updateMutation.isPending}
+                className={industrialStyles.btnPrimary}
+              >
+                {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        )}
+      </IndustrialCard>
     </div>
   )
 }
@@ -299,74 +412,85 @@ function SecuritySection() {
     },
   })
 
-  const inputClasses = (hasError: boolean) => {
-    // text-base (16px) prevents iOS Safari auto-zoom on focus
-    const base = "w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-base"
-    return hasError
-      ? `${base} border-red-500 focus:ring-red-500`
-      : `${base} border-white/20 focus:ring-amber-500`
-  }
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Change Password</h3>
-        <p className="text-sm text-gray-400">Update your password to keep your account secure.</p>
-      </div>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Shield className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Password Management</span>
+        </div>
+        
+        <p className="text-sm text-zinc-400 mb-6">
+          Update your password to maintain account security.
+        </p>
 
-      {!showForm ? (
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          Change Password
-        </button>
-      ) : (
-        <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-4 max-w-md">
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Current Password</label>
-            <input {...register('current_password')} type="password" className={inputClasses(!!errors.current_password)} />
-            {errors.current_password && <p className="mt-1 text-xs text-red-400">{errors.current_password.message}</p>}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">New Password</label>
-            <input {...register('new_password')} type="password" className={inputClasses(!!errors.new_password)} />
-            {errors.new_password && <p className="mt-1 text-xs text-red-400">{errors.new_password.message}</p>}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Confirm New Password</label>
-            <input {...register('confirm_password')} type="password" className={inputClasses(!!errors.confirm_password)} />
-            {errors.confirm_password && <p className="mt-1 text-xs text-red-400">{errors.confirm_password.message}</p>}
-          </div>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => { setShowForm(false); reset() }}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              {mutation.isPending ? 'Changing...' : 'Change Password'}
-            </button>
-          </div>
-        </form>
-      )}
+        {!showForm ? (
+          <button
+            onClick={() => setShowForm(true)}
+            className={industrialStyles.btnPrimary}
+          >
+            <span className="flex items-center gap-2">
+              <Lock className="w-4 h-4" />
+              Change Password
+            </span>
+          </button>
+        ) : (
+          <form onSubmit={handleSubmit((data) => mutation.mutate(data))} className="space-y-6 max-w-md">
+            <div>
+              <label className={industrialStyles.label}>Current Password</label>
+              <input {...register('current_password')} type="password" className={errors.current_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
+              {errors.current_password && <p className="mt-2 text-xs text-red-400">{errors.current_password.message}</p>}
+            </div>
+            <div>
+              <label className={industrialStyles.label}>New Password</label>
+              <input {...register('new_password')} type="password" className={errors.new_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
+              {errors.new_password && <p className="mt-2 text-xs text-red-400">{errors.new_password.message}</p>}
+            </div>
+            <div>
+              <label className={industrialStyles.label}>Confirm New Password</label>
+              <input {...register('confirm_password')} type="password" className={errors.confirm_password ? `${industrialStyles.input} border-red-500` : industrialStyles.input} />
+              {errors.confirm_password && <p className="mt-2 text-xs text-red-400">{errors.confirm_password.message}</p>}
+            </div>
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); reset() }}
+                className={industrialStyles.btnSecondary}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={mutation.isPending}
+                className={industrialStyles.btnPrimary}
+              >
+                {mutation.isPending ? 'Changing...' : 'Update Password'}
+              </button>
+            </div>
+          </form>
+        )}
+      </IndustrialCard>
 
-      <div className="border-t border-white/10 pt-6">
-        <h3 className="text-lg font-semibold text-white mb-2">Sign Out</h3>
-        <p className="text-sm text-gray-400 mb-4">End your session on this device.</p>
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <AlertCircle className="w-4 h-4 text-red-400" />
+          <span>Session Control</span>
+        </div>
+        
+        <p className="text-sm text-zinc-400 mb-6">
+          Terminate your current session on this device.
+        </p>
+        
         <button
           onClick={() => { logout(); navigate('/login') }}
-          className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg transition-colors"
+          className={industrialStyles.btnDanger}
         >
-          Sign Out
+          <span className="flex items-center gap-2">
+            <Zap className="w-4 h-4" />
+            Sign Out
+          </span>
         </button>
-      </div>
+      </IndustrialCard>
     </div>
   )
 }
@@ -432,86 +556,107 @@ function PaymentsSection() {
   })
 
   if (isLoading) {
-    return <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div></div>
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-2 border-zinc-600 border-t-[var(--accent-400)] rounded-full animate-spin" />
+      </div>
+    )
   }
 
-  const getStatusDisplay = () => {
+  const getStatusConfig = () => {
     if (!status?.is_connected) {
-      return { icon: <AlertCircle className="w-6 h-6 text-gray-400" />, title: 'Not Connected', description: 'Connect your Stripe account to receive payments.', color: 'gray' }
+      return { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect your Stripe account to receive payments.' }
     }
     if (!status.onboarding_complete) {
-      return { icon: <AlertCircle className="w-6 h-6 text-amber-500" />, title: 'Setup Incomplete', description: 'Please finish the Stripe onboarding process.', color: 'amber' }
+      return { led: 'warning' as const, title: 'SETUP INCOMPLETE', desc: 'Please finish the Stripe onboarding process.' }
     }
-    return { icon: <CheckCircle className="w-6 h-6 text-green-500" />, title: 'Connected & Active', description: 'Payments will be deposited to your account.', color: 'green' }
+    return { led: 'active' as const, title: 'CONNECTED & ACTIVE', desc: 'Payments will be deposited to your account.' }
   }
 
-  const statusDisplay = getStatusDisplay()
+  const statusConfig = getStatusConfig()
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Stripe Payments</h3>
-        <p className="text-sm text-gray-400">Accept credit card payments from customers.</p>
-      </div>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <CreditCard className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Stripe Payments</span>
+        </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        <div className="flex items-start gap-4">
-          {statusDisplay.icon}
-          <div className="flex-1">
-            <h4 className="font-semibold text-white">{statusDisplay.title}</h4>
-            <p className="text-sm text-gray-400 mt-1">{statusDisplay.description}</p>
-            
-            {status?.is_connected && status.onboarding_complete && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${status.charges_enabled ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                  {status.charges_enabled ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                  Charges {status.charges_enabled ? 'Enabled' : 'Disabled'}
-                </span>
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs ${status.payouts_enabled ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                  {status.payouts_enabled ? <CheckCircle className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                  Payouts {status.payouts_enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-            )}
+        <div className="flex items-start gap-4 mb-6">
+          <div className="p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
+            <StatusLED status={statusConfig.led} />
+          </div>
+          <div>
+            <h4 className="font-semibold text-zinc-100">{statusConfig.title}</h4>
+            <p className="text-sm text-zinc-400 mt-1">{statusConfig.desc}</p>
           </div>
         </div>
 
-        <div className="mt-6">
+        {status?.is_connected && status.onboarding_complete && (
+          <div className="flex flex-wrap gap-3 mb-6">
+            <IndustrialBadge variant={status.charges_enabled ? 'success' : 'error'}>
+              <StatusLED status={status.charges_enabled ? 'active' : 'error'} />
+              Charges {status.charges_enabled ? 'Enabled' : 'Disabled'}
+            </IndustrialBadge>
+            <IndustrialBadge variant={status.payouts_enabled ? 'success' : 'error'}>
+              <StatusLED status={status.payouts_enabled ? 'active' : 'error'} />
+              Payouts {status.payouts_enabled ? 'Enabled' : 'Disabled'}
+            </IndustrialBadge>
+          </div>
+        )}
+
+        <div className="pt-4 border-t border-zinc-800/50">
           {!status?.is_connected ? (
             <button
               onClick={() => onboardMutation.mutate()}
               disabled={onboardMutation.isPending || isRedirecting}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+              className={industrialStyles.btnPrimary}
             >
               {onboardMutation.isPending || isRedirecting ? (
-                <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Redirecting...</>
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+                  Redirecting...
+                </span>
               ) : (
-                <><CreditCard className="w-4 h-4" /> Connect Stripe</>
+                <span className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" />
+                  Connect Stripe
+                </span>
               )}
             </button>
           ) : !status.onboarding_complete ? (
             <button
               onClick={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending || isRedirecting}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+              className={`${industrialStyles.btnPrimary} bg-amber-600 hover:bg-amber-500 border-amber-400`}
             >
               {refreshMutation.isPending || isRedirecting ? (
-                <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Redirecting...</>
+                <span className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
+                  Redirecting...
+                </span>
               ) : (
-                <><RefreshCw className="w-4 h-4" /> Continue Setup</>
+                <span className="flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4" />
+                  Continue Setup
+                </span>
               )}
             </button>
           ) : (
             <button
               onClick={() => dashboardMutation.mutate()}
               disabled={dashboardMutation.isPending}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+              className={industrialStyles.btnSecondary}
             >
-              <ExternalLink className="w-4 h-4" /> Open Stripe Dashboard
+              <span className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4" />
+                Open Stripe Dashboard
+              </span>
             </button>
           )}
         </div>
-      </div>
+      </IndustrialCard>
     </div>
   )
 }
@@ -561,29 +706,35 @@ function ZelleSection() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Zelle Payments</h3>
-        <p className="text-sm text-gray-400">Upload a QR code for customers to pay via Zelle.</p>
-      </div>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <QrCode className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Zelle Payments</span>
+        </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        <div className="flex items-start gap-6">
-          <div className="w-32 h-32 bg-white/10 rounded-lg flex items-center justify-center overflow-hidden">
+        <div className="flex flex-col sm:flex-row items-start gap-6">
+          {/* QR Preview */}
+          <div className="w-32 h-32 bg-zinc-800/60 border border-zinc-600/50 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0">
             {zelleQrPreview || zelleSettings?.zelle_qr_image ? (
               <img src={zelleQrPreview || zelleSettings?.zelle_qr_image || ''} alt="Zelle QR" className="w-full h-full object-contain" />
             ) : (
-              <QrCode className="w-12 h-12 text-gray-500" />
+              <QrCode className="w-12 h-12 text-zinc-600" />
             )}
           </div>
+
           <div className="flex-1 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Upload QR Code</label>
+              <label className={industrialStyles.label}>Upload QR Code</label>
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleQrFileChange}
-                className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-amber-600 file:text-white hover:file:bg-amber-700"
+                className="block w-full text-sm text-zinc-400
+                  file:mr-4 file:py-2.5 file:px-4 file:rounded-lg
+                  file:border file:border-zinc-600/50 file:bg-zinc-800/80
+                  file:text-xs file:font-medium file:text-zinc-300
+                  hover:file:bg-zinc-700 file:transition-colors file:cursor-pointer"
               />
             </div>
             <div className="flex gap-3">
@@ -591,24 +742,30 @@ function ZelleSection() {
                 <button
                   onClick={() => uploadQrMutation.mutate(zelleQrPreview)}
                   disabled={uploadQrMutation.isPending}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className={industrialStyles.btnPrimary}
                 >
-                  <Save className="w-4 h-4" /> Save
+                  <span className="flex items-center gap-2">
+                    <Save className="w-4 h-4" />
+                    Save
+                  </span>
                 </button>
               )}
               {(zelleSettings?.zelle_qr_image || zelleQrPreview) && (
                 <button
                   onClick={() => { uploadQrMutation.mutate(null); setZelleQrPreview(null) }}
                   disabled={uploadQrMutation.isPending}
-                  className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className={industrialStyles.btnDanger}
                 >
-                  <Trash2 className="w-4 h-4" /> Remove
+                  <span className="flex items-center gap-2">
+                    <Trash2 className="w-4 h-4" />
+                    Remove
+                  </span>
                 </button>
               )}
             </div>
           </div>
         </div>
-      </div>
+      </IndustrialCard>
     </div>
   )
 }
@@ -665,68 +822,77 @@ function NotificationsSection() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Invoice Reminders</h3>
-        <p className="text-sm text-gray-400">Configure automatic reminders for overdue invoices.</p>
-      </div>
-
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-white">Enable Reminders</h4>
-            <p className="text-sm text-gray-400">Send automatic SMS reminders for overdue invoices</p>
-          </div>
-          <button
-            onClick={() => { setRemindersEnabled(!remindersEnabled); setIsEditing(true) }}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${remindersEnabled ? 'bg-amber-600' : 'bg-gray-600'}`}
-          >
-            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${remindersEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Bell className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Invoice Reminders</span>
         </div>
 
-        {remindersEnabled && (
-          <>
+        <div className="space-y-6">
+          {/* Toggle */}
+          <div className="flex items-center justify-between p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Reminder Frequency (days)</label>
-              <input
-                type="number"
-                min="1"
-                max="30"
-                value={reminderFrequency}
-                onChange={(e) => { setReminderFrequency(parseInt(e.target.value) || 3); setIsEditing(true) }}
-                className="w-32 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
+              <h4 className="font-semibold text-zinc-100 text-sm">Enable Reminders</h4>
+              <p className="text-xs text-zinc-500 mt-1">Send automatic SMS reminders for overdue invoices</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Max Reminders</label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={maxReminders}
-                onChange={(e) => { setMaxReminders(parseInt(e.target.value) || 3); setIsEditing(true) }}
-                className="w-32 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-          </>
-        )}
-
-        {isEditing && (
-          <div className="flex gap-3 pt-4 border-t border-white/10">
-            <button onClick={cancelEdit} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors">
-              Cancel
-            </button>
             <button
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+              onClick={() => { setRemindersEnabled(!remindersEnabled); setIsEditing(true) }}
+              className={`relative w-14 h-8 rounded-full border transition-colors ${
+                remindersEnabled 
+                  ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50' 
+                  : 'bg-zinc-800 border-zinc-600/50'
+              }`}
             >
-              {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+              <span className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
+                remindersEnabled ? 'left-7' : 'left-1'
+              }`} />
             </button>
           </div>
-        )}
-      </div>
+
+          {remindersEnabled && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <label className={industrialStyles.label}>Reminder Frequency (days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={reminderFrequency}
+                  onChange={(e) => { setReminderFrequency(parseInt(e.target.value) || 3); setIsEditing(true) }}
+                  className={industrialStyles.input}
+                />
+              </div>
+              <div>
+                <label className={industrialStyles.label}>Max Reminders</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={maxReminders}
+                  onChange={(e) => { setMaxReminders(parseInt(e.target.value) || 3); setIsEditing(true) }}
+                  className={industrialStyles.input}
+                />
+              </div>
+            </div>
+          )}
+
+          {isEditing && (
+            <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
+              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+                Cancel
+              </button>
+              <button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                className={industrialStyles.btnPrimary}
+              >
+                {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          )}
+        </div>
+      </IndustrialCard>
     </div>
   )
 }
@@ -759,7 +925,6 @@ function FeesSection() {
     }
   }, [taxFeeSettings])
 
-  // Check if any values have changed from original
   const hasChanges = taxFeeSettings && (
     salesTaxRate !== (taxFeeSettings.sales_tax_rate?.toString() || '') ||
     shopSuppliesRate !== (taxFeeSettings.shop_supplies_rate?.toString() || '') ||
@@ -827,25 +992,36 @@ function FeesSection() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Tax & Fees</h3>
-        <p className="text-sm text-gray-400">Configure default rates applied to invoices.</p>
-      </div>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Percent className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Tax & Fees Configuration</span>
+        </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-        {/* Inline display when locked */}
         {!isUnlocked ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-              <span className="text-gray-400">Tax: <span className="text-white font-medium">{taxFeeSettings?.sales_tax_rate || 0}%</span></span>
-              <span className="text-gray-400">Supplies: <span className="text-white font-medium">{taxFeeSettings?.shop_supplies_rate || 0}%</span></span>
-              <span className="text-gray-400">Service: <span className="text-white font-medium">{taxFeeSettings?.service_fee_rate || 0}%</span></span>
-              <span className="text-gray-400">Labor: <span className="text-gray-500">••••</span></span>
+          <div className="space-y-6">
+            {/* Locked display */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: 'Tax', value: `${taxFeeSettings?.sales_tax_rate || 0}%` },
+                { label: 'Supplies', value: `${taxFeeSettings?.shop_supplies_rate || 0}%` },
+                { label: 'Service', value: `${taxFeeSettings?.service_fee_rate || 0}%` },
+                { label: 'Labor', value: '••••' },
+              ].map((item, i) => (
+                <div key={item.label} style={staggeredReveal(i)} className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+                  <label className={industrialStyles.label}>{item.label}</label>
+                  <p className="text-lg text-zinc-100">{item.value}</p>
+                </div>
+              ))}
             </div>
-            
-            <div className="border-t border-white/10 pt-4">
-              <p className="text-xs text-gray-500 mb-3">Enter your password to edit these settings</p>
+
+            {/* Unlock form */}
+            <div className="p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+              <p className="text-xs text-zinc-500 mb-3">
+                <Lock className="w-3 h-3 inline mr-2" />
+                Enter password to edit
+              </p>
               <div className="flex gap-3 items-start">
                 <div className="flex-1 max-w-xs">
                   <input
@@ -854,91 +1030,93 @@ function FeesSection() {
                     onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
                     onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
                     placeholder="Enter password"
-                    className={`w-full px-3 py-2 bg-white/10 border rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                      passwordError ? 'border-red-500' : 'border-white/20'
-                    }`}
+                    className={`${industrialStyles.input} ${passwordError ? 'border-red-500' : ''}`}
                   />
-                  {passwordError && <p className="text-xs text-red-400 mt-1">{passwordError}</p>}
+                  {passwordError && <p className="text-xs text-red-400 mt-2">{passwordError}</p>}
                 </div>
                 <button
                   onClick={handleUnlock}
                   disabled={isVerifying}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
+                  className={industrialStyles.btnPrimary}
                 >
                   {isVerifying ? (
-                    <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div> Verifying</>
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-zinc-600 border-t-white animate-spin" />
+                      Verifying
+                    </span>
                   ) : (
-                    <><Lock className="w-4 h-4" /> Unlock</>
+                    <span className="flex items-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      Unlock
+                    </span>
                   )}
                 </button>
               </div>
             </div>
           </div>
         ) : (
-          /* Edit mode when unlocked */
-          <div className="space-y-4">
-            {/* Inline inputs on desktop, stacked on mobile */}
+          <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Sales Tax (%)</label>
+                <label className={industrialStyles.label}>Sales Tax (%)</label>
                 <div className="relative">
                   <input
                     type="text"
                     value={salesTaxRate}
                     onChange={handleRateChange(setSalesTaxRate)}
                     placeholder="0"
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
+                    className={`${industrialStyles.input} pr-10`}
                   />
-                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Supplies (%)</label>
+                <label className={industrialStyles.label}>Supplies (%)</label>
                 <div className="relative">
                   <input
                     type="text"
                     value={shopSuppliesRate}
                     onChange={handleRateChange(setShopSuppliesRate)}
                     placeholder="0"
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
+                    className={`${industrialStyles.input} pr-10`}
                   />
-                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Service Fee (%)</label>
+                <label className={industrialStyles.label}>Service Fee (%)</label>
                 <div className="relative">
                   <input
                     type="text"
                     value={serviceFeeRate}
                     onChange={handleRateChange(setServiceFeeRate)}
                     placeholder="0"
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-amber-500 pr-8"
+                    className={`${industrialStyles.input} pr-10`}
                   />
-                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" />
+                  <Percent className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-400 mb-1">Labor Rate ($/hr)</label>
+                <label className={industrialStyles.label}>Labor Rate ($/hr)</label>
                 <input
                   type="text"
                   value={laborRate}
                   onChange={handleRateChange(setLaborRate)}
                   placeholder="100"
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-base focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className={industrialStyles.input}
                 />
               </div>
             </div>
 
-            <div className="flex gap-3 pt-4 border-t border-white/10">
-              <button onClick={cancelEdit} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors">
+            <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
+              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
                 Cancel
               </button>
               {hasChanges && (
                 <button
                   onClick={() => saveMutation.mutate()}
                   disabled={saveMutation.isPending}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  className={industrialStyles.btnPrimary}
                 >
                   {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
                 </button>
@@ -946,7 +1124,7 @@ function FeesSection() {
             </div>
           </div>
         )}
-      </div>
+      </IndustrialCard>
     </div>
   )
 }
@@ -1056,104 +1234,103 @@ function WorkforceSection() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-2">Workforce</h3>
-        <p className="text-sm text-gray-400">Set timezone, daily core target, and default shift window for mechanics.</p>
-      </div>
-
-      <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Timezone</label>
-          <select
-            value={timezone}
-            onChange={(e) => { setTimezone(e.target.value); setIsEditing(true) }}
-            className="w-full max-w-md px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-          >
-            {timezoneOptions.map((tz) => (
-              <option key={tz} value={tz} className="bg-slate-900 text-white">
-                {tz}
-              </option>
-            ))}
-          </select>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Globe className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Workforce Configuration</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Core Minutes {coreMinutes && !Number.isNaN(parseInt(coreMinutes, 10)) && (
-                <span className="text-gray-400 font-normal">({(parseInt(coreMinutes, 10) / 60).toFixed(1)}h)</span>
-              )}
-            </label>
-            <input
-              type="number"
-              min={1}
-              max={1440}
-              value={coreMinutes}
-              onChange={(e) => {
-                const newCore = parseInt(e.target.value, 10)
-                setCoreMinutes(e.target.value)
-                setIsEditing(true)
-                // Auto-extend shift end if core exceeds shift duration
-                if (!Number.isNaN(newCore) && shiftStart) {
-                  const [startH, startM] = shiftStart.split(':').map(Number)
-                  const [endH, endM] = shiftEnd.split(':').map(Number)
-                  if (!Number.isNaN(startH) && !Number.isNaN(startM) && !Number.isNaN(endH) && !Number.isNaN(endM)) {
-                    const shiftMinutes = (endH * 60 + endM) - (startH * 60 + startM)
-                    if (newCore > shiftMinutes) {
-                      const newEndTotal = (startH * 60 + startM) + newCore
-                      const newEndH = Math.floor(newEndTotal / 60) % 24
-                      const newEndM = newEndTotal % 60
-                      setShiftEnd(`${newEndH.toString().padStart(2, '0')}:${newEndM.toString().padStart(2, '0')}`)
+            <label className={industrialStyles.label}>Timezone</label>
+            <select
+              value={timezone}
+              onChange={(e) => { setTimezone(e.target.value); setIsEditing(true) }}
+              className={`${industrialStyles.input} cursor-pointer`}
+            >
+              {timezoneOptions.map((tz) => (
+                <option key={tz} value={tz} className="bg-zinc-900 text-zinc-100">
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className={industrialStyles.label}>
+                Core Minutes
+                {coreMinutes && !Number.isNaN(parseInt(coreMinutes, 10)) && (
+                  <span className="text-zinc-500 font-normal ml-2">({(parseInt(coreMinutes, 10) / 60).toFixed(1)}h)</span>
+                )}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={coreMinutes}
+                onChange={(e) => {
+                  const newCore = parseInt(e.target.value, 10)
+                  setCoreMinutes(e.target.value)
+                  setIsEditing(true)
+                  if (!Number.isNaN(newCore) && shiftStart) {
+                    const [startH, startM] = shiftStart.split(':').map(Number)
+                    const [endH, endM] = shiftEnd.split(':').map(Number)
+                    if (!Number.isNaN(startH) && !Number.isNaN(startM) && !Number.isNaN(endH) && !Number.isNaN(endM)) {
+                      const shiftMinutes = (endH * 60 + endM) - (startH * 60 + startM)
+                      if (newCore > shiftMinutes) {
+                        const newEndTotal = (startH * 60 + startM) + newCore
+                        const newEndH = Math.floor(newEndTotal / 60) % 24
+                        const newEndM = newEndTotal % 60
+                        setShiftEnd(`${newEndH.toString().padStart(2, '0')}:${newEndM.toString().padStart(2, '0')}`)
+                      }
                     }
                   }
-                }
-              }}
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+                }}
+                className={industrialStyles.input}
+              />
+            </div>
+            <div>
+              <label className={industrialStyles.label}>Shift Start (HH:MM)</label>
+              <input
+                type="text"
+                value={shiftStart}
+                onChange={(e) => { setShiftStart(e.target.value); setIsEditing(true) }}
+                className={industrialStyles.input}
+                placeholder="08:00"
+              />
+            </div>
+            <div>
+              <label className={industrialStyles.label}>Shift End (HH:MM)</label>
+              <input
+                type="text"
+                value={shiftEnd}
+                onChange={(e) => { setShiftEnd(e.target.value); setIsEditing(true) }}
+                className={industrialStyles.input}
+                placeholder="18:00"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Shift Start (HH:MM)</label>
-            <input
-              type="text"
-              value={shiftStart}
-              onChange={(e) => { setShiftStart(e.target.value); setIsEditing(true) }}
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="08:00"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Shift End (HH:MM)</label>
-            <input
-              type="text"
-              value={shiftEnd}
-              onChange={(e) => { setShiftEnd(e.target.value); setIsEditing(true) }}
-              className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="18:00"
-            />
-          </div>
-        </div>
 
-        {isEditing && (
-          <div className="flex gap-3 pt-4 border-t border-white/10">
-            <button
-              onClick={cancelEdit}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            {hasChanges && (
-              <button
-                onClick={handleSave}
-                disabled={saveMutation.isPending}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+          {isEditing && (
+            <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
+              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+                Cancel
               </button>
-            )}
-          </div>
-        )}
-      </div>
+              {hasChanges && (
+                <button
+                  onClick={handleSave}
+                  disabled={saveMutation.isPending}
+                  className={industrialStyles.btnPrimary}
+                >
+                  {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </IndustrialCard>
     </div>
   )
 }
@@ -1162,157 +1339,159 @@ function AppearanceSection() {
   const { accent, setAccent, fontFamily, setFontFamily, fontSize, setFontSize, accentColors, resetToDefaults } = useTheme()
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-white mb-2">Appearance</h3>
-          <p className="text-sm text-gray-400">Customize your dashboard theme and typography.</p>
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      {/* Live Preview */}
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Palette className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Live Preview</span>
+          <button
+            onClick={resetToDefaults}
+            className="ml-auto px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-300 border border-zinc-700/50 hover:border-zinc-600 rounded-lg transition-colors flex items-center gap-2"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset
+          </button>
         </div>
-        <button
-          onClick={resetToDefaults}
-          className="px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors flex items-center gap-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Reset
-        </button>
-      </div>
 
-      {/* Live Preview Card */}
-      <div 
-        className="bg-white/5 border rounded-xl p-6 transition-all"
-        style={{ borderColor: accentColors[500] + '40' }}
-      >
-        <div className="flex items-center gap-3 mb-4">
-          <div 
-            className="w-10 h-10 rounded-full flex items-center justify-center"
-            style={{ backgroundColor: accentColors[500] + '30' }}
-          >
-            <Palette className="w-5 h-5" style={{ color: accentColors[500] }} />
+        <div className="p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl" style={{ borderColor: accentColors[500] + '40' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div 
+              className="w-10 h-10 flex items-center justify-center rounded-xl border"
+              style={{ backgroundColor: accentColors[500] + '20', borderColor: accentColors[500] + '60' }}
+            >
+              <Palette className="w-5 h-5" style={{ color: accentColors[500] }} />
+            </div>
+            <div>
+              <h4 className="font-semibold text-zinc-100">Theme Preview</h4>
+              <p className="text-xs text-zinc-500">See how your theme looks</p>
+            </div>
           </div>
-          <div>
-            <h4 className="font-semibold text-white">Preview</h4>
-            <p className="text-sm text-gray-400">See how your theme looks</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button 
-            className="px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors"
-            style={{ backgroundColor: accentColors[500] }}
-          >
-            Primary Button
-          </button>
-          <button 
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors border"
-            style={{ borderColor: accentColors[500], color: accentColors[500] }}
-          >
-            Secondary Button
-          </button>
-          <span 
-            className="px-3 py-1.5 rounded-full text-xs font-medium"
-            style={{ backgroundColor: accentColors[500] + '20', color: accentColors[400] }}
-          >
-            Badge
-          </span>
-        </div>
-        <div className="mt-4 pt-4 border-t border-white/10">
-          <p className="text-sm">
-            <span className="text-gray-400">Active link: </span>
-            <span style={{ color: accentColors[500] }} className="font-medium hover:underline cursor-pointer">
-              Example Link
+          <div className="flex flex-wrap items-center gap-3">
+            <button 
+              className="px-4 py-2.5 text-white text-sm font-semibold rounded-xl border transition-all hover:shadow-lg"
+              style={{ backgroundColor: accentColors[500], borderColor: accentColors[400] + '60' }}
+            >
+              Primary Button
+            </button>
+            <button 
+              className="px-4 py-2.5 text-sm font-semibold rounded-xl border bg-transparent transition-all"
+              style={{ borderColor: accentColors[500], color: accentColors[500] }}
+            >
+              Secondary
+            </button>
+            <span 
+              className="px-3 py-1.5 text-xs font-semibold rounded-full border"
+              style={{ backgroundColor: accentColors[500] + '20', color: accentColors[400], borderColor: accentColors[500] + '40' }}
+            >
+              Badge
             </span>
-          </p>
+          </div>
         </div>
-      </div>
+      </IndustrialCard>
 
       {/* Accent Color */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6">
-        <label className="block text-sm font-medium text-gray-300 mb-4">Accent Color</label>
-        <div className="flex flex-wrap gap-3 sm:gap-4">
-          {ACCENT_OPTIONS.map((option) => (
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Zap className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Accent Color</span>
+        </div>
+
+        <div className="flex flex-wrap gap-4">
+          {ACCENT_OPTIONS.map((option, i) => (
             <button
               key={option.id}
               onClick={() => setAccent(option.id)}
-              className="group flex flex-col items-center gap-1.5 sm:gap-2"
+              style={staggeredReveal(i)}
+              className={`group flex flex-col items-center gap-2 p-3 rounded-xl border transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                accent === option.id
+                  ? 'border-white/50 bg-zinc-800/80'
+                  : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/40'
+              }`}
             >
               <div
-                className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center transition-all ${
-                  accent === option.id
-                    ? 'ring-2 ring-offset-2 ring-offset-blueNoir-900 ring-white scale-110'
-                    : 'hover:scale-105'
+                className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl border transition-all ${
+                  accent === option.id ? 'scale-110' : 'group-hover:scale-105'
                 }`}
-                style={{ backgroundColor: option.colors[500] }}
+                style={{ backgroundColor: option.colors[500], borderColor: option.colors[400] + '60' }}
               >
                 {accent === option.id && (
-                  <Check className="w-4 h-4 sm:w-5 sm:h-5 text-white drop-shadow-md" />
+                  <Check className="w-5 h-5 text-white drop-shadow-md" />
                 )}
               </div>
-              <span className={`text-[10px] sm:text-xs font-medium transition-colors ${
-                accent === option.id ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'
+              <span className={`text-xs font-medium ${
+                accent === option.id ? 'text-white' : 'text-zinc-500 group-hover:text-zinc-400'
               }`}>
                 {option.label}
               </span>
             </button>
           ))}
         </div>
-      </div>
+      </IndustrialCard>
 
       {/* Font Family */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6">
-        <label className="block text-sm font-medium text-gray-300 mb-4">
-          <Type className="w-4 h-4 inline mr-2" />
-          Font Family
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-          {FONT_FAMILY_OPTIONS.map((option) => (
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Type className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Font Family</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {FONT_FAMILY_OPTIONS.map((option, i) => (
             <button
               key={option.id}
               onClick={() => setFontFamily(option.id)}
-              className={`p-3 sm:p-4 rounded-lg border text-left transition-all ${
+              style={{ ...staggeredReveal(i), fontFamily: option.stack }}
+              className={`p-4 text-left rounded-xl border transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                 fontFamily === option.id
-                  ? 'border-white/40 bg-white/10'
-                  : 'border-white/10 hover:border-white/20 hover:bg-white/5'
+                  ? 'border-white/50 bg-zinc-800/80'
+                  : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/40'
               }`}
-              style={{ fontFamily: option.stack }}
             >
-              <span className={`block text-sm font-medium ${fontFamily === option.id ? 'text-white' : 'text-gray-300'}`}>
+              <span className={`block text-sm font-semibold ${fontFamily === option.id ? 'text-white' : 'text-zinc-400'}`}>
                 {option.label}
               </span>
-              <span className="block text-xs text-gray-500 mt-1">Aa Bb Cc 123</span>
+              <span className="block text-xs text-zinc-600 mt-1">Aa Bb Cc 123</span>
             </button>
           ))}
         </div>
-      </div>
+      </IndustrialCard>
 
       {/* Font Size */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4 sm:p-6">
-        <label className="block text-sm font-medium text-gray-300 mb-4">Font Size</label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {FONT_SIZE_OPTIONS.map((option) => (
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Settings2 className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Font Size</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {FONT_SIZE_OPTIONS.map((option, i) => (
             <button
               key={option.id}
               onClick={() => setFontSize(option.id)}
-              className={`py-2.5 sm:py-3 px-2 sm:px-4 rounded-lg border text-center transition-all ${
+              style={staggeredReveal(i)}
+              className={`py-3 px-4 text-center rounded-xl border transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                 fontSize === option.id
-                  ? 'border-white/40 bg-white/10'
-                  : 'border-white/10 hover:border-white/20 hover:bg-white/5'
+                  ? 'border-white/50 bg-zinc-800/80'
+                  : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/40'
               }`}
             >
-              <span className={`block text-xs sm:text-sm font-medium whitespace-nowrap ${fontSize === option.id ? 'text-white' : 'text-gray-300'}`}>
+              <span className={`block text-sm font-semibold ${fontSize === option.id ? 'text-white' : 'text-zinc-400'}`}>
                 {option.label}
               </span>
-              <span className="hidden sm:block text-xs text-gray-500 mt-1">
+              <span className="hidden sm:block text-xs text-zinc-600 mt-1">
                 {option.previewPx}px
               </span>
             </button>
           ))}
         </div>
-        <p className="mt-3 text-xs text-gray-500">
-          Extra-wide screens automatically compact dashboard spacing so larger text still keeps swimlanes and KPI panels in view.
+        <p className="mt-4 text-xs text-zinc-600">
+          Extra-wide screens automatically compact dashboard spacing.
         </p>
-      </div>
+      </IndustrialCard>
 
-      <p className="text-xs text-gray-500">
-        All preferences are saved automatically and will persist across sessions.
+      <p className="text-xs text-zinc-600">
+        All preferences are saved automatically and persist across sessions.
       </p>
     </div>
   )
@@ -1343,16 +1522,17 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
     <div className="flex flex-col lg:flex-row gap-6 w-full max-w-[1200px] mx-auto">
       {/* Mobile: Horizontal scrolling nav */}
       <div className="lg:hidden">
-        <div className="bg-white/5 rounded-xl border border-white/10 p-2">
-          <nav className="flex gap-1 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {allSections.map((section) => (
+        <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-2">
+          <nav className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
+            {allSections.map((section, i) => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors flex-shrink-0 ${
+                style={staggeredReveal(i)}
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium transition-all flex-shrink-0 rounded-xl border animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                   activeSection === section.id
-                    ? 'bg-amber-600/20 text-amber-400'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50 text-white shadow-lg shadow-[var(--accent-500)]/20'
+                    : 'bg-zinc-800/60 border-zinc-700/50 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
                 }`}
               >
                 <section.icon className="w-4 h-4 flex-shrink-0" />
@@ -1365,23 +1545,30 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
 
       {/* Desktop: Vertical sidebar */}
       <div className="hidden lg:block w-64 flex-shrink-0">
-        <div className="bg-white/5 rounded-xl border border-white/10 p-4 sticky top-4">
-          {/* Profile Group */}
+        <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-4 sticky top-4">
+          {/* Account Group */}
           <div className="mb-6">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3">Account</h3>
+            <h3 className={industrialStyles.sectionHeader}>
+              <User className="w-3 h-3" />
+              Account
+            </h3>
             <nav className="space-y-1">
-              {PROFILE_SECTIONS.map((section) => (
+              {PROFILE_SECTIONS.map((section, i) => (
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  style={staggeredReveal(i)}
+                  className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                     activeSection === section.id
-                      ? 'bg-amber-600/20 text-amber-400 border-l-2 border-amber-500'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
+                      : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                 >
                   <section.icon className="w-4 h-4" />
                   {section.label}
+                  {activeSection === section.id && (
+                    <ChevronRight className="w-4 h-4 ml-auto" />
+                  )}
                 </button>
               ))}
             </nav>
@@ -1390,20 +1577,27 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
           {/* Garage Group */}
           {isGarageUser && (
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-3">Garage</h3>
+              <h3 className={industrialStyles.sectionHeader}>
+                <Settings2 className="w-3 h-3" />
+                Garage
+              </h3>
               <nav className="space-y-1">
-                {GARAGE_SECTIONS.map((section) => (
+                {GARAGE_SECTIONS.map((section, i) => (
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    style={staggeredReveal(i + PROFILE_SECTIONS.length)}
+                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                       activeSection === section.id
-                        ? 'bg-amber-600/20 text-amber-400 border-l-2 border-amber-500'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
+                        : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
                     }`}
                   >
                     <section.icon className="w-4 h-4" />
                     {section.label}
+                    {activeSection === section.id && (
+                      <ChevronRight className="w-4 h-4 ml-auto" />
+                    )}
                   </button>
                 ))}
               </nav>
@@ -1413,7 +1607,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
       </div>
 
       {/* Content */}
-      <div className="flex-1 bg-white/5 rounded-xl p-4 sm:p-6 lg:p-8 border border-white/10 min-h-[400px] lg:min-h-[600px]">
+      <div className="flex-1 min-h-[400px] lg:min-h-[600px]">
         {activeSection === 'profile' && <ProfileSection />}
         {activeSection === 'security' && <SecuritySection />}
         {activeSection === 'appearance' && <AppearanceSection />}
@@ -1438,4 +1632,17 @@ export default function UnifiedSettingsPage() {
   return (
     <SidebarLayout activeSection={activeSection} setActiveSection={setActiveSection} isGarageUser={isGarageUser} />
   )
+}
+
+// Add keyframes for animations
+const style = document.createElement('style')
+style.textContent = `
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+`
+if (typeof document !== 'undefined' && !document.querySelector('[data-industrial-styles]')) {
+  style.setAttribute('data-industrial-styles', '')
+  document.head.appendChild(style)
 }

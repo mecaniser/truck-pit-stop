@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 
 // ============ TYPES ============
 export type AccentColor = 'cyan' | 'indigo' | 'emerald' | 'rose' | 'amber'
-export type FontFamily = 'system' | 'inter' | 'source'
+export type FontFamily = 'geist' | 'dm-sans' | 'jakarta'
 export type FontSize = 'compact' | 'default' | 'comfortable' | 'large'
 
 export interface ThemeConfig {
@@ -21,9 +21,9 @@ export const ACCENT_OPTIONS: { id: AccentColor; label: string; colors: { 400: st
 ]
 
 export const FONT_FAMILY_OPTIONS: { id: FontFamily; label: string; stack: string }[] = [
-  { id: 'system', label: 'System', stack: 'ui-sans-serif, system-ui, -apple-system, sans-serif' },
-  { id: 'inter', label: 'Inter', stack: "'Inter', sans-serif" },
-  { id: 'source', label: 'Source Sans', stack: "'Source Sans 3', sans-serif" },
+  { id: 'geist', label: 'Geist', stack: "'Geist', ui-sans-serif, system-ui, sans-serif" },
+  { id: 'dm-sans', label: 'DM Sans', stack: "'DM Sans', ui-sans-serif, sans-serif" },
+  { id: 'jakarta', label: 'Jakarta', stack: "'Plus Jakarta Sans', ui-sans-serif, sans-serif" },
 ]
 
 export const FONT_SIZE_OPTIONS: { id: FontSize; label: string; scale: number; previewPx: number }[] = [
@@ -36,7 +36,7 @@ export const FONT_SIZE_OPTIONS: { id: FontSize; label: string; scale: number; pr
 // ============ DEFAULTS ============
 const DEFAULT_THEME: ThemeConfig = {
   accent: 'cyan',
-  fontFamily: 'system',
+  fontFamily: 'geist',
   fontSize: 'default',
 }
 
