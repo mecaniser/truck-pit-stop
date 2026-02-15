@@ -2188,7 +2188,7 @@ export default function MechanicPortalPage() {
                       value={miscNote}
                       onChange={(e) => setMiscNote(e.target.value)}
                       placeholder="Misc note (optional)"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-base text-white placeholder-gray-500"
                       disabled={isActiveRoTimer}
                     />
                   </div>
@@ -2476,7 +2476,7 @@ export default function MechanicPortalPage() {
                                     placeholder="Add note..."
                                     value={photoCaption}
                                     onChange={(e) => setPhotoCaption(e.target.value)}
-                                    className="w-full mt-2 px-2 py-1.5 rounded bg-gray-600 text-sm text-white placeholder-gray-400"
+                                    className="w-full mt-2 px-2 py-1.5 rounded bg-gray-600 text-base text-white placeholder-gray-400"
                                   />
                                   <button
                                     onClick={handlePhotoUpload}

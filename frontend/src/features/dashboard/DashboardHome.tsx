@@ -427,7 +427,7 @@ export default function DashboardHome() {
                         }
                       }}
                       placeholder="(555) 123-4567"
-                      className={`w-full pl-9 pr-3 py-2 bg-white/5 border rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                      className={`w-full pl-9 pr-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
                         quickTouched && quickErrors.phone
                           ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
                           : 'border-white/10'
@@ -461,7 +461,7 @@ export default function DashboardHome() {
                       }
                     }}
                     placeholder="Issue (e.g. engine overheating) *"
-                    className={`w-full px-3 py-2 bg-white/5 border rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                    className={`w-full px-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
                       quickTouched && quickErrors.complaint
                         ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
                         : 'border-white/10'
@@ -485,7 +485,7 @@ export default function DashboardHome() {
                       value={quickTruck}
                       onChange={(e) => setQuickTruck(e.target.value)}
                       placeholder="Truck (optional)"
-                      className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-1"
+                      className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1"
                     />
                   </div>
                 </div>

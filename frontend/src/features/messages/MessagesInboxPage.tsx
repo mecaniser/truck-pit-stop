@@ -357,7 +357,7 @@ export default function MessagesInboxPage() {
         <h2 className="text-sm text-gray-300 mb-3">New Outbound Message</h2>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <select
-            className="md:col-span-1 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white"
+            className="md:col-span-1 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-base text-white"
             value={newCustomerId}
             onChange={(e) => setNewCustomerId(e.target.value)}
           >
@@ -369,7 +369,7 @@ export default function MessagesInboxPage() {
             ))}
           </select>
           <input
-            className="md:col-span-2 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder:text-gray-400"
+            className="md:col-span-2 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-base text-white placeholder:text-gray-400"
             placeholder="Write your message..."
             value={newThreadBody}
             onChange={(e) => setNewThreadBody(e.target.value)}
@@ -519,7 +519,7 @@ export default function MessagesInboxPage() {
 
               <div className="pt-3 border-t border-white/10 flex gap-2">
                 <input
-                  className="flex-1 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder:text-gray-400"
+                  className="flex-1 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-base text-white placeholder:text-gray-400"
                   placeholder="Type a reply..."
                   value={replyBody}
                   onChange={(e) => setReplyBody(e.target.value)}

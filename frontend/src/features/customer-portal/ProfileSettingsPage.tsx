@@ -286,7 +286,8 @@ function SecuritySection() {
   })
 
   const inputClasses = (hasError: boolean) => {
-    const base = "w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-sm"
+    // text-base (16px) prevents iOS Safari auto-zoom on focus
+    const base = "w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-base"
     return hasError
       ? `${base} border-red-500 focus:ring-red-500`
       : `${base} border-white/20 focus:ring-amber-500`
