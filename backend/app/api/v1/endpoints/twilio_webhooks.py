@@ -80,13 +80,24 @@ async def twilio_inbound_sms(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Twilio signature")
 
-    await handle_inbound_sms(
-        db=db,
-        to_number=values.get("To", ""),
-        from_number=values.get("From", ""),
-        body=values.get("Body", ""),
-        twilio_message_sid=values.get("MessageSid"),
-    )
+    try:
+        await handle_inbound_sms(
+            db=db,
+            to_number=values.get("To", ""),
+            from_number=values.get("From", ""),
+            body=values.get("Body", ""),
+            twilio_message_sid=values.get("MessageSid"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "inbound_sms_failed",
+            error=str(e),
+            to_number=values.get("To"),
+            from_number=values.get("From"),
+        )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to process inbound SMS")
     return Response(content="<Response></Response>", media_type="application/xml")
 
 
@@ -109,11 +120,20 @@ async def twilio_sms_status(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Twilio signature")
 
-    await process_twilio_status_callback(
-        db=db,
-        message_sid=values.get("MessageSid"),
-        message_status=values.get("MessageStatus"),
-        error_code=values.get("ErrorCode"),
-        error_message=values.get("ErrorMessage"),
-    )
+    try:
+        await process_twilio_status_callback(
+            db=db,
+            message_sid=values.get("MessageSid"),
+            message_status=values.get("MessageStatus"),
+            error_code=values.get("ErrorCode"),
+            error_message=values.get("ErrorMessage"),
+        )
+    except Exception as e:
+        logger.exception(
+            "status_callback_failed",
+            error=str(e),
+            message_sid=values.get("MessageSid"),
+            message_status=values.get("MessageStatus"),
+        )
+        # Don't fail status callbacks - Twilio will retry
     return {"status": "success"}
