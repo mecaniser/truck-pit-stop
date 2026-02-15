@@ -1079,13 +1079,35 @@ function WorkforceSection() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Core Minutes</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Core Minutes {coreMinutes && !Number.isNaN(parseInt(coreMinutes, 10)) && (
+                <span className="text-gray-400 font-normal">({(parseInt(coreMinutes, 10) / 60).toFixed(1)}h)</span>
+              )}
+            </label>
             <input
               type="number"
               min={1}
               max={1440}
               value={coreMinutes}
-              onChange={(e) => { setCoreMinutes(e.target.value); setIsEditing(true) }}
+              onChange={(e) => {
+                const newCore = parseInt(e.target.value, 10)
+                setCoreMinutes(e.target.value)
+                setIsEditing(true)
+                // Auto-extend shift end if core exceeds shift duration
+                if (!Number.isNaN(newCore) && shiftStart) {
+                  const [startH, startM] = shiftStart.split(':').map(Number)
+                  const [endH, endM] = shiftEnd.split(':').map(Number)
+                  if (!Number.isNaN(startH) && !Number.isNaN(startM) && !Number.isNaN(endH) && !Number.isNaN(endM)) {
+                    const shiftMinutes = (endH * 60 + endM) - (startH * 60 + startM)
+                    if (newCore > shiftMinutes) {
+                      const newEndTotal = (startH * 60 + startM) + newCore
+                      const newEndH = Math.floor(newEndTotal / 60) % 24
+                      const newEndM = newEndTotal % 60
+                      setShiftEnd(`${newEndH.toString().padStart(2, '0')}:${newEndM.toString().padStart(2, '0')}`)
+                    }
+                  }
+                }
+              }}
               className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
           </div>
