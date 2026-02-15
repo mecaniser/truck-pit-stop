@@ -11,6 +11,7 @@ import { useSuggestionToasts } from '@/hooks/useSuggestionToasts'
 import { useTimerPanelPersistence } from '@/hooks/useTimerPanelPersistence'
 import NotificationBanner from '../../components/NotificationBanner'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
+import { StatusLED } from '@/components/ui/GlassNoirCard'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { 
@@ -265,8 +266,8 @@ function LiveTimer({ startedAt, totalMinutesToday = 0 }: { startedAt: string; to
 
 // Responsive container - full width on mobile, max 512px on larger screens, centered
 const Container = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`min-h-screen bg-gray-900 touch-manipulation ${className}`}>
-    <div className="w-full sm:max-w-lg sm:mx-auto bg-gray-900 min-h-screen relative sm:shadow-2xl sm:shadow-black/50 pb-[env(safe-area-inset-bottom)]">
+  <div className={`min-h-screen bg-zinc-950 touch-manipulation ${className}`}>
+    <div className="w-full sm:max-w-lg sm:mx-auto bg-zinc-950 min-h-screen relative sm:shadow-2xl sm:shadow-black/50 pb-[env(safe-area-inset-bottom)]">
       {children}
     </div>
   </div>
@@ -853,25 +854,25 @@ export default function MechanicPortalPage() {
     return (
       <div className="fixed bottom-0 left-0 right-0 z-10">
         {showStickyBar ? (
-          <div className="max-w-lg mx-auto bg-gray-900/95 border-t border-gray-700 px-4 py-3 backdrop-blur-sm">
+          <div className="max-w-lg mx-auto bg-zinc-900/95 border-t border-zinc-700/50 px-4 py-3 backdrop-blur-sm">
             {stickyIsLiveTimer ? (
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-base text-cyan-200 min-w-0 truncate">
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+                <div className="flex items-center gap-2 text-base text-[var(--accent-300)] min-w-0 truncate">
+                  <StatusLED status="active" size="sm" />
                   <span className="font-mono">{mechanicSuggestion.recommendedJob?.order_number}</span>
-                  <span className="font-mono text-green-200">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
+                  <span className="font-mono text-emerald-300">{formatSecondsAsClock(activeSessionElapsedSeconds)}</span>
                 </div>
                 <button
                   onClick={() => mechanicSuggestion.recommendedJob && completeWorkMutation.mutate(mechanicSuggestion.recommendedJob.id)}
                   disabled={completeWorkMutation.isPending || !mechanicSuggestion.recommendedJob}
-                  className="px-5 py-3 rounded-xl bg-emerald-600 active:bg-emerald-700 text-white text-base font-semibold disabled:bg-gray-600 shrink-0"
+                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-emerald-400/50 transition-all hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                 >
                   {completeWorkMutation.isPending ? 'Completing...' : 'Job Done'}
                 </button>
               </div>
             ) : (
               <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0 text-base text-gray-300 truncate">
+                <div className="flex-1 min-w-0 text-base text-zinc-300 truncate">
                   {mechanicSuggestion.action === 'start_misc'
                     ? `Start ${MISC_WORK_OPTIONS.find((o) => o.value === miscCategory)?.label || 'misc'} timer`
                     : formatSuggestedNextAction(mechanicSuggestion.action)}
@@ -879,7 +880,7 @@ export default function MechanicPortalPage() {
                 <button
                   onClick={handleStickyAction}
                   disabled={stickyActionBusy}
-                  className="px-5 py-3 rounded-xl bg-indigo-600 active:bg-indigo-700 text-white text-base font-semibold disabled:bg-gray-600 shrink-0"
+                  className="px-5 py-3 rounded-xl bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] text-white text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border border-[var(--accent-400)]/50 transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                 >
                   {stickyActionBusy
                     ? '...'
@@ -891,35 +892,31 @@ export default function MechanicPortalPage() {
             )}
           </div>
         ) : null}
-        <div className="max-w-lg mx-auto bg-gray-800 border-t border-gray-700 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-around">
+        <div className="max-w-lg mx-auto bg-zinc-900/95 backdrop-blur-sm border-t border-zinc-700/50 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex justify-around">
           <button
             onClick={() => setView('list')}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'list' && currentView !== 'detail' ? 'text-gray-500' : ''}`}
-            style={(currentView === 'list' || currentView === 'detail') ? { color: accentColors[500] } : undefined}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'list' && currentView !== 'detail' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <Wrench className="w-7 h-7" />
             <span className="text-[11px] font-medium">Jobs</span>
           </button>
           <button
             onClick={() => setView('history')}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'history' ? 'text-gray-500' : ''}`}
-            style={currentView === 'history' ? { color: accentColors[500] } : undefined}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'history' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <History className="w-7 h-7" />
             <span className="text-[11px] font-medium">History</span>
           </button>
           <button
             onClick={() => setView('stats')}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'stats' && currentView !== 'request' ? 'text-gray-500' : ''}`}
-            style={(currentView === 'stats' || currentView === 'request') ? { color: accentColors[500] } : undefined}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'stats' && currentView !== 'request' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <Trophy className="w-7 h-7" />
             <span className="text-[11px] font-medium">Rewards</span>
           </button>
           <button
             onClick={() => setView('profile')}
-            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-lg active:bg-gray-700/50 ${currentView !== 'profile' ? 'text-gray-500' : ''}`}
-            style={currentView === 'profile' ? { color: accentColors[500] } : undefined}
+            className={`flex flex-col items-center justify-center gap-0.5 min-h-[48px] min-w-[64px] rounded-xl active:bg-zinc-800/60 transition-colors ${currentView !== 'profile' ? 'text-zinc-500' : 'text-[var(--accent-400)]'}`}
           >
             <User className="w-7 h-7" />
             <span className="text-[11px] font-medium">Profile</span>
@@ -939,33 +936,33 @@ export default function MechanicPortalPage() {
       <Container className="flex flex-col">
         <div className="flex flex-col min-h-screen">
           {/* Header */}
-          <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-            <button onClick={goBack} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
-              <ArrowLeft className="w-6 h-6 text-gray-400" />
+          <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
+            <button onClick={goBack} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+              <ArrowLeft className="w-6 h-6 text-zinc-400" />
             </button>
             <div className="flex-1">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">
+              <p className="text-xs text-zinc-500 uppercase tracking-wide">
                 {STATUS_LABELS[jobDetail.status] || jobDetail.status}
               </p>
-              <h1 className="text-lg font-bold text-white">{jobDetail.order_number}</h1>
+              <h1 className="text-lg font-bold text-zinc-100">{jobDetail.order_number}</h1>
             </div>
           </header>
 
           {/* Vehicle Card */}
           <div className="p-4">
-            <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-cyan-500/20 rounded-xl flex items-center justify-center">
-                  <Truck className="w-6 h-6 text-cyan-400" />
+                <div className="w-12 h-12 bg-[var(--accent-500)]/20 rounded-xl flex items-center justify-center border border-[var(--accent-500)]/30">
+                  <Truck className="w-6 h-6 text-[var(--accent-400)]" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-white font-bold text-lg truncate">
+                  <h2 className="text-zinc-100 font-bold text-lg truncate">
                     {jobDetail.vehicle_year} {jobDetail.vehicle_make} {jobDetail.vehicle_model}
                   </h2>
                   {jobDetail.vehicle_license_plate && (
-                    <p className="text-gray-400 text-sm">{jobDetail.vehicle_license_plate}</p>
+                    <p className="text-zinc-400 text-sm">{jobDetail.vehicle_license_plate}</p>
                   )}
-                  <p className="text-gray-500 text-xs mt-1">Created {formatCreatedAt(jobDetail.created_at)}</p>
+                  <p className="text-zinc-500 text-xs mt-1">Created {formatCreatedAt(jobDetail.created_at)}</p>
                 </div>
               </div>
             </div>
@@ -988,12 +985,12 @@ export default function MechanicPortalPage() {
           {/* Services */}
           {jobDetail.services.length > 0 && (
             <div className="px-4 flex-1">
-              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Work to do</p>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-2">Work to do</p>
               <div className="space-y-2">
                 {jobDetail.services.map((svc, idx) => (
-                  <div key={idx} className="flex items-center gap-3 bg-gray-800 rounded-xl p-3 border border-gray-700">
-                    <Wrench className="w-5 h-5 text-amber-400 shrink-0" />
-                    <span className="text-white font-medium">{svc.name}</span>
+                  <div key={idx} className="flex items-center gap-3 bg-zinc-800/60 rounded-xl p-3 border border-zinc-700/50">
+                    <Wrench className="w-5 h-5 text-[var(--accent-400)] shrink-0" />
+                    <span className="text-zinc-100 font-medium">{svc.name}</span>
                   </div>
                 ))}
               </div>
@@ -1006,7 +1003,7 @@ export default function MechanicPortalPage() {
               <button
                 onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
                 disabled={isPending}
-                className="w-full py-5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-purple-500/25"
+                className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_32px_var(--accent-500)]"
               >
                 {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
                 ACCEPT & START
@@ -1016,7 +1013,7 @@ export default function MechanicPortalPage() {
             {jobDetail.status === 'in_progress' && jobDetail.hold_reason && (
               <div className="space-y-3">
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3 flex items-center gap-2">
-                  <PauseCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <StatusLED status="warning" />
                   <span className="text-amber-200 font-medium">
                     On hold: {HOLD_REASON_LABELS[jobDetail.hold_reason || ''] || jobDetail.hold_reason}
                   </span>
@@ -1025,7 +1022,7 @@ export default function MechanicPortalPage() {
                   <button
                     onClick={() => resumeOrderMutation.mutate(jobDetail.id)}
                     disabled={isPending}
-                    className="w-full py-5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25"
+                    className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                   >
                     {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
                     RESUME
@@ -1033,10 +1030,10 @@ export default function MechanicPortalPage() {
                   <button
                     onClick={() => completeWorkMutation.mutate(jobDetail.id)}
                     disabled={isPending}
-                    className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
+                    className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                   >
                     {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
-                    JOB DONE ✓
+                    JOB DONE
                   </button>
                 </div>
               </div>
@@ -1046,17 +1043,17 @@ export default function MechanicPortalPage() {
               <div className="space-y-3">
                 {holdTarget === jobDetail.id ? (
                   <div className="space-y-3">
-                    <p className="text-sm text-gray-400 font-medium">Why are you pausing?</p>
+                    <p className="text-sm text-zinc-400 font-medium">Why are you pausing?</p>
                     <div className="flex flex-wrap gap-2">
                       {HOLD_REASONS.map((r) => (
                         <button
                           key={r.value}
                           type="button"
                           onClick={() => setHoldReason(r.value)}
-                          className={`px-4 py-2.5 rounded-full border text-sm font-medium transition-colors ${
+                          className={`px-4 py-2.5 rounded-full border text-sm font-medium transition-all ${
                             holdReason === r.value
                               ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                              : 'bg-gray-700/60 border-gray-600 text-gray-300 active:bg-gray-600'
+                              : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 active:bg-zinc-700'
                           }`}
                         >
                           {r.label}
@@ -1066,14 +1063,14 @@ export default function MechanicPortalPage() {
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
-                        className="py-4 bg-gray-700 active:bg-gray-600 text-gray-300 text-lg font-semibold rounded-2xl transition-all"
+                        className="py-4 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-lg font-semibold rounded-2xl transition-all border border-zinc-600/50"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={() => holdReason && holdOrderMutation.mutate({ orderId: jobDetail.id, reason: holdReason })}
                         disabled={!holdReason || holdOrderMutation.isPending}
-                        className="py-4 bg-amber-600 active:bg-amber-700 disabled:bg-gray-700 text-white text-lg font-semibold rounded-2xl transition-all"
+                        className="py-4 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-lg font-semibold rounded-2xl transition-all border border-amber-400/50"
                       >
                         {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
                       </button>
@@ -1086,7 +1083,7 @@ export default function MechanicPortalPage() {
                         <button
                           onClick={() => acceptAndStartMutation.mutate({ orderId: jobDetail.id, currentStatus: jobDetail.status })}
                           disabled={isPending}
-                          className="w-full py-5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-500/25"
+                          className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                         >
                           {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
                           RESUME
@@ -1094,7 +1091,7 @@ export default function MechanicPortalPage() {
                       )}
                       <button
                         onClick={() => setHoldTarget(jobDetail.id)}
-                        className="w-full py-5 bg-amber-600/80 hover:bg-amber-600 active:bg-amber-700 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3"
+                        className="w-full py-5 bg-amber-600/80 hover:bg-amber-600 active:scale-[0.98] text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-amber-400/50"
                       >
                         <PauseCircle className="w-7 h-7" />
                         HOLD
@@ -1102,10 +1099,10 @@ export default function MechanicPortalPage() {
                       <button
                         onClick={() => completeWorkMutation.mutate(jobDetail.id)}
                         disabled={isPending}
-                        className="w-full py-5 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-600 text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-500/25"
+                        className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                       >
                         {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
-                        DONE ✓
+                        DONE
                       </button>
                     </div>
                   </div>
@@ -1114,18 +1111,18 @@ export default function MechanicPortalPage() {
             )}
 
             {jobDetail.status === 'pending_review' && (
-              <div className="bg-orange-500/20 border border-orange-500/50 rounded-2xl p-5 text-center">
-                <Clock className="w-10 h-10 text-orange-400 mx-auto mb-2" />
-                <p className="text-orange-300 font-medium text-lg">Waiting for manager approval</p>
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5 text-center">
+                <StatusLED status="warning" />
+                <p className="text-amber-300 font-medium text-lg mt-2">Waiting for manager approval</p>
               </div>
             )}
 
             {['completed', 'invoiced', 'paid'].includes(jobDetail.status) && (
-              <div className="bg-green-500/20 border border-green-500/50 rounded-2xl p-5 text-center">
-                <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
-                <p className="text-green-300 font-medium text-lg">Job Completed</p>
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5 text-center">
+                <StatusLED status="active" />
+                <p className="text-emerald-300 font-medium text-lg mt-2">Job Completed</p>
                 {jobDetail.work_completed_at && (
-                  <p className="text-green-400/70 text-sm mt-1">
+                  <p className="text-emerald-400/70 text-sm mt-1">
                     {format(new Date(jobDetail.work_completed_at), 'MMM d, yyyy')}
                   </p>
                 )}
@@ -1144,17 +1141,17 @@ export default function MechanicPortalPage() {
   if (view === 'history') {
     return (
       <Container>
-        <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
-            <ArrowLeft className="w-6 h-6 text-gray-400" />
+        <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
+          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+            <ArrowLeft className="w-6 h-6 text-zinc-400" />
           </button>
-          <h1 className="text-lg font-bold text-white">Work History</h1>
+          <h1 className="text-lg font-bold text-zinc-100">Work History</h1>
         </header>
 
         <div className="p-4">
           {historyLoading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+              <Loader2 className="w-8 h-8 text-[var(--accent-500)] animate-spin" />
             </div>
           ) : history && history.length > 0 ? (
             <div className="space-y-3">
@@ -1162,21 +1159,22 @@ export default function MechanicPortalPage() {
                 <button
                   key={item.id}
                   onClick={() => openJob(item.id, 'history')}
-                  className="w-full text-left bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-gray-600 transition-colors"
+                  className="w-full text-left bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 hover:border-[var(--accent-500)]/40 transition-all shadow-xl shadow-black/20 hover:shadow-[var(--accent-500)]/10"
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono text-sm text-gray-500">{item.order_number}</span>
-                    <span className="text-xs text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full">
+                    <span className="font-mono text-sm text-zinc-500">{item.order_number}</span>
+                    <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                      <StatusLED status="active" size="sm" />
                       +{item.points_earned.toLocaleString()} pts
                     </span>
                   </div>
-                  <p className="text-white font-medium">{item.vehicle_info}</p>
+                  <p className="text-zinc-100 font-medium">{item.vehicle_info}</p>
                   <div className="flex items-center gap-3 mt-1">
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-zinc-500">
                       {format(new Date(item.completed_at), 'MMM d, yyyy')}
                     </p>
                     {item.actual_hours != null && (
-                      <span className="text-xs text-amber-400 font-mono">{item.actual_hours}h worked</span>
+                      <span className="text-xs text-[var(--accent-400)] font-mono">{item.actual_hours}h worked</span>
                     )}
                   </div>
                 </button>
@@ -1184,8 +1182,10 @@ export default function MechanicPortalPage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <History className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400">No completed jobs yet</p>
+              <div className="w-16 h-16 bg-zinc-900/80 rounded-full flex items-center justify-center mx-auto mb-3 border border-zinc-700/50">
+                <History className="w-8 h-8 text-zinc-600" />
+              </div>
+              <p className="text-zinc-400">No completed jobs yet</p>
             </div>
           )}
         </div>
@@ -1205,81 +1205,86 @@ export default function MechanicPortalPage() {
     
     return (
       <Container>
-        <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
-            <ArrowLeft className="w-6 h-6 text-gray-400" />
+        <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
+          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+            <ArrowLeft className="w-6 h-6 text-zinc-400" />
           </button>
-          <h1 className="text-lg font-bold text-white">My Stats & Rewards</h1>
+          <h1 className="text-lg font-bold text-zinc-100">My Stats & Rewards</h1>
         </header>
 
         <div className="p-4 space-y-4">
           {/* Available Points Card */}
-          <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-6 text-center">
-            <Trophy className="w-12 h-12 text-white mx-auto mb-2" />
-            <p className="text-white/80 text-sm uppercase tracking-wide">Available Points</p>
-            <p className="text-5xl font-black text-white">{availablePoints.toLocaleString()}</p>
-            <p className="text-white/60 text-sm mt-1">
-              Lifetime earned: {(stats?.total_points || 0).toLocaleString()}
-            </p>
+          <div className="relative bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-6 text-center border border-[var(--accent-500)]/30 shadow-xl shadow-black/20 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-500)]/20 to-transparent" />
+            <div className="relative">
+              <div className="w-16 h-16 bg-[var(--accent-500)]/20 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-[var(--accent-400)]/30">
+                <Trophy className="w-8 h-8 text-[var(--accent-400)]" />
+              </div>
+              <p className="text-zinc-400 text-sm uppercase tracking-[0.2em] font-bold">Available Points</p>
+              <p className="text-5xl font-black text-zinc-100 mt-1">{availablePoints.toLocaleString()}</p>
+              <p className="text-zinc-500 text-sm mt-2">
+                Lifetime earned: {(stats?.total_points || 0).toLocaleString()}
+              </p>
+            </div>
           </div>
 
           {/* Streak & Multiplier */}
           {(stats?.streak_days || 0) > 0 && (
-            <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700 flex items-center gap-4">
-              <div className="w-12 h-12 bg-orange-500/20 rounded-xl flex items-center justify-center">
-                <Zap className="w-6 h-6 text-orange-400" />
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-500/20 rounded-xl flex items-center justify-center border border-amber-500/30">
+                <Zap className="w-6 h-6 text-amber-400" />
               </div>
               <div className="flex-1">
-                <p className="text-gray-400 text-sm">Current Streak</p>
-                <p className="text-2xl font-bold text-white">{stats?.streak_days} days</p>
+                <p className="text-zinc-400 text-sm">Current Streak</p>
+                <p className="text-2xl font-bold text-zinc-100">{stats?.streak_days} days</p>
               </div>
               {(stats?.streak_multiplier || 1) > 1 && (
-                <div className="bg-green-500/20 px-3 py-1 rounded-full">
-                  <span className="text-green-400 font-bold">{stats?.streak_multiplier}x</span>
+                <div className="bg-emerald-500/20 px-3 py-1.5 rounded-full border border-emerald-500/30">
+                  <span className="text-emerald-400 font-bold">{stats?.streak_multiplier}x</span>
                 </div>
               )}
             </div>
           )}
 
           {/* Redemption Options */}
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
-            <p className="text-sm text-gray-400 mb-3">Redeem Your Points</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-3">Redeem Your Points</p>
             
             {/* PTO Option */}
-            <div className={`p-4 rounded-xl mb-3 ${canRedeemPTO ? 'bg-blue-500/20 border border-blue-500/50' : 'bg-gray-700/50'}`}>
+            <div className={`p-4 rounded-xl mb-3 ${canRedeemPTO ? 'bg-[var(--accent-500)]/10 border border-[var(--accent-500)]/30' : 'bg-zinc-800/60 border border-zinc-700/50'}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl">🏖️</span>
-                  <span className="text-white font-medium">PTO Day</span>
+                  <Calendar className="w-5 h-5 text-[var(--accent-400)]" />
+                  <span className="text-zinc-100 font-medium">PTO Day</span>
                 </div>
-                <span className="text-gray-400 text-sm">8,000 pts = 1 day</span>
+                <span className="text-zinc-400 text-sm">8,000 pts = 1 day</span>
               </div>
               {canRedeemPTO ? (
-                <p className="text-blue-400 text-sm">
+                <p className="text-[var(--accent-400)] text-sm">
                   You can redeem <strong>{ptoDays} day{ptoDays > 1 ? 's' : ''}</strong> of PTO!
                 </p>
               ) : (
-                <p className="text-gray-500 text-sm">
+                <p className="text-zinc-500 text-sm">
                   Need {(8000 - availablePoints).toLocaleString()} more points
                 </p>
               )}
             </div>
 
             {/* Cash Option */}
-            <div className={`p-4 rounded-xl ${availablePoints > 0 ? 'bg-green-500/20 border border-green-500/50' : 'bg-gray-700/50'}`}>
+            <div className={`p-4 rounded-xl ${availablePoints > 0 ? 'bg-emerald-500/10 border border-emerald-500/30' : 'bg-zinc-800/60 border border-zinc-700/50'}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-2xl">💵</span>
-                  <span className="text-white font-medium">Cash Out</span>
+                  <DollarSign className="w-5 h-5 text-emerald-400" />
+                  <span className="text-zinc-100 font-medium">Cash Out</span>
                 </div>
-                <span className="text-gray-400 text-sm">$0.0375/pt</span>
+                <span className="text-zinc-400 text-sm">$0.0375/pt</span>
               </div>
               {availablePoints > 0 ? (
-                <p className="text-green-400 text-sm">
+                <p className="text-emerald-400 text-sm">
                   Worth <strong>${cashValue}</strong> cash
                 </p>
               ) : (
-                <p className="text-gray-500 text-sm">Complete jobs to earn points</p>
+                <p className="text-zinc-500 text-sm">Complete jobs to earn points</p>
               )}
             </div>
 
@@ -1287,7 +1292,7 @@ export default function MechanicPortalPage() {
             <button
               onClick={() => setView('request')}
               disabled={availablePoints <= 0}
-              className="w-full py-4 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white font-bold rounded-xl transition-colors mt-3"
+              className="w-full py-4 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all mt-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
             >
               Request PTO or Cash
             </button>
@@ -1295,62 +1300,65 @@ export default function MechanicPortalPage() {
 
           {/* Job Counts */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
-              <p className="text-3xl font-bold text-white">{stats?.jobs_completed_today || 0}</p>
-              <p className="text-xs text-gray-500 uppercase">Today</p>
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 text-center shadow-xl shadow-black/20">
+              <p className="text-3xl font-bold text-zinc-100">{stats?.jobs_completed_today || 0}</p>
+              <p className="text-xs text-zinc-500 uppercase">Today</p>
             </div>
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
-              <p className="text-3xl font-bold text-white">{stats?.jobs_completed_week || 0}</p>
-              <p className="text-xs text-gray-500 uppercase">This Week</p>
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 text-center shadow-xl shadow-black/20">
+              <p className="text-3xl font-bold text-zinc-100">{stats?.jobs_completed_week || 0}</p>
+              <p className="text-xs text-zinc-500 uppercase">This Week</p>
             </div>
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
-              <p className="text-3xl font-bold text-white">{stats?.jobs_completed_month || 0}</p>
-              <p className="text-xs text-gray-500 uppercase">This Month</p>
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 text-center shadow-xl shadow-black/20">
+              <p className="text-3xl font-bold text-zinc-100">{stats?.jobs_completed_month || 0}</p>
+              <p className="text-xs text-zinc-500 uppercase">This Month</p>
             </div>
           </div>
 
           {/* How Points Work */}
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
-            <p className="text-sm text-gray-400 mb-3">How Points Work</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-3">How Points Work</p>
             <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2 text-gray-300">
-                <span className="text-green-400">•</span>
+              <div className="flex items-center gap-2 text-zinc-300">
+                <StatusLED status="active" size="sm" />
                 <span>1 point per $1 of labor value</span>
               </div>
-              <div className="flex items-center gap-2 text-gray-300">
-                <span className="text-green-400">•</span>
+              <div className="flex items-center gap-2 text-zinc-300">
+                <StatusLED status="active" size="sm" />
                 <span>5+ day streak = 1.1x bonus</span>
               </div>
-              <div className="flex items-center gap-2 text-gray-300">
-                <span className="text-green-400">•</span>
+              <div className="flex items-center gap-2 text-zinc-300">
+                <StatusLED status="active" size="sm" />
                 <span>10+ day streak = 1.25x bonus</span>
               </div>
-              <div className="flex items-center gap-2 text-gray-300">
-                <span className="text-green-400">•</span>
+              <div className="flex items-center gap-2 text-zinc-300">
+                <StatusLED status="active" size="sm" />
                 <span>Bigger jobs = more points!</span>
               </div>
             </div>
           </div>
 
           {/* Milestones */}
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
-            <p className="text-sm text-gray-400 mb-3">Milestones</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-3">Milestones</p>
             <div className="space-y-3">
               {[
-                { pts: 1000, label: 'Rookie', icon: '🔧' },
-                { pts: 5000, label: 'Pro', icon: '⭐' },
-                { pts: 10000, label: 'Expert', icon: '🏆' },
-                { pts: 50000, label: 'Master', icon: '👑' },
+                { pts: 1000, label: 'Rookie', icon: Wrench },
+                { pts: 5000, label: 'Pro', icon: Star },
+                { pts: 10000, label: 'Expert', icon: Trophy },
+                { pts: 50000, label: 'Master', icon: Zap },
               ].map((m) => {
                 const achieved = (stats?.total_points || 0) >= m.pts
+                const IconComponent = m.icon
                 return (
-                  <div key={m.pts} className={`flex items-center gap-3 ${achieved ? '' : 'opacity-40'}`}>
-                    <span className="text-2xl">{m.icon}</span>
-                    <div className="flex-1">
-                      <p className={`font-medium ${achieved ? 'text-white' : 'text-gray-500'}`}>{m.label}</p>
-                      <p className="text-xs text-gray-500">{m.pts.toLocaleString()} points</p>
+                  <div key={m.pts} className={`flex items-center gap-3 p-2 rounded-xl transition-all ${achieved ? 'bg-zinc-800/40' : 'opacity-40'}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${achieved ? 'bg-[var(--accent-500)]/20 border border-[var(--accent-500)]/30' : 'bg-zinc-800 border border-zinc-700/50'}`}>
+                      <IconComponent className={`w-5 h-5 ${achieved ? 'text-[var(--accent-400)]' : 'text-zinc-600'}`} />
                     </div>
-                    {achieved && <CheckCircle className="w-5 h-5 text-green-400" />}
+                    <div className="flex-1">
+                      <p className={`font-medium ${achieved ? 'text-zinc-100' : 'text-zinc-500'}`}>{m.label}</p>
+                      <p className="text-xs text-zinc-500">{m.pts.toLocaleString()} points</p>
+                    </div>
+                    {achieved && <StatusLED status="active" />}
                   </div>
                 )
               })}
@@ -1376,28 +1384,28 @@ export default function MechanicPortalPage() {
     
     return (
       <Container>
-        <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('stats')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
-            <ArrowLeft className="w-6 h-6 text-gray-400" />
+        <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
+          <button onClick={() => setView('stats')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+            <ArrowLeft className="w-6 h-6 text-zinc-400" />
           </button>
-          <h1 className="text-lg font-bold text-white">Request Rewards</h1>
+          <h1 className="text-lg font-bold text-zinc-100">Request Rewards</h1>
         </header>
 
         <div className="p-4 space-y-4">
           {/* Available Points */}
-          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 flex items-center justify-between">
-            <span className="text-gray-400">Available Points</span>
-            <span className="text-2xl font-bold text-amber-400">{availablePoints.toLocaleString()}</span>
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 flex items-center justify-between">
+            <span className="text-zinc-400">Available Points</span>
+            <span className="text-2xl font-bold text-[var(--accent-400)]">{availablePoints.toLocaleString()}</span>
           </div>
 
           {/* Request Type Toggle */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 bg-zinc-900/80 backdrop-blur-sm p-1.5 rounded-2xl border border-zinc-700/50">
             <button
               onClick={() => setRequestType('pto')}
-              className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${
+              className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                 requestType === 'pto' 
-                  ? 'bg-blue-600 text-white' 
-                  : 'bg-gray-800 text-gray-400 border border-gray-700'
+                  ? 'bg-[var(--accent-500)]/20 text-white border border-[var(--accent-500)]/50' 
+                  : 'text-zinc-500 border border-transparent hover:text-zinc-300 hover:bg-zinc-800/40'
               }`}
             >
               <Calendar className="w-5 h-5" />
@@ -1405,10 +1413,10 @@ export default function MechanicPortalPage() {
             </button>
             <button
               onClick={() => setRequestType('cash')}
-              className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors ${
+              className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
                 requestType === 'cash' 
-                  ? 'bg-green-600 text-white' 
-                  : 'bg-gray-800 text-gray-400 border border-gray-700'
+                  ? 'bg-emerald-500/20 text-white border border-emerald-500/50' 
+                  : 'text-zinc-500 border border-transparent hover:text-zinc-300 hover:bg-zinc-800/40'
               }`}
             >
               <DollarSign className="w-5 h-5" />
@@ -1418,41 +1426,41 @@ export default function MechanicPortalPage() {
 
           {/* PTO Form */}
           {requestType === 'pto' && (
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-4">
-              <p className="text-sm text-gray-400">Select your PTO dates (8,000 pts/day)</p>
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 space-y-4">
+              <p className="text-sm text-zinc-400">Select your PTO dates (8,000 pts/day)</p>
               
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Start Date</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">Start Date</label>
                   <input
                     type="date"
                     value={ptoStartDate}
                     onChange={(e) => setPtoStartDate(e.target.value)}
                     min={format(new Date(), 'yyyy-MM-dd')}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                    className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">End Date</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">End Date</label>
                   <input
                     type="date"
                     value={ptoEndDate}
                     onChange={(e) => setPtoEndDate(e.target.value)}
                     min={ptoStartDate || format(new Date(), 'yyyy-MM-dd')}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                    className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
                   />
                 </div>
               </div>
 
               {ptoDays > 0 && (
-                <div className="bg-gray-700/50 rounded-lg p-3">
+                <div className="bg-zinc-800/60 rounded-xl p-3 border border-zinc-700/50">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Days requested</span>
-                    <span className="text-white font-medium">{ptoDays}</span>
+                    <span className="text-zinc-400">Days requested</span>
+                    <span className="text-zinc-100 font-medium">{ptoDays}</span>
                   </div>
                   <div className="flex justify-between text-sm mt-1">
-                    <span className="text-gray-400">Points needed</span>
-                    <span className={ptoPointsNeeded <= availablePoints ? 'text-green-400' : 'text-red-400'}>
+                    <span className="text-zinc-400">Points needed</span>
+                    <span className={ptoPointsNeeded <= availablePoints ? 'text-emerald-400' : 'text-red-400'}>
                       {ptoPointsNeeded.toLocaleString()}
                     </span>
                   </div>
@@ -1463,7 +1471,7 @@ export default function MechanicPortalPage() {
                 value={requestNotes}
                 onChange={(e) => setRequestNotes(e.target.value)}
                 placeholder="Notes (optional)"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 resize-none"
+                className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 resize-none focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
                 rows={2}
               />
 
@@ -1486,7 +1494,7 @@ export default function MechanicPortalPage() {
                   })
                 }}
                 disabled={!canRequestPTO || !ptoStartDate || !ptoEndDate || ptoPointsNeeded > availablePoints || createRequestMutation.isPending}
-                className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="w-full py-4 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
               >
                 {createRequestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
                 Request PTO
@@ -1496,20 +1504,20 @@ export default function MechanicPortalPage() {
 
           {/* Cash Form */}
           {requestType === 'cash' && (
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-4">
-              <p className="text-sm text-gray-400">Cash out your points ($0.0375/pt)</p>
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 space-y-4">
+              <p className="text-sm text-zinc-400">Cash out your points ($0.0375/pt)</p>
               
-              <div className="bg-green-500/20 border border-green-500/50 rounded-xl p-4 text-center">
-                <p className="text-green-400 text-sm">You can cash out</p>
-                <p className="text-3xl font-bold text-white">${cashValue}</p>
-                <p className="text-green-400/60 text-xs mt-1">({availablePoints.toLocaleString()} points)</p>
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center">
+                <p className="text-emerald-400 text-sm">You can cash out</p>
+                <p className="text-3xl font-bold text-zinc-100">${cashValue}</p>
+                <p className="text-emerald-400/60 text-xs mt-1">({availablePoints.toLocaleString()} points)</p>
               </div>
 
               <textarea
                 value={requestNotes}
                 onChange={(e) => setRequestNotes(e.target.value)}
                 placeholder="Notes (optional)"
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 resize-none"
+                className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 resize-none focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
                 rows={2}
               />
 
@@ -1526,7 +1534,7 @@ export default function MechanicPortalPage() {
                   })
                 }}
                 disabled={availablePoints <= 0 || createRequestMutation.isPending}
-                className="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
               >
                 {createRequestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <DollarSign className="w-5 h-5" />}
                 Request Cash Out
@@ -1536,54 +1544,57 @@ export default function MechanicPortalPage() {
 
           {/* My Requests */}
           {myRequests && myRequests.length > 0 && (
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-              <p className="text-sm text-gray-400 mb-3">My Requests</p>
+            <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-3">My Requests</p>
               <div className="space-y-2">
                 {myRequests.map((req) => (
-                  <div key={req.id} className="bg-gray-700/50 rounded-lg p-3">
+                  <div key={req.id} className="bg-zinc-800/60 rounded-xl p-3 border border-zinc-700/50">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         {req.request_type === 'pto' ? (
-                          <Calendar className="w-4 h-4 text-blue-400" />
+                          <Calendar className="w-4 h-4 text-[var(--accent-400)]" />
                         ) : (
-                          <DollarSign className="w-4 h-4 text-green-400" />
+                          <DollarSign className="w-4 h-4 text-emerald-400" />
                         )}
-                        <span className="text-white font-medium">
+                        <span className="text-zinc-100 font-medium">
                           {req.request_type === 'pto' 
                             ? `${req.pto_days} day${req.pto_days !== 1 ? 's' : ''} PTO`
                             : `$${req.cash_value?.toFixed(2)} cash`
                           }
                         </span>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        req.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
-                        req.status === 'approved' ? 'bg-green-500/20 text-green-400' :
-                        req.status === 'denied' ? 'bg-red-500/20 text-red-400' :
-                        'bg-gray-500/20 text-gray-400'
+                      <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
+                        req.status === 'pending' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                        req.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                        req.status === 'denied' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                        'bg-zinc-800 text-zinc-400 border-zinc-700/50'
                       }`}>
+                        {req.status === 'pending' && <StatusLED status="warning" size="sm" />}
+                        {req.status === 'approved' && <StatusLED status="active" size="sm" />}
+                        {req.status === 'denied' && <StatusLED status="error" size="sm" />}
                         {req.status}
                       </span>
                     </div>
                     {req.request_type === 'pto' && req.pto_start_date && (
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-zinc-500 mt-1">
                         {format(new Date(req.pto_start_date), 'MMM d')} - {format(new Date(req.pto_end_date!), 'MMM d, yyyy')}
                       </p>
                     )}
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-zinc-500">
                         {format(new Date(req.created_at), 'MMM d, yyyy')}
                       </span>
                       {req.status === 'pending' && (
                         <button
                           onClick={() => cancelRequestMutation.mutate(req.id)}
-                          className="text-xs text-red-400 hover:text-red-300"
+                          className="text-xs text-red-400 hover:text-red-300 transition-colors"
                         >
                           Cancel
                         </button>
                       )}
                     </div>
                     {req.manager_notes && (
-                      <p className="text-xs text-gray-400 mt-2 italic">"{req.manager_notes}"</p>
+                      <p className="text-xs text-zinc-400 mt-2 italic bg-zinc-800/40 rounded-lg p-2">"{req.manager_notes}"</p>
                     )}
                   </div>
                 ))}
@@ -1648,18 +1659,18 @@ export default function MechanicPortalPage() {
 
     return (
       <Container>
-        <header className="bg-gray-800 px-4 py-3 flex items-center gap-3">
-          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-gray-700 rounded-xl">
-            <ArrowLeft className="w-6 h-6 text-gray-400" />
+        <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 flex items-center gap-3 border-b border-zinc-700/50">
+          <button onClick={() => setView('list')} className="p-3 -ml-3 active:bg-zinc-800 rounded-xl">
+            <ArrowLeft className="w-6 h-6 text-zinc-400" />
           </button>
-          <h1 className="text-lg font-bold text-white">Profile Settings</h1>
+          <h1 className="text-lg font-bold text-zinc-100">Profile Settings</h1>
         </header>
 
         <div className="p-4 space-y-6 pb-24">
           {/* Profile Info */}
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">Personal Information</h2>
+              <h2 className="text-zinc-100 font-semibold">Personal Information</h2>
               {!isEditingProfile && (
                 <button
                   onClick={() => {
@@ -1669,7 +1680,7 @@ export default function MechanicPortalPage() {
                     setPhone(user?.phone || '')
                     setIsEditingProfile(true)
                   }}
-                  className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white rounded-xl transition-all border border-[var(--accent-400)]/50 hover:shadow-[0_0_16px_var(--accent-500)]"
                 >
                   Edit
                 </button>
@@ -1679,98 +1690,98 @@ export default function MechanicPortalPage() {
             {!isEditingProfile ? (
               <div className="space-y-3">
                 <div>
-                  <div className="text-xs text-gray-400">Name</div>
-                  <div className="text-white">{user?.first_name} {user?.last_name}</div>
+                  <div className="text-xs font-medium text-zinc-400 mb-1">Name</div>
+                  <div className="text-zinc-100">{user?.first_name} {user?.last_name}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400">Email</div>
-                  <div className="text-white">{user?.email}</div>
+                  <div className="text-xs font-medium text-zinc-400 mb-1">Email</div>
+                  <div className="text-zinc-100">{user?.email}</div>
                 </div>
                 {user?.phone && (
                   <div>
-                    <div className="text-xs text-gray-400">Phone</div>
-                    <div className="text-white">{user?.phone}</div>
+                    <div className="text-xs font-medium text-zinc-400 mb-1">Phone</div>
+                    <div className="text-zinc-100">{user?.phone}</div>
                   </div>
                 )}
               </div>
             ) : (
               <div className="space-y-3">
               <div>
-                <label className="text-xs text-gray-400 block mb-1">First Name</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">First Name</label>
                 <input
                   type="text"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Last Name</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Last Name</label>
                 <input
                   type="text"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Email Address</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Email Address</label>
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">This is your login email</p>
+                <p className="text-xs text-zinc-500 mt-1">This is your login email</p>
                 {email !== originalEmail && (
-                  <div className="mt-2 bg-blue-500/10 border border-blue-500/30 rounded-lg p-2">
-                    <p className="text-blue-400 text-xs">
-                      📧 You'll receive a verification link at the new email
+                  <div className="mt-2 bg-[var(--accent-500)]/10 border border-[var(--accent-500)]/30 rounded-xl p-3">
+                    <p className="text-[var(--accent-400)] text-xs">
+                      You'll receive a verification link at the new email
                     </p>
                   </div>
                 )}
               </div>
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Phone</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Phone</label>
                 <input
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="(555) 123-4567"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
               {/* Password confirmation - shown when email is changing */}
               {email !== originalEmail && (
                 <div>
-                  <label className="text-xs text-gray-400 block mb-1">Confirm Password</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">Confirm Password</label>
                   <div className="relative">
                     <input
                       type={showProfilePassword ? 'text' : 'password'}
                       value={profilePassword}
                       onChange={(e) => setProfilePassword(e.target.value)}
                       placeholder="Enter your current password"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white pr-10"
+                      className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500 pr-12"
                     />
                     <button
                       type="button"
                       onClick={() => setShowProfilePassword(!showProfilePassword)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 p-1 transition-colors"
                     >
                       {showProfilePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                   <p className="text-xs text-amber-400 mt-1">
-                    🔒 Password required for security
+                    Password required for security
                   </p>
                 </div>
               )}
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1781,14 +1792,14 @@ export default function MechanicPortalPage() {
                       setProfilePassword('')
                       setIsEditingProfile(false)
                     }}
-                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                    className="flex-1 py-3 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all border border-zinc-600/50 hover:border-zinc-500"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleProfileUpdate}
                     disabled={updateProfileMutation.isPending}
-                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                   >
                     {updateProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                     Save
@@ -1799,9 +1810,9 @@ export default function MechanicPortalPage() {
           </div>
 
           {/* Change Password */}
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-white font-semibold">Change Password</h2>
+              <h2 className="text-zinc-100 font-semibold">Change Password</h2>
               {!isChangingPassword && (
                 <button
                   onClick={() => {
@@ -1810,7 +1821,7 @@ export default function MechanicPortalPage() {
                     setConfirmPassword('')
                     setIsChangingPassword(true)
                   }}
-                  className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition-all border border-amber-400/50 hover:shadow-[0_0_16px_rgba(251,191,36,0.4)]"
                 >
                   Change
                 </button>
@@ -1820,18 +1831,18 @@ export default function MechanicPortalPage() {
             {isChangingPassword && (
               <div className="space-y-3">
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Current Password</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Current Password</label>
                 <div className="relative">
                   <input
                     type={showCurrentPassword ? 'text' : 'password'}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white pr-10"
+                    className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500 pr-12"
                   />
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 p-1 transition-colors"
                   >
                     {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -1839,36 +1850,36 @@ export default function MechanicPortalPage() {
               </div>
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">New Password</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">New Password</label>
                 <div className="relative">
                   <input
                     type={showNewPassword ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white pr-10"
+                    className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500 pr-12"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-100 p-1 transition-colors"
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Min 8 characters</p>
+                <p className="text-xs text-zinc-500 mt-1">Min 8 characters</p>
               </div>
 
               <div>
-                <label className="text-xs text-gray-400 block mb-1">Confirm New Password</label>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Confirm New Password</label>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all hover:border-zinc-500"
                 />
               </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -1877,14 +1888,14 @@ export default function MechanicPortalPage() {
                       setConfirmPassword('')
                       setIsChangingPassword(false)
                     }}
-                    className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                    className="flex-1 py-3 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl transition-all border border-zinc-600/50 hover:border-zinc-500"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handlePasswordChange}
                     disabled={changePasswordMutation.isPending || !currentPassword || !newPassword || !confirmPassword}
-                    className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                    className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50 hover:shadow-[0_0_24px_rgba(251,191,36,0.4)]"
                   >
                     {changePasswordMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                     Change
@@ -1895,15 +1906,15 @@ export default function MechanicPortalPage() {
           </div>
 
           {/* Appearance Settings */}
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Palette className="w-5 h-5 text-purple-400" />
-                <h2 className="text-white font-semibold">Appearance</h2>
+                <Palette className="w-5 h-5 text-[var(--accent-400)]" />
+                <h2 className="text-zinc-100 font-semibold">Appearance</h2>
               </div>
               <button
                 onClick={resetToDefaults}
-                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-xl transition-all"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
@@ -1911,14 +1922,14 @@ export default function MechanicPortalPage() {
             
             {/* Accent Color */}
             <div className="mb-4">
-              <label className="text-xs text-gray-400 block mb-2">Accent Color</label>
+              <label className="block text-xs font-medium text-zinc-400 mb-2">Accent Color</label>
               <div className="flex gap-2">
                 {ACCENT_OPTIONS.map((option) => (
                   <button
                     key={option.id}
                     onClick={() => setAccent(option.id)}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                      accent === option.id ? 'ring-2 ring-offset-2 ring-offset-gray-800 ring-white scale-110' : ''
+                      accent === option.id ? 'ring-2 ring-offset-2 ring-offset-zinc-900 ring-white scale-110' : 'hover:scale-105'
                     }`}
                     style={{ backgroundColor: option.colors[500] }}
                   >
@@ -1930,16 +1941,16 @@ export default function MechanicPortalPage() {
 
             {/* Font Size */}
             <div>
-              <label className="text-xs text-gray-400 block mb-2">Font Size</label>
+              <label className="block text-xs font-medium text-zinc-400 mb-2">Font Size</label>
               <div className="flex gap-2">
                 {FONT_SIZE_OPTIONS.map((option) => (
                   <button
                     key={option.id}
                     onClick={() => setFontSize(option.id)}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold transition-all ${
                       fontSize === option.id
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        ? 'bg-[var(--accent-500)] text-white border border-[var(--accent-400)]/50 shadow-[0_0_12px_var(--accent-500)/40]'
+                        : 'bg-zinc-800/80 text-zinc-300 hover:bg-zinc-700 border border-zinc-600/50'
                     }`}
                   >
                     {option.label}
@@ -1949,12 +1960,12 @@ export default function MechanicPortalPage() {
             </div>
           </div>
 
-          <div className="bg-gray-800 rounded-2xl p-4 border border-gray-700">
-            <h2 className="text-white font-semibold">Session</h2>
-            <p className="text-sm text-gray-400 mt-1">Sign out from this device.</p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20">
+            <h2 className="text-zinc-100 font-semibold">Session</h2>
+            <p className="text-sm text-zinc-400 mt-1">Sign out from this device.</p>
             <button
               onClick={handleLogout}
-              className="w-full mt-4 py-4 bg-rose-600 active:bg-rose-700 text-white text-base font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              className="w-full mt-4 py-4 bg-red-950/80 hover:bg-red-900 active:scale-[0.98] text-red-400 text-base font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-red-800/50 hover:border-red-600"
             >
               <LogOut className="w-4 h-4" />
               Sign Out
@@ -1975,25 +1986,24 @@ export default function MechanicPortalPage() {
   return (
     <Container>
       {/* Header */}
-      <header className="bg-gray-800 px-4 py-3">
+      <header className="bg-zinc-900/80 backdrop-blur-sm px-4 py-3 border-b border-zinc-700/50">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-gray-400">Hey, {user?.first_name}!</p>
-            <h1 className="text-xl font-bold text-white">My Jobs</h1>
+            <p className="text-sm text-zinc-400">Hey, {user?.first_name}!</p>
+            <h1 className="text-xl font-bold text-zinc-100">My Jobs</h1>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setView('stats')}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-full transition-colors active:opacity-70"
-              style={{ backgroundColor: accentColors[500] + '30' }}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-full transition-colors active:opacity-70 bg-[var(--accent-500)]/20 border border-[var(--accent-500)]/30"
             >
-              <Star className="w-5 h-5" style={{ color: accentColors[400] }} />
-              <span className="font-bold text-base" style={{ color: accentColors[400] }}>{stats?.available_points || 0}</span>
+              <Star className="w-5 h-5 text-[var(--accent-400)]" />
+              <span className="font-bold text-base text-[var(--accent-400)]">{stats?.available_points || 0}</span>
             </button>
             {isClockedIn ? (
               <button
                 onClick={handleHeaderClockOutAction}
-                className="p-3 text-gray-400 active:text-amber-300 active:bg-gray-700 rounded-xl"
+                className="p-3 text-zinc-400 active:text-amber-300 active:bg-zinc-800 rounded-xl"
                 title="Clock Out"
               >
                 <LogOut className="w-6 h-6" />
@@ -2005,15 +2015,15 @@ export default function MechanicPortalPage() {
 
       {/* Quick Stats Bar */}
       {isClockedIn && !isOnBreak && (
-        <div className="bg-gray-800/50 px-4 py-2 flex items-center gap-4 border-b border-gray-700/50">
+        <div className="bg-zinc-900/60 backdrop-blur-sm px-4 py-2 flex items-center gap-4 border-b border-zinc-700/50">
           <div className="flex items-center gap-1.5 text-sm">
-            <span className="text-gray-500">Today:</span>
-            <span className="text-white font-medium">{stats?.jobs_completed_today || 0} done</span>
+            <span className="text-zinc-500">Today:</span>
+            <span className="text-zinc-100 font-medium">{stats?.jobs_completed_today || 0} done</span>
           </div>
           {(stats?.streak_days || 0) > 0 && (
             <div className="flex items-center gap-1.5 text-sm">
-              <Zap className="w-4 h-4 text-orange-400" />
-              <span className="text-orange-400 font-medium">{stats?.streak_days} day streak</span>
+              <Zap className="w-4 h-4 text-amber-400" />
+              <span className="text-amber-400 font-medium">{stats?.streak_days} day streak</span>
             </div>
           )}
         </div>
@@ -2035,18 +2045,21 @@ export default function MechanicPortalPage() {
         ) : null}
 
         {daySummary && !isClockedIn ? (
-          <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 space-y-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-400">Morning Start</p>
-              <h2 className="text-2xl font-semibold text-white mt-1">Clock in to start your day</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                Shift {daySummary.shift_start_local} - {daySummary.shift_end_local} · Core target {(daySummary.core_target_minutes / 60).toFixed(1)}h
-              </p>
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-5 border border-zinc-700/50 shadow-xl shadow-black/20 space-y-4">
+            <div className="flex items-start gap-3">
+              <StatusLED status="inactive" />
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Morning Start</p>
+                <h2 className="text-2xl font-semibold text-zinc-100 mt-1">Clock in to start your day</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  Shift {daySummary.shift_start_local} - {daySummary.shift_end_local} · Core target {(daySummary.core_target_minutes / 60).toFixed(1)}h
+                </p>
+              </div>
             </div>
             <button
               onClick={handleAttendanceToggle}
               disabled={attendanceToggleBusy}
-              className="w-full py-5 text-white text-xl font-bold rounded-2xl transition-colors disabled:bg-gray-600 bg-emerald-600 active:bg-emerald-700 shadow-lg shadow-emerald-500/25"
+              className="w-full py-5 text-white text-xl font-bold rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-emerald-600 active:bg-emerald-700 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)] shadow-lg shadow-emerald-500/25"
             >
               {attendanceToggleBusy ? 'Clocking In...' : 'Clock In'}
             </button>
@@ -2056,23 +2069,29 @@ export default function MechanicPortalPage() {
         {daySummary && isClockedIn ? (
           <>
             {isTimerPanelExpanded ? (
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 space-y-3">
+              <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 space-y-3">
                 <button onClick={handleTimerPanelToggle} className="flex items-center justify-between w-full active:opacity-70">
-                  <span className="text-xs uppercase tracking-wide text-gray-400">Timer Panel</span>
-                  <span className="text-sm text-cyan-300 font-medium">▲ Collapse</span>
+                  <div className="flex items-center gap-2">
+                    <StatusLED status="active" />
+                    <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Timer Panel</span>
+                  </div>
+                  <span className="text-sm text-[var(--accent-400)] font-medium">▲ Collapse</span>
                 </button>
             {isOnBreak ? (
               <>
-                <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2.5">
+                <div className="rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs uppercase tracking-wide text-amber-300">Break Time</span>
+                    <div className="flex items-center gap-2">
+                      <StatusLED status="warning" />
+                      <span className="text-xs font-bold uppercase tracking-[0.2em] text-amber-300">Break Time</span>
+                    </div>
                     <span className="font-mono text-lg font-semibold text-amber-100">{formatSecondsAsClock(breakElapsedSeconds)}</span>
                   </div>
                 </div>
                 <button
                   onClick={handleBreakToggle}
                   disabled={breakToggleBusy}
-                  className="w-full py-4 text-white text-base font-semibold rounded-xl transition-colors disabled:bg-gray-600 bg-blue-600 active:bg-blue-700"
+                  className="w-full py-4 text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-[var(--accent-600)] active:bg-[var(--accent-500)] hover:shadow-[0_0_24px_var(--accent-500)]"
                 >
                   {breakToggleBusy ? 'Ending Break...' : 'End Break'}
                 </button>
@@ -2107,16 +2126,16 @@ export default function MechanicPortalPage() {
                 {/* Today's Progress — positive framing */}
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-gray-400">Today's Progress</span>
-                    <span className="font-mono text-sm font-semibold text-cyan-200">{(daySummary.tracked_minutes / 60).toFixed(1)}h logged</span>
+                    <span className="text-zinc-400">Today's Progress</span>
+                    <span className="font-mono text-sm font-semibold text-[var(--accent-400)]">{(daySummary.tracked_minutes / 60).toFixed(1)}h logged</span>
                   </div>
-                  <div className="h-2.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div className="h-2.5 bg-zinc-800 rounded-full overflow-hidden">
                     <div
-                      className="h-2.5 bg-cyan-500 rounded-full transition-all"
+                      className="h-2.5 bg-[var(--accent-500)] rounded-full transition-all"
                       style={{ width: `${daySummary.core_target_minutes > 0 ? Math.min((daySummary.tracked_minutes / daySummary.core_target_minutes) * 100, 100) : 0}%` }}
                     />
                   </div>
-                  <div className="text-[11px] text-gray-500 mt-1">
+                  <div className="text-[11px] text-zinc-500 mt-1">
                     {daySummary.tracked_minutes >= daySummary.core_target_minutes
                       ? <span className="text-emerald-400">Great day! You've hit your {(daySummary.core_target_minutes / 60).toFixed(1)}h goal</span>
                       : <span>{(daySummary.tracked_minutes / 60).toFixed(1)}h toward your {(daySummary.core_target_minutes / 60).toFixed(1)}h goal</span>
@@ -2135,12 +2154,12 @@ export default function MechanicPortalPage() {
                         type="button"
                         disabled={isActiveRoTimer}
                         onClick={() => setMiscCategory(option.value)}
-                        className={`shrink-0 px-4 py-2.5 rounded-full border text-sm font-medium transition-colors whitespace-nowrap ${
+                        className={`shrink-0 px-4 py-2.5 rounded-full border text-sm font-medium transition-all whitespace-nowrap ${
                           isSuggestedPick
-                            ? 'bg-indigo-500/20 border-indigo-400 text-indigo-100 ring-1 ring-indigo-300/60 animate-pulse'
+                            ? 'bg-[var(--accent-500)]/30 border-[var(--accent-400)] text-white ring-1 ring-[var(--accent-400)]/60 animate-pulse'
                             : isSelected
-                            ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                            : 'bg-gray-700/60 border-gray-600 text-gray-300 active:bg-gray-600'
+                            ? 'bg-[var(--accent-500)]/30 border-[var(--accent-400)] text-white'
+                            : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 active:bg-zinc-700'
                         } disabled:opacity-40 disabled:cursor-not-allowed`}
                       >
                         {option.label}
@@ -2153,9 +2172,11 @@ export default function MechanicPortalPage() {
                 <button
                   onClick={handleTimerToggle}
                   disabled={timerToggleBusy || (isActiveRoTimer && !hasActiveDayTimer)}
-                  className={`w-full py-4 text-white text-base font-semibold rounded-xl transition-colors disabled:bg-gray-600 ${
-                    hasActiveDayTimer ? 'bg-rose-600 active:bg-rose-700' : 'bg-blue-600 active:bg-blue-700'
-                  } ${shouldPulseTimerToggle ? 'ring-2 ring-indigo-300/70 animate-pulse' : ''}`}
+                  className={`w-full py-4 text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    hasActiveDayTimer 
+                      ? 'bg-red-950/80 text-red-400 border border-red-800/50 hover:bg-red-900 hover:border-red-600' 
+                      : 'bg-[var(--accent-600)] border border-[var(--accent-400)]/50 hover:bg-[var(--accent-500)] hover:shadow-[0_0_24px_var(--accent-500)]'
+                  } ${shouldPulseTimerToggle ? 'ring-2 ring-[var(--accent-400)]/70 animate-pulse' : ''}`}
                 >
                   {timerToggleBusy
                     ? (hasActiveDayTimer ? 'Stopping...' : 'Starting...')
@@ -2169,26 +2190,26 @@ export default function MechanicPortalPage() {
                   <button
                     onClick={handleBreakToggle}
                     disabled={breakToggleBusy}
-                    className="w-full py-4 text-white text-base font-semibold rounded-xl transition-colors disabled:bg-gray-600 bg-amber-600 active:bg-amber-700"
+                    className="w-full py-4 text-white text-base font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-amber-600 border border-amber-400/50 hover:bg-amber-500 hover:shadow-[0_0_24px_rgba(251,191,36,0.5)]"
                   >
                     {breakToggleBusy ? 'Starting Break...' : 'Start Break'}
                   </button>
                 ) : null}
 
                 {/* Collapsible breakdown */}
-                <details className="rounded-lg border border-white/10 bg-gray-900/40 p-2 text-xs">
-                  <summary className="cursor-pointer text-gray-300 font-medium">Time breakdown</summary>
+                <details className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 p-3 text-xs">
+                  <summary className="cursor-pointer text-zinc-300 font-medium">Time breakdown</summary>
                   <div className="pt-2 space-y-2">
-                    <div className="grid grid-cols-3 gap-2 text-gray-300">
-                      <div>Jobs: <span className="text-white">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
-                      <div>Misc: <span className="text-white">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
-                      <div>Break: <span className="text-white">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
+                    <div className="grid grid-cols-3 gap-2 text-zinc-400">
+                      <div>Jobs: <span className="text-zinc-100 font-semibold">{(daySummary.ro_minutes / 60).toFixed(1)}h</span></div>
+                      <div>Misc: <span className="text-zinc-100 font-semibold">{(daySummary.misc_minutes / 60).toFixed(1)}h</span></div>
+                      <div>Break: <span className="text-zinc-100 font-semibold">{(daySummary.break_minutes / 60).toFixed(1)}h</span></div>
                     </div>
                     <input
                       value={miscNote}
                       onChange={(e) => setMiscNote(e.target.value)}
                       placeholder="Misc note (optional)"
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-base text-white placeholder-gray-500"
+                      className="w-full bg-zinc-800/60 border border-zinc-600/50 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all"
                       disabled={isActiveRoTimer}
                     />
                   </div>
@@ -2197,7 +2218,7 @@ export default function MechanicPortalPage() {
             )}
           </div>
         ) : (
-          <div className="bg-gray-800 rounded-xl border border-gray-700">
+          <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl border border-zinc-700/50 shadow-xl shadow-black/20">
                 {/* Tappable status + timer area */}
                 <button
                   onClick={handleTimerPanelToggle}
@@ -2205,18 +2226,27 @@ export default function MechanicPortalPage() {
                 >
                   {/* Row 1: status badges */}
                   <div className="flex items-center gap-2 text-xs mb-2">
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-medium">Clocked In</span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-medium border border-emerald-500/30">
+                      <StatusLED status="active" size="sm" />
+                      Clocked In
+                    </span>
                     {isOnBreak ? (
-                      <span className="px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 font-medium">On Break</span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 font-medium border border-amber-500/30">
+                        <StatusLED status="warning" size="sm" />
+                        On Break
+                      </span>
                     ) : daySummary.active_session ? (
-                      <span className="px-2.5 py-1 rounded-full bg-green-500/20 text-green-300 font-medium">Timer On</span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-medium border border-emerald-500/30">
+                        <StatusLED status="active" size="sm" />
+                        Timer On
+                      </span>
                     ) : (
-                      <span className="px-2.5 py-1 rounded-full bg-gray-700 text-gray-400 font-medium">Idle</span>
+                      <span className="px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-400 font-medium border border-zinc-700/50">Idle</span>
                     )}
-                    <span className="ml-auto text-[11px] text-cyan-400 font-medium">▼ Expand</span>
+                    <span className="ml-auto text-[11px] text-[var(--accent-400)] font-medium">▼ Expand</span>
                   </div>
                   {/* Row 2: prominent timer */}
-                  <div className={`font-mono text-3xl font-bold tracking-tight ${isOnBreak ? 'text-amber-200' : hasActiveDayTimer ? 'text-cyan-200' : 'text-gray-300'}`}>
+                  <div className={`font-mono text-3xl font-bold tracking-tight ${isOnBreak ? 'text-amber-200' : hasActiveDayTimer ? 'text-emerald-300' : 'text-zinc-300'}`}>
                     {collapsedInlineTimerLabel}
                   </div>
                 </button>
@@ -2230,14 +2260,14 @@ export default function MechanicPortalPage() {
                         <button
                           onClick={handleTimerToggle}
                           disabled={timerToggleBusy}
-                          className="flex-1 py-3 text-white text-sm font-semibold rounded-xl bg-blue-600 active:bg-blue-700 disabled:bg-gray-600 transition-colors"
+                          className="flex-1 py-3 text-white text-sm font-semibold rounded-xl bg-[var(--accent-600)] border border-[var(--accent-400)]/50 active:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                         >
                           {timerToggleBusy ? 'Starting...' : 'Start Misc Timer'}
                         </button>
                         <button
                           onClick={handleBreakToggle}
                           disabled={breakToggleBusy}
-                          className="py-3 px-5 text-white text-sm font-semibold rounded-xl bg-amber-600 active:bg-amber-700 disabled:bg-gray-600 transition-colors"
+                          className="py-3 px-5 text-white text-sm font-semibold rounded-xl bg-amber-600 border border-amber-400/50 active:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
                           Break
                         </button>
@@ -2248,7 +2278,7 @@ export default function MechanicPortalPage() {
                       <button
                         onClick={handleBreakToggle}
                         disabled={breakToggleBusy}
-                        className="w-full py-3 text-white text-sm font-semibold rounded-xl bg-blue-600 active:bg-blue-700 disabled:bg-gray-600 transition-colors"
+                        className="w-full py-3 text-white text-sm font-semibold rounded-xl bg-[var(--accent-600)] border border-[var(--accent-400)]/50 active:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_24px_var(--accent-500)]"
                       >
                         {breakToggleBusy ? 'Ending Break...' : 'End Break'}
                       </button>
@@ -2262,32 +2292,32 @@ export default function MechanicPortalPage() {
 
         {isClockedIn && !isOnBreak && (isLoading ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+            <Loader2 className="w-8 h-8 text-[var(--accent-500)] animate-spin" />
           </div>
         ) : activeJobs.length === 0 && pendingReview.length === 0 ? (
           <>
             {/* No Active Jobs - Show Stats Instead */}
             <div className="text-center py-8">
-              <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Wrench className="w-10 h-10 text-gray-600" />
+              <div className="w-20 h-20 bg-zinc-900/80 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4 border border-zinc-700/50">
+                <Wrench className="w-10 h-10 text-zinc-600" />
               </div>
-              <p className="text-gray-400 text-lg font-semibold">All caught up!</p>
-              <p className="text-gray-600 text-sm mt-1">No active jobs right now 🎉</p>
+              <p className="text-zinc-300 text-lg font-semibold">All caught up!</p>
+              <p className="text-zinc-600 text-sm mt-1">No active jobs right now</p>
             </div>
 
             {/* Quick Stats */}
             <div className="grid grid-cols-3 gap-3">
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
-                <p className="text-2xl font-bold text-white">{stats?.jobs_completed_today || 0}</p>
-                <p className="text-xs text-gray-500 uppercase">Today</p>
+              <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 text-center shadow-xl shadow-black/20">
+                <p className="text-2xl font-bold text-zinc-100">{stats?.jobs_completed_today || 0}</p>
+                <p className="text-xs text-zinc-500 uppercase">Today</p>
               </div>
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
-                <p className="text-2xl font-bold text-white">{stats?.jobs_completed_week || 0}</p>
-                <p className="text-xs text-gray-500 uppercase">This Week</p>
+              <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 text-center shadow-xl shadow-black/20">
+                <p className="text-2xl font-bold text-zinc-100">{stats?.jobs_completed_week || 0}</p>
+                <p className="text-xs text-zinc-500 uppercase">This Week</p>
               </div>
-              <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-center">
-                <p className="text-2xl font-bold text-white">{stats?.jobs_completed_month || 0}</p>
-                <p className="text-xs text-gray-500 uppercase">This Month</p>
+              <div className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 text-center shadow-xl shadow-black/20">
+                <p className="text-2xl font-bold text-zinc-100">{stats?.jobs_completed_month || 0}</p>
+                <p className="text-xs text-zinc-500 uppercase">This Month</p>
               </div>
             </div>
 
@@ -2295,31 +2325,30 @@ export default function MechanicPortalPage() {
             {history && history.length > 0 && (
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm text-gray-400 font-medium">Recent Completed</h3>
+                  <h3 className="text-sm text-zinc-400 font-medium">Recent Completed</h3>
                   <button
                     onClick={() => setView('history')}
-                    className="text-xs hover:opacity-80"
-                    style={{ color: accentColors[400] }}
+                    className="text-xs text-[var(--accent-400)] hover:opacity-80 transition-opacity"
                   >
                     View All →
                   </button>
                 </div>
                 <div className="space-y-2">
                   {history.slice(0, 3).map((item) => (
-                    <div key={item.id} className="bg-gray-800 rounded-xl p-3 border border-gray-700">
+                    <div key={item.id} className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-3 border border-zinc-700/50 shadow-xl shadow-black/20">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <p className="text-white font-medium text-sm">{item.vehicle_info}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{item.order_number}</p>
+                          <p className="text-zinc-100 font-medium text-sm">{item.vehicle_info}</p>
+                          <p className="text-xs text-zinc-500 mt-0.5">{item.order_number}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full">
+                          <span className="text-xs text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/30">
                             +{item.points_earned.toLocaleString()} pts
                           </span>
-                          <CheckCircle className="w-4 h-4 text-green-400" />
+                          <StatusLED status="active" size="sm" />
                         </div>
                       </div>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-zinc-600 mt-1">
                         {format(new Date(item.completed_at), 'MMM d, h:mm a')}
                       </p>
                     </div>
@@ -2334,7 +2363,7 @@ export default function MechanicPortalPage() {
             {/* Active Jobs - Expandable Cards */}
             {activeJobs.length > 0 && (
               <div className="flex items-center gap-2 mb-1">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Active Jobs</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Active Jobs</p>
                 <SectionInfoTooltip text="Jobs you can accept, resume, or complete. Expanding a card shows services, photos, and job actions." />
               </div>
             )}
@@ -2348,15 +2377,15 @@ export default function MechanicPortalPage() {
                 && daySummary.active_session.repair_order_id === job.id
               const timedStartForJob = daySummary?.active_session?.started_at || detail?.work_started_at || null
               
-              // Status-based accent color
-              const borderColor = isSuggestedJob ? 'border-indigo-400' : isWorking ? 'border-purple-500' : isNew ? 'border-blue-500' : 'border-gray-700'
-              const statusBg = isWorking ? 'bg-purple-500' : isNew ? 'bg-blue-500' : 'bg-gray-600'
+              // Status-based accent color using design system
+              const borderColor = isSuggestedJob ? 'border-[var(--accent-400)]' : isWorking ? 'border-emerald-500/50' : isNew ? 'border-[var(--accent-500)]/50' : 'border-zinc-700/50'
+              const statusLedStatus = isWorking ? 'active' : isNew ? 'info' : 'inactive'
               
               return (
                 <div 
                   key={job.id}
                   ref={isSuggestedJob ? suggestedJobRef : undefined}
-                  className={`rounded-2xl overflow-hidden bg-gray-800/50 border-2 ${borderColor} transition-all ${isSuggestedJob ? 'shadow-[0_0_0_2px_rgba(99,102,241,0.35)]' : ''}`}
+                  className={`rounded-2xl overflow-hidden bg-zinc-900/80 backdrop-blur-sm border ${borderColor} shadow-xl shadow-black/20 transition-all ${isSuggestedJob ? 'shadow-[0_0_16px_var(--accent-500)/30] ring-1 ring-[var(--accent-400)]/50' : ''} ${isExpanded ? 'border-[var(--accent-500)]/40' : ''}`}
                 >
                   {/* Header - Always visible */}
                   <button
@@ -2365,32 +2394,39 @@ export default function MechanicPortalPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        {/* Status indicator dot */}
-                        <div className={`w-3 h-3 rounded-full shrink-0 ${statusBg} ${(isWorking || isSuggestedJob) ? 'animate-pulse' : ''}`} />
+                        {/* Status LED indicator */}
+                        <StatusLED status={statusLedStatus} pulse={isWorking || isSuggestedJob} />
                         <div className="min-w-0 flex-1">
-                          <h3 className="text-white font-semibold truncate">{job.vehicle_info}</h3>
-                          <p className="text-sm text-gray-400">
+                          <h3 className="text-zinc-100 font-semibold truncate">{job.vehicle_info}</h3>
+                          <p className="text-sm text-zinc-400">
                             {job.services_count} service{job.services_count !== 1 ? 's' : ''} · {job.order_number}
                           </p>
-                          <p className="text-xs text-gray-500 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
+                          <p className="text-xs text-zinc-500 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {isSuggestedJob ? (
-                          <span className="px-2 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wide text-indigo-100 bg-indigo-500/70 animate-pulse">
+                          <span className="px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide text-white bg-[var(--accent-500)] border border-[var(--accent-400)]/50 animate-pulse">
                             Next
                           </span>
                         ) : null}
                         {job.hold_reason ? (
-                          <span className="px-2 py-1 rounded-md text-xs font-medium text-amber-200 bg-amber-600/70">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-amber-200 bg-amber-500/20 border border-amber-500/30">
+                            <StatusLED status="warning" size="sm" />
                             On Hold
                           </span>
                         ) : (
-                          <span className={`px-2 py-1 rounded-md text-xs font-medium text-white ${statusBg}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                            isWorking 
+                              ? 'text-emerald-300 bg-emerald-500/20 border-emerald-500/30' 
+                              : isNew 
+                                ? 'text-white bg-[var(--accent-500)]/30 border-[var(--accent-400)]/50' 
+                                : 'text-zinc-300 bg-zinc-800 border-zinc-700/50'
+                          }`}>
                             {STATUS_LABELS[job.status]}
                           </span>
                         )}
-                        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-5 h-5 text-zinc-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                       </div>
                     </div>
                   </button>
@@ -2399,10 +2435,10 @@ export default function MechanicPortalPage() {
                   <div className={`overflow-hidden transition-all duration-200 ${
                     isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
                   }`}>
-                    <div className="px-4 pb-4 space-y-3">
+                    <div className="px-4 pb-4 space-y-3 border-t border-zinc-700/50 pt-3">
                       {expandedJobLoading ? (
                         <div className="flex justify-center py-6">
-                          <Loader2 className="w-6 h-6 animate-spin text-gray-500" />
+                          <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
                         </div>
                       ) : detail ? (
                         <>
@@ -2414,7 +2450,8 @@ export default function MechanicPortalPage() {
                             />
                           )}
                           {isWorking && !isTimedForThisJob && (
-                            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+                            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-300 flex items-center gap-2">
+                              <StatusLED status="warning" size="sm" />
                               In-progress job is currently not timed. Resume timer for this repair order.
                             </div>
                           )}
@@ -2422,15 +2459,15 @@ export default function MechanicPortalPage() {
                           {/* Services List */}
                           {detail.services.length > 0 && (
                             <div>
-                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Services</p>
+                              <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 mb-2">Services</p>
                               <div className="space-y-1.5">
                                 {detail.services.map((svc, idx) => (
                                   <div 
                                     key={idx} 
                                     className="flex items-center gap-2 text-sm"
                                   >
-                                    <Wrench className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                    <span className="text-gray-200">{svc.name}</span>
+                                    <Wrench className="w-3.5 h-3.5 text-[var(--accent-400)] shrink-0" />
+                                    <span className="text-zinc-200">{svc.name}</span>
                                   </div>
                                 ))}
                               </div>
@@ -2441,9 +2478,9 @@ export default function MechanicPortalPage() {
                           {['assigned', 'acknowledged', 'in_progress'].includes(job.status) && (
                             <div>
                               <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs text-gray-500 uppercase tracking-wide">Photos</p>
-                                <label className="p-2.5 rounded-lg bg-gray-700 active:bg-gray-600 cursor-pointer transition-colors">
-                                  <Camera className="w-5 h-5 text-gray-300" />
+                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Photos</p>
+                                <label className="p-2.5 rounded-xl bg-zinc-800/60 border border-zinc-600/50 active:bg-zinc-700 cursor-pointer transition-all hover:border-zinc-500">
+                                  <Camera className="w-5 h-5 text-zinc-300" />
                                   <input
                                     type="file"
                                     accept="image/*"
@@ -2457,16 +2494,16 @@ export default function MechanicPortalPage() {
                               
                               {/* Photo Preview */}
                               {showPhotoPreview && (
-                                <div className="rounded-lg bg-gray-700/50 p-2 mb-2">
+                                <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/50 p-3 mb-2">
                                   <div className="relative">
                                     <img 
                                       src={showPhotoPreview} 
                                       alt="Preview" 
-                                      className="w-full rounded max-h-40 object-cover"
+                                      className="w-full rounded-lg max-h-40 object-cover"
                                     />
                                     <button
                                       onClick={() => { setShowPhotoPreview(null); setPhotoCaption('') }}
-                                      className="absolute top-1.5 right-1.5 p-1 bg-black/60 rounded-full"
+                                      className="absolute top-1.5 right-1.5 p-1.5 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
                                     >
                                       <X className="w-3 h-3 text-white" />
                                     </button>
@@ -2476,12 +2513,12 @@ export default function MechanicPortalPage() {
                                     placeholder="Add note..."
                                     value={photoCaption}
                                     onChange={(e) => setPhotoCaption(e.target.value)}
-                                    className="w-full mt-2 px-2 py-1.5 rounded bg-gray-600 text-base text-white placeholder-gray-400"
+                                    className="w-full mt-2 px-4 py-2 rounded-xl bg-zinc-800/60 border border-zinc-600/50 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] transition-all"
                                   />
                                   <button
                                     onClick={handlePhotoUpload}
                                     disabled={isUploadingPhoto}
-                                    className="w-full mt-2 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-sm font-medium rounded flex items-center justify-center gap-1.5"
+                                    className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.4)]"
                                   >
                                     {isUploadingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
                                     Upload
@@ -2497,7 +2534,7 @@ export default function MechanicPortalPage() {
                                       <img
                                         src={photo.image_url}
                                         alt={photo.caption || 'Work photo'}
-                                        className="w-full aspect-square object-cover rounded"
+                                        className="w-full aspect-square object-cover rounded-lg"
                                       />
                                       <button
                                         onClick={(e) => {
@@ -2506,7 +2543,7 @@ export default function MechanicPortalPage() {
                                             deletePhotoMutation.mutate({ jobId: job.id, photoId: photo.id })
                                           }
                                         }}
-                                        className="absolute top-0.5 right-0.5 p-0.5 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                        className="absolute top-0.5 right-0.5 p-1 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                       >
                                         <X className="w-2.5 h-2.5 text-white" />
                                       </button>
@@ -2517,7 +2554,7 @@ export default function MechanicPortalPage() {
                               
                               {/* Empty state */}
                               {(!workPhotos || workPhotos.length === 0) && !showPhotoPreview && (
-                                <p className="text-xs text-gray-600 text-center py-2">No photos</p>
+                                <p className="text-xs text-zinc-600 text-center py-2">No photos</p>
                               )}
                             </div>
                           )}
@@ -2531,7 +2568,7 @@ export default function MechanicPortalPage() {
                                   acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
                                 }}
                                 disabled={isPending}
-                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                               >
                                 {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
                                 ACCEPT & START
@@ -2540,8 +2577,8 @@ export default function MechanicPortalPage() {
                             
                             {job.status === 'in_progress' && job.hold_reason && (
                               <div className="space-y-2">
-                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center gap-2">
-                                  <PauseCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-center gap-2">
+                                  <StatusLED status="warning" size="sm" />
                                   <span className="text-sm text-amber-200">
                                     On hold: {HOLD_REASON_LABELS[job.hold_reason || ''] || job.hold_reason}
                                   </span>
@@ -2553,7 +2590,7 @@ export default function MechanicPortalPage() {
                                       resumeOrderMutation.mutate(job.id)
                                     }}
                                     disabled={isPending}
-                                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                    className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                                   >
                                     {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
                                     RESUME
@@ -2564,7 +2601,7 @@ export default function MechanicPortalPage() {
                                       completeWorkMutation.mutate(job.id)
                                     }}
                                     disabled={isPending}
-                                    className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                                   >
                                     {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                                     JOB DONE
@@ -2577,17 +2614,17 @@ export default function MechanicPortalPage() {
                               <div className="space-y-2">
                                 {holdTarget === job.id ? (
                                   <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                                    <p className="text-xs text-gray-400 font-medium">Why are you pausing?</p>
+                                    <p className="text-xs text-zinc-400 font-medium">Why are you pausing?</p>
                                     <div className="flex flex-wrap gap-2">
                                       {HOLD_REASONS.map((r) => (
                                         <button
                                           key={r.value}
                                           type="button"
                                           onClick={() => setHoldReason(r.value)}
-                                          className={`px-4 py-2.5 rounded-full border text-sm font-medium transition-colors ${
+                                          className={`px-4 py-2.5 rounded-full border text-sm font-medium transition-all ${
                                             holdReason === r.value
                                               ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                                              : 'bg-gray-700/60 border-gray-600 text-gray-300 active:bg-gray-600'
+                                              : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 active:bg-zinc-700'
                                           }`}
                                         >
                                           {r.label}
@@ -2597,14 +2634,14 @@ export default function MechanicPortalPage() {
                                     <div className="grid grid-cols-2 gap-2">
                                       <button
                                         onClick={() => { setHoldTarget(null); setHoldReason('') }}
-                                        className="py-3 bg-gray-700 active:bg-gray-600 text-gray-300 text-sm font-semibold rounded-xl transition-all"
+                                        className="py-3 bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-sm font-semibold rounded-xl transition-all border border-zinc-600/50"
                                       >
                                         Cancel
                                       </button>
                                       <button
                                         onClick={() => holdReason && holdOrderMutation.mutate({ orderId: job.id, reason: holdReason })}
                                         disabled={!holdReason || holdOrderMutation.isPending}
-                                        className="py-3 bg-amber-600 active:bg-amber-700 disabled:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-all"
+                                        className="py-3 bg-amber-600 hover:bg-amber-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all border border-amber-400/50"
                                       >
                                         {holdOrderMutation.isPending ? 'Holding...' : 'Confirm Hold'}
                                       </button>
@@ -2619,7 +2656,7 @@ export default function MechanicPortalPage() {
                                           acceptAndStartMutation.mutate({ orderId: job.id, currentStatus: job.status })
                                         }}
                                         disabled={isPending}
-                                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                        className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                                       >
                                         {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
                                         RESUME
@@ -2630,7 +2667,7 @@ export default function MechanicPortalPage() {
                                         e.stopPropagation()
                                         setHoldTarget(job.id)
                                       }}
-                                      className="w-full py-3 bg-amber-600/80 hover:bg-amber-600 active:bg-amber-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                      className="w-full py-3 bg-amber-600/80 hover:bg-amber-600 active:scale-[0.98] text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50"
                                     >
                                       <PauseCircle className="w-5 h-5" />
                                       HOLD
@@ -2641,7 +2678,7 @@ export default function MechanicPortalPage() {
                                         completeWorkMutation.mutate(job.id)
                                       }}
                                       disabled={isPending}
-                                      className="w-full py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 disabled:bg-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                                     >
                                       {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                                       DONE
@@ -2663,21 +2700,21 @@ export default function MechanicPortalPage() {
             {pendingReview.length > 0 && (
               <div className="pt-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">Awaiting Review</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">Awaiting Review</p>
                   <SectionInfoTooltip text="Completed jobs waiting for manager verification before final closeout." />
                 </div>
                 {pendingReview.map((job) => (
                   <div
                     key={job.id}
-                    className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 flex items-center gap-3"
+                    className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-4 border border-zinc-700/50 shadow-xl shadow-black/20 flex items-center gap-3"
                   >
-                    <Clock className="w-5 h-5 text-orange-400 shrink-0" />
+                    <StatusLED status="warning" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white font-medium truncate">{job.vehicle_info}</p>
-                      <p className="text-xs text-gray-500">{job.order_number}</p>
-                      <p className="text-xs text-gray-600 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
+                      <p className="text-zinc-100 font-medium truncate">{job.vehicle_info}</p>
+                      <p className="text-xs text-zinc-500">{job.order_number}</p>
+                      <p className="text-xs text-zinc-600 mt-0.5">Created {formatCreatedAt(job.created_at)}</p>
                     </div>
-                    <span className="text-xs text-orange-400 bg-orange-500/20 px-2 py-1 rounded-full shrink-0">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/20 px-2.5 py-1 rounded-full border border-amber-500/30 shrink-0">
                       Pending Review
                     </span>
                   </div>
@@ -2689,24 +2726,24 @@ export default function MechanicPortalPage() {
       </main>
 
       {showClockOutModal ? (
-        <div className="fixed inset-0 z-30 bg-black/70 flex items-center justify-center px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-700 bg-gray-800 p-4 space-y-3">
-            <h3 className="text-white text-lg font-semibold">Clock Out</h3>
-            <p className="text-sm text-gray-300">
+        <div className="fixed inset-0 z-30 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-700/50 bg-zinc-900/95 backdrop-blur-sm p-5 space-y-4 shadow-2xl shadow-black/50">
+            <h3 className="text-zinc-100 text-lg font-semibold">Clock Out</h3>
+            <p className="text-sm text-zinc-400">
               End your shift now? Any active timer or break will be closed automatically.
             </p>
             <div className="grid grid-cols-2 gap-3 pt-1">
               <button
                 onClick={() => setShowClockOutModal(false)}
                 disabled={attendanceToggleBusy}
-                className="w-full py-3.5 rounded-xl bg-gray-700 active:bg-gray-600 text-white text-base font-medium disabled:opacity-60"
+                className="w-full py-3.5 rounded-xl bg-zinc-800/80 hover:bg-zinc-700 active:scale-[0.98] text-zinc-300 text-base font-medium disabled:opacity-60 border border-zinc-600/50 transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmClockOut}
                 disabled={attendanceToggleBusy}
-                className="w-full py-3.5 rounded-xl bg-rose-600 active:bg-rose-700 text-white text-base font-semibold disabled:opacity-60"
+                className="w-full py-3.5 rounded-xl bg-red-950/80 hover:bg-red-900 active:scale-[0.98] text-red-400 text-base font-semibold disabled:opacity-60 border border-red-800/50 hover:border-red-600 transition-all"
               >
                 {attendanceToggleBusy ? 'Clocking Out...' : 'Clock Out'}
               </button>
@@ -2717,7 +2754,7 @@ export default function MechanicPortalPage() {
                 setView('profile')
               }}
               disabled={attendanceToggleBusy}
-              className="w-full py-3 text-sm text-gray-400 active:text-white disabled:opacity-60"
+              className="w-full py-3 text-sm text-zinc-500 hover:text-zinc-300 active:text-zinc-100 disabled:opacity-60 transition-colors"
             >
               Need to sign out too? Go to Profile.
             </button>

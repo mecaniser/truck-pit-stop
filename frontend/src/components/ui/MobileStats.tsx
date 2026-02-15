@@ -11,7 +11,7 @@ interface SegmentOption {
   shortLabel?: string // For mobile
   count?: number
   icon?: ReactNode
-  color?: 'default' | 'accent' | 'green' | 'red' | 'blue'
+  color?: 'default' | 'accent' | 'green' | 'red' | 'blue' | 'gold'
 }
 
 interface SegmentedControlProps {
@@ -40,6 +40,10 @@ const colorClasses = {
   },
   blue: {
     active: 'bg-blue-500/20 text-blue-400 border-blue-500/50',
+    inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
+  },
+  gold: {
+    active: 'bg-amber-500/20 text-amber-400 border-amber-500/50',
     inactive: 'text-zinc-500 border-transparent hover:text-zinc-300 hover:bg-zinc-800/40',
   },
 }
@@ -82,7 +86,7 @@ interface StatItem {
   label: string
   value: string | number
   icon?: ReactNode
-  color?: 'default' | 'accent' | 'green' | 'red' | 'blue'
+  color?: 'default' | 'accent' | 'green' | 'red' | 'blue' | 'gold'
   sublabel?: string
 }
 
@@ -97,6 +101,7 @@ const statColorClasses = {
   green: 'border-emerald-500/30 bg-emerald-500/10',
   red: 'border-red-500/30 bg-red-500/10',
   blue: 'border-blue-500/30 bg-blue-500/10',
+  gold: 'border-amber-500/30 bg-amber-500/10',
 }
 
 const statValueColors = {
@@ -105,6 +110,7 @@ const statValueColors = {
   green: 'text-emerald-400',
   red: 'text-red-400',
   blue: 'text-blue-400',
+  gold: 'text-amber-400',
 }
 
 export function StatScrollRow({ stats, size = 'md' }: StatScrollRowProps) {
@@ -216,7 +222,7 @@ interface StatPillProps {
   label: string
   value: string | number
   icon?: ReactNode
-  color?: 'default' | 'accent' | 'green' | 'red' | 'blue'
+  color?: 'default' | 'accent' | 'green' | 'red' | 'blue' | 'gold'
   onClick?: () => void
   active?: boolean
 }

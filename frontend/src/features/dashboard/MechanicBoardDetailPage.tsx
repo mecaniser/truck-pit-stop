@@ -13,7 +13,7 @@ import type { AttentionPriority } from '@/types'
 import { ATTENTION_REASON_LABELS } from '@/types'
 import { 
   Card, Button, Input, Badge, StatusLED, Header, Spinner, 
-  SectionHeader, staggeredReveal, Label
+  staggeredReveal, Label
 } from '@/components/ui'
 
 interface SessionRow {

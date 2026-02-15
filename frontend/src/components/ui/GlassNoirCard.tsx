@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, forwardRef } from 'react'
 
 // ============ DESIGN SYSTEM STYLES ============
 // Hybrid industrial-organic: rounded corners + LED glows + soft shadows
@@ -42,6 +42,7 @@ interface CardProps {
   hover?: boolean
   variant?: 'default' | 'elevated' | 'subtle'
   padding?: 'none' | 'sm' | 'md' | 'lg'
+  style?: React.CSSProperties
 }
 
 const paddingClasses = {
@@ -56,7 +57,8 @@ export function GlassNoirCard({
   className = '', 
   hover = false,
   variant = 'default',
-  padding = 'md' 
+  padding = 'md',
+  style
 }: CardProps) {
   const variantStyles = {
     default: styles.card,
@@ -72,6 +74,7 @@ export function GlassNoirCard({
         ${hover ? 'transition-all duration-300 hover:border-[var(--accent-500)]/40 hover:shadow-lg hover:shadow-[var(--accent-500)]/10' : ''}
         ${className}
       `}
+      style={style}
     >
       {children}
     </div>
@@ -158,18 +161,22 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   error?: boolean
 }
 
-export function Input({ className = '', error = false, ...props }: InputProps) {
-  return (
-    <input
-      className={`
-        ${styles.input}
-        ${error ? 'border-red-500 focus:border-red-400' : ''}
-        ${className}
-      `}
-      {...props}
-    />
-  )
-}
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ className = '', error = false, ...props }, ref) => {
+    return (
+      <input
+        ref={ref}
+        className={`
+          ${styles.input}
+          ${error ? 'border-red-500 focus:border-red-400' : ''}
+          ${className}
+        `}
+        {...props}
+      />
+    )
+  }
+)
+Input.displayName = 'Input'
 
 // ============ LABEL ============
 export function Label({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -196,7 +203,7 @@ export function SectionHeader({ children, icon, actions }: SectionHeaderProps) {
 // ============ BADGE ============
 interface BadgeProps {
   children: ReactNode
-  variant?: 'default' | 'success' | 'warning' | 'error' | 'info'
+  variant?: 'default' | 'success' | 'warning' | 'error' | 'info' | 'gold'
   className?: string
 }
 
@@ -206,6 +213,7 @@ const badgeVariants = {
   warning: 'bg-amber-950/80 text-amber-400 border-amber-700/50',
   error: 'bg-red-950/80 text-red-400 border-red-700/50',
   info: 'bg-blue-950/80 text-blue-400 border-blue-700/50',
+  gold: 'bg-amber-950/80 text-amber-300 border-amber-600/50',
 }
 
 export function GlassNoirBadge({ children, variant = 'default', className = '' }: BadgeProps) {

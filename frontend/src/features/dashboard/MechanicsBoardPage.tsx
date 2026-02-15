@@ -12,7 +12,7 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import type { AttentionPriority } from '@/types'
 import { ATTENTION_REASON_LABELS } from '@/types'
 import { 
-  Card, Button, Input, Badge, StatusLED, Header, Spinner, staggeredReveal 
+  Card, Input, Badge, StatusLED, Header, Spinner, staggeredReveal 
 } from '@/components/ui'
 
 interface MechanicBoardItem {
