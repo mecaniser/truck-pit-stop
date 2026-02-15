@@ -508,15 +508,40 @@ async def handle_inbound_sms(
     if not sender_candidates or not normalized_sender:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid inbound sender number")
 
-    result = await db.execute(
-        select(Customer).where(
+    # First, check for existing thread by phone - preserves conversation continuity
+    customer: Optional[Customer] = None
+    thread_result = await db.execute(
+        select(MessageThread)
+        .where(
             and_(
-                Customer.tenant_id == tenant.id,
-                Customer.phone.in_(sender_candidates),
+                MessageThread.tenant_id == tenant.id,
+                MessageThread.customer_phone.in_(sender_candidates),
             )
         )
+        .order_by(MessageThread.last_message_at.desc().nulls_last())
+        .limit(1)
     )
-    customer = result.scalar_one_or_none()
+    existing_thread = thread_result.scalar_one_or_none()
+    if existing_thread:
+        customer_result = await db.execute(
+            select(Customer).where(Customer.id == existing_thread.customer_id)
+        )
+        customer = customer_result.scalar_one_or_none()
+
+    # Fall back to most recently active customer with this phone
+    if not customer:
+        result = await db.execute(
+            select(Customer)
+            .where(
+                and_(
+                    Customer.tenant_id == tenant.id,
+                    Customer.phone.in_(sender_candidates),
+                )
+            )
+            .order_by(Customer.updated_at.desc())
+            .limit(1)
+        )
+        customer = result.scalar_one_or_none()
     if not customer:
         customer = Customer(
             tenant_id=tenant.id,
