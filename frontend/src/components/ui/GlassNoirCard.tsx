@@ -234,17 +234,39 @@ export function GlassNoirBadge({ children, variant = 'default', className = '' }
 export const Badge = GlassNoirBadge
 
 // ============ STATUS LED ============
-type LEDStatus = 'active' | 'inactive' | 'warning' | 'error'
+type LEDStatus = 'active' | 'inactive' | 'warning' | 'error' | 'info'
 
-const ledStyles: Record<LEDStatus, string> = {
-  active: 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)] animate-pulse',
-  inactive: 'w-2.5 h-2.5 rounded-full bg-zinc-600',
-  warning: 'w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)] animate-pulse',
-  error: 'w-2.5 h-2.5 rounded-full bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.9)]',
+const ledColors: Record<LEDStatus, { bg: string; glow: string }> = {
+  active: { bg: 'bg-emerald-400', glow: 'shadow-[0_0_10px_rgba(52,211,153,0.9)]' },
+  inactive: { bg: 'bg-zinc-600', glow: '' },
+  warning: { bg: 'bg-amber-400', glow: 'shadow-[0_0_10px_rgba(251,191,36,0.9)]' },
+  error: { bg: 'bg-red-400', glow: 'shadow-[0_0_10px_rgba(248,113,113,0.9)]' },
+  info: { bg: 'bg-sky-400', glow: 'shadow-[0_0_10px_rgba(56,189,248,0.9)]' },
 }
 
-export function StatusLED({ status }: { status: LEDStatus }) {
-  return <div className={ledStyles[status]} />
+const ledSizes = {
+  sm: 'w-2 h-2',
+  md: 'w-2.5 h-2.5',
+  lg: 'w-3 h-3',
+}
+
+interface StatusLEDProps {
+  status: LEDStatus
+  size?: 'sm' | 'md' | 'lg'
+  pulse?: boolean
+}
+
+export function StatusLED({ status, size = 'md', pulse }: StatusLEDProps) {
+  const { bg, glow } = ledColors[status]
+  const shouldPulse = pulse ?? (status === 'active' || status === 'warning')
+  return (
+    <div 
+      className={`
+        ${ledSizes[size]} rounded-full ${bg} ${glow}
+        ${shouldPulse ? 'animate-pulse' : ''}
+      `} 
+    />
+  )
 }
 
 // ============ HEADER ============

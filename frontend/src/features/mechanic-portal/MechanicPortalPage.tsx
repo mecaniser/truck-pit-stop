@@ -19,7 +19,6 @@ import {
   Truck, 
   CheckCircle, 
   PlayCircle, 
-  Clock,
   ArrowLeft,
   Loader2,
   History,
@@ -275,7 +274,7 @@ const Container = ({ children, className = '' }: { children: React.ReactNode; cl
 
 export default function MechanicPortalPage() {
   const { user, logout, setUser } = useAuthStore()
-  const { accentColors, accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
+  const { accent, setAccent, fontSize, setFontSize, resetToDefaults } = useTheme()
   const queryClient = useQueryClient()
   
   // Notification manager for queued, deduplicated notifications
