@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, ChevronRight } from 'lucide-react'
+import { ChevronRight, Users } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import LiveElapsedTimer from '@/components/LiveElapsedTimer'
@@ -11,6 +11,9 @@ import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import type { AttentionPriority } from '@/types'
 import { ATTENTION_REASON_LABELS } from '@/types'
+import { 
+  Card, Button, Input, Badge, StatusLED, Header, Spinner, staggeredReveal 
+} from '@/components/ui'
 
 interface MechanicBoardItem {
   mechanic_id: string
@@ -76,14 +79,14 @@ const toHours = (minutes: number) => (minutes / 60).toFixed(1)
 
 const PRIORITY_ORDER: Record<AttentionPriority, number> = { red: 0, yellow: 1, green: 2 }
 const PRIORITY_BORDER: Record<AttentionPriority, string> = {
-  red: 'border-l-rose-500',
+  red: 'border-l-red-500',
   yellow: 'border-l-amber-400',
   green: 'border-l-emerald-500',
 }
-const PRIORITY_DOT: Record<AttentionPriority, string> = {
-  red: 'bg-rose-500',
-  yellow: 'bg-amber-400',
-  green: 'bg-emerald-500',
+const PRIORITY_LED: Record<AttentionPriority, 'error' | 'warning' | 'active'> = {
+  red: 'error',
+  yellow: 'warning',
+  green: 'active',
 }
 
 const HOLD_REASON_LABELS: Record<string, string> = {
@@ -157,13 +160,17 @@ export default function MechanicsBoardPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+        <Spinner size="lg" />
       </div>
     )
   }
 
   if (isError || !data) {
-    return <div className="text-red-400">Failed to load mechanics board.</div>
+    return (
+      <Card className="p-6">
+        <p className="text-red-400">Failed to load mechanics board.</p>
+      </Card>
+    )
   }
 
   const sorted = sortByAttention(data.mechanics)
@@ -174,45 +181,40 @@ export default function MechanicsBoardPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-white">Mechanic Board</h1>
-              <SectionInfoTooltip text="Team-wide mechanic monitoring. Cards are sorted by attention priority — red needs action now, yellow worth checking, green on track." />
-            </div>
-            <p className="text-sm text-gray-400">
-              {data.date} · {data.timezone}
-            </p>
-          </div>
+      <Header
+        title="Mechanic Board"
+        subtitle={`${data.date} · ${data.timezone}`}
+        icon={<Users className="w-5 h-5 text-[var(--accent-400)]" />}
+        actions={
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-gray-300">
-              Tracked: <strong className="text-white">{toHours(data.team_tracked_minutes)}h</strong> / {toHours(data.team_core_target_minutes)}h
+            <span className="text-zinc-300">
+              Tracked: <strong className="text-zinc-100">{toHours(data.team_tracked_minutes)}h</strong> / {toHours(data.team_core_target_minutes)}h
             </span>
-            <span className="text-amber-300">
-              Utilization: <strong>{data.team_utilization_percent.toFixed(1)}%</strong>
-            </span>
+            <Badge variant="warning">
+              Utilization: {data.team_utilization_percent.toFixed(1)}%
+            </Badge>
           </div>
-        </div>
-      </div>
+        }
+      />
+      <SectionInfoTooltip text="Team-wide mechanic monitoring. Cards are sorted by attention priority — red needs action now, yellow worth checking, green on track." />
 
       {/* Attention summary banner */}
       {sorted.length > 0 ? (
         <div className="flex items-center gap-4 px-1 text-xs">
           {redCount > 0 ? (
-            <span className="flex items-center gap-1.5 text-rose-300 font-medium">
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+            <span className="flex items-center gap-2 text-red-300 font-medium">
+              <StatusLED status="error" />
               {redCount} need{redCount === 1 ? 's' : ''} attention
             </span>
           ) : null}
           {yellowCount > 0 ? (
-            <span className="flex items-center gap-1.5 text-amber-300 font-medium">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+            <span className="flex items-center gap-2 text-amber-300 font-medium">
+              <StatusLED status="warning" />
               {yellowCount} worth checking
             </span>
           ) : null}
-          <span className="flex items-center gap-1.5 text-emerald-300">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+          <span className="flex items-center gap-2 text-emerald-300">
+            <StatusLED status="active" />
             {greenCount} on track
           </span>
         </div>
@@ -220,10 +222,12 @@ export default function MechanicsBoardPage() {
 
       {/* Mechanic cards */}
       {!sorted.length ? (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-gray-400">No active mechanics.</div>
+        <Card className="p-6">
+          <p className="text-zinc-400">No active mechanics.</p>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {sorted.map((m) => {
+          {sorted.map((m, index) => {
             const mechanicDetailPath = `/dashboard/mechanics/${m.mechanic_id}`
             const corePercent = m.core_target_minutes > 0
               ? Math.min(((m.core_target_minutes - m.core_countdown_remaining_minutes) / m.core_target_minutes) * 100, 100)
@@ -233,122 +237,128 @@ export default function MechanicsBoardPage() {
               : null
 
             return (
-              <div
+              <Card
                 key={m.mechanic_id}
-                className={`bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/10 transition-colors cursor-pointer border-l-4 ${PRIORITY_BORDER[m.attention_priority]}`}
-                role="button"
-                tabIndex={0}
-                aria-label={`Open mechanic board for ${m.mechanic_name}`}
-                onClick={() => navigate(mechanicDetailPath)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    navigate(mechanicDetailPath)
-                  }
-                }}
+                hover
+                padding="none"
+                className={`p-4 cursor-pointer border-l-4 ${PRIORITY_BORDER[m.attention_priority]} animate-[fadeIn_0.3s_ease-out_forwards] opacity-0`}
+                style={staggeredReveal(index)}
               >
-                {/* Row 1: Name + status + chevron */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${PRIORITY_DOT[m.attention_priority]}`} />
-                    <h2 className="text-white font-medium">{m.mechanic_name}</h2>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open mechanic board for ${m.mechanic_name}`}
+                  onClick={() => navigate(mechanicDetailPath)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      navigate(mechanicDetailPath)
+                    }
+                  }}
+                >
+                  {/* Row 1: Name + status + chevron */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <StatusLED status={PRIORITY_LED[m.attention_priority]} />
+                      <h2 className="text-zinc-100 font-semibold">{m.mechanic_name}</h2>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {m.active_session ? (
+                        <Badge variant="success">Active</Badge>
+                      ) : m.attendance_active ? (
+                        <Badge variant="default">Idle</Badge>
+                      ) : (
+                        <Badge variant="default" className="opacity-50">Off</Badge>
+                      )}
+                      <ChevronRight className="w-4 h-4 text-zinc-600" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {m.active_session ? (
-                      <span className="text-[11px] px-2 py-1 rounded bg-green-500/20 text-green-300">Active</span>
-                    ) : m.attendance_active ? (
-                      <span className="text-[11px] px-2 py-1 rounded bg-gray-500/20 text-gray-300">Idle</span>
-                    ) : (
-                      <span className="text-[11px] px-2 py-1 rounded bg-gray-500/20 text-gray-500">Off</span>
-                    )}
-                    <ChevronRight className="w-4 h-4 text-gray-600" />
+
+                  {/* Row 2: Attention reason (if red/yellow) */}
+                  {firstReason && m.attention_priority !== 'green' ? (
+                    <div className={`mt-2 text-xs font-medium ${m.attention_priority === 'red' ? 'text-red-300' : 'text-amber-300'}`}>
+                      {firstReason}
+                      {m.attention_reasons.length > 1 ? (
+                        <span className="text-zinc-500 font-normal"> +{m.attention_reasons.length - 1} more</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Row 3: Suggested action */}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div className="text-xs text-zinc-400 truncate">
+                      Suggested: <span className="text-zinc-200">{formatSuggestedNextAction(m.suggested_next_action)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {m.active_session?.session_type === 'misc' ? (
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setStopTarget({ mechanicId: m.mechanic_id, mechanicName: m.mechanic_name })
+                          }}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200"
+                        >
+                          Stop Misc
+                        </button>
+                      ) : null}
+                      {(m.suggested_next_action === 'continue_ro' || m.suggested_next_action === 'stop_misc_pick_ro' || m.suggested_next_action === 'start_assigned_ro') ? (
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            navigate(mechanicDetailPath)
+                          }}
+                          className="px-3 py-1.5 text-xs rounded-lg bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200"
+                        >
+                          Go to Detail
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
+
+                  {/* Row 4: Core remaining bar */}
+                  <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+                      <span>Core Remaining</span>
+                      <span className="text-zinc-100 font-medium">{toHours(m.core_countdown_remaining_minutes)}h left</span>
+                    </div>
+                    <div className="h-2 bg-zinc-800/60 rounded-full overflow-hidden">
+                      <div className="h-2 bg-[var(--accent-500)] rounded-full transition-all" style={{ width: `${corePercent}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Row 5: Summary line */}
+                  <div className="mt-3 text-xs text-zinc-400">
+                    Tracked {toHours(m.tracked_minutes)}h · RO {toHours(m.ro_minutes)}h · Misc {toHours(m.misc_minutes)}h
+                  </div>
+
+                  {m.held_orders_count > 0 ? (
+                    <div className="mt-2 text-xs text-amber-300">
+                      On hold: <span className="text-amber-200">{m.held_orders?.[0]?.order_number || `${m.held_orders_count} job(s)`}</span>
+                      {m.held_orders?.[0]?.hold_reason ? (
+                        <span className="text-amber-100"> · {formatHoldReason(m.held_orders[0].hold_reason)}</span>
+                      ) : null}
+                      {m.held_orders_count > 1 ? (
+                        <span className="text-amber-200"> · +{m.held_orders_count - 1} more</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* Row 6: Active timer (only if running) */}
+                  {m.active_session?.started_at ? (
+                    <div className="mt-3 text-xs text-emerald-300 flex items-center gap-2">
+                      <StatusLED status="active" />
+                      <LiveElapsedTimer startedAt={m.active_session.started_at} className="font-mono text-emerald-200" />
+                      <span className="text-zinc-500">·</span>
+                      <span className="text-zinc-300">
+                        {formatSessionType(m.active_session.session_type)}
+                        {m.active_session.session_type === 'misc' && m.active_session.misc_category
+                          ? ` (${formatMiscCategory(m.active_session.misc_category)})`
+                          : ''}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
-
-                {/* Row 2: Attention reason (if red/yellow) */}
-                {firstReason && m.attention_priority !== 'green' ? (
-                  <div className={`mt-1.5 text-xs font-medium ${m.attention_priority === 'red' ? 'text-rose-300' : 'text-amber-300'}`}>
-                    {firstReason}
-                    {m.attention_reasons.length > 1 ? (
-                      <span className="text-gray-500 font-normal"> +{m.attention_reasons.length - 1} more</span>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {/* Row 3: Suggested action */}
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <div className="text-xs text-gray-400 truncate">
-                    Suggested: <span className="text-gray-200">{formatSuggestedNextAction(m.suggested_next_action)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {m.active_session?.session_type === 'misc' ? (
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setStopTarget({ mechanicId: m.mechanic_id, mechanicName: m.mechanic_name })
-                        }}
-                        className="px-2 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold"
-                      >
-                        Stop Misc
-                      </button>
-                    ) : null}
-                    {(m.suggested_next_action === 'continue_ro' || m.suggested_next_action === 'stop_misc_pick_ro' || m.suggested_next_action === 'start_assigned_ro') ? (
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          navigate(mechanicDetailPath)
-                        }}
-                        className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold"
-                      >
-                        Go to Detail
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Row 4: Core remaining bar */}
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                    <span>Core Remaining</span>
-                    <span className="text-white font-medium">{toHours(m.core_countdown_remaining_minutes)}h left</span>
-                  </div>
-                  <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-2 bg-cyan-500 rounded-full transition-all" style={{ width: `${corePercent}%` }} />
-                  </div>
-                </div>
-
-                {/* Row 5: Summary line */}
-                <div className="mt-2 text-xs text-gray-400">
-                  Tracked {toHours(m.tracked_minutes)}h · RO {toHours(m.ro_minutes)}h · Misc {toHours(m.misc_minutes)}h
-                </div>
-
-                {m.held_orders_count > 0 ? (
-                  <div className="mt-2 text-xs text-amber-300">
-                    On hold: <span className="text-amber-200">{m.held_orders?.[0]?.order_number || `${m.held_orders_count} job(s)`}</span>
-                    {m.held_orders?.[0]?.hold_reason ? (
-                      <span className="text-amber-100"> · {formatHoldReason(m.held_orders[0].hold_reason)}</span>
-                    ) : null}
-                    {m.held_orders_count > 1 ? (
-                      <span className="text-amber-200"> · +{m.held_orders_count - 1} more</span>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {/* Row 6: Active timer (only if running) */}
-                {m.active_session?.started_at ? (
-                  <div className="mt-2 text-xs text-green-300 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-                    <LiveElapsedTimer startedAt={m.active_session.started_at} className="font-mono text-green-200" />
-                    <span className="text-gray-500">·</span>
-                    <span className="text-gray-300">
-                      {formatSessionType(m.active_session.session_type)}
-                      {m.active_session.session_type === 'misc' && m.active_session.misc_category
-                        ? ` (${formatMiscCategory(m.active_session.misc_category)})`
-                        : ''}
-                    </span>
-                  </div>
-                ) : null}
-              </div>
+              </Card>
             )
           })}
         </div>
@@ -357,7 +367,7 @@ export default function MechanicsBoardPage() {
       {/* Stop Misc Modal */}
       {stopTarget ? (
         <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 px-4"
           tabIndex={-1}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
@@ -385,26 +395,25 @@ export default function MechanicsBoardPage() {
             }
           }}
         >
-          <div className="w-full max-w-md bg-gray-900 border border-white/10 rounded-xl p-4 space-y-3">
-            <h3 className="text-white font-medium">Stop Misc Timer</h3>
-            <p className="text-sm text-gray-400">
-              Provide manager reason to stop misc timer for <span className="text-white">{stopTarget.mechanicName}</span>.
+          <Card className="w-full max-w-md p-6 space-y-4">
+            <h3 className="text-zinc-100 font-semibold text-lg">Stop Misc Timer</h3>
+            <p className="text-sm text-zinc-400">
+              Provide manager reason to stop misc timer for <span className="text-zinc-100 font-medium">{stopTarget.mechanicName}</span>.
             </p>
-            <input
+            <Input
               ref={stopReasonInputRef}
               value={stopReason}
               onChange={(event) => setStopReason(event.target.value)}
               placeholder="Manager reason (required)"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800/50">
               <button
                 ref={cancelStopButtonRef}
                 onClick={() => {
                   setStopTarget(null)
                   setStopReason('')
                 }}
-                className="px-3 py-2 rounded-lg bg-white/10 text-gray-200"
+                className="px-4 py-2.5 text-sm rounded-xl bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold border border-zinc-600/50 hover:border-zinc-500 transition-all duration-200"
               >
                 Cancel
               </button>
@@ -415,12 +424,12 @@ export default function MechanicsBoardPage() {
                   stopMiscMutation.mutate({ mechanicId: stopTarget.mechanicId, managerReason: stopReason.trim() })
                 }}
                 disabled={!stopReason.trim() || stopMiscMutation.isPending}
-                className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:bg-gray-600 text-white"
+                className="px-4 py-2.5 text-sm rounded-xl bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stopMiscMutation.isPending ? 'Stopping...' : 'Stop Misc'}
               </button>
             </div>
-          </div>
+          </Card>
         </div>
       ) : null}
     </div>

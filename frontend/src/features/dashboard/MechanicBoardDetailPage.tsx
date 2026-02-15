@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Loader2, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Loader2, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, User } from 'lucide-react'
 import api from '@/lib/api'
 import { MISC_WORK_OPTIONS, formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
@@ -11,6 +11,10 @@ import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import type { AttentionPriority } from '@/types'
 import { ATTENTION_REASON_LABELS } from '@/types'
+import { 
+  Card, Button, Input, Badge, StatusLED, Header, Spinner, 
+  SectionHeader, staggeredReveal, Label
+} from '@/components/ui'
 
 interface SessionRow {
   id: string
@@ -294,13 +298,17 @@ export default function MechanicBoardDetailPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+        <Spinner size="lg" />
       </div>
     )
   }
 
   if (isError || !data) {
-    return <div className="text-red-400">Failed to load mechanic board detail.</div>
+    return (
+      <Card className="p-6">
+        <p className="text-red-400">Failed to load mechanic board detail.</p>
+      </Card>
+    )
   }
 
   const m = data.mechanic
@@ -317,40 +325,53 @@ export default function MechanicBoardDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/dashboard/mechanics')} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300">
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={() => navigate('/dashboard/mechanics')} 
+          className="p-2.5 rounded-xl bg-zinc-800/60 hover:bg-zinc-700 text-zinc-300 border border-zinc-700/50 transition-all duration-200"
+        >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <div>
-          <h1 className="text-xl font-semibold text-white">{m.mechanic_name}</h1>
-          <p className="text-xs text-gray-400">{m.date} · {m.timezone}</p>
-        </div>
+        <Header
+          title={m.mechanic_name}
+          subtitle={`${m.date} · ${m.timezone}`}
+          icon={<User className="w-5 h-5 text-[var(--accent-400)]" />}
+        />
       </div>
 
       {m.attention_priority !== 'green' && m.attention_reasons.length > 0 ? (
-        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${m.attention_priority === 'red' ? 'bg-rose-500/15 border border-rose-500/30 text-rose-200' : 'bg-amber-500/15 border border-amber-400/30 text-amber-200'}`}>
-          {m.attention_reasons.map((r) => ATTENTION_REASON_LABELS[r] || r).join(' · ')}
-        </div>
+        <Card 
+          variant="subtle" 
+          padding="none" 
+          className={`px-4 py-3 ${m.attention_priority === 'red' ? 'border-red-500/30 bg-red-950/30' : 'border-amber-500/30 bg-amber-950/30'}`}
+        >
+          <div className="flex items-center gap-3">
+            <StatusLED status={m.attention_priority === 'red' ? 'error' : 'warning'} />
+            <span className={`text-sm font-medium ${m.attention_priority === 'red' ? 'text-red-200' : 'text-amber-200'}`}>
+              {m.attention_reasons.map((r) => ATTENTION_REASON_LABELS[r] || r).join(' · ')}
+            </span>
+          </div>
+        </Card>
       ) : null}
 
       {/* Tab bar */}
-      <div className="flex gap-1 border-b border-white/10 pb-px">
+      <div className="flex gap-1 border-b border-zinc-700/50 pb-px">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+          className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all duration-200 ${
             activeTab === 'overview'
-              ? 'bg-white/10 text-white border border-white/10 border-b-transparent -mb-px'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 border-b-transparent -mb-px'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
           }`}
         >
           Overview
         </button>
         <button
           onClick={() => setActiveTab('controls')}
-          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors flex items-center gap-1.5 ${
+          className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all duration-200 flex items-center gap-2 ${
             activeTab === 'controls'
-              ? 'bg-white/10 text-white border border-white/10 border-b-transparent -mb-px'
-              : 'text-gray-400 hover:text-gray-200'
+              ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 border-b-transparent -mb-px'
+              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
           }`}
         >
           <Settings className="w-3.5 h-3.5" />
@@ -361,54 +382,57 @@ export default function MechanicBoardDetailPage() {
       {/* ── OVERVIEW TAB ── */}
       {activeTab === 'overview' && (
         <>
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+          <Card className="space-y-4">
             <div className="flex items-center gap-2">
-              <h2 className="text-white font-medium">Today Summary</h2>
+              <h2 className="text-zinc-100 font-semibold">Today Summary</h2>
               <SectionInfoTooltip text="At-a-glance performance for this mechanic today: tracked hours, work mix, utilization, efficiency, and whether a timer is currently running." />
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-8 gap-3 text-sm">
-              <div className="text-gray-400">Tracked<br /><span className="text-white font-semibold">{(m.tracked_minutes / 60).toFixed(1)}h</span></div>
-              <div className="text-gray-400">RO<br /><span className="text-white font-semibold">{(m.ro_minutes / 60).toFixed(1)}h</span></div>
-              <div className="text-gray-400">Misc<br /><span className="text-white font-semibold">{(m.misc_minutes / 60).toFixed(1)}h</span></div>
-              <div className="text-gray-400">Break<br /><span className="text-white font-semibold">{(m.break_minutes / 60).toFixed(1)}h</span></div>
-              <div className="text-gray-400">Idle<br /><span className="text-white font-semibold">{(m.idle_minutes / 60).toFixed(1)}h</span></div>
-              <div className="text-gray-400">Utilization<br /><span className="text-amber-300 font-semibold">{m.utilization_percent.toFixed(1)}%</span></div>
-              <div className="text-gray-400">Efficiency<br /><span className="text-white font-semibold">{m.efficiency_percent == null ? 'n/a' : `${m.efficiency_percent.toFixed(1)}%`}</span></div>
-              <div className="text-gray-400">Core Gap<br /><span className="text-white font-semibold">{(m.core_gap_minutes / 60).toFixed(1)}h</span></div>
+            <div className="grid grid-cols-2 lg:grid-cols-8 gap-4 text-sm">
+              <div className="text-zinc-400">Tracked<br /><span className="text-zinc-100 font-semibold">{(m.tracked_minutes / 60).toFixed(1)}h</span></div>
+              <div className="text-zinc-400">RO<br /><span className="text-zinc-100 font-semibold">{(m.ro_minutes / 60).toFixed(1)}h</span></div>
+              <div className="text-zinc-400">Misc<br /><span className="text-zinc-100 font-semibold">{(m.misc_minutes / 60).toFixed(1)}h</span></div>
+              <div className="text-zinc-400">Break<br /><span className="text-zinc-100 font-semibold">{(m.break_minutes / 60).toFixed(1)}h</span></div>
+              <div className="text-zinc-400">Idle<br /><span className="text-zinc-100 font-semibold">{(m.idle_minutes / 60).toFixed(1)}h</span></div>
+              <div className="text-zinc-400">Utilization<br /><span className="text-amber-400 font-semibold">{m.utilization_percent.toFixed(1)}%</span></div>
+              <div className="text-zinc-400">Efficiency<br /><span className="text-zinc-100 font-semibold">{m.efficiency_percent == null ? 'n/a' : `${m.efficiency_percent.toFixed(1)}%`}</span></div>
+              <div className="text-zinc-400">Core Gap<br /><span className="text-zinc-100 font-semibold">{(m.core_gap_minutes / 60).toFixed(1)}h</span></div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-              <div className="rounded-lg border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-2 text-cyan-100">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="rounded-xl border border-[var(--accent-500)]/30 bg-[var(--accent-500)]/10 px-3 py-2.5 text-[var(--accent-400)]">
                 Core Countdown Remaining: <span className="font-semibold">{(m.core_countdown_remaining_minutes / 60).toFixed(1)}h</span>
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-200">
+              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-200">
                 Tracked Progress: <span className="font-semibold">{(m.tracked_minutes / 60).toFixed(1)}h / {(m.core_target_minutes / 60).toFixed(1)}h</span>
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-200">
+              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-200">
                 Work Coverage: <span className="font-semibold">{formatCoverageLabel(m.work_coverage_percent, m.attendance_minutes)}</span>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-              <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-300">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-300 flex items-center gap-2">
+                <StatusLED status={m.attendance_active ? 'active' : 'inactive'} />
                 Attendance:{' '}
-                <span className={m.attendance_active ? 'text-emerald-300' : 'text-gray-200'}>
+                <span className={m.attendance_active ? 'text-emerald-300' : 'text-zinc-200'}>
                   {m.attendance_active ? 'Clocked In' : 'Clocked Out'}
                 </span>
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-300">
+              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-300 flex items-center gap-2">
+                <StatusLED status={m.break_active ? 'warning' : 'inactive'} />
                 Break:{' '}
-                <span className={m.break_active ? 'text-amber-300' : 'text-gray-200'}>
+                <span className={m.break_active ? 'text-amber-300' : 'text-zinc-200'}>
                   {m.break_active ? 'On Break' : 'No Break'}
                 </span>
               </div>
-              <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-gray-300">
-                Flex: <span className="text-white">{m.flex_used_minutes}m / {m.flex_budget_minutes}m</span>
-                {m.flex_overrun_minutes > 0 ? <span className="text-rose-300"> · +{m.flex_overrun_minutes}m</span> : null}
+              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-300">
+                Flex: <span className="text-zinc-100">{m.flex_used_minutes}m / {m.flex_budget_minutes}m</span>
+                {m.flex_overrun_minutes > 0 ? <span className="text-red-300"> · +{m.flex_overrun_minutes}m</span> : null}
               </div>
             </div>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-zinc-400 flex items-center gap-2">
               Live timer:{' '}
               {m.active_session?.started_at ? (
-                <span className="text-emerald-300">
+                <span className="text-emerald-300 flex items-center gap-2">
+                  <StatusLED status="active" />
                   {formatSessionType(m.active_session.session_type)}
                   {m.active_session.session_type === 'misc' && m.active_session.misc_category
                     ? ` (${formatMiscCategory(m.active_session.misc_category)})`
@@ -416,144 +440,163 @@ export default function MechanicBoardDetailPage() {
                   {' '}· <LiveElapsedTimer startedAt={m.active_session.started_at} className="font-mono text-emerald-200" />
                 </span>
               ) : (
-                <span className="text-gray-300">idle</span>
+                <span className="text-zinc-300 flex items-center gap-2">
+                  <StatusLED status="inactive" />
+                  idle
+                </span>
               )}
             </div>
-            <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-              <div className="text-xs text-gray-400">
+            <Card variant="subtle" padding="sm" className="space-y-2">
+              <div className="text-xs text-zinc-400">
                 Suggested next action:{' '}
-                <span className="text-gray-200">{formatSuggestedNextAction(m.suggested_next_action)}</span>
+                <span className="text-zinc-200 font-medium">{formatSuggestedNextAction(m.suggested_next_action)}</span>
               </div>
-              <div className="mt-1 text-[11px] text-gray-500">
-                Ready assigned: <span className="text-gray-200">{m.assigned_ready_orders_count}</span>
+              <div className="text-[11px] text-zinc-500">
+                Ready assigned: <span className="text-zinc-200">{m.assigned_ready_orders_count}</span>
                 {' · '}
-                Untimed in-progress: <span className="text-gray-200">{m.untimed_in_progress_orders_count}</span>
+                Untimed in-progress: <span className="text-zinc-200">{m.untimed_in_progress_orders_count}</span>
                 {m.recommended_order_number ? (
                   <>
                     {' · '}
-                    Recommended RO: <span className="text-gray-200">{m.recommended_order_number}</span>
+                    Recommended RO: <span className="text-zinc-200">{m.recommended_order_number}</span>
                   </>
                 ) : null}
               </div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="flex items-center gap-2 pt-2">
                 {m.recommended_order_id ? (
-                  <button
-                    onClick={openRecommendedOrder}
-                    className="px-2.5 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"
-                  >
+                  <Button size="sm" onClick={openRecommendedOrder}>
                     Open Recommended RO
-                  </button>
+                  </Button>
                 ) : null}
                 {m.suggested_next_action === 'stop_misc_pick_ro' && m.active_session?.session_type === 'misc' ? (
-                  <button
+                  <Button 
+                    size="sm" 
+                    variant="danger"
                     onClick={() => setStopReason('Stopping misc to pick up assigned repair order')}
-                    className="px-2.5 py-1.5 rounded bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-semibold"
                   >
                     Prefill Stop Reason
-                  </button>
+                  </Button>
                 ) : null}
               </div>
-            </div>
+            </Card>
             {m.held_orders_count > 0 ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                <div className="text-xs text-amber-200 font-medium">
+              <Card variant="subtle" padding="sm" className="border-amber-500/30 bg-amber-950/30">
+                <div className="text-xs text-amber-200 font-semibold flex items-center gap-2">
+                  <StatusLED status="warning" />
                   On-hold repair orders ({m.held_orders_count})
                 </div>
-                <div className="mt-1 space-y-1">
+                <div className="mt-2 space-y-1">
                   {(m.held_orders || []).map((order) => (
                     <div key={order.id} className="text-xs text-amber-100">
                       {order.order_number} · {formatHoldReason(order.hold_reason)}
                     </div>
                   ))}
                 </div>
-              </div>
+              </Card>
             ) : null}
-          </div>
+          </Card>
 
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+          <Card className="space-y-4">
             <div className="flex items-center gap-2">
-              <h2 className="text-white font-medium">7-Day Trend</h2>
+              <h2 className="text-zinc-100 font-semibold">7-Day Trend</h2>
               <SectionInfoTooltip text="Daily utilization and efficiency trend for the last 7 days. Use this to spot consistency issues and coaching opportunities." />
             </div>
             {!trendRows.length ? (
-              <p className="text-sm text-gray-400">No trend data yet.</p>
+              <p className="text-sm text-zinc-400">No trend data yet.</p>
             ) : (
               <>
                 <div className="space-y-2 md:hidden">
-                  {trendRows.map((row) => (
-                    <div key={row.date} className="rounded-lg border border-white/10 bg-white/5 p-2">
-                      <div className="flex items-center justify-between text-xs text-gray-400">
+                  {trendRows.map((row, i) => (
+                    <Card 
+                      key={row.date} 
+                      variant="subtle" 
+                      padding="sm"
+                      className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
+                      style={staggeredReveal(i)}
+                    >
+                      <div className="flex items-center justify-between text-xs text-zinc-400">
                         <span>{row.date}</span>
-                        <span>{row.utilization_percent.toFixed(1)}%</span>
+                        <span className="text-zinc-100 font-medium">{row.utilization_percent.toFixed(1)}%</span>
                       </div>
-                      <div className="mt-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-2 bg-amber-400 rounded-full" style={{ width: `${Math.min(row.utilization_percent, 100)}%` }} />
+                      <div className="mt-2 h-2 bg-zinc-800/60 rounded-full overflow-hidden">
+                        <div className="h-2 bg-[var(--accent-500)] rounded-full transition-all" style={{ width: `${Math.min(row.utilization_percent, 100)}%` }} />
                       </div>
-                      <div className="mt-1 text-[11px] text-gray-500">
+                      <div className="mt-2 text-[11px] text-zinc-500">
                         Tracked {(row.tracked_minutes / 60).toFixed(1)}h · Efficiency {row.efficiency_percent == null ? 'n/a' : `${row.efficiency_percent.toFixed(1)}%`}
                       </div>
-                    </div>
+                    </Card>
                   ))}
                 </div>
-                <div className="hidden md:grid md:grid-cols-7 md:gap-2">
-                  {trendRows.map((row) => (
-                    <div key={row.date} className="rounded-lg border border-white/10 bg-white/5 p-2">
-                      <div className="flex items-center justify-between text-[11px] text-gray-400">
+                <div className="hidden md:grid md:grid-cols-7 md:gap-3">
+                  {trendRows.map((row, i) => (
+                    <Card 
+                      key={row.date} 
+                      variant="subtle" 
+                      padding="sm"
+                      className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
+                      style={staggeredReveal(i)}
+                    >
+                      <div className="flex items-center justify-between text-[11px] text-zinc-400">
                         <span>{formatTrendDate(row.date)}</span>
-                        <span>{row.utilization_percent.toFixed(0)}%</span>
+                        <span className="text-zinc-100 font-medium">{row.utilization_percent.toFixed(0)}%</span>
                       </div>
-                      <div className="mt-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-2 bg-amber-400 rounded-full" style={{ width: `${Math.min(row.utilization_percent, 100)}%` }} />
+                      <div className="mt-2 h-2 bg-zinc-800/60 rounded-full overflow-hidden">
+                        <div className="h-2 bg-[var(--accent-500)] rounded-full transition-all" style={{ width: `${Math.min(row.utilization_percent, 100)}%` }} />
                       </div>
-                      <div className="mt-1 text-[10px] text-gray-500 leading-tight">
+                      <div className="mt-2 text-[10px] text-zinc-500 leading-tight">
                         {(row.tracked_minutes / 60).toFixed(1)}h · {row.efficiency_percent == null ? 'n/a' : `${row.efficiency_percent.toFixed(0)}%`}
                       </div>
-                    </div>
+                    </Card>
                   ))}
                 </div>
               </>
             )}
-          </div>
+          </Card>
 
           {/* Today Sessions — active session prominent, history collapsed */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <h2 className="text-white font-medium">Today Sessions</h2>
+          <Card className="space-y-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-zinc-100 font-semibold">Today Sessions</h2>
               <SectionInfoTooltip text="Chronological record of all timer sessions for the selected day, including active, stopped, edited, and deletable entries." />
             </div>
 
             {!data.today_sessions.length ? (
-              <p className="text-gray-400 text-sm">No sessions recorded for this day.</p>
+              <p className="text-zinc-400 text-sm">No sessions recorded for this day.</p>
             ) : (() => {
               const activeSession = data.today_sessions.find((s) => !s.ended_at)
               const completedSessions = data.today_sessions.filter((s) => !!s.ended_at)
 
-              const renderSessionRow = (s: SessionRow) => {
+              const renderSessionRow = (s: SessionRow, index?: number) => {
                 const durationMin = computeSessionDurationMinutes(s)
                 return (
-                  <div key={s.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                  <Card 
+                    key={s.id} 
+                    variant="subtle" 
+                    padding="sm"
+                    className={index !== undefined ? 'animate-[fadeIn_0.3s_ease-out_forwards] opacity-0' : ''}
+                    style={index !== undefined ? staggeredReveal(index) : undefined}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-white text-sm font-medium">
+                          <span className="text-zinc-100 text-sm font-semibold">
                             {formatSessionType(s.session_type)}
                             {s.misc_category ? ` · ${formatMiscCategory(s.misc_category)}` : ''}
                           </span>
                           {s.ended_at ? (
-                            <span className="text-xs font-semibold text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                              {formatDuration(durationMin)}
-                            </span>
+                            <Badge variant="warning">{formatDuration(durationMin)}</Badge>
                           ) : null}
                         </div>
-                        <div className="text-xs text-gray-400 mt-0.5">
+                        <div className="text-xs text-zinc-400 mt-1">
                           {new Date(s.started_at).toLocaleTimeString()} – {s.ended_at ? new Date(s.ended_at).toLocaleTimeString() : 'now'}
                         </div>
                         {!s.ended_at ? (
-                          <div className="text-xs text-emerald-300 mt-1">
+                          <div className="text-xs text-emerald-300 mt-2 flex items-center gap-2">
+                            <StatusLED status="active" />
                             Running: <LiveElapsedTimer startedAt={s.started_at} className="font-mono text-emerald-200" />
                           </div>
                         ) : null}
-                        {s.note && <div className="text-xs text-gray-300 mt-1 truncate">{s.note}</div>}
+                        {s.note && <div className="text-xs text-zinc-300 mt-2 truncate">{s.note}</div>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <button
@@ -563,7 +606,7 @@ export default function MechanicBoardDetailPage() {
                             setEditReason('')
                             setEditMode('edit')
                           }}
-                          className="p-1.5 rounded bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+                          className="p-2 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 transition-all duration-200"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
@@ -573,31 +616,34 @@ export default function MechanicBoardDetailPage() {
                             setEditReason('')
                             setEditMode('delete')
                           }}
-                          className="p-1.5 rounded bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+                          className="p-2 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30 transition-all duration-200"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </Card>
                 )
               }
 
               return (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {/* Active session — always visible */}
                   {activeSession ? renderSessionRow(activeSession) : (
-                    <div className="text-sm text-gray-400">No active timer</div>
+                    <div className="text-sm text-zinc-400 flex items-center gap-2">
+                      <StatusLED status="inactive" />
+                      No active timer
+                    </div>
                   )}
 
                   {/* Summary footer — always visible */}
                   {sessionTotals && (
-                    <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-300">
-                      <span>Total RO: <span className="text-white font-semibold">{formatDuration(sessionTotals.repair_order || 0)}</span></span>
-                      <span>Total Misc: <span className="text-white font-semibold">{formatDuration(sessionTotals.misc || 0)}</span></span>
-                      <span>Break: <span className="text-white font-semibold">{formatDuration(m.break_minutes)}</span></span>
-                      <span>Idle: <span className="text-white font-semibold">{formatDuration(m.idle_minutes)}</span></span>
-                    </div>
+                    <Card variant="subtle" padding="sm" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-300">
+                      <span>Total RO: <span className="text-zinc-100 font-semibold">{formatDuration(sessionTotals.repair_order || 0)}</span></span>
+                      <span>Total Misc: <span className="text-zinc-100 font-semibold">{formatDuration(sessionTotals.misc || 0)}</span></span>
+                      <span>Break: <span className="text-zinc-100 font-semibold">{formatDuration(m.break_minutes)}</span></span>
+                      <span>Idle: <span className="text-zinc-100 font-semibold">{formatDuration(m.idle_minutes)}</span></span>
+                    </Card>
                   )}
 
                   {/* Completed sessions — collapsed by default */}
@@ -605,14 +651,14 @@ export default function MechanicBoardDetailPage() {
                     <>
                       <button
                         onClick={() => setSessionsExpanded(!sessionsExpanded)}
-                        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                        className="flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 transition-all duration-200 font-medium"
                       >
-                        {sessionsExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        {sessionsExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         {sessionsExpanded ? 'Hide' : 'Show'} {completedSessions.length} completed session{completedSessions.length !== 1 ? 's' : ''}
                       </button>
                       {sessionsExpanded && (
                         <div className="space-y-2">
-                          {completedSessions.map(renderSessionRow)}
+                          {completedSessions.map((s, i) => renderSessionRow(s, i))}
                         </div>
                       )}
                     </>
@@ -620,77 +666,82 @@ export default function MechanicBoardDetailPage() {
                 </div>
               )
             })()}
-          </div>
+          </Card>
         </>
       )}
 
       {/* ── CONTROLS TAB ── */}
       {activeTab === 'controls' && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+        <Card className="space-y-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-white font-medium">Admin Override Controls</h2>
+            <h2 className="text-zinc-100 font-semibold">Admin Override Controls</h2>
             <SectionInfoTooltip text="Owner/admin controls to start or stop this mechanic's active timer with mandatory manager reason for audit tracking." />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
-              <div className="text-xs text-gray-400">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card variant="subtle" padding="sm" className="space-y-3">
+              <div className="text-xs text-zinc-400 flex items-center gap-2">
+                <StatusLED status={m.attendance_active ? 'active' : 'inactive'} />
                 Attendance:{' '}
-                <span className={m.attendance_active ? 'text-emerald-300' : 'text-gray-300'}>
+                <span className={m.attendance_active ? 'text-emerald-300 font-medium' : 'text-zinc-300'}>
                   {m.attendance_active ? 'Clocked In' : 'Clocked Out'}
                 </span>
               </div>
-              <input
+              <Input
                 value={attendanceReason}
                 onChange={(e) => setAttendanceReason(e.target.value)}
                 placeholder="Manager reason (required)"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
               />
               <button
                 onClick={() => attendanceToggleMutation.mutate()}
                 disabled={!attendanceReason.trim() || attendanceToggleMutation.isPending}
-                className={`w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-white disabled:bg-gray-600 ${
-                  m.attendance_active ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  m.attendance_active 
+                    ? 'bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-800/50' 
+                    : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/50'
                 }`}
               >
                 {attendanceToggleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {m.attendance_active ? 'Clock Out Mechanic' : 'Clock In Mechanic'}
               </button>
-            </div>
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 space-y-2">
-              <div className="text-xs text-gray-400">
+            </Card>
+            <Card variant="subtle" padding="sm" className="space-y-3">
+              <div className="text-xs text-zinc-400 flex items-center gap-2">
+                <StatusLED status={m.break_active ? 'warning' : 'inactive'} />
                 Break:{' '}
-                <span className={m.break_active ? 'text-amber-300' : 'text-gray-300'}>
+                <span className={m.break_active ? 'text-amber-300 font-medium' : 'text-zinc-300'}>
                   {m.break_active ? 'On Break' : 'Not on Break'}
                 </span>
               </div>
-              <input
+              <Input
                 value={breakReason}
                 onChange={(e) => setBreakReason(e.target.value)}
                 placeholder="Manager reason (required)"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
               />
               <button
                 onClick={() => breakToggleMutation.mutate()}
                 disabled={!breakReason.trim() || breakToggleMutation.isPending || !m.attendance_active}
-                className={`w-full flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-white disabled:bg-gray-600 ${
-                  m.break_active ? 'bg-blue-600 hover:bg-blue-700' : 'bg-amber-600 hover:bg-amber-700'
+                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  m.break_active 
+                    ? 'bg-blue-950/80 hover:bg-blue-900 text-blue-400 border border-blue-800/50' 
+                    : 'bg-amber-950/80 hover:bg-amber-900 text-amber-400 border border-amber-800/50'
                 }`}
               >
                 {breakToggleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                 {m.break_active ? 'End Break' : 'Start Break'}
               </button>
-            </div>
+            </Card>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div className="space-y-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <Label>Session Type</Label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setSessionType('misc')}
-                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
                     sessionType === 'misc'
-                      ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                      : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                      ? 'bg-[var(--accent-500)]/20 border-[var(--accent-400)] text-[var(--accent-400)]'
+                      : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
                   }`}
                 >
                   Misc
@@ -698,21 +749,20 @@ export default function MechanicBoardDetailPage() {
                 <button
                   type="button"
                   onClick={() => setSessionType('repair_order')}
-                  className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition-all duration-200 ${
                     sessionType === 'repair_order'
-                      ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                      : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                      ? 'bg-[var(--accent-500)]/20 border-[var(--accent-400)] text-[var(--accent-400)]'
+                      : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
                   }`}
                 >
                   Repair Order
                 </button>
               </div>
               {sessionType === 'repair_order' ? (
-                <input
+                <Input
                   value={repairOrderId}
                   onChange={(e) => setRepairOrderId(e.target.value)}
                   placeholder="Repair order UUID"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
                 />
               ) : (
                 <div className="grid grid-cols-2 gap-2">
@@ -721,10 +771,10 @@ export default function MechanicBoardDetailPage() {
                       key={option.value}
                       type="button"
                       onClick={() => setMiscCategory(option.value)}
-                      className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      className={`px-3 py-2 rounded-xl border text-xs font-semibold transition-all duration-200 ${
                         miscCategory === option.value
-                          ? 'bg-amber-500/20 border-amber-400 text-amber-200'
-                          : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                          ? 'bg-[var(--accent-500)]/20 border-[var(--accent-400)] text-[var(--accent-400)]'
+                          : 'bg-zinc-800/60 border-zinc-600/50 text-zinc-300 hover:bg-zinc-700 hover:border-zinc-500'
                       }`}
                     >
                       {option.label}
@@ -732,111 +782,118 @@ export default function MechanicBoardDetailPage() {
                   ))}
                 </div>
               )}
-              <input
+              <Input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Note (optional)"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
               />
-              <input
+              <Input
                 value={startReason}
                 onChange={(e) => setStartReason(e.target.value)}
                 placeholder="Manager reason (required)"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
               />
               <button
                 onClick={() => startTimerMutation.mutate()}
                 disabled={!startReason.trim() || startTimerMutation.isPending || (sessionType === 'repair_order' && !repairOrderId.trim())}
-                className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white rounded-lg px-3 py-2"
+                className="w-full flex items-center justify-center gap-2 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold rounded-xl px-4 py-2.5 text-sm border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
                 {startTimerMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
                 Start Timer
               </button>
             </div>
-            <div className="space-y-2">
-              <div className="text-sm text-gray-400">
+            <div className="space-y-3">
+              <Label>Stop Timer</Label>
+              <div className="text-sm text-zinc-400 flex items-center gap-2">
                 Current state:{' '}
                 {active ? (
-                  <span className="text-green-300">
+                  <span className="text-emerald-300 flex items-center gap-2">
+                    <StatusLED status="active" />
                     active timer running
                     {m.active_session?.started_at ? (
                       <>
-                        {' '}· <LiveElapsedTimer startedAt={m.active_session.started_at} className="font-mono text-green-200" />
+                        {' '}· <LiveElapsedTimer startedAt={m.active_session.started_at} className="font-mono text-emerald-200" />
                       </>
                     ) : null}
                   </span>
                 ) : (
-                  <span className="text-gray-300">idle</span>
+                  <span className="text-zinc-300 flex items-center gap-2">
+                    <StatusLED status="inactive" />
+                    idle
+                  </span>
                 )}
               </div>
-              <input
+              <Input
                 value={stopReason}
                 onChange={(e) => setStopReason(e.target.value)}
                 placeholder="Manager reason (required)"
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
               />
               <button
                 onClick={() => stopTimerMutation.mutate()}
                 disabled={!stopReason.trim() || stopTimerMutation.isPending}
-                className="w-full flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700 disabled:bg-gray-600 text-white rounded-lg px-3 py-2"
+                className="w-full flex items-center justify-center gap-2 bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold rounded-xl px-4 py-2.5 text-sm border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stopTimerMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
                 Stop Active Timer
               </button>
             </div>
           </div>
-        </div>
+        </Card>
       )}
 
       {editMode && selectedSession && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
-          <div className="w-full max-w-md bg-gray-900 border border-white/10 rounded-xl p-4 space-y-3">
-            <h3 className="text-white font-medium">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <Card className="w-full max-w-md p-6 space-y-4">
+            <h3 className="text-zinc-100 font-semibold text-lg">
               {editMode === 'edit' ? 'Edit Session Note' : 'Delete Session'}
             </h3>
             {editMode === 'edit' && (
-              <textarea
-                value={editNote}
-                onChange={(e) => setEditNote(e.target.value)}
-                rows={3}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white"
-              />
+              <div>
+                <Label>Note</Label>
+                <textarea
+                  value={editNote}
+                  onChange={(e) => setEditNote(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 bg-zinc-800/60 border border-zinc-600/50 rounded-xl text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:border-[var(--accent-500)] focus:bg-zinc-800 focus:ring-2 focus:ring-[var(--accent-500)]/20 transition-all duration-200 hover:border-zinc-500"
+                />
+              </div>
             )}
-            <input
-              value={editReason}
-              onChange={(e) => setEditReason(e.target.value)}
-              placeholder="Manager reason (required)"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500"
-            />
-            <div className="flex justify-end gap-2">
-              <button
+            <div>
+              <Label>Manager Reason</Label>
+              <Input
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder="Manager reason (required)"
+              />
+            </div>
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800/50">
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setEditMode(null)
                   setSelectedSession(null)
                 }}
-                className="px-3 py-2 rounded-lg bg-white/10 text-gray-200"
               >
                 Cancel
-              </button>
+              </Button>
               {editMode === 'edit' ? (
                 <button
                   onClick={() => editSessionMutation.mutate()}
                   disabled={!editReason.trim() || editSessionMutation.isPending}
-                  className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white"
+                  className="px-4 py-2.5 text-sm rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-400 font-semibold border border-amber-800/50 hover:border-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editSessionMutation.isPending ? 'Saving...' : 'Save'}
                 </button>
               ) : (
-                <button
+                <Button
+                  variant="danger"
                   onClick={() => deleteSessionMutation.mutate()}
                   disabled={!editReason.trim() || deleteSessionMutation.isPending}
-                  className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:bg-gray-600 text-white"
                 >
                   {deleteSessionMutation.isPending ? 'Deleting...' : 'Delete'}
-                </button>
+                </Button>
               )}
             </div>
-          </div>
+          </Card>
         </div>
       )}
     </div>
