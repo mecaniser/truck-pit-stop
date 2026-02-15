@@ -1,13 +1,51 @@
 import { ReactNode } from 'react'
 
-interface GlassNoirCardProps {
+// ============ DESIGN SYSTEM STYLES ============
+// Hybrid industrial-organic: rounded corners + LED glows + soft shadows
+
+const styles = {
+  card: `
+    relative bg-zinc-900/80 backdrop-blur-sm 
+    border border-zinc-700/50 rounded-2xl
+    overflow-hidden shadow-xl shadow-black/20
+  `,
+  cardElevated: `
+    relative bg-zinc-800/60 backdrop-blur-sm 
+    border border-zinc-700/50 rounded-2xl
+    overflow-hidden shadow-lg shadow-black/20
+  `,
+  cardSubtle: `
+    bg-zinc-800/40 border border-zinc-700/50 rounded-xl
+  `,
+  input: `
+    w-full px-4 py-3 
+    bg-zinc-800/60 border border-zinc-600/50 rounded-xl
+    text-zinc-100 text-sm
+    placeholder-zinc-500 
+    focus:outline-none focus:border-[var(--accent-500)] 
+    focus:bg-zinc-800 focus:ring-2 focus:ring-[var(--accent-500)]/20
+    transition-all duration-200
+    hover:border-zinc-500
+  `,
+  label: `block text-xs font-medium text-zinc-400 mb-2`,
+  sectionHeader: `
+    text-xs font-bold uppercase tracking-[0.2em] text-zinc-500
+    border-b border-zinc-800/50 pb-2 mb-6
+    flex items-center gap-3
+  `,
+}
+
+// ============ CARD ============
+interface CardProps {
   children: ReactNode
   className?: string
   hover?: boolean
-  padding?: 'sm' | 'md' | 'lg'
+  variant?: 'default' | 'elevated' | 'subtle'
+  padding?: 'none' | 'sm' | 'md' | 'lg'
 }
 
 const paddingClasses = {
+  none: '',
   sm: 'p-4',
   md: 'p-6',
   lg: 'p-8',
@@ -17,16 +55,21 @@ export function GlassNoirCard({
   children, 
   className = '', 
   hover = false,
+  variant = 'default',
   padding = 'md' 
-}: GlassNoirCardProps) {
+}: CardProps) {
+  const variantStyles = {
+    default: styles.card,
+    elevated: styles.cardElevated,
+    subtle: styles.cardSubtle,
+  }
+  
   return (
     <div
       className={`
-        bg-black/40 backdrop-blur-xl 
-        border border-gold-500/20 
-        rounded-xl
+        ${variantStyles[variant]}
         ${paddingClasses[padding]}
-        ${hover ? 'transition-all duration-300 hover:border-gold-500/40 hover:shadow-lg hover:shadow-gold-500/10' : ''}
+        ${hover ? 'transition-all duration-300 hover:border-[var(--accent-500)]/40 hover:shadow-lg hover:shadow-[var(--accent-500)]/10' : ''}
         ${className}
       `}
     >
@@ -35,10 +78,14 @@ export function GlassNoirCard({
   )
 }
 
-interface GlassNoirButtonProps {
+// Alias for cleaner imports
+export const Card = GlassNoirCard
+
+// ============ BUTTON ============
+interface ButtonProps {
   children: ReactNode
   onClick?: () => void
-  variant?: 'primary' | 'secondary' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
   className?: string
   disabled?: boolean
@@ -46,15 +93,34 @@ interface GlassNoirButtonProps {
 }
 
 const buttonVariants = {
-  primary: 'bg-gold-500 hover:bg-gold-400 text-black font-semibold shadow-lg shadow-gold-500/20',
-  secondary: 'bg-gold-500/10 hover:bg-gold-500/20 text-gold-400 border border-gold-500/30',
-  ghost: 'hover:bg-gold-500/10 text-gold-400',
+  primary: `
+    bg-[var(--accent-600)] hover:bg-[var(--accent-500)] 
+    text-white font-semibold
+    border border-[var(--accent-400)]/50
+    hover:shadow-[0_0_24px_var(--accent-500)]
+    active:scale-[0.98]
+  `,
+  secondary: `
+    bg-zinc-800/80 hover:bg-zinc-700 
+    text-zinc-300 font-semibold
+    border border-zinc-600/50 hover:border-zinc-500
+  `,
+  danger: `
+    bg-red-950/80 hover:bg-red-900 
+    text-red-400 font-semibold
+    border border-red-800/50 hover:border-red-600
+  `,
+  ghost: `
+    hover:bg-zinc-800/60 
+    text-zinc-400 hover:text-zinc-300
+    border border-transparent
+  `,
 }
 
 const buttonSizes = {
-  sm: 'px-3 py-1.5 text-sm',
-  md: 'px-4 py-2',
-  lg: 'px-6 py-3 text-lg',
+  sm: 'px-3 py-1.5 text-xs rounded-lg',
+  md: 'px-4 py-2.5 text-sm rounded-xl',
+  lg: 'px-6 py-3 text-sm rounded-xl',
 }
 
 export function GlassNoirButton({
@@ -65,7 +131,7 @@ export function GlassNoirButton({
   className = '',
   disabled = false,
   type = 'button',
-}: GlassNoirButtonProps) {
+}: ButtonProps) {
   return (
     <button
       type={type}
@@ -74,8 +140,8 @@ export function GlassNoirButton({
       className={`
         ${buttonVariants[variant]}
         ${buttonSizes[size]}
-        rounded-lg transition-all duration-200
-        disabled:opacity-50 disabled:cursor-not-allowed
+        transition-all duration-200
+        disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none
         ${className}
       `}
     >
@@ -84,26 +150,115 @@ export function GlassNoirButton({
   )
 }
 
-// Header component for GlassNoir pages
-interface GlassNoirHeaderProps {
+// Alias
+export const Button = GlassNoirButton
+
+// ============ INPUT ============
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  error?: boolean
+}
+
+export function Input({ className = '', error = false, ...props }: InputProps) {
+  return (
+    <input
+      className={`
+        ${styles.input}
+        ${error ? 'border-red-500 focus:border-red-400' : ''}
+        ${className}
+      `}
+      {...props}
+    />
+  )
+}
+
+// ============ LABEL ============
+export function Label({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <label className={`${styles.label} ${className}`}>{children}</label>
+}
+
+// ============ SECTION HEADER ============
+interface SectionHeaderProps {
+  children: ReactNode
+  icon?: ReactNode
+  actions?: ReactNode
+}
+
+export function SectionHeader({ children, icon, actions }: SectionHeaderProps) {
+  return (
+    <div className={styles.sectionHeader}>
+      {icon && <span className="text-[var(--accent-400)]">{icon}</span>}
+      <span>{children}</span>
+      {actions && <div className="ml-auto">{actions}</div>}
+    </div>
+  )
+}
+
+// ============ BADGE ============
+interface BadgeProps {
+  children: ReactNode
+  variant?: 'default' | 'success' | 'warning' | 'error' | 'info'
+  className?: string
+}
+
+const badgeVariants = {
+  default: 'bg-zinc-800/80 text-zinc-300 border-zinc-600/50',
+  success: 'bg-emerald-950/80 text-emerald-400 border-emerald-700/50',
+  warning: 'bg-amber-950/80 text-amber-400 border-amber-700/50',
+  error: 'bg-red-950/80 text-red-400 border-red-700/50',
+  info: 'bg-blue-950/80 text-blue-400 border-blue-700/50',
+}
+
+export function GlassNoirBadge({ children, variant = 'default', className = '' }: BadgeProps) {
+  return (
+    <span className={`
+      inline-flex items-center gap-2 
+      px-3 py-1.5 text-xs font-semibold 
+      rounded-full border
+      ${badgeVariants[variant]}
+      ${className}
+    `}>
+      {children}
+    </span>
+  )
+}
+
+// Alias
+export const Badge = GlassNoirBadge
+
+// ============ STATUS LED ============
+type LEDStatus = 'active' | 'inactive' | 'warning' | 'error'
+
+const ledStyles: Record<LEDStatus, string> = {
+  active: 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)] animate-pulse',
+  inactive: 'w-2.5 h-2.5 rounded-full bg-zinc-600',
+  warning: 'w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)] animate-pulse',
+  error: 'w-2.5 h-2.5 rounded-full bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.9)]',
+}
+
+export function StatusLED({ status }: { status: LEDStatus }) {
+  return <div className={ledStyles[status]} />
+}
+
+// ============ HEADER ============
+interface HeaderProps {
   title: string
   subtitle?: string
   icon?: ReactNode
   actions?: ReactNode
 }
 
-export function GlassNoirHeader({ title, subtitle, icon, actions }: GlassNoirHeaderProps) {
+export function GlassNoirHeader({ title, subtitle, icon, actions }: HeaderProps) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
         {icon && (
-          <div className="p-2.5 sm:p-3 bg-gold-500/10 rounded-xl border border-gold-500/20 flex-shrink-0">
+          <div className="p-2.5 sm:p-3 bg-[var(--accent-500)]/10 rounded-xl border border-[var(--accent-500)]/30 flex-shrink-0">
             {icon}
           </div>
         )}
         <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-white truncate">{title}</h1>
-          {subtitle && <p className="text-sm sm:text-base text-gray-400 mt-0.5 sm:mt-1 truncate">{subtitle}</p>}
+          <h1 className="text-xl sm:text-2xl font-bold text-zinc-100 truncate">{title}</h1>
+          {subtitle && <p className="text-sm sm:text-base text-zinc-400 mt-0.5 sm:mt-1 truncate">{subtitle}</p>}
         </div>
       </div>
       {actions && <div className="flex items-center gap-3">{actions}</div>}
@@ -111,8 +266,11 @@ export function GlassNoirHeader({ title, subtitle, icon, actions }: GlassNoirHea
   )
 }
 
-// Stat card for metrics
-interface GlassNoirStatProps {
+// Alias
+export const Header = GlassNoirHeader
+
+// ============ STAT CARD ============
+interface StatProps {
   label: string
   value: string | number
   icon?: ReactNode
@@ -120,21 +278,21 @@ interface GlassNoirStatProps {
   className?: string
 }
 
-export function GlassNoirStat({ label, value, icon, trend, className = '' }: GlassNoirStatProps) {
+export function GlassNoirStat({ label, value, icon, trend, className = '' }: StatProps) {
   return (
     <GlassNoirCard hover className={className}>
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-gray-400 text-sm">{label}</p>
-          <p className="text-2xl font-bold text-white mt-1">{value}</p>
+          <p className="text-zinc-400 text-sm">{label}</p>
+          <p className="text-2xl font-bold text-zinc-100 mt-1">{value}</p>
           {trend && (
-            <p className={`text-sm mt-2 ${trend.positive ? 'text-green-400' : 'text-red-400'}`}>
+            <p className={`text-sm mt-2 ${trend.positive ? 'text-emerald-400' : 'text-red-400'}`}>
               {trend.positive ? '↑' : '↓'} {Math.abs(trend.value)}%
             </p>
           )}
         </div>
         {icon && (
-          <div className="p-2 bg-gold-500/10 rounded-lg text-gold-400">
+          <div className="p-2 bg-[var(--accent-500)]/10 rounded-xl text-[var(--accent-400)]">
             {icon}
           </div>
         )}
@@ -143,24 +301,61 @@ export function GlassNoirStat({ label, value, icon, trend, className = '' }: Gla
   )
 }
 
-// Badge component
-interface GlassNoirBadgeProps {
-  children: ReactNode
-  variant?: 'gold' | 'success' | 'warning' | 'error' | 'info'
+// Alias
+export const Stat = GlassNoirStat
+
+// ============ TOGGLE ============
+interface ToggleProps {
+  enabled: boolean
+  onChange: (enabled: boolean) => void
+  disabled?: boolean
 }
 
-const badgeVariants = {
-  gold: 'bg-gold-500/10 text-gold-400 border-gold-500/30',
-  success: 'bg-green-500/10 text-green-400 border-green-500/30',
-  warning: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  error: 'bg-red-500/10 text-red-400 border-red-500/30',
-  info: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-}
-
-export function GlassNoirBadge({ children, variant = 'gold' }: GlassNoirBadgeProps) {
+export function Toggle({ enabled, onChange, disabled = false }: ToggleProps) {
   return (
-    <span className={`px-2.5 py-1 text-xs font-medium rounded-full border ${badgeVariants[variant]}`}>
-      {children}
-    </span>
+    <button
+      type="button"
+      onClick={() => !disabled && onChange(!enabled)}
+      disabled={disabled}
+      className={`
+        relative w-14 h-8 rounded-full border transition-colors
+        ${enabled 
+          ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50' 
+          : 'bg-zinc-800 border-zinc-600/50'
+        }
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+      `}
+    >
+      <span className={`
+        absolute top-1 w-5 h-5 bg-white rounded-full 
+        transition-transform shadow-md
+        ${enabled ? 'left-7' : 'left-1'}
+      `} />
+    </button>
   )
 }
+
+// ============ SPINNER ============
+export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
+  const sizes = {
+    sm: 'w-4 h-4',
+    md: 'w-6 h-6',
+    lg: 'w-8 h-8',
+  }
+  return (
+    <div className={`${sizes[size]} border-2 border-zinc-600 border-t-[var(--accent-400)] rounded-full animate-spin`} />
+  )
+}
+
+// ============ DIVIDER ============
+export function Divider({ className = '' }: { className?: string }) {
+  return <div className={`border-t border-zinc-800/50 ${className}`} />
+}
+
+// ============ STAGGERED ANIMATION HELPER ============
+export const staggeredReveal = (index: number) => ({
+  animationDelay: `${index * 50}ms`,
+})
+
+// ============ EXPORTS ============
+export { styles as designStyles }
