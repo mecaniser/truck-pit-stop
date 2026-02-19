@@ -102,6 +102,19 @@ const formatHoldReason = (reason?: string | null) => {
   return HOLD_REASON_LABELS[reason] || reason.replace(/_/g, ' ')
 }
 
+const getMechanicStatusBadge = (mechanic: MechanicBoardItem) => {
+  if (mechanic.active_session) {
+    return { variant: 'success' as const, label: 'Active Job', className: '' }
+  }
+  if (mechanic.break_active) {
+    return { variant: 'warning' as const, label: 'On Break', className: '' }
+  }
+  if (mechanic.attendance_active) {
+    return { variant: 'default' as const, label: 'Clocked In', className: '' }
+  }
+  return { variant: 'default' as const, label: 'Clocked Out', className: 'opacity-50' }
+}
+
 function sortByAttention(mechanics: MechanicBoardItem[]): MechanicBoardItem[] {
   return [...mechanics].sort((a, b) => {
     const pa = PRIORITY_ORDER[a.attention_priority] ?? 2
@@ -229,6 +242,7 @@ export default function MechanicsBoardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {sorted.map((m, index) => {
             const mechanicDetailPath = `/dashboard/mechanics/${m.mechanic_id}`
+            const statusBadge = getMechanicStatusBadge(m)
             const corePercent = m.core_target_minutes > 0
               ? Math.min(((m.core_target_minutes - m.core_countdown_remaining_minutes) / m.core_target_minutes) * 100, 100)
               : 0
@@ -263,13 +277,7 @@ export default function MechanicsBoardPage() {
                       <h2 className="text-zinc-100 font-semibold">{m.mechanic_name}</h2>
                     </div>
                     <div className="flex items-center gap-2">
-                      {m.active_session ? (
-                        <Badge variant="success">Active</Badge>
-                      ) : m.attendance_active ? (
-                        <Badge variant="default">Idle</Badge>
-                      ) : (
-                        <Badge variant="default" className="opacity-50">Off</Badge>
-                      )}
+                      <Badge variant={statusBadge.variant} className={statusBadge.className}>{statusBadge.label}</Badge>
                       <ChevronRight className="w-4 h-4 text-zinc-600" />
                     </div>
                   </div>

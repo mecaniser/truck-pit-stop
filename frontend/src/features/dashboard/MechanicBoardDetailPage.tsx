@@ -118,6 +118,18 @@ const formatDuration = (minutes: number) => {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+const formatTimeInZone = (isoTimestamp: string | null, timeZone: string) => {
+  if (!isoTimestamp) return null
+  const parsed = new Date(isoTimestamp)
+  if (Number.isNaN(parsed.getTime())) return null
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+    timeZoneName: 'short',
+  }).format(parsed)
+}
+
 const computeSessionDurationMinutes = (s: SessionRow): number => {
   const start = new Date(s.started_at).getTime()
   const end = s.ended_at ? new Date(s.ended_at).getTime() : Date.now()
@@ -313,6 +325,12 @@ export default function MechanicBoardDetailPage() {
 
   const m = data.mechanic
   const trendRows = m.trend_7_days || []
+  const attendanceStartedLabel = formatTimeInZone(m.attendance_started_at, m.timezone)
+  const attendanceEndedLabel = formatTimeInZone(m.attendance_ended_at, m.timezone)
+  const attendanceMetaLabel = m.attendance_active
+    ? (attendanceStartedLabel ? `Clocked in at ${attendanceStartedLabel}` : null)
+    : (attendanceEndedLabel ? `Clocked out at ${attendanceEndedLabel}` : null)
+
   const formatTrendDate = (isoDate: string) => {
     const parsed = new Date(`${isoDate}T00:00:00`)
     if (Number.isNaN(parsed.getTime())) return isoDate
@@ -409,12 +427,17 @@ export default function MechanicBoardDetailPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-300 flex items-center gap-2">
-                <StatusLED status={m.attendance_active ? 'active' : 'inactive'} />
-                Attendance:{' '}
-                <span className={m.attendance_active ? 'text-emerald-300' : 'text-zinc-200'}>
-                  {m.attendance_active ? 'Clocked In' : 'Clocked Out'}
-                </span>
+              <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-300 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+                <div className="flex items-center gap-2">
+                  <StatusLED status={m.attendance_active ? 'active' : 'inactive'} />
+                  Attendance:{' '}
+                  <span className={m.attendance_active ? 'text-emerald-300' : 'text-zinc-200'}>
+                    {m.attendance_active ? 'Clocked In' : 'Clocked Out'}
+                  </span>
+                </div>
+                {attendanceMetaLabel ? (
+                  <span className="text-[11px] text-zinc-500">{attendanceMetaLabel}</span>
+                ) : null}
               </div>
               <div className="rounded-xl border border-zinc-700/50 bg-zinc-800/40 px-3 py-2.5 text-zinc-300 flex items-center gap-2">
                 <StatusLED status={m.break_active ? 'warning' : 'inactive'} />
@@ -679,12 +702,17 @@ export default function MechanicBoardDetailPage() {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card variant="subtle" padding="sm" className="space-y-3">
-              <div className="text-xs text-zinc-400 flex items-center gap-2">
-                <StatusLED status={m.attendance_active ? 'active' : 'inactive'} />
-                Attendance:{' '}
-                <span className={m.attendance_active ? 'text-emerald-300 font-medium' : 'text-zinc-300'}>
-                  {m.attendance_active ? 'Clocked In' : 'Clocked Out'}
-                </span>
+              <div className="text-xs text-zinc-400 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+                <div className="flex items-center gap-2">
+                  <StatusLED status={m.attendance_active ? 'active' : 'inactive'} />
+                  Attendance:{' '}
+                  <span className={m.attendance_active ? 'text-emerald-300 font-medium' : 'text-zinc-300'}>
+                    {m.attendance_active ? 'Clocked In' : 'Clocked Out'}
+                  </span>
+                </div>
+                {attendanceMetaLabel ? (
+                  <span className="text-[11px] text-zinc-500">{attendanceMetaLabel}</span>
+                ) : null}
               </div>
               <Input
                 value={attendanceReason}

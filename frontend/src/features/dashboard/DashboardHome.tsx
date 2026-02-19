@@ -17,6 +17,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
+import { formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
@@ -52,6 +53,21 @@ interface MechanicWorkload {
   mechanic_name: string
   assigned_count: number
   in_progress_count: number
+}
+
+interface TeamCapacityStatusItem {
+  mechanic_id: string
+  attendance_active: boolean
+  break_active: boolean
+  active_session: {
+    session_type: string
+    misc_category: string | null
+    started_at: string | null
+  } | null
+}
+
+interface TeamCapacityBoardResponse {
+  mechanics: TeamCapacityStatusItem[]
 }
 
 interface RevenueStats {
@@ -137,6 +153,50 @@ function useElapsedTime(startedAt: string | null) {
   }, [startedAt, calc])
 
   return elapsed
+}
+
+const getTeamCapacityStatus = (mechanic: TeamCapacityStatusItem | undefined) => {
+  if (!mechanic) {
+    return {
+      label: 'Status unavailable',
+      textClass: 'text-gray-500',
+      dotClass: 'bg-gray-500',
+    }
+  }
+
+  if (mechanic.active_session) {
+    const sessionLabel = formatSessionType(mechanic.active_session.session_type)
+    const detail = mechanic.active_session.session_type === 'misc' && mechanic.active_session.misc_category
+      ? `${sessionLabel} (${formatMiscCategory(mechanic.active_session.misc_category)})`
+      : sessionLabel
+    return {
+      label: `Running ${detail}`,
+      textClass: 'text-emerald-300',
+      dotClass: 'bg-emerald-400',
+    }
+  }
+
+  if (mechanic.break_active) {
+    return {
+      label: 'On Break',
+      textClass: 'text-amber-300',
+      dotClass: 'bg-amber-400',
+    }
+  }
+
+  if (mechanic.attendance_active) {
+    return {
+      label: 'Clocked In',
+      textClass: 'text-sky-300',
+      dotClass: 'bg-sky-400',
+    }
+  }
+
+  return {
+    label: 'Clocked Out',
+    textClass: 'text-gray-400',
+    dotClass: 'bg-gray-500',
+  }
 }
 
 function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClick: () => void; accentColor: string }) {
@@ -226,12 +286,23 @@ export default function DashboardHome() {
     },
     refetchOnWindowFocus: true, // Refresh when tab becomes visible
   })
+
+  const { data: teamBoard } = useQuery<TeamCapacityBoardResponse>({
+    queryKey: ['mechanic-board-team'],
+    queryFn: async () => {
+      const response = await api.get('/dashboard/mechanics/board')
+      return response.data
+    },
+    enabled: isManager,
+    refetchOnWindowFocus: true,
+  })
   
   const error = queryError ? 'Failed to load dashboard stats' : null
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+    queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
   }
 
   const validateQuickForm = () => {
@@ -316,6 +387,7 @@ export default function DashboardHome() {
 
   const metricValue = (value?: string) => parseFloat(value || '0')
   const teamMembers = stats?.mechanic_workload || []
+  const teamStatusByMechanicId = new Map((teamBoard?.mechanics || []).map((mechanic) => [mechanic.mechanic_id, mechanic]))
   const teamAssignedTotal = teamMembers.reduce((sum, m) => sum + m.assigned_count, 0)
   const teamInProgressTotal = teamMembers.reduce((sum, m) => sum + m.in_progress_count, 0)
   const teamQueuedTotal = Math.max(teamAssignedTotal - teamInProgressTotal, 0)
@@ -340,14 +412,42 @@ export default function DashboardHome() {
     >
       {/* Header */}
       <div className="flex-shrink-0">
-        <h1 className="text-2xl sm:text-3xl 2xl:text-[2.15rem] font-bold text-white">
-          {isMechanic ? 'My Workbench' : 'Garage Cockpit'}
-        </h1>
-        <p className="text-gray-400 mt-1 2xl:text-[1.02rem]">
-          {isMechanic
-            ? `You have ${stats?.my_in_progress || 0} jobs in progress`
-            : `Welcome back, ${user?.first_name || user?.email}`}
-        </p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-2xl sm:text-3xl 2xl:text-[2.15rem] font-bold text-white">
+              {isMechanic ? 'My Workbench' : 'Garage Cockpit'}
+            </h1>
+            <p className="text-gray-400 mt-1 2xl:text-[1.02rem]">
+              {isMechanic
+                ? `You have ${stats?.my_in_progress || 0} jobs in progress`
+                : `Welcome back, ${user?.first_name || user?.email}`}
+            </p>
+          </div>
+
+          {/* Manager CTA Buttons */}
+          {isManager && (
+            <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap lg:justify-end">
+              <button
+                onClick={() => setShowQuickForm(!showQuickForm)}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 font-semibold rounded-xl transition-colors text-white"
+                style={{
+                  backgroundColor: showQuickForm ? accentColors[600] : accentColors[500],
+                  boxShadow: `0 10px 15px -3px ${accentColors[500]}33`,
+                }}
+              >
+                <Zap className="w-4 h-4" />
+                <span>Lightning Order</span>
+              </button>
+              <button
+                onClick={() => navigate('/dashboard/repair-orders?new=true')}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-xl transition-colors border border-white/10"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Full Order</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Real-time notification banners */}
@@ -358,154 +458,127 @@ export default function DashboardHome() {
         autoDismissMs={10000}
       />
 
-      {/* Action Buttons (managers only) */}
-      {isManager && (
-        <div className="space-y-3">
-          {/* Two CTA Buttons - Right aligned */}
-          <div className="flex justify-end gap-3">
+      {/* Quick Order Form (managers only, collapsible) */}
+      {isManager && showQuickForm && (
+        <form
+          onSubmit={handleQuickOrder}
+          className="rounded-xl p-3 sm:p-4 animate-in slide-in-from-top-2 duration-200"
+          style={{
+            background: `linear-gradient(to right, ${accentColors[500]}1a, ${accentColors[600]}0d)`,
+            borderWidth: 1,
+            borderColor: `${accentColors[500]}33`,
+          }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4" style={{ color: accentColors[400] }} />
+              <span className="text-sm font-semibold" style={{ color: accentColors[400] }}>Lightning Order</span>
+              <span className="text-xs text-gray-500">— Walk-in / Phone call</span>
+            </div>
             <button
-              onClick={() => setShowQuickForm(!showQuickForm)}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 font-semibold rounded-xl transition-colors text-white"
-              style={{ 
-                backgroundColor: showQuickForm ? accentColors[600] : accentColors[500],
-                boxShadow: `0 10px 15px -3px ${accentColors[500]}33`
-              }}
+              type="button"
+              onClick={() => setShowQuickForm(false)}
+              className="p-1 text-gray-500 hover:text-white rounded"
             >
-              <Zap className="w-4 h-4" />
-              <span>Lightning Order</span>
-            </button>
-            <button
-              onClick={() => navigate('/dashboard/repair-orders?new=true')}
-              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-xl transition-colors border border-white/10"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Full Order</span>
+              <X className="w-4 h-4" />
             </button>
           </div>
-
-          {/* Quick Order Form (collapsible) */}
-          {showQuickForm && (
-            <form
-              onSubmit={handleQuickOrder}
-              className="rounded-xl p-3 sm:p-4 animate-in slide-in-from-top-2 duration-200"
-              style={{ 
-                background: `linear-gradient(to right, ${accentColors[500]}1a, ${accentColors[600]}0d)`,
-                borderWidth: 1,
-                borderColor: `${accentColors[500]}33`
-              }}
+          <div className="flex flex-col sm:flex-row sm:items-start gap-2">
+            {/* Phone - Required */}
+            <div className="flex-shrink-0 sm:w-40">
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="tel"
+                  value={quickPhone}
+                  onChange={(e) => {
+                    setQuickPhone(formatUSPhone(e.target.value))
+                    if (quickTouched) {
+                      const digits = e.target.value.replace(/\D/g, '')
+                      setQuickErrors((prev) => ({
+                        ...prev,
+                        phone: digits.length >= 10 ? undefined : 'Valid phone required',
+                      }))
+                    }
+                  }}
+                  placeholder="(555) 123-4567"
+                  className={`w-full pl-9 pr-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                    quickTouched && quickErrors.phone
+                      ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
+                      : 'border-white/10'
+                  }`}
+                  style={!(quickTouched && quickErrors.phone) ? {
+                    ['--tw-ring-color' as string]: `${accentColors[500]}4d`,
+                  } : undefined}
+                />
+              </div>
+              {quickTouched && quickErrors.phone && (
+                <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {quickErrors.phone}
+                </p>
+              )}
+            </div>
+            {/* Description - Required */}
+            <div className="flex-1">
+              <input
+                type="text"
+                value={quickComplaint}
+                onChange={(e) => {
+                  setQuickComplaint(e.target.value)
+                  if (quickTouched) {
+                    setQuickErrors((prev) => ({
+                      ...prev,
+                      complaint: e.target.value.trim() ? undefined : 'Description required',
+                    }))
+                  }
+                }}
+                placeholder="Issue (e.g. engine overheating) *"
+                className={`w-full px-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
+                  quickTouched && quickErrors.complaint
+                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
+                    : 'border-white/10'
+                }`}
+              />
+              {quickTouched && quickErrors.complaint && (
+                <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {quickErrors.complaint}
+                </p>
+              )}
+            </div>
+            {/* Truck - Optional */}
+            <div className="flex-shrink-0 sm:w-48">
+              <div className="relative">
+                <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  value={quickTruck}
+                  onChange={(e) => setQuickTruck(e.target.value)}
+                  placeholder="Truck (optional)"
+                  className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={quickSubmitting}
+              className="px-4 py-2 h-[38px] disabled:opacity-50 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors shrink-0 self-start"
+              style={{ backgroundColor: accentColors[500] }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4" style={{ color: accentColors[400] }} />
-                  <span className="text-sm font-semibold" style={{ color: accentColors[400] }}>Lightning Order</span>
-                  <span className="text-xs text-gray-500">— Walk-in / Phone call</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowQuickForm(false)}
-                  className="p-1 text-gray-500 hover:text-white rounded"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                {/* Phone - Required */}
-                <div className="flex-shrink-0 sm:w-40">
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                      type="tel"
-                      value={quickPhone}
-                      onChange={(e) => {
-                        setQuickPhone(formatUSPhone(e.target.value))
-                        if (quickTouched) {
-                          const digits = e.target.value.replace(/\D/g, '')
-                          setQuickErrors((prev) => ({
-                            ...prev,
-                            phone: digits.length >= 10 ? undefined : 'Valid phone required',
-                          }))
-                        }
-                      }}
-                      placeholder="(555) 123-4567"
-                      className={`w-full pl-9 pr-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
-                        quickTouched && quickErrors.phone
-                          ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
-                          : 'border-white/10'
-                      }`}
-                      style={!(quickTouched && quickErrors.phone) ? { 
-                        ['--tw-ring-color' as string]: `${accentColors[500]}4d`
-                      } : undefined}
-                    />
-                  </div>
-                  {quickTouched && quickErrors.phone && (
-                    <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      {quickErrors.phone}
-                    </p>
-                  )}
-                </div>
-                {/* Description - Required */}
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={quickComplaint}
-                    onChange={(e) => {
-                      setQuickComplaint(e.target.value)
-                      if (quickTouched) {
-                        setQuickErrors((prev) => ({
-                          ...prev,
-                          complaint: e.target.value.trim() ? undefined : 'Description required',
-                        }))
-                      }
-                    }}
-                    placeholder="Issue (e.g. engine overheating) *"
-                    className={`w-full px-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
-                      quickTouched && quickErrors.complaint
-                        ? 'border-red-500 focus:border-red-500 focus:ring-red-500/30'
-                        : 'border-white/10'
-                    }`}
-                  />
-                  {quickTouched && quickErrors.complaint && (
-                    <p className="mt-1 text-xs text-red-400 flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      {quickErrors.complaint}
-                    </p>
-                  )}
-                </div>
-                {/* Truck - Optional */}
-                <div className="flex-shrink-0 sm:w-48">
-                  <div className="relative">
-                    <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                      type="text"
-                      value={quickTruck}
-                      onChange={(e) => setQuickTruck(e.target.value)}
-                      placeholder="Truck (optional)"
-                      className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="submit"
-                  disabled={quickSubmitting}
-                  className="px-4 py-2 h-[38px] disabled:opacity-50 text-white font-semibold rounded-lg flex items-center gap-2 transition-colors shrink-0 self-start"
-                  style={{ backgroundColor: accentColors[500] }}
-                >
-                  {quickSubmitting ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                  <span className="hidden sm:inline">Create</span>
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+              {quickSubmitting ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+              ) : (
+                <Send className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">Create</span>
+            </button>
+          </div>
+        </form>
       )}
 
       {/* Alerts Banner (managers only, conditional) */}
@@ -703,12 +776,13 @@ export default function DashboardHome() {
                       ? Math.round((m.in_progress_count / m.assigned_count) * 100)
                       : 0
                     const queued = Math.max(m.assigned_count - m.in_progress_count, 0)
+                    const status = getTeamCapacityStatus(teamStatusByMechanicId.get(m.mechanic_id))
                     return (
                       <div
                         key={m.mechanic_id}
                         onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
                         className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 2xl:px-2"
-                        title={`${m.mechanic_name}: ${m.in_progress_count} active / ${m.assigned_count} assigned`}
+                        title={`${m.mechanic_name}: ${status.label} · ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div
@@ -718,6 +792,10 @@ export default function DashboardHome() {
                             {m.mechanic_name.charAt(0).toUpperCase()}
                           </div>
                           <span className="text-xs 2xl:text-[13px] text-white truncate">{m.mechanic_name}</span>
+                        </div>
+                        <div className={`mt-1 text-[11px] 2xl:text-xs flex items-center gap-1.5 ${status.textClass}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${status.dotClass}`} />
+                          <span className="truncate">{status.label}</span>
                         </div>
                         <div className="mt-1 text-[11px] 2xl:text-xs text-gray-400">
                           {m.in_progress_count} active · {queued} queued

@@ -828,7 +828,7 @@ export default function MechanicsPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Core Minutes (override)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Core Minutes</label>
                     <input
                       {...register('core_hours_target_minutes_override')}
                       type="number"
