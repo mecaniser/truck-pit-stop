@@ -10,17 +10,24 @@ import {
   ArrowRight,
   Wrench
 } from 'lucide-react'
+import { useTheme } from '../../contexts/ThemeContext'
 
-// Colors: Dark Gold (#B8860B), Dark Blue (#1e3a5f), White
-const COLORS = {
-  darkGold: '#B8860B',
-  darkBlue: '#1e3a5f',
-  white: '#ffffff',
+const BRAND = {
+  platformName: 'Diesel Bridge Network',
+  networkName: 'Diesel Bridge',
+  heroLine: 'Dispatch smarter. Repair faster. Drive on.',
+  supportLine: 'Connect drivers to qualified repair, fast.',
+  networkLine: 'Nationwide garages, one operating network.',
 }
 
 export default function LandingPage() {
+  const { accentColors } = useTheme()
+  const accent400 = accentColors[400]
+  const accent500 = accentColors[500]
+  const accent600 = accentColors[600]
+
   return (
-    <div className="min-h-screen" style={{ background: `linear-gradient(to top left, ${COLORS.darkBlue} 0%, #0f172a 50%, #1a1a2e 100%)` }}>
+    <div className="min-h-screen" style={{ background: 'linear-gradient(to top left, #162338 0%, #0f172a 50%, #111827 100%)' }}>
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -29,25 +36,25 @@ export default function LandingPage() {
             <div className="flex items-center gap-2">
               <div 
                 className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: COLORS.darkBlue }}
+                style={{ background: `linear-gradient(135deg, ${accent500} 0%, ${accent600} 100%)` }}
               >
                 <Truck className="w-6 h-6 text-white" />
               </div>
               <span className="text-xl font-bold text-white">
-                Truck Pit Stop
+                {BRAND.platformName}
               </span>
             </div>
 
             {/* Nav Links */}
             <div className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-gray-400 hover:text-white transition-colors">
-                Features
+              <a href="#audiences" className="text-gray-400 hover:text-[var(--accent-400)] transition-colors">
+                Who It's For
               </a>
-              <a href="#how-it-works" className="text-gray-400 hover:text-white transition-colors">
-                How It Works
+              <a href="#features" className="text-gray-400 hover:text-[var(--accent-400)] transition-colors">
+                Platform
               </a>
-              <a href="#pricing" className="text-gray-400 hover:text-white transition-colors">
-                Pricing
+              <a href="#pricing" className="text-gray-400 hover:text-[var(--accent-400)] transition-colors">
+                Access
               </a>
             </div>
 
@@ -55,14 +62,14 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <Link
                 to="/login"
-                className="px-4 py-2 text-sm font-medium rounded-lg transition-colors text-gray-300 hover:text-white"
+                className="px-4 py-2 text-sm font-medium rounded-lg transition-colors text-gray-300 hover:text-[var(--accent-400)]"
               >
                 Sign In
               </Link>
               <Link
                 to="/enroll"
-                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-all hover:opacity-90"
-                style={{ backgroundColor: COLORS.darkGold }}
+                className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)]"
+                style={{ backgroundColor: accent500 }}
               >
                 Get Started
               </Link>
@@ -76,29 +83,31 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
+              <p className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-4 py-1 text-sm font-semibold text-gray-200 mb-6">
+                {BRAND.networkName} Network
+              </p>
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-                Streamline Your{' '}
-                <span style={{ color: COLORS.darkGold }}>Truck Repair</span>{' '}
-                Operations
+                {BRAND.heroLine}
               </h1>
               <p className="text-lg text-gray-300 mb-8 max-w-xl">
-                The all-in-one platform that connects shop owners, mechanics, and customers 
-                for seamless heavy-duty truck repair management.
+                {BRAND.supportLine} {BRAND.networkLine} Manage your garage, team,
+                and customers in one workflow while giving dispatch and drivers a
+                faster path to qualified repair.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Link
                   to="/enroll"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 text-lg font-semibold rounded-lg transition-all hover:opacity-90"
-                  style={{ backgroundColor: COLORS.darkGold, color: COLORS.white }}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 text-lg font-semibold rounded-lg transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)]"
+                  style={{ backgroundColor: accent500 }}
                 >
-                  Register Your Garage
+                  Join as a Garage
                   <ArrowRight className="w-5 h-5" />
                 </Link>
                 <a
-                  href="#features"
+                  href="#audiences"
                   className="inline-flex items-center justify-center gap-2 px-6 py-3 text-lg font-semibold text-white rounded-lg border-2 border-white/30 hover:bg-white/10 transition-colors"
                 >
-                  Learn More
+                  See Who It's For
                 </a>
               </div>
             </div>
@@ -108,7 +117,7 @@ export default function LandingPage() {
               <div className="relative">
                 <div 
                   className="absolute inset-0 rounded-2xl opacity-20"
-                  style={{ backgroundColor: COLORS.darkGold }}
+                  style={{ backgroundColor: accent500 }}
                 />
                 <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20">
                   <div className="space-y-4">
@@ -134,13 +143,13 @@ export default function LandingPage() {
                     <div className="flex items-center gap-3 p-3 bg-white/10 rounded-lg">
                       <div 
                         className="w-10 h-10 rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: `${COLORS.darkGold}33` }}
+                        style={{ backgroundColor: `${accent500}33` }}
                       >
-                        <MessageSquare className="w-5 h-5" style={{ color: COLORS.darkGold }} />
+                        <MessageSquare className="w-5 h-5" style={{ color: accent400 }} />
                       </div>
                       <div>
                         <p className="text-white font-medium">Quote approved via SMS</p>
-                        <p className="text-gray-400 text-sm">Customer approved $2,450 quote</p>
+                        <p className="text-gray-400 text-sm">Customer approved repair quote</p>
                       </div>
                     </div>
                   </div>
@@ -151,25 +160,66 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Stats Bar */}
-      <section className="py-8 bg-gray-900/50 border-y border-gray-800">
+      {/* Audience Section */}
+      <section id="audiences" className="py-12 px-4 bg-gray-900/50 border-y border-gray-800">
         <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: COLORS.darkGold }}>500+</p>
-              <p className="text-gray-400">Repair Shops</p>
+          <div className="text-center mb-10">
+            <h2 className="text-3xl md:text-4xl font-bold mb-3 text-white">
+              Built for Both Sides of the Breakdown
+            </h2>
+            <p className="text-gray-400 max-w-3xl mx-auto">
+              One side runs the garage. The other side needs fast routing when trucks
+              go down. Diesel Bridge Network connects both.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="rounded-2xl border border-gray-700 bg-gray-900/45 p-6">
+              <h3 className="text-xl font-semibold text-white mb-4">For Garage Owners</h3>
+              <ul className="space-y-3 text-gray-300">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span>Run intake, repair orders, time tracking, and invoicing in one place.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span>Use two-way texting and quote approvals to reduce phone tag.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span>Give fleet customers clear status updates through a shared portal.</span>
+                </li>
+              </ul>
+              <Link
+                to="/enroll"
+                className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)]"
+                style={{ backgroundColor: accent500 }}
+              >
+                Join as a Garage
+                <ArrowRight className="w-4 h-4" />
+              </Link>
             </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: COLORS.darkGold }}>50K+</p>
-              <p className="text-gray-400">Repairs Completed</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: COLORS.darkGold }}>98%</p>
-              <p className="text-gray-400">Customer Satisfaction</p>
-            </div>
-            <div className="text-center">
-              <p className="text-3xl font-bold" style={{ color: COLORS.darkGold }}>24/7</p>
-              <p className="text-gray-400">Support Available</p>
+            <div className="rounded-2xl border border-gray-700 bg-gray-900/45 p-6">
+              <h3 className="text-xl font-semibold text-white mb-4">For Drivers and Dispatchers</h3>
+              <ul className="space-y-3 text-gray-300">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span>Find nearby qualified garages based on service needs and location.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span>Send repair context early so shops can diagnose faster on arrival.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span>Track progress in one thread until the truck is back on route.</span>
+                </li>
+              </ul>
+              <a
+                href="#features"
+                className="mt-6 inline-flex items-center justify-center gap-2 rounded-lg border border-white/30 px-5 py-2.5 font-semibold text-white transition-colors hover:bg-white/10"
+              >
+                Explore the Platform
+              </a>
             </div>
           </div>
         </div>
@@ -180,11 +230,11 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">
-              Everything You Need to Run Your Shop
+              Simple Tools That Keep Repairs Moving
             </h2>
             <p className="text-gray-400 max-w-2xl mx-auto">
-              From quote management to payment processing, we've got every aspect of your 
-              truck repair business covered.
+              Clear workflows for your team, clear updates for your customers, and
+              clearer routing decisions for dispatch.
             </p>
           </div>
 
@@ -193,16 +243,16 @@ export default function LandingPage() {
             <div className="p-6 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 hover:bg-gray-800/70 transition-all">
               <div 
                 className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20` }}
+                style={{ backgroundColor: `${accent500}20` }}
               >
-                <Clock className="w-6 h-6" style={{ color: COLORS.darkGold }} />
+                <Clock className="w-6 h-6" style={{ color: accent400 }} />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Real-Time Tracking
+                Live Job and Time Tracking
               </h3>
               <p className="text-gray-400">
-                Track repair progress in real-time. Keep customers informed with automatic 
-                status updates via SMS.
+                Keep every order visible by status, mechanic, and labor time so your
+                team knows what to do next.
               </p>
             </div>
 
@@ -210,16 +260,16 @@ export default function LandingPage() {
             <div className="p-6 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 hover:bg-gray-800/70 transition-all">
               <div 
                 className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20` }}
+                style={{ backgroundColor: `${accent500}20` }}
               >
-                <MessageSquare className="w-6 h-6" style={{ color: COLORS.darkGold }} />
+                <MessageSquare className="w-6 h-6" style={{ color: accent400 }} />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                SMS Quote Approval
+                Two-Way Texting and Quote Approval
               </h3>
               <p className="text-gray-400">
-                Send quotes directly to customers' phones. They can approve or decline 
-                with a single tap.
+                Send estimates by text, capture approvals, and answer follow-up
+                questions without leaving the workflow.
               </p>
             </div>
 
@@ -227,16 +277,16 @@ export default function LandingPage() {
             <div className="p-6 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 hover:bg-gray-800/70 transition-all">
               <div 
                 className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20` }}
+                style={{ backgroundColor: `${accent500}20` }}
               >
-                <Users className="w-6 h-6" style={{ color: COLORS.darkGold }} />
+                <Users className="w-6 h-6" style={{ color: accent400 }} />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Customer Portal
+                Customer and Fleet Portal
               </h3>
               <p className="text-gray-400">
-                Give customers their own portal to view repair history, track current 
-                jobs, and manage their fleet.
+                Give customers and fleet managers a single place to view repair
+                history, current status, and invoices.
               </p>
             </div>
 
@@ -244,16 +294,16 @@ export default function LandingPage() {
             <div className="p-6 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 hover:bg-gray-800/70 transition-all">
               <div 
                 className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20` }}
+                style={{ backgroundColor: `${accent500}20` }}
               >
-                <Wrench className="w-6 h-6" style={{ color: COLORS.darkGold }} />
+                <Wrench className="w-6 h-6" style={{ color: accent400 }} />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Mechanic Dashboard
+                Mechanic Productivity Board
               </h3>
               <p className="text-gray-400">
-                Mechanics get their own view with assigned jobs, time tracking, and 
-                easy status updates.
+                Mechanics get clear assignments, timer controls, and status updates
+                tied directly to each order.
               </p>
             </div>
 
@@ -261,16 +311,16 @@ export default function LandingPage() {
             <div className="p-6 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 hover:bg-gray-800/70 transition-all">
               <div 
                 className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20` }}
+                style={{ backgroundColor: `${accent500}20` }}
               >
-                <BarChart3 className="w-6 h-6" style={{ color: COLORS.darkGold }} />
+                <BarChart3 className="w-6 h-6" style={{ color: accent400 }} />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Business Analytics
+                Dispatch and Network Insights
               </h3>
               <p className="text-gray-400">
-                Track revenue, monitor mechanic productivity, and identify trends with 
-                powerful reporting tools.
+                Route jobs faster by seeing service capability and turnaround patterns
+                across network garages.
               </p>
             </div>
 
@@ -278,16 +328,16 @@ export default function LandingPage() {
             <div className="p-6 rounded-xl bg-gray-800/50 border border-gray-700 hover:border-gray-600 hover:bg-gray-800/70 transition-all">
               <div 
                 className="w-12 h-12 rounded-lg flex items-center justify-center mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20` }}
+                style={{ backgroundColor: `${accent500}20` }}
               >
-                <Shield className="w-6 h-6" style={{ color: COLORS.darkGold }} />
+                <Shield className="w-6 h-6" style={{ color: accent400 }} />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Flexible Payments
+                Notifications and Payments
               </h3>
               <p className="text-gray-400">
-                Accept credit cards, Zelle, or cash. Send invoices with automatic 
-                payment reminders.
+                Automate customer notifications and keep billing records in the same
+                system as your repair workflow.
               </p>
             </div>
           </div>
@@ -299,10 +349,11 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">
-              Get Started in Minutes
+              How the Network Flow Works
             </h2>
             <p className="text-gray-400 max-w-2xl mx-auto">
-              Simple onboarding process to get your shop up and running quickly.
+              Keep setup simple while connecting garage operations and roadside repair
+              requests in one flow.
             </p>
           </div>
 
@@ -311,16 +362,16 @@ export default function LandingPage() {
             <div className="text-center">
               <div 
                 className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold"
-                style={{ backgroundColor: COLORS.darkGold, color: COLORS.darkBlue }}
+                style={{ backgroundColor: accent500, color: '#0b1220' }}
               >
                 1
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Register Your Garage
+                Garages Publish Capabilities
               </h3>
               <p className="text-gray-400">
-                Fill out a simple form with your business details. We'll review and 
-                approve within 1-2 business days.
+                Enroll your shop, define service coverage, and set who handles each
+                type of repair.
               </p>
             </div>
 
@@ -328,16 +379,16 @@ export default function LandingPage() {
             <div className="text-center">
               <div 
                 className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold"
-                style={{ backgroundColor: COLORS.darkGold, color: COLORS.darkBlue }}
+                style={{ backgroundColor: accent500, color: '#0b1220' }}
               >
                 2
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Set Up Your Shop
+                Drivers or Dispatch Request Service
               </h3>
               <p className="text-gray-400">
-                Add your team members, configure payment options, and customize your 
-                settings.
+                Share truck details and issue context so the nearest qualified garage
+                can respond faster.
               </p>
             </div>
 
@@ -345,15 +396,16 @@ export default function LandingPage() {
             <div className="text-center">
               <div 
                 className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6 text-2xl font-bold"
-                style={{ backgroundColor: COLORS.darkGold, color: COLORS.darkBlue }}
+                style={{ backgroundColor: accent500, color: '#0b1220' }}
               >
                 3
               </div>
               <h3 className="text-xl font-semibold mb-2 text-white">
-                Start Taking Orders
+                Everyone Tracks the Same Job Thread
               </h3>
               <p className="text-gray-400">
-                Create repair orders, send quotes, and manage your workflow from day one.
+                Coordinate diagnosis, approvals, and updates in one place until the
+                truck is back on route.
               </p>
             </div>
           </div>
@@ -365,61 +417,62 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold mb-4 text-white">
-              Simple, Transparent Pricing
+              Founding Garage Access
             </h2>
             <p className="text-gray-400 max-w-2xl mx-auto">
-              Start free and scale as you grow. No hidden fees.
+              Keep onboarding simple while the network expands market by market.
             </p>
           </div>
 
           <div className="max-w-lg mx-auto">
             <div 
               className="rounded-2xl p-8 text-center bg-gray-800/50 border-2"
-              style={{ borderColor: COLORS.darkGold }}
+              style={{ borderColor: `${accent500}66` }}
             >
               <div 
                 className="inline-block px-4 py-1 rounded-full text-sm font-medium mb-4"
-                style={{ backgroundColor: `${COLORS.darkGold}20`, color: COLORS.darkGold }}
+                style={{ backgroundColor: `${accent500}20`, color: accent400 }}
               >
-                Limited Time Offer
+                Early Access
               </div>
               <h3 className="text-2xl font-bold mb-2 text-white">
-                Free During Beta
+                Garage Enrollment Program
               </h3>
-              <p className="text-4xl font-bold mb-4 text-white">
-                $0<span className="text-lg font-normal text-gray-400">/month</span>
+              <p className="text-gray-300 mb-6">
+                Built for early partners that want to shape the workflow and grow with
+                Diesel Bridge Network.
               </p>
               <ul className="text-left space-y-3 mb-8">
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: COLORS.darkGold }} />
-                  <span className="text-gray-300">Unlimited repair orders</span>
+                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span className="text-gray-300">Repair orders, labor tracking, and workflow controls</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: COLORS.darkGold }} />
-                  <span className="text-gray-300">SMS notifications included</span>
+                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span className="text-gray-300">Two-way texting and quote approval links</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: COLORS.darkGold }} />
-                  <span className="text-gray-300">Customer portal access</span>
+                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span className="text-gray-300">Customer and fleet status visibility</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: COLORS.darkGold }} />
-                  <span className="text-gray-300">Payment processing</span>
+                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span className="text-gray-300">Invoicing and payment collection tools</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: COLORS.darkGold }} />
-                  <span className="text-gray-300">Priority support</span>
+                  <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: accent400 }} />
+                  <span className="text-gray-300">Direct onboarding support from the founding team</span>
                 </li>
               </ul>
               <Link
                 to="/enroll"
-                className="block w-full py-3 text-lg font-semibold text-white rounded-lg transition-all hover:opacity-90"
-                style={{ backgroundColor: COLORS.darkGold }}
+                className="block w-full py-3 text-lg font-semibold text-white rounded-lg transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)]"
+                style={{ backgroundColor: accent500 }}
               >
-                Get Started Free
+                Apply for Garage Access
               </Link>
               <p className="text-sm text-gray-500 mt-4">
-                No credit card required
+                Rolling out by market and service coverage
               </p>
             </div>
           </div>
@@ -430,19 +483,19 @@ export default function LandingPage() {
       <section className="py-20 px-4 bg-gray-900/70 border-t border-gray-800">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
-            Ready to Transform Your Shop?
+            Keep Your Shop Ready for the Next Breakdown
           </h2>
           <p className="text-gray-400 text-lg mb-8 max-w-2xl mx-auto">
-            Join hundreds of truck repair shops already using Truck Pit Stop to 
-            streamline their operations and delight their customers.
+            {BRAND.networkLine} Bring your shop online, reduce downtime, and deliver a
+            faster, more transparent repair experience for fleets and drivers.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
               to="/enroll"
-              className="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-semibold rounded-lg transition-all hover:opacity-90"
-              style={{ backgroundColor: COLORS.darkGold, color: COLORS.white }}
+              className="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-semibold rounded-lg transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)]"
+              style={{ backgroundColor: accent500 }}
             >
-              Register Your Garage
+              Join as a Garage
               <ArrowRight className="w-5 h-5" />
             </Link>
             <Link
@@ -462,19 +515,19 @@ export default function LandingPage() {
             <div className="flex items-center gap-2">
               <div 
                 className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: COLORS.darkGold }}
+                style={{ backgroundColor: accent500 }}
               >
                 <Truck className="w-5 h-5 text-white" />
               </div>
-              <span className="text-white font-semibold">Truck Pit Stop</span>
+              <span className="text-white font-semibold">{BRAND.platformName}</span>
             </div>
             <div className="flex items-center gap-6 text-gray-400 text-sm">
-              <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-              <a href="#" className="hover:text-white transition-colors">Contact</a>
+              <a href="#" className="hover:text-[var(--accent-400)] transition-colors">Privacy Policy</a>
+              <a href="#" className="hover:text-[var(--accent-400)] transition-colors">Terms of Service</a>
+              <a href="#" className="hover:text-[var(--accent-400)] transition-colors">Contact</a>
             </div>
             <p className="text-gray-500 text-sm">
-              © {new Date().getFullYear()} Truck Pit Stop. All rights reserved.
+              © {new Date().getFullYear()} {BRAND.platformName}. All rights reserved.
             </p>
           </div>
         </div>
