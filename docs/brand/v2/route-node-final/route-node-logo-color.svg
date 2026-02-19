@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="420" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
+  <title id="title">Diesel Bridge Network Route Node logo color</title>
+  <desc id="desc">Primary color horizontal lockup for the Route Node logo system.</desc>
+
+  <defs>
+    <style>
+      .title {
+        font-family: "Saira Condensed", "Rajdhani", sans-serif;
+        font-size: 104px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        fill: #0B1220;
+      }
+      .sub {
+        font-family: "IBM Plex Sans Condensed", "Barlow Condensed", sans-serif;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        fill: #1D4ED8;
+      }
+      .tag {
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        font-size: 22px;
+        font-weight: 500;
+        fill: #334155;
+      }
+    </style>
+  </defs>
+
+  <g transform="translate(62,72)">
+    <polygon points="128,32 210,80 210,176 128,224 46,176 46,80" fill="none" stroke="#06B6D4" stroke-width="14" />
+    <circle cx="128" cy="128" r="22" fill="#F59E0B" />
+
+    <circle cx="25" cy="25" r="12" fill="#38BDF8" />
+    <circle cx="231" cy="25" r="12" fill="#38BDF8" />
+    <circle cx="25" cy="231" r="12" fill="#38BDF8" />
+    <circle cx="231" cy="231" r="12" fill="#38BDF8" />
+    <circle cx="128" cy="6" r="12" fill="#38BDF8" />
+    <circle cx="128" cy="250" r="12" fill="#38BDF8" />
+
+    <path d="M35 35 L81 76" fill="none" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+    <path d="M221 35 L175 76" fill="none" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+    <path d="M35 221 L81 180" fill="none" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+    <path d="M221 221 L175 180" fill="none" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+    <path d="M128 16 L128 64" fill="none" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+    <path d="M128 240 L128 192" fill="none" stroke="#94A3B8" stroke-width="6" stroke-linecap="round" />
+
+    <path d="M84 128 L172 128" fill="none" stroke="#F59E0B" stroke-width="5" stroke-linecap="round" stroke-dasharray="12 10" />
+  </g>
+
+  <g transform="translate(380,98)">
+    <text x="0" y="104" class="title">Diesel Bridge</text>
+    <text x="8" y="146" class="sub">NETWORK</text>
+    <text x="8" y="194" class="tag">Smart dispatch intelligence across every service node.</text>
+  </g>
+</svg>

@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="420" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
+  <title id="title">Diesel Bridge Network logo system Pitstop Link</title>
+  <desc id="desc">Fast handoff logo using interlocking links and speed accents.</desc>
+
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF5" />
+      <stop offset="100%" stop-color="#F4F1E7" />
+    </linearGradient>
+    <style>
+      .title {
+        font-family: "Anton", "League Gothic", "Impact", sans-serif;
+        font-size: 102px;
+        letter-spacing: 0.03em;
+        fill: #1F2937;
+      }
+      .sub {
+        font-family: "Barlow Condensed", "Rajdhani", sans-serif;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        fill: #9A3412;
+      }
+      .tag {
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        font-size: 22px;
+        font-weight: 500;
+        fill: #4B5563;
+      }
+      .small {
+        font-family: "Barlow Condensed", "Rajdhani", sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        fill: #78350F;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="420" fill="url(#paper)" />
+
+  <g transform="translate(66,76)">
+    <rect x="0" y="0" width="252" height="252" rx="38" fill="#111827" />
+
+    <ellipse cx="96" cy="126" rx="58" ry="44" fill="none" stroke="#FACC15" stroke-width="13" />
+    <ellipse cx="156" cy="126" rx="58" ry="44" fill="none" stroke="#F59E0B" stroke-width="13" />
+    <rect x="104" y="110" width="44" height="32" rx="14" fill="#111827" />
+
+    <path d="M24 86 H72" fill="none" stroke="#D1D5DB" stroke-width="8" stroke-linecap="round" />
+    <path d="M12 114 H64" fill="none" stroke="#D1D5DB" stroke-width="8" stroke-linecap="round" />
+    <path d="M180 138 H236" fill="none" stroke="#D1D5DB" stroke-width="8" stroke-linecap="round" />
+    <path d="M190 166 H240" fill="none" stroke="#D1D5DB" stroke-width="8" stroke-linecap="round" />
+
+    <circle cx="38" cy="206" r="10" fill="#F97316" />
+    <circle cx="214" cy="44" r="10" fill="#F97316" />
+    <path d="M47 198 L87 163" fill="none" stroke="#9CA3AF" stroke-width="3.5" stroke-linecap="round" />
+    <path d="M205 52 L166 88" fill="none" stroke="#9CA3AF" stroke-width="3.5" stroke-linecap="round" />
+  </g>
+
+  <g transform="translate(372,98)">
+    <text x="0" y="100" class="title">Diesel Bridge</text>
+    <text x="8" y="142" class="sub">NETWORK</text>
+    <text x="8" y="190" class="tag">Fast service handoff that keeps trucks earning on the road.</text>
+  </g>
+
+  <g transform="translate(372,276)">
+    <text x="0" y="0" class="small">SPEED-ORIENTED MINI MARKS</text>
+
+    <rect x="0" y="18" width="74" height="54" rx="10" fill="#111827" />
+    <rect x="92" y="18" width="74" height="54" rx="10" fill="#111827" />
+    <rect x="184" y="18" width="74" height="54" rx="10" fill="#111827" />
+
+    <ellipse cx="37" cy="44" rx="15" ry="10" fill="none" stroke="#FACC15" stroke-width="3" />
+    <path d="M18 44 H24" fill="none" stroke="#D1D5DB" stroke-width="2.4" stroke-linecap="round" />
+
+    <ellipse cx="129" cy="44" rx="15" ry="10" fill="none" stroke="#F59E0B" stroke-width="3" />
+    <path d="M110 44 H116" fill="none" stroke="#D1D5DB" stroke-width="2.4" stroke-linecap="round" />
+
+    <ellipse cx="221" cy="44" rx="15" ry="10" fill="none" stroke="#FACC15" stroke-width="3" />
+    <path d="M202 44 H208" fill="none" stroke="#D1D5DB" stroke-width="2.4" stroke-linecap="round" />
+  </g>
+</svg>

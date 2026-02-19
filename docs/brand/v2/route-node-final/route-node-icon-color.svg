@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Route Node icon color</title>
+  <desc id="desc">Color icon for Diesel Bridge Route Node logo system.</desc>
+
+  <rect x="24" y="24" width="464" height="464" rx="88" fill="#0B1220" />
+
+  <polygon points="256,118 342,168 342,268 256,318 170,268 170,168" fill="none" stroke="#06B6D4" stroke-width="16" />
+  <circle cx="256" cy="218" r="28" fill="#F59E0B" />
+
+  <circle cx="126" cy="126" r="14" fill="#38BDF8" />
+  <circle cx="386" cy="126" r="14" fill="#38BDF8" />
+  <circle cx="126" cy="386" r="14" fill="#38BDF8" />
+  <circle cx="386" cy="386" r="14" fill="#38BDF8" />
+  <circle cx="256" cy="92" r="14" fill="#38BDF8" />
+  <circle cx="256" cy="420" r="14" fill="#38BDF8" />
+
+  <path d="M139 139 L202 186" fill="none" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+  <path d="M373 139 L310 186" fill="none" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+  <path d="M139 373 L202 286" fill="none" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+  <path d="M373 373 L310 286" fill="none" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+  <path d="M256 108 L256 150" fill="none" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+  <path d="M256 404 L256 286" fill="none" stroke="#94A3B8" stroke-width="8" stroke-linecap="round" />
+
+  <path d="M204 218 L308 218" fill="none" stroke="#F59E0B" stroke-width="6" stroke-linecap="round" stroke-dasharray="14 10" />
+</svg>

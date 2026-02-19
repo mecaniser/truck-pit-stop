@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="420" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
+  <title id="title">Diesel Bridge Network logo system Bridge Span</title>
+  <desc id="desc">Bridge-led network logo with four nodes and a central coordination hub.</desc>
+
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#EEF2F7" />
+    </linearGradient>
+    <style>
+      .title {
+        font-family: "Bebas Neue", "Oswald", "Impact", sans-serif;
+        font-size: 112px;
+        letter-spacing: 0.03em;
+        fill: #102A43;
+      }
+      .sub {
+        font-family: "Rajdhani", "Barlow Condensed", sans-serif;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        fill: #334E68;
+      }
+      .tag {
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        font-size: 22px;
+        font-weight: 500;
+        fill: #486581;
+      }
+      .small {
+        font-family: "Rajdhani", "Barlow Condensed", sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        fill: #334E68;
+      }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1400" height="420" fill="url(#panel)" />
+
+  <g transform="translate(70,78)">
+    <rect x="0" y="0" width="250" height="250" rx="44" fill="#13233D" />
+
+    <path d="M34 126 C72 72 178 72 216 126" fill="none" stroke="#F97316" stroke-width="12" stroke-linecap="round" />
+    <path d="M34 126 C72 180 178 180 216 126" fill="none" stroke="#264763" stroke-width="12" stroke-linecap="round" />
+    <path d="M60 126 L190 126" fill="none" stroke="#F9FAFB" stroke-width="5" stroke-linecap="round" stroke-dasharray="12 10" />
+
+    <circle cx="28" cy="52" r="11" fill="#F97316" />
+    <circle cx="222" cy="52" r="11" fill="#F97316" />
+    <circle cx="28" cy="198" r="11" fill="#F97316" />
+    <circle cx="222" cy="198" r="11" fill="#F97316" />
+    <circle cx="125" cy="126" r="14" fill="#F9FAFB" />
+
+    <path d="M38 60 L114 115" fill="none" stroke="#9FB3C8" stroke-width="4" stroke-linecap="round" />
+    <path d="M212 60 L136 115" fill="none" stroke="#9FB3C8" stroke-width="4" stroke-linecap="round" />
+    <path d="M38 190 L114 137" fill="none" stroke="#9FB3C8" stroke-width="4" stroke-linecap="round" />
+    <path d="M212 190 L136 137" fill="none" stroke="#9FB3C8" stroke-width="4" stroke-linecap="round" />
+  </g>
+
+  <g transform="translate(370,96)">
+    <text x="0" y="104" class="title">Diesel Bridge</text>
+    <text x="6" y="146" class="sub">NETWORK</text>
+    <text x="6" y="194" class="tag">Reliable routing from breakdown to back-on-road.</text>
+  </g>
+
+  <g transform="translate(370,274)">
+    <text x="0" y="0" class="small">ICON STRESS CHECK</text>
+
+    <rect x="0" y="20" width="64" height="64" rx="12" fill="#13233D" />
+    <rect x="94" y="20" width="64" height="64" rx="12" fill="#13233D" />
+    <rect x="188" y="20" width="64" height="64" rx="12" fill="#13233D" />
+
+    <path d="M16 52 C22 43 42 43 48 52" fill="none" stroke="#F97316" stroke-width="3.2" stroke-linecap="round" />
+    <path d="M110 52 C116 43 136 43 142 52" fill="none" stroke="#F97316" stroke-width="3.2" stroke-linecap="round" />
+    <path d="M204 52 C210 43 230 43 236 52" fill="none" stroke="#F97316" stroke-width="3.2" stroke-linecap="round" />
+
+    <text x="15" y="101" class="small">16</text>
+    <text x="109" y="101" class="small">24</text>
+    <text x="203" y="101" class="small">32</text>
+  </g>
+</svg>

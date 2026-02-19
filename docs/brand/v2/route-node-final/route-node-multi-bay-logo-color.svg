@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="420" viewBox="0 0 1400 420" role="img" aria-labelledby="title desc">
+  <title id="title">Diesel Bridge Network Route Node Multi-Bay logo</title>
+  <desc id="desc">Top-down multi-bay garage with trucks approaching from all directions.</desc>
+
+  <defs>
+    <style>
+      .title {
+        font-family: "Saira Condensed", "Rajdhani", sans-serif;
+        font-size: 100px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        fill: #0B1220;
+      }
+      .sub {
+        font-family: "IBM Plex Sans Condensed", "Barlow Condensed", sans-serif;
+        font-size: 34px;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        fill: #1D4ED8;
+      }
+      .tag {
+        font-family: "Public Sans", "Segoe UI", sans-serif;
+        font-size: 22px;
+        font-weight: 500;
+        fill: #334155;
+      }
+      .lane {
+        fill: #1E293B;
+      }
+      .lane-line {
+        stroke: #94A3B8;
+        stroke-width: 2.4;
+        stroke-linecap: round;
+        stroke-dasharray: 6 8;
+      }
+    </style>
+
+    <g id="truckGlyph">
+      <rect x="-16" y="-8" width="22" height="16" rx="2.8" fill="#F97316" />
+      <rect x="6" y="-6.2" width="10" height="12.4" rx="2.2" fill="#FB923C" />
+      <rect x="8.5" y="-4.3" width="5.2" height="4.6" rx="1.2" fill="#DBEAFE" />
+      <circle cx="-10" cy="8.8" r="2.4" fill="#CBD5E1" />
+      <circle cx="1" cy="8.8" r="2.4" fill="#CBD5E1" />
+      <circle cx="10.5" cy="8.8" r="2.4" fill="#CBD5E1" />
+    </g>
+  </defs>
+
+  <g transform="translate(50,58)">
+    <rect x="0" y="0" width="304" height="304" rx="56" fill="#071427" />
+
+    <rect x="132" y="0" width="40" height="88" class="lane" />
+    <rect x="132" y="216" width="40" height="88" class="lane" />
+    <rect x="0" y="132" width="88" height="40" class="lane" />
+    <rect x="216" y="132" width="88" height="40" class="lane" />
+
+    <path d="M44 44 L98 98" fill="none" class="lane" stroke-width="26" stroke-linecap="round" />
+    <path d="M260 44 L206 98" fill="none" class="lane" stroke-width="26" stroke-linecap="round" />
+    <path d="M44 260 L98 206" fill="none" class="lane" stroke-width="26" stroke-linecap="round" />
+    <path d="M260 260 L206 206" fill="none" class="lane" stroke-width="26" stroke-linecap="round" />
+
+    <line x1="152" y1="10" x2="152" y2="76" class="lane-line" />
+    <line x1="152" y1="228" x2="152" y2="294" class="lane-line" />
+    <line x1="10" y1="152" x2="76" y2="152" class="lane-line" />
+    <line x1="228" y1="152" x2="294" y2="152" class="lane-line" />
+
+    <line x1="54" y1="54" x2="86" y2="86" class="lane-line" />
+    <line x1="250" y1="54" x2="218" y2="86" class="lane-line" />
+    <line x1="54" y1="250" x2="86" y2="218" class="lane-line" />
+    <line x1="250" y1="250" x2="218" y2="218" class="lane-line" />
+
+    <rect x="98" y="98" width="108" height="108" rx="18" fill="#13233D" stroke="#22D3EE" stroke-width="4.2" />
+    <rect x="134" y="84" width="36" height="22" rx="5" fill="#020617" stroke="#38BDF8" stroke-width="1.8" />
+    <rect x="198" y="134" width="22" height="36" rx="5" fill="#020617" stroke="#38BDF8" stroke-width="1.8" />
+    <rect x="134" y="198" width="36" height="22" rx="5" fill="#020617" stroke="#38BDF8" stroke-width="1.8" />
+    <rect x="84" y="134" width="22" height="36" rx="5" fill="#020617" stroke="#38BDF8" stroke-width="1.8" />
+
+    <circle cx="152" cy="152" r="12" fill="#F59E0B" />
+
+    <use href="#truckGlyph" transform="translate(152,34) rotate(90)" />
+    <use href="#truckGlyph" transform="translate(152,270) rotate(-90)" />
+    <use href="#truckGlyph" transform="translate(34,152) rotate(0)" />
+    <use href="#truckGlyph" transform="translate(270,152) rotate(180)" />
+    <use href="#truckGlyph" transform="translate(62,62) rotate(45)" />
+    <use href="#truckGlyph" transform="translate(242,62) rotate(135)" />
+    <use href="#truckGlyph" transform="translate(62,242) rotate(-45)" />
+    <use href="#truckGlyph" transform="translate(242,242) rotate(-135)" />
+  </g>
+
+  <g transform="translate(392,98)">
+    <text x="0" y="104" class="title">Diesel Bridge</text>
+    <text x="8" y="146" class="sub">NETWORK</text>
+    <text x="8" y="194" class="tag">Top-view multi-bay routing with trucks approaching from every side.</text>
+  </g>
+</svg>

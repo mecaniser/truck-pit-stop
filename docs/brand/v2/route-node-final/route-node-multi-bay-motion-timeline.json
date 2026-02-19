@@ -1,0 +1,157 @@
+{
+  "version": "1.0",
+  "logoSystem": "Route Node Multi-Bay",
+  "durationMs": 6200,
+  "tokens": {
+    "durationFast": 120,
+    "durationBase": 240,
+    "durationFlow": 700,
+    "durationEmphasis": 450,
+    "easeStandard": "cubic-bezier(0.2, 0, 0, 1)",
+    "easeEmphasis": "cubic-bezier(0.22, 1, 0.36, 1)"
+  },
+  "layers": [
+    "bayStructure",
+    "laneNorth",
+    "laneEast",
+    "laneSouth",
+    "laneWest",
+    "laneNorthEast",
+    "laneSouthEast",
+    "laneSouthWest",
+    "laneNorthWest",
+    "truckNorth",
+    "truckEast",
+    "truckSouth",
+    "truckWest",
+    "truckNorthEast",
+    "truckSouthEast",
+    "truckSouthWest",
+    "truckNorthWest",
+    "baySignalNorth",
+    "baySignalEast",
+    "baySignalSouth",
+    "baySignalWest",
+    "wordmark"
+  ],
+  "timeline": [
+    {
+      "id": "structure-enter",
+      "startMs": 0,
+      "durationMs": 620,
+      "targets": ["bayStructure"],
+      "properties": {
+        "opacity": [0, 1],
+        "scale": [0.94, 1]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "lanes-draw",
+      "startMs": 320,
+      "durationMs": 840,
+      "targets": [
+        "laneNorth",
+        "laneEast",
+        "laneSouth",
+        "laneWest",
+        "laneNorthEast",
+        "laneSouthEast",
+        "laneSouthWest",
+        "laneNorthWest"
+      ],
+      "properties": {
+        "strokeDashoffset": [220, 0],
+        "opacity": [0, 1]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "cardinal-truck-wave",
+      "startMs": 980,
+      "durationMs": 1280,
+      "targets": ["truckNorth", "truckEast", "truckSouth", "truckWest"],
+      "properties": {
+        "pathProgress": [0, 1]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "diagonal-truck-wave",
+      "startMs": 1480,
+      "durationMs": 1180,
+      "targets": ["truckNorthEast", "truckSouthEast", "truckSouthWest", "truckNorthWest"],
+      "properties": {
+        "pathProgress": [0, 1]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "bay-signals-confirm",
+      "startMs": 2820,
+      "durationMs": 700,
+      "targets": ["baySignalNorth", "baySignalEast", "baySignalSouth", "baySignalWest"],
+      "properties": {
+        "opacity": [0.35, 1, 0.55],
+        "scale": [1, 1.2, 1]
+      },
+      "easing": "easeEmphasis"
+    },
+    {
+      "id": "wordmark-settle",
+      "startMs": 3340,
+      "durationMs": 560,
+      "targets": ["wordmark"],
+      "properties": {
+        "opacity": [0, 1],
+        "translateY": [16, 0]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "final-hold",
+      "startMs": 3900,
+      "durationMs": 2300,
+      "targets": [
+        "bayStructure",
+        "truckNorth",
+        "truckEast",
+        "truckSouth",
+        "truckWest",
+        "truckNorthEast",
+        "truckSouthEast",
+        "truckSouthWest",
+        "truckNorthWest",
+        "wordmark"
+      ],
+      "properties": {
+        "opacity": [1, 1]
+      },
+      "easing": "linear"
+    }
+  ],
+  "microInteractions": [
+    {
+      "name": "truckAssignedToBay",
+      "trigger": "shop_accepts_truck",
+      "durationMs": 450,
+      "effect": "Assigned bay indicator pulses once and lane brightens."
+    },
+    {
+      "name": "allDirectionIntake",
+      "trigger": "multiple_trucks_arriving",
+      "durationMs": 1500,
+      "effect": "Cardinal trucks animate first, followed by diagonal trucks, showing full-direction intake."
+    },
+    {
+      "name": "bayOccupied",
+      "trigger": "truck_enters_bay",
+      "durationMs": 400,
+      "effect": "Matched bay aperture darkens and status marker transitions from amber to cyan."
+    }
+  ],
+  "reducedMotion": {
+    "enabled": true,
+    "strategy": "Disable vehicle path movement and update lane/bay states with opacity and color only."
+  }
+}

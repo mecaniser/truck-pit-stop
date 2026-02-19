@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Route Node favicon source</title>
+  <desc id="desc">High-contrast favicon source optimized for tiny sizes.</desc>
+
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="#0B1220" />
+
+  <polygon points="256,142 330,184 330,270 256,312 182,270 182,184" fill="none" stroke="#22D3EE" stroke-width="20" />
+  <circle cx="256" cy="226" r="34" fill="#F59E0B" />
+
+  <circle cx="130" cy="130" r="18" fill="#38BDF8" />
+  <circle cx="382" cy="130" r="18" fill="#38BDF8" />
+  <circle cx="130" cy="382" r="18" fill="#38BDF8" />
+  <circle cx="382" cy="382" r="18" fill="#38BDF8" />
+
+  <path d="M148 148 L198 188" fill="none" stroke="#94A3B8" stroke-width="10" stroke-linecap="round" />
+  <path d="M364 148 L314 188" fill="none" stroke="#94A3B8" stroke-width="10" stroke-linecap="round" />
+  <path d="M148 364 L198 282" fill="none" stroke="#94A3B8" stroke-width="10" stroke-linecap="round" />
+  <path d="M364 364 L314 282" fill="none" stroke="#94A3B8" stroke-width="10" stroke-linecap="round" />
+</svg>

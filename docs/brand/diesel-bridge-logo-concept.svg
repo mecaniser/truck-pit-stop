@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="260" viewBox="0 0 880 260" role="img" aria-labelledby="title desc">
+  <title id="title">Diesel Bridge Network logo concept</title>
+  <desc id="desc">Bridge and road network symbol with five nodes and a horizontal wordmark.</desc>
+
+  <defs>
+    <style>
+      .navy { stroke: #13233D; fill: #13233D; }
+      .orange { stroke: #F97316; fill: #F97316; }
+      .gray { stroke: #6B7280; fill: #6B7280; }
+      .light { stroke: #F9FAFB; fill: #F9FAFB; }
+      .none { fill: none; }
+      .wordmark { font-family: "Oswald", "Montserrat", "Arial", sans-serif; }
+      .submark { font-family: "Montserrat", "Arial", sans-serif; letter-spacing: 0.2em; }
+    </style>
+  </defs>
+
+  <g transform="translate(24,20)">
+    <circle cx="30" cy="40" r="12" class="orange" />
+    <circle cx="170" cy="40" r="12" class="orange" />
+    <circle cx="30" cy="180" r="12" class="orange" />
+    <circle cx="170" cy="180" r="12" class="orange" />
+    <circle cx="100" cy="110" r="14" class="navy" />
+
+    <path d="M42 46 L88 98" class="gray none" stroke-width="6" stroke-linecap="round" />
+    <path d="M158 46 L112 98" class="gray none" stroke-width="6" stroke-linecap="round" />
+    <path d="M42 174 L88 122" class="gray none" stroke-width="6" stroke-linecap="round" />
+    <path d="M158 174 L112 122" class="gray none" stroke-width="6" stroke-linecap="round" />
+
+    <path d="M24 110 C54 70 146 70 176 110" class="navy none" stroke-width="10" stroke-linecap="round" />
+    <path d="M24 110 C54 150 146 150 176 110" class="navy none" stroke-width="10" stroke-linecap="round" />
+
+    <path d="M52 110 L148 110" class="light none" stroke-width="4" stroke-linecap="round" stroke-dasharray="12 10" />
+  </g>
+
+  <g transform="translate(254,78)">
+    <text x="0" y="52" class="wordmark navy" font-size="78" font-weight="600">Diesel Bridge</text>
+    <text x="4" y="92" class="submark gray" font-size="22" font-weight="600">NETWORK</text>
+  </g>
+</svg>

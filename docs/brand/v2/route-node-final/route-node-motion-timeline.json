@@ -1,0 +1,128 @@
+{
+  "version": "1.0",
+  "logoSystem": "Route Node",
+  "durationMs": 4800,
+  "tokens": {
+    "durationFast": 120,
+    "durationBase": 240,
+    "durationFlow": 700,
+    "durationEmphasis": 450,
+    "easeStandard": "cubic-bezier(0.2, 0, 0, 1)",
+    "easeEmphasis": "cubic-bezier(0.22, 1, 0.36, 1)"
+  },
+  "layers": [
+    "outerNodes",
+    "radialLinks",
+    "hexRing",
+    "hub",
+    "routePulse",
+    "wordmark"
+  ],
+  "timeline": [
+    {
+      "id": "nodes-enter",
+      "startMs": 0,
+      "durationMs": 700,
+      "targets": ["outerNodes"],
+      "properties": {
+        "opacity": [0, 1],
+        "scale": [0.88, 1]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "links-draw",
+      "startMs": 480,
+      "durationMs": 720,
+      "targets": ["radialLinks"],
+      "properties": {
+        "strokeDashoffset": [120, 0],
+        "opacity": [0.2, 1]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "hex-trace",
+      "startMs": 860,
+      "durationMs": 760,
+      "targets": ["hexRing"],
+      "properties": {
+        "strokeDashoffset": [260, 0]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "hub-pop",
+      "startMs": 1480,
+      "durationMs": 380,
+      "targets": ["hub"],
+      "properties": {
+        "opacity": [0, 1],
+        "scale": [0.84, 1.04, 1]
+      },
+      "easing": "easeEmphasis"
+    },
+    {
+      "id": "route-highlight",
+      "startMs": 1860,
+      "durationMs": 980,
+      "targets": ["routePulse"],
+      "properties": {
+        "pathProgress": [0, 1],
+        "glowOpacity": [0, 0.9, 0.25]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "wordmark-settle",
+      "startMs": 2700,
+      "durationMs": 620,
+      "targets": ["wordmark"],
+      "properties": {
+        "opacity": [0, 1],
+        "translateY": [18, 0]
+      },
+      "easing": "easeStandard"
+    },
+    {
+      "id": "final-hold",
+      "startMs": 3320,
+      "durationMs": 1480,
+      "targets": ["outerNodes", "hexRing", "hub", "wordmark"],
+      "properties": {
+        "opacity": [1, 1]
+      },
+      "easing": "linear"
+    }
+  ],
+  "microInteractions": [
+    {
+      "name": "networkPulse",
+      "trigger": "new_dispatch_request",
+      "durationMs": 700,
+      "effect": "hub pulse radiates to eligible nodes"
+    },
+    {
+      "name": "matchConfirm",
+      "trigger": "mechanic_accepts_job",
+      "durationMs": 450,
+      "effect": "selected link brightens and hub emits a confirmation ring"
+    },
+    {
+      "name": "etaProgress",
+      "trigger": "dispatch_in_progress",
+      "durationMs": 1200,
+      "effect": "route stroke loops with directional dash movement"
+    },
+    {
+      "name": "jobComplete",
+      "trigger": "repair_completed",
+      "durationMs": 500,
+      "effect": "hub token morphs into check badge and route de-emphasizes"
+    }
+  ],
+  "reducedMotion": {
+    "enabled": true,
+    "strategy": "Replace path travel with opacity transitions and instant state updates."
+  }
+}
