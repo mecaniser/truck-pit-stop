@@ -1,4 +1,4 @@
-# Truck Pit Stop Management System
+# DieselBridge Network Management System
 
 A comprehensive multi-tenant web application for managing semi-truck repair garages.
 
@@ -167,12 +167,31 @@ TWILIO_AUTH_TOKEN=...
 TWILIO_PHONE_NUMBER=+1234567890
 RESEND_API_KEY=re_...
 FRONTEND_URL=http://localhost:5173
+PUBLIC_API_BASE_URL=http://localhost:8000
+CORS_ORIGINS_STR=http://localhost:5173
+COOKIE_DOMAIN=
 ```
 
 ### Frontend (.env)
 ```
 VITE_API_URL=http://localhost:8000/api/v1
+VITE_SITE_URL=http://localhost:5173
 VITE_STRIPE_PUBLISHABLE_KEY=pk_...
+```
+
+### Production example (dieselbridge.com)
+```
+# Backend
+ENVIRONMENT=production
+FRONTEND_URL=https://www.dieselbridge.com
+PUBLIC_API_BASE_URL=https://api.dieselbridge.com
+CORS_ORIGINS_STR=https://www.dieselbridge.com,https://dieselbridge.com
+COOKIE_DOMAIN=.dieselbridge.com
+COOKIE_SECURE=true
+
+# Frontend
+VITE_API_URL=https://api.dieselbridge.com/api/v1
+VITE_SITE_URL=https://www.dieselbridge.com
 ```
 
 ## Deployment to Railway
@@ -195,4 +214,3 @@ Remaining features to implement:
 - Reporting dashboard
 - File uploads
 - Activity logs/audit trail
-

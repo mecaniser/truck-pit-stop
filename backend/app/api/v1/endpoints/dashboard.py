@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import aliased
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.websocket import (
+    broadcast_repair_order_update,
     broadcast_mechanic_attendance_update,
     broadcast_mechanic_break_update,
     broadcast_mechanic_timer_update,
@@ -1011,7 +1012,6 @@ async def manager_start_mechanic_timer(
     await db.refresh(session)
     # Broadcast auto-held RO if one was held
     if auto_held_ro:
-        from app.services.websocket_service import broadcast_repair_order_update
         await broadcast_repair_order_update(
             tenant_id=str(auto_held_ro.tenant_id),
             customer_id=str(auto_held_ro.customer_id),
@@ -1021,6 +1021,7 @@ async def manager_start_mechanic_timer(
             updated_at=auto_held_ro.updated_at.isoformat() if auto_held_ro.updated_at else None,
             hold_reason=auto_held_ro.hold_reason,
             held_at=auto_held_ro.held_at.isoformat() if auto_held_ro.held_at else None,
+            send_to_customer=False,
         )
     await broadcast_mechanic_timer_update(
         tenant_id=str(current_user.tenant_id),

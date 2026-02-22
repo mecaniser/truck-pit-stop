@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /platform-admin/
+
+Sitemap: https://www.dieselbridge.com/sitemap.xml

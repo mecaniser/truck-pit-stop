@@ -18,6 +18,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
 import NotificationBanner from '../../components/NotificationBanner'
+import BrandLogo from '../../components/brand/BrandLogo'
 import { getStripeForAccount } from '../../lib/stripe'
 import { formatUSPhone } from '../../utils/phone'
 
@@ -1236,26 +1237,8 @@ export default function CustomerPortalPage() {
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center">
-              <Link to="/portal" className="relative text-lg sm:text-xl font-bold text-slate-800 py-1">
-                <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 32" preserveAspectRatio="none" fill="none">
-                  <style>{`
-                    @keyframes checker { 0%, 100% { fill: #1e293b } 50% { fill: ${accentColors[500]} } }
-                    @keyframes checkerAlt { 0%, 100% { fill: ${accentColors[500]} } 50% { fill: #1e293b } }
-                    .t1 { animation: checker 2.5s ease-in-out infinite }
-                    .t2 { animation: checkerAlt 2.5s ease-in-out infinite }
-                    .b1 { animation: checker 2.5s ease-in-out infinite; animation-delay: -0.8s }
-                    .b2 { animation: checkerAlt 2.5s ease-in-out infinite; animation-delay: -0.8s }
-                  `}</style>
-                  <rect x="50" y="0" width="12.5" height="4" className="t1"/>
-                  <rect x="62.5" y="0" width="12.5" height="4" className="t2"/>
-                  <rect x="75" y="0" width="12.5" height="4" className="t1"/>
-                  <rect x="87.5" y="0" width="12.5" height="4" className="t2"/>
-                  <rect x="0" y="28" width="12.5" height="4" className="b2"/>
-                  <rect x="12.5" y="28" width="12.5" height="4" className="b1"/>
-                  <rect x="25" y="28" width="12.5" height="4" className="b2"/>
-                  <rect x="37.5" y="28" width="12.5" height="4" className="b1"/>
-                </svg>
-                <span className="relative px-1">Truck Pit Stop</span>
+              <Link to="/portal" className="inline-flex items-center py-1" aria-label="Diesel Bridge Network customer portal">
+                <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
               </Link>
             </div>
 

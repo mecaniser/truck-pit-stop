@@ -35,7 +35,7 @@ def test_is_placeholder_walkin_customer_detects_placeholder_email():
         tenant_id=uuid4(),
         first_name="John",
         last_name="Doe",
-        email="walkin+5551231234@placeholder.truckpitstop.com",
+        email="walkin+5551231234@placeholder.dieselbridge.network",
     )
     assert _is_placeholder_walkin_customer(customer) is True
 

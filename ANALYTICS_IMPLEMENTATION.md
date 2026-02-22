@@ -152,7 +152,7 @@ Garage Analytics Page
 
 ### As SUPER_ADMIN
 
-1. **Login**: `admin@truckpitstop.com` / `superadmin123`
+1. **Login**: `admin@dieselbridge.network` / `superadmin123`
 
 2. **View All Garages**:
    ```

@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     
     # Resend
     RESEND_API_KEY: str = ""
-    RESEND_FROM_EMAIL: str = "noreply@truckpitstop.com"
+    RESEND_FROM_EMAIL: str = "noreply@dieselbridge.network"
     
     # Cloudinary (for work photos)
     CLOUDINARY_CLOUD_NAME: str = ""

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { ArrowLeft, Clock3, MessageSquare, Route, Wrench } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
+import BrandLogo from '../../components/brand/BrandLogo'
 
 const loginSchema = z.object({
   email: z
@@ -114,9 +115,9 @@ export default function LoginPage() {
           <section className="hidden overflow-hidden rounded-3xl border border-zinc-800/80 bg-zinc-950/65 p-8 shadow-2xl lg:block">
             <div className="flex h-full flex-col justify-between">
               <div>
-                <p className="mb-4 inline-flex items-center rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
-                  Diesel Bridge Network
-                </p>
+                <div className="mb-4">
+                  <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 w-auto" />
+                </div>
                 <h1 className="text-4xl font-black tracking-tight text-zinc-100">
                   Run your garage.
                   <span className="mt-1 block text-[var(--accent-400)]">Keep trucks moving.</span>
@@ -146,6 +147,9 @@ export default function LoginPage() {
 
           <section className="rounded-3xl border border-zinc-800/80 bg-zinc-950/75 p-6 shadow-2xl backdrop-blur sm:p-8">
             <div className="mb-6">
+              <div className="mb-3 lg:hidden">
+                <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 w-auto" />
+              </div>
               <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
                 <Wrench className="h-3.5 w-3.5 text-[var(--accent-400)]" />
                 Secure Staff Login

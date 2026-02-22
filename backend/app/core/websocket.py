@@ -340,6 +340,7 @@ async def broadcast_repair_order_update(
     updated_at: Optional[str] = None,
     hold_reason: Optional[str] = None,
     held_at: Optional[str] = None,
+    send_to_customer: bool = True,
 ) -> None:
     """
     Broadcast a repair order status update to relevant parties.
@@ -361,8 +362,9 @@ async def broadcast_repair_order_update(
     # Broadcast to tenant staff
     await manager.broadcast_to_tenant(tenant_id, message)
     
-    # Send to customer
-    await manager.send_to_customer(customer_id, message)
+    # Send to customer (optional for internal-only state transitions like hold/resume)
+    if send_to_customer:
+        await manager.send_to_customer(customer_id, message)
 
 
 async def broadcast_quote_event(

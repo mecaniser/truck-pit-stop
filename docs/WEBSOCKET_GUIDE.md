@@ -22,7 +22,7 @@ WebSocket (Persistent):
 (Connection stays open for real-time communication)
 ```
 
-## Why WebSockets for TruckPitStop?
+## Why WebSockets for DieselBridge Network?
 
 ### The Problem with Polling
 
@@ -59,7 +59,7 @@ With WebSockets, the server **tells us** when something changes:
 - **Scalable**: Less server load than polling
 - **Better UX**: Users see real-time progress
 
-## How It Works in TruckPitStop
+## How It Works in DieselBridge Network
 
 ### Connection Flow
 
@@ -288,7 +288,7 @@ When a user exceeds the connection limit, the **oldest connection is gracefully 
 
 ## Summary
 
-WebSockets transform TruckPitStop from a "refresh to see updates" app to a **real-time collaborative platform**. When a mechanic starts work, the customer sees it instantly. When a customer approves a quote, the garage knows immediately.
+WebSockets transform DieselBridge Network from a "refresh to see updates" app to a **real-time collaborative platform**. When a mechanic starts work, the customer sees it instantly. When a customer approves a quote, the garage knows immediately.
 
 The implementation uses:
 - **Backend**: FastAPI WebSocket endpoint + ConnectionManager

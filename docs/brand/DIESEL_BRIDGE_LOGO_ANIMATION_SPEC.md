@@ -1,7 +1,7 @@
-# Diesel Bridge Network
+# DieselBridge Network
 ## Logo Concept + Animation Flow Spec (v0.1)
 
-This draft defines a first-pass visual direction for the Diesel Bridge Network platform that connects:
+This draft defines a first-pass visual direction for the DieselBridge Network platform that connects:
 
 - Truck drivers
 - Fleet companies
@@ -38,11 +38,11 @@ The mark combines:
 - Top-right: Fleet
 - Bottom-left: Repair Shop
 - Bottom-right: Mechanic
-- Center: Diesel Bridge platform
+- Center: DieselBridge platform
 
 ### Wordmark
 
-- Primary text: `Diesel Bridge`
+- Primary text: `DieselBridge`
 - Secondary text: `Network`
 - Style: tall, engineered sans for the primary line, neutral sans for secondary
 
@@ -73,7 +73,7 @@ Usage ratio:
 
 ```mermaid
 flowchart LR
-  D["Driver"] --> P["Diesel Bridge Platform"]
+  D["Driver"] --> P["DieselBridge Platform"]
   F["Fleet"] --> P
   S["Repair Shop"] --> P
   M["Mechanic"] --> P

@@ -1,6 +1,6 @@
 # Security Guide for Beginners
 
-This guide explains the security improvements made to TruckPitStop in plain English. If you're new to web security, start here.
+This guide explains the security improvements made to DieselBridge Network in plain English. If you're new to web security, start here.
 
 ---
 

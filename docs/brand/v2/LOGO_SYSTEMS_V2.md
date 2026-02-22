@@ -1,9 +1,9 @@
-# Diesel Bridge Network
+# DieselBridge Network
 ## Logo Systems v2
 
 Generated: 2026-02-19
 
-This package includes three distinct logo systems built for the Diesel Bridge Network concept:
+This package includes three distinct logo systems built for the DieselBridge Network concept:
 
 - `Bridge Span`: reliability + infrastructure trust
 - `Route Node`: dynamic network orchestration

@@ -26,6 +26,7 @@ class UserRegister(BaseModel):
     first_name: str
     last_name: str
     phone: Optional[str] = None
+    garage_name: Optional[str] = None
     tenant_slug: Optional[str] = None  # For customer registration
 
 
@@ -39,6 +40,8 @@ class UserResponse(BaseModel):
     role: UserRole
     is_active: bool
     tenant_id: Optional[UUID] = None
+    tenant_name: Optional[str] = None
+    tenant_slug: Optional[str] = None
     customer_id: Optional[UUID] = None
     core_hours_target_minutes_override: Optional[int] = None
     shift_start_local_override: Optional[str] = None

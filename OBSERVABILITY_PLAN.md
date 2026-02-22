@@ -1,6 +1,6 @@
 # Observability Implementation Plan
 
-Self-hosted monitoring and error tracking system for TruckPitStop.
+Self-hosted monitoring and error tracking system for DieselBridge Network.
 
 **Created:** 2026-02-08  
 **Status:** Implemented

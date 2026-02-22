@@ -547,7 +547,7 @@ async def handle_inbound_sms(
             tenant_id=tenant.id,
             first_name="SMS",
             last_name="Customer",
-            email=f"sms+{normalized_sender}@placeholder.truckpitstop.com",
+            email=f"sms+{normalized_sender}@placeholder.dieselbridge.network",
             phone=normalized_sender,
             source="sms",
             sms_opt_out=False,

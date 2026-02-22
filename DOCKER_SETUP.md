@@ -1,4 +1,4 @@
-# Docker Setup for Truck Pit Stop
+# Docker Setup for DieselBridge Network
 
 ## Quick Start
 
@@ -40,9 +40,9 @@ uvicorn app.main:app --reload
 
 The backend is configured to connect to:
 - **Host**: localhost:5432
-- **Database**: truckpitstop
-- **User**: truckpitstop
-- **Password**: truckpitstop_dev
+- **Database**: dieselbridge
+- **User**: dieselbridge
+- **Password**: dieselbridge_dev
 
 These are set in `backend/.env` and match the docker-compose.yml configuration.
 
@@ -66,7 +66,7 @@ docker-compose logs -f redis
 
 ### Connect to PostgreSQL
 ```bash
-docker exec -it truckpitstop_postgres psql -U truckpitstop -d truckpitstop
+docker exec -it dieselbridge_postgres psql -U dieselbridge -d dieselbridge
 ```
 
 ### Reset Database

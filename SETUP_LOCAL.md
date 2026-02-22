@@ -1,6 +1,6 @@
 # Local Development Setup
 
-Quick guide to get Truck Pit Stop running locally.
+Quick guide to get DieselBridge Network running locally.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ pip install -r requirements.txt
 cp .env.example .env
 
 # Edit .env - minimum required:
-# DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/truckpitstop
+# DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dieselbridge
 # SECRET_KEY=your-random-secret-key-here
 # REDIS_URL=redis://localhost:6379/0
 ```
@@ -29,7 +29,7 @@ cp .env.example .env
 
 Edit `.env`:
 ```
-DATABASE_URL=sqlite+aiosqlite:///./truckpitstop.db
+DATABASE_URL=sqlite+aiosqlite:///./dieselbridge.db
 ```
 
 **Or use PostgreSQL:**
@@ -40,7 +40,7 @@ DATABASE_URL=sqlite+aiosqlite:///./truckpitstop.db
 
 ```bash
 # If using PostgreSQL, create database first:
-# createdb truckpitstop
+# createdb dieselbridge
 
 # Run migrations
 cd backend

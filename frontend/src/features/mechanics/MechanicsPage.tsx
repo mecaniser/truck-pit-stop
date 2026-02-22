@@ -789,7 +789,7 @@ export default function MechanicsPage() {
                       className={`w-full px-4 py-3 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 transition-colors ${
                         errors.email ? 'border-red-500 focus:ring-red-500' : 'border-gray-200 focus:ring-amber-500'
                       }`}
-                      placeholder="mechanic@truckpitstop.com"
+                      placeholder="mechanic@dieselbridge.com"
                     />
                     {errors.email && (
                       <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>

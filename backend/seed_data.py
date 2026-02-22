@@ -31,7 +31,7 @@ async def seed():
         # Create Platform Super Admin (Platform Owner)
         super_admin = User(
             id=uuid4(),
-            email="admin@truckpitstop.com",
+            email="admin@dieselbridge.network",
             hashed_password=get_password_hash("superadmin123"),
             first_name="Platform",
             last_name="Admin",
@@ -852,7 +852,7 @@ async def seed():
         print(f"🔧 {len(services)} services created in 5 categories")
         print("\nTest accounts created:")
         print("\n🔐 Platform Level:")
-        print("  Super Admin: admin@truckpitstop.com / superadmin123")
+        print("  Super Admin: admin@dieselbridge.network / superadmin123")
         print("\n🏢 Garage Level (Truck Pit Stop Wisconsin):")
         print("  Garage Owner: truxpitstop@gmail.com / BUse@1534")
         print("  Garage Admin: admin@truckpitstopwi.com / admin123")
@@ -864,4 +864,3 @@ async def seed():
 
 if __name__ == "__main__":
     asyncio.run(seed())
-

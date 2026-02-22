@@ -123,7 +123,7 @@ def _is_placeholder_walkin_customer(customer: Customer) -> bool:
     email = (customer.email or "").lower()
     first_name = (customer.first_name or "").lower()
     return (
-        "@placeholder.truckpitstop.com" in email
+        "@placeholder.dieselbridge.network" in email
         or first_name == "walk-in"
         or (customer.source or "").lower() == "walk_in"
     )

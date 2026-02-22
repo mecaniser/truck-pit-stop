@@ -129,6 +129,11 @@ class SubmitGuestZellePaymentResponse(BaseModel):
     pending_zelle_confirmation: bool = True
 
 
+def _cookie_domain() -> Optional[str]:
+    domain = settings.COOKIE_DOMAIN.strip()
+    return domain or None
+
+
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     """Set auth cookies for a newly authenticated user."""
     response.set_cookie(
@@ -138,6 +143,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        domain=_cookie_domain(),
         path="/",
     )
     response.set_cookie(
@@ -147,6 +153,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        domain=_cookie_domain(),
         path="/api/v1/auth",
     )
 

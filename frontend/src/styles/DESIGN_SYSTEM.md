@@ -1,4 +1,4 @@
-# TruckPitStop Design System
+# DieselBridge Network Design System
 
 A hybrid industrial-organic design system combining modern dashboard aesthetics with soft, approachable UI elements.
 

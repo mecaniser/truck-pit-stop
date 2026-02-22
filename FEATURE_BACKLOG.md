@@ -1,4 +1,4 @@
-# TruckPitStop Feature Backlog
+# DieselBridge Network Feature Backlog
 
 Features identified from competitor analysis (Fullbay, Easy Truck Shop), with implementation status tracked below.
 

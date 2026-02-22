@@ -1,7 +1,7 @@
 from datetime import timedelta, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Cookie
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from app.core.security import (
     verify_password,
     get_password_hash,
@@ -51,6 +51,24 @@ from app.core.password_policy import validate_password
 router = APIRouter()
 
 
+async def _build_user_response(user: User, db: AsyncSession) -> UserResponse:
+    response = UserResponse.model_validate(user)
+
+    if user.tenant_id:
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
+        if tenant:
+            response.tenant_name = tenant.name
+            response.tenant_slug = tenant.slug
+
+    return response
+
+
+def _cookie_domain() -> Optional[str]:
+    domain = settings.COOKIE_DOMAIN.strip()
+    return domain or None
+
+
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str, remember_me: bool = False):
     """Set httpOnly cookies for tokens."""
     # Access token cookie (shorter lived)
@@ -61,6 +79,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str, 
         secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        domain=_cookie_domain(),
         path="/",
     )
     # Refresh token cookie (longer lived)
@@ -72,14 +91,16 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str, 
         secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=refresh_days * 24 * 60 * 60,
+        domain=_cookie_domain(),
         path="/api/v1/auth",  # Only sent to auth endpoints
     )
 
 
 def clear_auth_cookies(response: Response):
     """Clear auth cookies on logout."""
-    response.delete_cookie(key="access_token", path="/")
-    response.delete_cookie(key="refresh_token", path="/api/v1/auth")
+    domain = _cookie_domain()
+    response.delete_cookie(key="access_token", path="/", domain=domain)
+    response.delete_cookie(key="refresh_token", path="/api/v1/auth", domain=domain)
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
@@ -102,7 +123,7 @@ async def register(
             detail="Email already registered",
         )
     
-    # Resolve tenant_slug first if provided (needed for scoped customer lookup)
+    # Resolve tenant from explicit slug first, then optional garage name fallback.
     target_tenant_id = None
     if user_data.tenant_slug:
         result = await db.execute(select(Tenant).where(Tenant.slug == user_data.tenant_slug))
@@ -113,6 +134,23 @@ async def register(
                 detail="Tenant not found",
             )
         target_tenant_id = tenant.id
+    elif user_data.garage_name and user_data.garage_name.strip():
+        normalized_name = user_data.garage_name.strip().lower()
+        result = await db.execute(
+            select(Tenant).where(func.lower(Tenant.name) == normalized_name)
+        )
+        matching_tenants = result.scalars().all()
+        if not matching_tenants:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Garage not found. Please check the name or use your garage code.",
+            )
+        if len(matching_tenants) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Multiple garages match this name. Please use your garage code.",
+            )
+        target_tenant_id = matching_tenants[0].id
     
     # Check if there's an existing Customer record with this email or phone
     # This links the new User account to the Customer created by staff (including walk-ins)
@@ -354,8 +392,9 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
     current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    return UserResponse.model_validate(current_user)
+    return await _build_user_response(current_user, db)
 
 
 class UserProfileUpdate(BaseModel):
@@ -478,8 +517,9 @@ async def update_current_user(
     
     # If only email was being changed (no other fields to update), return early
     if email_verification_pending and not any(k in data for k in ['first_name', 'last_name', 'phone']):
+        response_user = await _build_user_response(current_user, db)
         return ProfileUpdateResponse(
-            user=UserResponse.model_validate(current_user),
+            user=response_user,
             message="Verification email sent. Please check your new email address to confirm the change.",
             email_verification_pending=True
         )
@@ -510,8 +550,10 @@ async def update_current_user(
     if email_verification_pending:
         message = "Profile updated. A verification email has been sent to your new email address."
     
+    response_user = await _build_user_response(current_user, db)
+    
     return ProfileUpdateResponse(
-        user=UserResponse.model_validate(current_user),
+        user=response_user,
         message=message,
         email_verification_pending=email_verification_pending
     )

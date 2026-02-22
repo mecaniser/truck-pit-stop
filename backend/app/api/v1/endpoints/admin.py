@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
@@ -829,10 +829,6 @@ async def get_tenant_stats(
 # Garage Owner Settings (Zelle, etc.)
 # ============================================================================
 
-from pydantic import BaseModel
-from typing import Optional
-
-
 class ZelleSettingsRequest(BaseModel):
     zelle_email: Optional[str] = None
     zelle_phone: Optional[str] = None
@@ -888,6 +884,25 @@ class WorkforceSettingsResponse(BaseModel):
     default_shift_end_local: str
 
 
+class GarageProfileResponse(BaseModel):
+    name: str
+    slug: str
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+
+
+class GarageProfileUpdateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    address: Optional[str] = Field(None, max_length=500)
+    phone: Optional[str] = Field(None, max_length=20)
+    email: Optional[EmailStr] = None
+    website: Optional[str] = Field(None, max_length=255)
+    logo_url: Optional[str] = Field(None, max_length=500)
+
+
 def require_garage_owner():
     """Dependency to ensure only garage owner/admin can access"""
     async def role_checker(current_user: User = Depends(get_current_active_user)):
@@ -898,6 +913,79 @@ def require_garage_owner():
             )
         return current_user
     return role_checker
+
+
+@router.get("/garage-profile", response_model=GarageProfileResponse)
+async def get_garage_profile(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Get garage profile settings for the current tenant."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    return GarageProfileResponse(
+        name=tenant.name,
+        slug=tenant.slug,
+        address=tenant.address,
+        phone=tenant.phone,
+        email=tenant.email,
+        website=tenant.website,
+        logo_url=tenant.logo_url,
+    )
+
+
+@router.put("/garage-profile", response_model=GarageProfileResponse)
+async def update_garage_profile(
+    body: GarageProfileUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Update garage profile settings for the current tenant."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Garage name is required")
+
+    def clean_optional_text(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        trimmed = value.strip()
+        return trimmed or None
+
+    tenant.name = name
+    tenant.address = clean_optional_text(body.address)
+    tenant.phone = normalize_phone(body.phone)
+    tenant.email = clean_optional_text(str(body.email)) if body.email else None
+    tenant.website = clean_optional_text(body.website)
+    tenant.logo_url = clean_optional_text(body.logo_url)
+
+    await db.commit()
+    await db.refresh(tenant)
+
+    return GarageProfileResponse(
+        name=tenant.name,
+        slug=tenant.slug,
+        address=tenant.address,
+        phone=tenant.phone,
+        email=tenant.email,
+        website=tenant.website,
+        logo_url=tenant.logo_url,
+    )
 
 
 @router.get("/zelle-settings", response_model=ZelleSettingsResponse)

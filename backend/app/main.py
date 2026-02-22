@@ -573,14 +573,32 @@ if frontend_dist.exists():
     # Serve static assets (JS, CSS, etc.)
     app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
     
-    # Serve other static files (favicon, etc.)
-    static_files = ["favicon.ico", "vite.svg", "robots.txt"]
-    for file in static_files:
-        file_path = frontend_dist / file
+    # Serve root-level static files used by the frontend shell (favicon, logos, robots, etc.)
+    static_files = [
+        "favicon.ico",
+        "robots.txt",
+        "DB_bridge_logo_favi_figma_public.svg",
+        "DB_bridge_logo_favi_figma_public.png",
+        "DB_bridge_logo_favi_figma_public_B.svg",
+        "DB_bridge_logo_favi_figma_public_B.png",
+        "DB_bridge_logo_favi_figma_admin.svg",
+        "DB_bridge_logo_favi_figma_admin.png",
+        "DB-favicon-corrected-transparent-admin.png",
+        "DB_bridge_logo_figma.png",
+        "logo-transparent.png",
+    ]
+    for filename in static_files:
+        file_path = frontend_dist / filename
         if file_path.exists():
-            @app.get(f"/{file}")
-            async def serve_static_file(filename: str = file):
-                return FileResponse(str(file_path))
+            async def serve_static_file(path: Path = file_path):
+                return FileResponse(str(path))
+
+            app.add_api_route(
+                f"/{filename}",
+                serve_static_file,
+                methods=["GET"],
+                include_in_schema=False,
+            )
     
     # Serve index.html for root and all non-API routes (SPA routing)
     @app.get("/")

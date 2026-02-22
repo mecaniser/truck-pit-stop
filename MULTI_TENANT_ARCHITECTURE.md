@@ -2,7 +2,7 @@
 
 ## Overview
 
-The TruckPitStop application supports a proper multi-tenant SaaS architecture with **complete separation** between platform management and garage operations.
+The DieselBridge Network application supports a proper multi-tenant SaaS architecture with **complete separation** between platform management and garage operations.
 
 ## Role Hierarchy
 
@@ -120,7 +120,7 @@ This will:
 ## Test Accounts
 
 ### Platform Level
-- **Super Admin**: `admin@truckpitstop.com` / `superadmin123`
+- **Super Admin**: `admin@dieselbridge.network` / `superadmin123`
   - Access: Platform-wide management
   - Dashboard: All garages and analytics
 

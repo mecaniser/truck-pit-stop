@@ -184,7 +184,7 @@ export default function PendingEnrollmentsPage() {
                   </div>
                   <div>
                     <h3 className="text-xl font-semibold text-white">{enrollment.garage_name}</h3>
-                    <p className="text-sm text-gray-400">truckpitstop.com/{enrollment.slug}</p>
+                    <p className="text-sm text-gray-400">dieselbridge.com/{enrollment.slug}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

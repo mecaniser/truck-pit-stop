@@ -1,6 +1,6 @@
 # Security Hardening Tracker
 
-This document tracks all security implementations, audit findings, and remediation status for the TruckPitStop platform.
+This document tracks all security implementations, audit findings, and remediation status for the DieselBridge Network platform.
 
 **Last Updated:** 2026-02-11  
 **Audit Date:** 2026-02-07

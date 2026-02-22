@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CheckCircle, ClipboardList, MapPinned, Truck, Wrench } from 'lucide-react'
+import { ArrowRight, CheckCircle, ClipboardList, MapPinned, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
+import BrandLogo from '../../components/brand/BrandLogo'
 
 const BRAND = {
   platformName: 'Diesel Bridge Network',
@@ -64,11 +65,11 @@ export default function LandingPage() {
   const { accentColors } = useTheme()
   const accent400 = accentColors[400]
   const accent500 = accentColors[500]
-  const accent600 = accentColors[600]
 
   useEffect(() => {
     const pageTitle = 'Diesel Bridge Network | 3-Step Breakdown-to-Repair Flow'
     const pageDescription = 'Diesel Bridge Network helps dispatch, drivers, and garages coordinate repairs in a clear three-step workflow that reduces downtime.'
+    const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
 
     document.title = pageTitle
 
@@ -106,7 +107,8 @@ export default function LandingPage() {
     upsertMetaByName('robots', 'index, follow')
     upsertMetaByProperty('og:title', pageTitle)
     upsertMetaByProperty('og:description', pageDescription)
-    upsertCanonical(`${window.location.origin}/`)
+    upsertMetaByProperty('og:url', `${siteOrigin}/`)
+    upsertCanonical(`${siteOrigin}/`)
   }, [])
 
   return (
@@ -120,14 +122,12 @@ export default function LandingPage() {
 
       <header className="sticky top-0 z-50 border-b border-gray-800 bg-gray-900/95 backdrop-blur-sm">
         <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6" aria-label="Primary">
-          <div className="flex items-center gap-2">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-lg"
-              style={{ background: `linear-gradient(135deg, ${accent500} 0%, ${accent600} 100%)` }}
-            >
-              <Truck className="h-6 w-6 text-white" aria-hidden="true" />
-            </div>
-            <span className="text-base font-bold text-white sm:text-lg">{BRAND.platformName}</span>
+          <div className="flex items-center">
+            <img
+              src="/DB_bridge_logo_favi_figma_public_B.svg"
+              alt={BRAND.platformName}
+              className="h-[52px] sm:h-[56px] w-auto"
+            />
           </div>
           <Link
             to="/login"
@@ -213,11 +213,8 @@ export default function LandingPage() {
 
       <footer className="border-t border-gray-800 bg-gray-900 px-4 py-10 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: accent500 }}>
-              <Truck className="h-5 w-5 text-white" aria-hidden="true" />
-            </div>
-            <span className="font-semibold text-white">{BRAND.platformName}</span>
+          <div className="flex items-center">
+            <BrandLogo alt={BRAND.platformName} variant="landing" className="h-7 sm:h-8 w-auto" />
           </div>
           <p className="text-sm text-gray-400">
             © {new Date().getFullYear()} {BRAND.platformName}. All rights reserved.

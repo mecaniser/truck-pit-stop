@@ -464,7 +464,7 @@ Your logs show:
 
 ## Error Tracking System
 
-Beyond logging errors to stdout, TruckPitStop includes a **persistent error tracking system** that stores errors in the database for historical analysis and resolution tracking.
+Beyond logging errors to stdout, DieselBridge Network includes a **persistent error tracking system** that stores errors in the database for historical analysis and resolution tracking.
 
 ### Why Persistent Error Tracking?
 
@@ -728,12 +728,12 @@ CRITICAL → System at risk, immediate action required
 
 ```
 # Format: namespace_subsystem_name_unit
-truckpitstop_http_requests_total
-truckpitstop_http_request_duration_seconds
-truckpitstop_db_connections_active
-truckpitstop_auth_login_attempts_total
-truckpitstop_errors_total
-truckpitstop_payment_errors_total
+dieselbridge_http_requests_total
+dieselbridge_http_request_duration_seconds
+dieselbridge_db_connections_active
+dieselbridge_auth_login_attempts_total
+dieselbridge_errors_total
+dieselbridge_payment_errors_total
 ```
 
 ### Error Dashboard Filters

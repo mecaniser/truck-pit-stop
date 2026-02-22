@@ -7,6 +7,7 @@ import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { formatUSPhone } from '@/utils/phone'
 import { isValidUSPhone } from '@/utils/phone'
+import BrandLogo from '../../components/brand/BrandLogo'
 
 const registerSchema = z.object({
   email: z
@@ -115,11 +116,14 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md space-y-6 p-6 sm:p-8 bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 backdrop-blur rounded-xl shadow-2xl">
         <div>
+          <div className="mb-3 flex justify-center">
+            <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-12 w-auto" />
+          </div>
           <h2 className="text-center text-3xl font-extrabold text-gray-900">
             Create Account
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Register for Truck Pit Stop
+            Register for Diesel Bridge Network
           </p>
         </div>
 

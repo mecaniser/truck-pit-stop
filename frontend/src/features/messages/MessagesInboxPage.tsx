@@ -329,9 +329,9 @@ export default function MessagesInboxPage() {
       }
     }
 
-    window.addEventListener('truckpitstop:sms-event', onSmsEvent as EventListener)
+    window.addEventListener('dieselbridge:sms-event', onSmsEvent as EventListener)
     return () => {
-      window.removeEventListener('truckpitstop:sms-event', onSmsEvent as EventListener)
+      window.removeEventListener('dieselbridge:sms-event', onSmsEvent as EventListener)
     }
   }, [enqueueSmsRefresh, includeArchived, loadMessages, loadThreads, selectedThreadId])
 

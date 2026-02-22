@@ -233,7 +233,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           // Inbox pages manage thread/message lists locally; keep global unread summary fresh.
           queryClient.invalidateQueries({ queryKey: ['messages-unread-summary'] })
           if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('truckpitstop:sms-event', { detail: data }))
+            window.dispatchEvent(new CustomEvent('dieselbridge:sms-event', { detail: data }))
           }
           break
 

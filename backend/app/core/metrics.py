@@ -11,49 +11,49 @@ from app.core.config import settings
 
 # Custom business metrics
 AUTH_LOGIN_TOTAL = Counter(
-    "truckpitstop_auth_login_total",
+    "dieselbridge_auth_login_total",
     "Total login attempts",
     ["status", "tenant_id"],
 )
 
 AUTH_LOGOUT_TOTAL = Counter(
-    "truckpitstop_auth_logout_total",
+    "dieselbridge_auth_logout_total",
     "Total logout events",
     ["tenant_id"],
 )
 
 REPAIR_ORDERS_CREATED = Counter(
-    "truckpitstop_repair_orders_created_total",
+    "dieselbridge_repair_orders_created_total",
     "Total repair orders created",
     ["tenant_id"],
 )
 
 QUOTES_TOTAL = Counter(
-    "truckpitstop_quotes_total",
+    "dieselbridge_quotes_total",
     "Total quotes by status",
     ["status", "tenant_id"],
 )
 
 PAYMENTS_TOTAL = Counter(
-    "truckpitstop_payments_total",
+    "dieselbridge_payments_total",
     "Total payment events",
     ["status", "payment_method", "tenant_id"],
 )
 
 ACTIVE_USERS = Gauge(
-    "truckpitstop_active_users",
+    "dieselbridge_active_users",
     "Currently active users (approximation)",
 )
 
 DB_QUERY_DURATION = Histogram(
-    "truckpitstop_db_query_duration_seconds",
+    "dieselbridge_db_query_duration_seconds",
     "Database query duration",
     ["operation"],
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
 EXTERNAL_API_DURATION = Histogram(
-    "truckpitstop_external_api_duration_seconds",
+    "dieselbridge_external_api_duration_seconds",
     "External API call duration",
     ["service", "operation"],
     buckets=(0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
@@ -61,19 +61,19 @@ EXTERNAL_API_DURATION = Histogram(
 
 # Error tracking metrics
 ERRORS_TOTAL = Counter(
-    "truckpitstop_errors_total",
+    "dieselbridge_errors_total",
     "Total application errors",
     ["error_type", "error_category", "endpoint"],
 )
 
 PAYMENT_ERRORS_TOTAL = Counter(
-    "truckpitstop_payment_errors_total",
+    "dieselbridge_payment_errors_total",
     "Payment-specific errors",
     ["error_type", "provider"],
 )
 
 UNHANDLED_EXCEPTIONS_TOTAL = Counter(
-    "truckpitstop_unhandled_exceptions_total",
+    "dieselbridge_unhandled_exceptions_total",
     "Total unhandled exceptions",
     ["exception_type"],
 )
@@ -93,14 +93,14 @@ def setup_metrics(app: FastAPI) -> Instrumentator:
         should_ignore_untemplated=True,
         should_instrument_requests_inprogress=True,
         excluded_handlers=["/health", "/health/live", "/health/ready", "/metrics"],
-        inprogress_name="truckpitstop_http_requests_inprogress",
+        inprogress_name="dieselbridge_http_requests_inprogress",
         inprogress_labels=True,
     )
     
     # Add default metrics
     instrumentator.add(
         metrics.default(
-            metric_namespace="truckpitstop",
+            metric_namespace="dieselbridge",
             metric_subsystem="http",
         )
     )
@@ -108,7 +108,7 @@ def setup_metrics(app: FastAPI) -> Instrumentator:
     # Add latency histogram with custom buckets
     instrumentator.add(
         metrics.latency(
-            metric_namespace="truckpitstop",
+            metric_namespace="dieselbridge",
             metric_subsystem="http",
             buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
         )
@@ -117,7 +117,7 @@ def setup_metrics(app: FastAPI) -> Instrumentator:
     # Add request size
     instrumentator.add(
         metrics.request_size(
-            metric_namespace="truckpitstop",
+            metric_namespace="dieselbridge",
             metric_subsystem="http",
         )
     )
@@ -125,7 +125,7 @@ def setup_metrics(app: FastAPI) -> Instrumentator:
     # Add response size
     instrumentator.add(
         metrics.response_size(
-            metric_namespace="truckpitstop",
+            metric_namespace="dieselbridge",
             metric_subsystem="http",
         )
     )

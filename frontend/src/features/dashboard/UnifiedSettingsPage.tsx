@@ -9,7 +9,7 @@ import api from '../../lib/api'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
 import { 
-  User, Lock, CreditCard, Bell, Percent, QrCode, Globe,
+  User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
   ChevronRight, Zap, Shield, Settings2
 } from 'lucide-react'
@@ -106,11 +106,28 @@ const passwordSchema = z.object({
   path: ["confirm_password"],
 })
 
+const garageProfileSchema = z.object({
+  name: z.string().min(1, 'Garage name is required').max(255, 'Maximum 255 characters'),
+  address: z.string().optional().refine((value) => !value || value.length <= 500, {
+    message: 'Maximum 500 characters',
+  }),
+  phone: z.string().optional().refine((value) => isValidUSPhone(value), {
+    message: 'Invalid phone number',
+  }),
+  email: z.string().optional().refine((value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
+    message: 'Valid email required',
+  }),
+  website: z.string().optional().refine((value) => !value || value.length <= 255, {
+    message: 'Maximum 255 characters',
+  }),
+})
+
 type ProfileFormData = z.infer<typeof profileSchema>
 type PasswordFormData = z.infer<typeof passwordSchema>
+type GarageProfileFormData = z.infer<typeof garageProfileSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'zelle' | 'notifications' | 'fees' | 'workforce'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'garageProfile' | 'payments' | 'zelle' | 'notifications' | 'fees' | 'workforce'
 
 interface ConnectStatus {
   is_connected: boolean
@@ -144,6 +161,16 @@ interface WorkforceSettings {
   default_core_hours_minutes: number
   default_shift_start_local: string
   default_shift_end_local: string
+}
+
+interface GarageProfile {
+  name: string
+  slug: string
+  address: string | null
+  phone: string | null
+  email: string | null
+  website: string | null
+  logo_url: string | null
 }
 
 // ============ INDUSTRIAL COMPONENTS ============
@@ -374,6 +401,196 @@ function ProfileSection() {
                 className={industrialStyles.btnPrimary}
               >
                 {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        )}
+      </IndustrialCard>
+    </div>
+  )
+}
+
+function GarageProfileSection() {
+  const { user, setUser } = useAuthStore()
+  const queryClient = useQueryClient()
+  const [isEditing, setIsEditing] = useState(false)
+
+  const { data: garageProfile, isLoading } = useQuery<GarageProfile>({
+    queryKey: ['garage-profile'],
+    queryFn: async () => {
+      const response = await api.get('/admin/garage-profile')
+      return response.data
+    },
+  })
+
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<GarageProfileFormData>({
+    resolver: zodResolver(garageProfileSchema),
+  })
+
+  useEffect(() => {
+    if (!garageProfile) return
+    reset({
+      name: garageProfile.name || '',
+      address: garageProfile.address || '',
+      phone: garageProfile.phone || '',
+      email: garageProfile.email || '',
+      website: garageProfile.website || '',
+    })
+  }, [garageProfile, reset])
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: GarageProfileFormData) => {
+      const payload = {
+        name: data.name.trim(),
+        address: data.address?.trim() || null,
+        phone: data.phone?.trim() || null,
+        email: data.email?.trim() || null,
+        website: data.website?.trim() || null,
+      }
+      const response = await api.put('/admin/garage-profile', payload)
+      return response.data as GarageProfile
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['garage-profile'], updated)
+      if (user) {
+        setUser({
+          ...user,
+          tenant_name: updated.name,
+          tenant_slug: updated.slug,
+        })
+      }
+      setIsEditing(false)
+      toast.success('Garage profile updated')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to update garage profile')
+    },
+  })
+
+  const inputClasses = (hasError: boolean) => {
+    return hasError
+      ? `${industrialStyles.input} border-red-500 focus:border-red-400`
+      : industrialStyles.input
+  }
+
+  if (isLoading && !garageProfile) {
+    return (
+      <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+        <IndustrialCard className="p-6 sm:p-8">
+          <div className={industrialStyles.sectionHeader}>
+            <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
+            <span>Garage Profile</span>
+          </div>
+          <p className="text-sm text-zinc-400">Loading garage profile...</p>
+        </IndustrialCard>
+      </div>
+    )
+  }
+
+  const onSubmit = (data: GarageProfileFormData) => {
+    updateMutation.mutate(data)
+  }
+
+  return (
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Garage Profile</span>
+        </div>
+
+        {!isEditing ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {[
+                { label: 'Garage Name', value: garageProfile?.name || '—' },
+                { label: 'Garage Slug', value: garageProfile?.slug || '—' },
+                { label: 'Garage Email', value: garageProfile?.email || '—' },
+                { label: 'Garage Phone', value: garageProfile?.phone ? formatUSPhone(garageProfile.phone) : '—' },
+                { label: 'Website', value: garageProfile?.website || '—' },
+                { label: 'Address', value: garageProfile?.address || '—' },
+              ].map((field, index) => (
+                <div key={field.label} style={staggeredReveal(index)} className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0">
+                  <label className={industrialStyles.label}>{field.label}</label>
+                  <p className="text-lg text-zinc-100 border-b border-zinc-800/50 pb-2 break-words">
+                    {field.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setIsEditing(true)}
+              className={industrialStyles.btnPrimary}
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="w-4 h-4" />
+                Edit Garage Profile
+              </span>
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            <div>
+              <label className={industrialStyles.label}>Garage Name</label>
+              <input {...register('name')} className={inputClasses(!!errors.name)} />
+              {errors.name && <p className="mt-2 text-xs text-red-400">{errors.name.message}</p>}
+            </div>
+
+            <div>
+              <label className={industrialStyles.label}>Garage Slug (read-only)</label>
+              <input value={garageProfile?.slug || ''} className={`${industrialStyles.input} opacity-70`} disabled />
+            </div>
+
+            <div>
+              <label className={industrialStyles.label}>Garage Email</label>
+              <input {...register('email')} type="email" className={inputClasses(!!errors.email)} placeholder="garage@example.com" />
+              {errors.email && <p className="mt-2 text-xs text-red-400">{errors.email.message}</p>}
+            </div>
+
+            <div>
+              <label className={industrialStyles.label}>Garage Phone</label>
+              <input {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
+              {errors.phone && <p className="mt-2 text-xs text-red-400">{errors.phone.message}</p>}
+            </div>
+
+            <div>
+              <label className={industrialStyles.label}>Website</label>
+              <input {...register('website')} className={inputClasses(!!errors.website)} placeholder="https://example.com" />
+              {errors.website && <p className="mt-2 text-xs text-red-400">{errors.website.message}</p>}
+            </div>
+
+            <div>
+              <label className={industrialStyles.label}>Address</label>
+              <textarea {...register('address')} className={`${inputClasses(!!errors.address)} min-h-[96px]`} />
+              {errors.address && <p className="mt-2 text-xs text-red-400">{errors.address.message}</p>}
+            </div>
+
+            <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditing(false)
+                  if (garageProfile) {
+                    reset({
+                      name: garageProfile.name || '',
+                      address: garageProfile.address || '',
+                      phone: garageProfile.phone || '',
+                      email: garageProfile.email || '',
+                      website: garageProfile.website || '',
+                    })
+                  }
+                }}
+                className={industrialStyles.btnSecondary}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updateMutation.isPending}
+                className={industrialStyles.btnPrimary}
+              >
+                {updateMutation.isPending ? 'Saving...' : 'Save Garage Profile'}
               </button>
             </div>
           </form>
@@ -1506,6 +1723,7 @@ const PROFILE_SECTIONS = [
 ]
 
 const GARAGE_SECTIONS = [
+  { id: 'garageProfile' as const, label: 'Garage Profile', shortLabel: 'Profile', icon: Building2 },
   { id: 'payments' as const, label: 'Stripe Payments', shortLabel: 'Stripe', icon: CreditCard },
   { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode },
   { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell },
@@ -1611,6 +1829,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
         {activeSection === 'profile' && <ProfileSection />}
         {activeSection === 'security' && <SecuritySection />}
         {activeSection === 'appearance' && <AppearanceSection />}
+        {activeSection === 'garageProfile' && <GarageProfileSection />}
         {activeSection === 'payments' && <PaymentsSection />}
         {activeSection === 'zelle' && <ZelleSection />}
         {activeSection === 'notifications' && <NotificationsSection />}

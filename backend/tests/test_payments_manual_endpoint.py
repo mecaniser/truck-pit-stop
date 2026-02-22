@@ -78,7 +78,7 @@ def _build_context():
         tenant_id=tenant_id,
         first_name="Walk-in",
         last_name="Customer",
-        email="walkin+15551234567@placeholder.truckpitstop.com",
+        email="walkin+15551234567@placeholder.dieselbridge.network",
         phone="15551234567",
         source="walk_in",
     )
@@ -184,7 +184,7 @@ async def test_record_manual_payment_returns_warning_when_sender_email_conflicts
     )
 
     # Email remains unchanged on conflict, but other enrichment still applies.
-    assert walkin_customer.email == "walkin+15551234567@placeholder.truckpitstop.com"
+    assert walkin_customer.email == "walkin+15551234567@placeholder.dieselbridge.network"
     assert walkin_customer.phone == "14145550909"
     assert walkin_customer.source == "zelle"
 

@@ -45,6 +45,8 @@ export interface User {
   role: UserRole
   is_active: boolean
   tenant_id: string | null
+  tenant_name?: string | null
+  tenant_slug?: string | null
   customer_id: string | null
   core_hours_target_minutes_override?: number | null
   shift_start_local_override?: string | null

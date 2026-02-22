@@ -61,7 +61,7 @@ async def send_password_reset_email(to: str, reset_token: str):
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #d97706;">Password Reset Request</h2>
-        <p>You requested to reset your password for Truck Pit Stop.</p>
+        <p>You requested to reset your password for DieselBridge Network.</p>
         <p>Click the link below to reset your password:</p>
         <p style="margin: 30px 0;">
             <a href="{reset_url}" 
@@ -83,7 +83,7 @@ async def send_password_reset_email(to: str, reset_token: str):
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": "Reset Your Password - Truck Pit Stop",
+            "subject": "Reset Your Password - DieselBridge Network",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -106,7 +106,7 @@ async def send_email_verification(to: str, verification_token: str):
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
             <h2 style="color: #1f2937; margin-top: 0;">Confirm Your Email Change</h2>
             <p style="color: #4b5563; line-height: 1.6;">
-                You requested to change your email address on Truck Pit Stop. 
+                You requested to change your email address on DieselBridge Network. 
                 To confirm this change, please click the button below:
             </p>
             <div style="margin: 30px 0; text-align: center;">
@@ -136,7 +136,7 @@ async def send_email_verification(to: str, verification_token: str):
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": "Verify Your Email Address - Truck Pit Stop",
+            "subject": "Verify Your Email Address - DieselBridge Network",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -167,7 +167,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         
         <div style="background: #f9fafb; padding: 25px; border-radius: 8px;">
             <p style="color: #374151; line-height: 1.6;">
-                Someone requested to change the email address for your Truck Pit Stop account from:
+                Someone requested to change the email address for your DieselBridge Network account from:
             </p>
             <div style="background: white; padding: 15px; border-radius: 6px; margin: 15px 0; border: 1px solid #e5e7eb;">
                 <p style="margin: 0; color: #6b7280; font-size: 14px;">Current Email:</p>
@@ -196,7 +196,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         </div>
         
         <p style="color: #9ca3af; font-size: 12px; margin-top: 30px; text-align: center;">
-            This is an automated security notification from Truck Pit Stop
+            This is an automated security notification from DieselBridge Network
         </p>
     </body>
     </html>
@@ -206,7 +206,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": old_email,
-            "subject": "🔔 Email Change Request - Truck Pit Stop",
+            "subject": "🔔 Email Change Request - DieselBridge Network",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -226,7 +226,7 @@ async def send_enrollment_received_email(to: str, garage_name: str, owner_name: 
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
             <h2 style="color: #1f2937; margin-top: 0;">Welcome, {owner_name}!</h2>
             <p style="color: #4b5563; line-height: 1.6;">
-                Thank you for applying to join Truck Pit Stop with <strong>{garage_name}</strong>.
+                Thank you for applying to join DieselBridge Network with <strong>{garage_name}</strong>.
             </p>
             <p style="color: #4b5563; line-height: 1.6;">
                 Your application is now under review. Our team will verify your information and get back to you within 1-2 business days.
@@ -251,7 +251,7 @@ async def send_enrollment_received_email(to: str, garage_name: str, owner_name: 
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": f"Application Received - {garage_name} | Truck Pit Stop",
+            "subject": f"Application Received - {garage_name} | DieselBridge Network",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -275,7 +275,7 @@ async def send_enrollment_approved_email(to: str, garage_name: str, owner_name: 
                 Great news! Your application for <strong>{garage_name}</strong> has been approved.
             </p>
             <p style="color: #4b5563; line-height: 1.6;">
-                You can now log in and start managing your truck repair shop with Truck Pit Stop.
+                You can now log in and start managing your truck repair shop with DieselBridge Network.
             </p>
             <div style="margin: 30px 0; text-align: center;">
                 <a href="{login_url}" 
@@ -304,7 +304,7 @@ async def send_enrollment_approved_email(to: str, garage_name: str, owner_name: 
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": f"Welcome to Truck Pit Stop - {garage_name} Approved!",
+            "subject": f"Welcome to DieselBridge Network - {garage_name} Approved!",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -325,7 +325,7 @@ async def send_enrollment_rejected_email(to: str, garage_name: str, owner_name: 
                 Hi {owner_name},
             </p>
             <p style="color: #374151; line-height: 1.6;">
-                Thank you for your interest in joining Truck Pit Stop with <strong>{garage_name}</strong>.
+                Thank you for your interest in joining DieselBridge Network with <strong>{garage_name}</strong>.
             </p>
             <p style="color: #374151; line-height: 1.6;">
                 After reviewing your application, we're unable to approve it at this time.
@@ -347,7 +347,7 @@ async def send_enrollment_rejected_email(to: str, garage_name: str, owner_name: 
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": f"Application Status Update - {garage_name} | Truck Pit Stop",
+            "subject": f"Application Status Update - {garage_name} | DieselBridge Network",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -367,7 +367,7 @@ async def send_new_enrollment_notification(admin_emails: list, garage_name: str,
         </div>
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
             <p style="color: #4b5563; line-height: 1.6;">
-                A new garage has applied to join Truck Pit Stop:
+                A new garage has applied to join DieselBridge Network:
             </p>
             <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e5e7eb;">
                 <table style="width: 100%; border-collapse: collapse;">

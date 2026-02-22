@@ -111,7 +111,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
             # Build reminder message
             vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
             days_overdue = (today - invoice.due_date.date()).days if invoice.due_date else 0
-            garage_name = tenant.name if tenant else "Truck Pit Stop"
+            garage_name = tenant.name if tenant else "DieselBridge Network"
             
             reminder_num = invoice.reminder_count + 1
             

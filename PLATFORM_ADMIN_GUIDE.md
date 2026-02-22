@@ -2,7 +2,7 @@
 
 ## Overview
 
-As the platform owner with SUPER_ADMIN access, you manage the TruckPitStop SaaS business. Your interface is **completely separate** from individual garage operations.
+As the platform owner with SUPER_ADMIN access, you manage the DieselBridge Network SaaS business. Your interface is **completely separate** from individual garage operations.
 
 ## Your Dashboard
 
@@ -222,7 +222,7 @@ As SUPER_ADMIN, you **do not have access** to:
 ## Login Credentials
 
 **Your Account:**
-- Email: `admin@truckpitstop.com`
+- Email: `admin@dieselbridge.network`
 - Password: `superadmin123`
 - Role: `SUPER_ADMIN`
 - Tenant: `null` (not tied to any garage)
@@ -237,7 +237,7 @@ All your endpoints are under `/api/v1/admin/*`
 # Login
 POST /api/v1/auth/login
 {
-  "email": "admin@truckpitstop.com",
+  "email": "admin@dieselbridge.network",
   "password": "superadmin123"
 }
 
@@ -247,7 +247,7 @@ POST /api/v1/auth/login
   "token_type": "bearer",
   "user": {
     "id": "uuid",
-    "email": "admin@truckpitstop.com",
+    "email": "admin@dieselbridge.network",
     "role": "super_admin",
     "tenant_id": null
   }

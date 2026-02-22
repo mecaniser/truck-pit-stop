@@ -65,7 +65,7 @@ const isWalkInPlaceholderCustomer = (customer?: Customer | null): boolean => {
   const email = (customer.email || '').toLowerCase()
   const firstName = (customer.first_name || '').toLowerCase()
   const source = (customer.source || '').toLowerCase()
-  return firstName === 'walk-in' || email.includes('@placeholder.truckpitstop.com') || source === 'walk_in'
+  return firstName === 'walk-in' || email.includes('@placeholder.dieselbridge.network') || source === 'walk_in'
 }
 
 const truncateWithEllipsis = (value: string, maxLength = 36): string => {

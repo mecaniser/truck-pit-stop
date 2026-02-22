@@ -7,6 +7,7 @@ import api from '../../lib/api'
 import { CheckCircle, XCircle, Truck, Wrench, AlertCircle, Loader2 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
+import BrandLogo from '../../components/brand/BrandLogo'
 
 interface QuoteDetail {
   quote: {
@@ -314,7 +315,9 @@ export default function QuoteApprovalPage() {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-amber-500 mb-2">🔧 Truck Pit Stop</h1>
+          <div className="mb-2 flex justify-center">
+            <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-12 sm:h-14 w-auto" />
+          </div>
           <p className="text-gray-400">Quote Approval</p>
         </div>
 

@@ -114,6 +114,11 @@ class QuotePortalCreateResponse(BaseModel):
     user_exists: bool
 
 
+def _cookie_domain() -> Optional[str]:
+    domain = settings.COOKIE_DOMAIN.strip()
+    return domain or None
+
+
 def _require_staff(current_user: User) -> None:
     if current_user.role not in (
         UserRole.GARAGE_OWNER,
@@ -135,6 +140,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        domain=_cookie_domain(),
         path="/",
     )
     response.set_cookie(
@@ -144,6 +150,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         secure=settings.COOKIE_SECURE_EFFECTIVE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        domain=_cookie_domain(),
         path="/api/v1/auth",
     )
 
@@ -617,7 +624,7 @@ async def send_quote_to_customer(
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+            <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
         </div>
         
         <h2 style="color: #333;">Quote Ready for Your Approval</h2>
@@ -687,10 +694,10 @@ async def send_quote_to_customer(
             db=db,
             tenant_id=str(current_user.tenant_id),
             to=customer.email,
-            subject=f"Quote {quote.quote_number} Auto-Approved - Truck Pit Stop",
+            subject=f"Quote {quote.quote_number} Auto-Approved - DieselBridge Network",
             body=f"""
             <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h1 style="color: #d97706;">Truck Pit Stop</h1>
+                <h1 style="color: #d97706;">DieselBridge Network</h1>
                 <h2 style="color: #16a34a;">Quote Auto-Approved</h2>
                 <p>Hi {customer.first_name},</p>
                 <p>Your repair quote <strong>{quote.quote_number}</strong> for <strong>${quote.total_amount:,.2f}</strong> 
@@ -711,7 +718,7 @@ async def send_quote_to_customer(
             db=db,
             tenant_id=str(current_user.tenant_id),
             to=customer.email,
-            subject=f"Quote {quote.quote_number} Ready for Approval - Truck Pit Stop",
+            subject=f"Quote {quote.quote_number} Ready for Approval - DieselBridge Network",
             body=html_body,
             template_name="quote_approval",
         )
@@ -720,9 +727,9 @@ async def send_quote_to_customer(
     if customer.phone:
         vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         if auto_approved:
-            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - Truck Pit Stop"
+            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - DieselBridge Network"
         else:
-            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - Truck Pit Stop"
+            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - DieselBridge Network"
         try:
             await send_sms(
                 db,
@@ -920,7 +927,7 @@ async def decline_quote(
             try:
                 await send_sms(
                     db, str(order.tenant_id), manager.phone,
-                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - Truck Pit Stop",
+                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - DieselBridge Network",
                     template_name="quote_declined_shop"
                 )
             except Exception:
@@ -1250,7 +1257,7 @@ async def decline_quote_by_token(
             try:
                 await send_sms(
                     db, str(order.tenant_id), manager.phone,
-                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - Truck Pit Stop",
+                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - DieselBridge Network",
                     template_name="quote_declined_shop"
                 )
             except Exception:

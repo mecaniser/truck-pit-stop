@@ -18,6 +18,7 @@ import MessagesInboxPage from '@/features/messages/MessagesInboxPage'
 import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
 import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
 import type { MessagesUnreadSummary } from '@/types'
+import BrandLogo from '../brand/BrandLogo'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
@@ -86,26 +87,8 @@ export default function DashboardLayout() {
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <Link to="/dashboard" className="relative text-lg sm:text-xl font-bold py-1 text-white">
-                <svg className="absolute inset-0 w-full h-full opacity-15" viewBox="0 0 100 32" preserveAspectRatio="none" fill="none">
-                  <style>{`
-                    @keyframes checker { 0%, 100% { fill: ${isSuperAdmin ? '#B8860B' : accentHex} } 50% { fill: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } }
-                    @keyframes checkerAlt { 0%, 100% { fill: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } 50% { fill: ${isSuperAdmin ? '#B8860B' : accentHex} } }
-                    .t1 { animation: checker 2.5s ease-in-out infinite }
-                    .t2 { animation: checkerAlt 2.5s ease-in-out infinite }
-                    .b1 { animation: checker 2.5s ease-in-out infinite; animation-delay: -0.8s }
-                    .b2 { animation: checkerAlt 2.5s ease-in-out infinite; animation-delay: -0.8s }
-                  `}</style>
-                  <rect x="50" y="0" width="12.5" height="4" className="t1"/>
-                  <rect x="62.5" y="0" width="12.5" height="4" className="t2"/>
-                  <rect x="75" y="0" width="12.5" height="4" className="t1"/>
-                  <rect x="87.5" y="0" width="12.5" height="4" className="t2"/>
-                  <rect x="0" y="28" width="12.5" height="4" className="b2"/>
-                  <rect x="12.5" y="28" width="12.5" height="4" className="b1"/>
-                  <rect x="25" y="28" width="12.5" height="4" className="b2"/>
-                  <rect x="37.5" y="28" width="12.5" height="4" className="b1"/>
-                </svg>
-                <span className="relative px-1">Truck Pit Stop</span>
+              <Link to="/dashboard" className="inline-flex items-center py-1" aria-label="Diesel Bridge Network dashboard">
+                <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
               </Link>
               {isSuperAdmin && (
                 <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gold-500/10 border border-gold-500/30 rounded-full text-gold-400 text-xs font-medium">

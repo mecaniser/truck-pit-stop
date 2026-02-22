@@ -93,7 +93,7 @@ Change your password immediately!
 Ensure these are set in `backend/.env`:
 ```bash
 RESEND_API_KEY=your_api_key_here
-RESEND_FROM_EMAIL=noreply@truckpitstop.com
+RESEND_FROM_EMAIL=noreply@dieselbridge.network
 FRONTEND_URL=http://localhost:5173
 REDIS_URL=redis://localhost:6379/0
 ```

@@ -290,7 +290,7 @@ Manually visit /verify-email?token=fake → Error: "Invalid verification link"
 **Backend** (`.env`):
 ```bash
 RESEND_API_KEY=re_xxxxx
-RESEND_FROM_EMAIL=noreply@truckpitstop.com
+RESEND_FROM_EMAIL=noreply@dieselbridge.network
 FRONTEND_URL=http://localhost:5173
 REDIS_URL=redis://localhost:6379/0
 ```

@@ -189,7 +189,7 @@ async def quick_create_repair_order(
                     tenant_id=tenant_id,
                     first_name="Walk-in",
                     last_name=raw_phone or "Customer",  # Keep original format for display
-                    email=f"walkin+{phone}@placeholder.truckpitstop.com",
+                    email=f"walkin+{phone}@placeholder.dieselbridge.network",
                     phone=phone,  # Store normalized
                     source="walk_in",
                 )
@@ -203,7 +203,7 @@ async def quick_create_repair_order(
                 select(Customer).where(
                     and_(
                         Customer.tenant_id == tenant_id,
-                        Customer.email == "walkin@placeholder.truckpitstop.com",
+                        Customer.email == "walkin@placeholder.dieselbridge.network",
                     )
                 ).limit(1)
             )
@@ -213,7 +213,7 @@ async def quick_create_repair_order(
                     tenant_id=tenant_id,
                     first_name="Walk-in",
                     last_name="Customer",
-                    email="walkin@placeholder.truckpitstop.com",
+                    email="walkin@placeholder.dieselbridge.network",
                     source="walk_in",
                 )
                 db.add(customer)
@@ -627,7 +627,7 @@ async def assign_mechanic(
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+            <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
         </div>
         
         <h2 style="color: #333;">New Job Assigned</h2>
@@ -656,7 +656,7 @@ async def assign_mechanic(
             db=db,
             tenant_id=str(current_user.tenant_id),
             to=mechanic.email,
-            subject=f"New Job Assigned: {order.order_number} - Truck Pit Stop",
+            subject=f"New Job Assigned: {order.order_number} - DieselBridge Network",
             body=html_body,
             template_name="job_assigned",
         )
@@ -669,7 +669,7 @@ async def assign_mechanic(
                 to=mechanic.phone,
                 body=(
                     f"New job assigned: Order #{order.order_number} for {vehicle_info}. "
-                    f"Portal: {portal_url} - Truck Pit Stop"
+                    f"Portal: {portal_url} - DieselBridge Network"
                 ),
                 template_name="job_assigned_sms",
             )
@@ -808,6 +808,7 @@ async def start_work(
             updated_at=auto_held_ro.updated_at.isoformat() if auto_held_ro.updated_at else None,
             hold_reason=auto_held_ro.hold_reason,
             held_at=auto_held_ro.held_at.isoformat() if auto_held_ro.held_at else None,
+            send_to_customer=False,
         )
     try:
         await broadcast_mechanic_timer_update(
@@ -837,7 +838,7 @@ async def start_work(
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+                    <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
                 </div>
                 
                 <h2 style="color: #333;">Work Has Started!</h2>
@@ -866,7 +867,7 @@ async def start_work(
                 db=db,
                 tenant_id=str(order.tenant_id),
                 to=customer.email,
-                subject=f"Work Started on {order.order_number} - Truck Pit Stop",
+                subject=f"Work Started on {order.order_number} - DieselBridge Network",
                 body=html_body,
                 template_name="work_started",
             )
@@ -880,7 +881,7 @@ async def start_work(
                     db,
                     str(order.tenant_id),
                     customer.phone,
-                    f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - Truck Pit Stop",
+                    f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - DieselBridge Network",
                     template_name="work_started_sms",
                     customer_id=customer.id,
                     source="automated",
@@ -969,6 +970,7 @@ async def hold_repair_order(
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
         hold_reason=order.hold_reason,
         held_at=order.held_at.isoformat() if order.held_at else None,
+        send_to_customer=False,
     )
     try:
         await broadcast_mechanic_timer_update(
@@ -1040,6 +1042,7 @@ async def resume_repair_order(
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
         hold_reason=order.hold_reason,
         held_at=order.held_at.isoformat() if order.held_at else None,
+        send_to_customer=False,
     )
     # Broadcast auto-held RO if one was held
     if auto_held_ro:
@@ -1052,6 +1055,7 @@ async def resume_repair_order(
             updated_at=auto_held_ro.updated_at.isoformat() if auto_held_ro.updated_at else None,
             hold_reason=auto_held_ro.hold_reason,
             held_at=auto_held_ro.held_at.isoformat() if auto_held_ro.held_at else None,
+            send_to_customer=False,
         )
     try:
         await broadcast_mechanic_timer_update(
@@ -1289,7 +1293,7 @@ async def complete_work(
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+                    <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
                 </div>
                 
                 <h2 style="color: #333;">Work Ready for Review</h2>
@@ -1317,7 +1321,7 @@ async def complete_work(
                 db=db,
                 tenant_id=str(order.tenant_id),
                 to=manager.email,
-                subject=f"Review Needed: {order.order_number} - Truck Pit Stop",
+                subject=f"Review Needed: {order.order_number} - DieselBridge Network",
                 body=html_body,
                 template_name="work_pending_review",
             )
@@ -1332,7 +1336,7 @@ async def complete_work(
                 db,
                 str(order.tenant_id),
                 customer.phone,
-                f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - Truck Pit Stop",
+                f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - DieselBridge Network",
                 template_name="work_complete_sms",
                 customer_id=customer.id,
                 source="automated",
@@ -1422,7 +1426,7 @@ async def approve_completion(
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #d97706; margin: 0;">🔧 Truck Pit Stop</h1>
+                <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
             </div>
             
             <h2 style="color: #16a34a;">Work Complete!</h2>
@@ -1445,7 +1449,7 @@ async def approve_completion(
             </p>
             
             <p style="color: #666; font-size: 14px;">
-                Thank you for choosing Truck Pit Stop!
+                Thank you for choosing DieselBridge Network!
             </p>
         </body>
         </html>
@@ -1455,7 +1459,7 @@ async def approve_completion(
             db=db,
             tenant_id=str(order.tenant_id),
             to=customer.email,
-            subject=f"Work Complete: {order.order_number} - Truck Pit Stop",
+            subject=f"Work Complete: {order.order_number} - DieselBridge Network",
             body=html_body,
             template_name="work_complete",
         )
@@ -1469,7 +1473,7 @@ async def approve_completion(
                 db,
                 str(order.tenant_id),
                 customer.phone,
-                f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - Truck Pit Stop",
+                f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - DieselBridge Network",
                 template_name="ready_pickup_sms",
                 customer_id=customer.id,
                 source="automated",

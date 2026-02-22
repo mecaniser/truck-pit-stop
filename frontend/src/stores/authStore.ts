@@ -12,6 +12,8 @@ interface User {
   role: 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'customer'
   is_active: boolean
   tenant_id: string | null
+  tenant_name?: string | null
+  tenant_slug?: string | null
   customer_id: string | null
 }
 
