@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -7,6 +7,7 @@ import { ArrowLeft, Clock3, MessageSquare, Route, Wrench } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import BrandLogo from '../../components/brand/BrandLogo'
+import { applySeo } from '../../lib/seo'
 
 const loginSchema = z.object({
   email: z
@@ -39,6 +40,24 @@ export default function LoginPage() {
   const resetSuccess = searchParams.get('reset') === 'success'
   const defaultEmail = import.meta.env.DEV ? 'truxpitstop@gmail.com' : ''
   const defaultPassword = import.meta.env.DEV ? 'BUse@1534' : ''
+
+  useEffect(() => {
+    const pageTitle = 'Staff Login | Diesel Bridge Network'
+    const pageDescription = 'Secure login for Diesel Bridge Network staff and authorized users.'
+    const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
+    const canonicalUrl = `${siteOrigin}/login`
+
+    applySeo({
+      title: pageTitle,
+      description: pageDescription,
+      canonicalUrl,
+      robots: 'noindex, nofollow',
+      ogUrl: canonicalUrl,
+      ogType: 'website',
+      ogSiteName: 'Diesel Bridge Network',
+      twitterCard: 'summary',
+    })
+  }, [])
 
   const {
     register,

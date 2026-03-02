@@ -412,6 +412,53 @@ class ProfileUpdateResponse(BaseModel):
     email_verification_pending: bool = False
 
 
+class PlatformContactResponse(BaseModel):
+    support_name: str
+    support_email: Optional[str] = None
+    support_phone: Optional[str] = None
+
+
+@router.get("/platform-contact", response_model=PlatformContactResponse)
+async def get_platform_contact(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Public platform support contact details for customer-facing pages.
+    Source of truth is the most recently updated active super admin profile.
+    """
+    active_super_admin_result = await db.execute(
+        select(User)
+        .where(
+            User.role == UserRole.SUPER_ADMIN,
+            User.is_active == True,
+        )
+        .order_by(User.updated_at.desc(), User.created_at.desc())
+    )
+    support_user = active_super_admin_result.scalars().first()
+
+    if not support_user:
+        fallback_super_admin_result = await db.execute(
+            select(User)
+            .where(User.role == UserRole.SUPER_ADMIN)
+            .order_by(User.updated_at.desc(), User.created_at.desc())
+        )
+        support_user = fallback_super_admin_result.scalars().first()
+
+    if not support_user:
+        return PlatformContactResponse(
+            support_name="Diesel Bridge Support",
+            support_email=None,
+            support_phone=None,
+        )
+
+    support_name = f"{support_user.first_name} {support_user.last_name}".strip() or "Diesel Bridge Support"
+    return PlatformContactResponse(
+        support_name=support_name,
+        support_email=support_user.email,
+        support_phone=support_user.phone,
+    )
+
+
 @router.put("/me", response_model=ProfileUpdateResponse)
 async def update_current_user(
     update_data: UserProfileUpdate,

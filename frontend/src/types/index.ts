@@ -207,6 +207,11 @@ export interface Labor {
   total_cost: string
   mechanic_id: string | null
   service_code: string | null
+  line_type: 'flat_service' | 'repair_operation' | 'manual'
+  provider: string | null
+  provider_operation_id: string | null
+  auto_recalc_enabled: boolean
+  source_service_id: string | null
   created_at: string
 }
 
@@ -238,11 +243,40 @@ export interface RepairOrder {
   acknowledged_at?: string | null
   work_started_at?: string | null
   work_completed_at?: string | null
+  pricing_locked_at?: string | null
+  pricing_lock_reason?: string | null
 }
 
 export interface RepairOrderDetail extends RepairOrder {
   parts_usage: PartsUsage[]
   labor_items: Labor[]
+}
+
+export interface PriceBuildWarning {
+  code: string
+  message: string
+}
+
+export interface RepairOperationCandidate {
+  operation_id: string
+  name: string
+  description?: string | null
+  estimated_hours: string
+  provider: string
+}
+
+export interface PriceBuildLine extends Labor {}
+
+export interface PriceBuildSummary {
+  order_id: string
+  labor_total: string
+  parts_total: string
+  total_cost: string
+  pricing_locked: boolean
+  pricing_locked_at?: string | null
+  pricing_lock_reason?: string | null
+  lines: PriceBuildLine[]
+  warnings: PriceBuildWarning[]
 }
 
 export interface Quote {

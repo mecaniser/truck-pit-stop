@@ -4,6 +4,8 @@ import { ArrowRight, CheckCircle, ClipboardList, MapPinned, Wrench } from 'lucid
 import type { LucideIcon } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import BrandLogo from '../../components/brand/BrandLogo'
+import { usePlatformContact } from '../../hooks/usePlatformContact'
+import { applySeo, removeStructuredData } from '../../lib/seo'
 
 const BRAND = {
   platformName: 'Diesel Bridge Network',
@@ -63,6 +65,7 @@ const FLOW_STEPS: FlowStep[] = [
 
 export default function LandingPage() {
   const { accentColors } = useTheme()
+  const { mailtoHref } = usePlatformContact()
   const accent400 = accentColors[400]
   const accent500 = accentColors[500]
 
@@ -70,45 +73,58 @@ export default function LandingPage() {
     const pageTitle = 'Diesel Bridge Network | 3-Step Breakdown-to-Repair Flow'
     const pageDescription = 'Diesel Bridge Network helps dispatch, drivers, and garages coordinate repairs in a clear three-step workflow that reduces downtime.'
     const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
+    const canonicalUrl = `${siteOrigin}/`
+    const ogImage = `${siteOrigin}/DB_bridge_logo_favi_figma_public_B.png`
+    const structuredDataId = 'seo-jsonld-landing'
 
-    document.title = pageTitle
+    applySeo({
+      title: pageTitle,
+      description: pageDescription,
+      canonicalUrl,
+      robots: 'index, follow',
+      ogUrl: canonicalUrl,
+      ogImage,
+      ogSiteName: BRAND.platformName,
+      twitterImage: ogImage,
+      structuredData: {
+        id: structuredDataId,
+        data: {
+          '@context': 'https://schema.org',
+          '@graph': [
+            {
+              '@type': 'Organization',
+              '@id': `${siteOrigin}/#organization`,
+              name: BRAND.platformName,
+              url: siteOrigin,
+              logo: ogImage,
+            },
+            {
+              '@type': 'WebSite',
+              '@id': `${siteOrigin}/#website`,
+              url: siteOrigin,
+              name: BRAND.platformName,
+              publisher: {
+                '@id': `${siteOrigin}/#organization`,
+              },
+            },
+            {
+              '@type': 'WebPage',
+              '@id': `${canonicalUrl}#webpage`,
+              url: canonicalUrl,
+              name: pageTitle,
+              description: pageDescription,
+              isPartOf: {
+                '@id': `${siteOrigin}/#website`,
+              },
+            },
+          ],
+        },
+      },
+    })
 
-    const upsertMetaByName = (name: string, content: string) => {
-      let metaTag = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
-      if (!metaTag) {
-        metaTag = document.createElement('meta')
-        metaTag.setAttribute('name', name)
-        document.head.appendChild(metaTag)
-      }
-      metaTag.setAttribute('content', content)
+    return () => {
+      removeStructuredData(structuredDataId)
     }
-
-    const upsertMetaByProperty = (property: string, content: string) => {
-      let metaTag = document.querySelector(`meta[property="${property}"]`) as HTMLMetaElement | null
-      if (!metaTag) {
-        metaTag = document.createElement('meta')
-        metaTag.setAttribute('property', property)
-        document.head.appendChild(metaTag)
-      }
-      metaTag.setAttribute('content', content)
-    }
-
-    const upsertCanonical = (href: string) => {
-      let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null
-      if (!canonical) {
-        canonical = document.createElement('link')
-        canonical.setAttribute('rel', 'canonical')
-        document.head.appendChild(canonical)
-      }
-      canonical.setAttribute('href', href)
-    }
-
-    upsertMetaByName('description', pageDescription)
-    upsertMetaByName('robots', 'index, follow')
-    upsertMetaByProperty('og:title', pageTitle)
-    upsertMetaByProperty('og:description', pageDescription)
-    upsertMetaByProperty('og:url', `${siteOrigin}/`)
-    upsertCanonical(`${siteOrigin}/`)
   }, [])
 
   return (
@@ -221,7 +237,7 @@ export default function LandingPage() {
           </p>
           <div className="flex items-center gap-4 text-sm text-gray-400">
             <Link to="/login" className="hover:text-white">Sign in</Link>
-            <a href="mailto:support@dieselbridge.network" className="hover:text-white">Contact</a>
+            <a href={mailtoHref || 'mailto:support@dieselbridge.network'} className="hover:text-white">Contact</a>
           </div>
         </div>
       </footer>

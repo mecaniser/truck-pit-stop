@@ -37,6 +37,11 @@ from app.services.pricing import (
     get_order_subtotal,
     get_selected_services_total,
 )
+from app.services.price_build_service import (
+    PriceBuildLockedError,
+    PriceBuildService,
+    PriceBuildValidationError,
+)
 from app.core.websocket import broadcast_quote_event, broadcast_repair_order_update, WSEventType
 from app.services.quote_access_service import (
     QUOTE_PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
@@ -44,6 +49,7 @@ from app.services.quote_access_service import (
 )
 
 router = APIRouter()
+price_build_service = PriceBuildService()
 
 
 class QuoteCreate(BaseModel):
@@ -563,8 +569,30 @@ async def send_quote_to_customer(
             detail="Access denied",
         )
 
-    # Force customer-facing send to use current totals (services + parts),
+    # Force customer-facing send to use current totals from the price builder,
     # even if the quote draft was created before later edits.
+    try:
+        pb_order = await price_build_service.load_order(db, order.id)
+        if pb_order.pricing_locked_at is None:
+            try:
+                await price_build_service.recalculate_order(db, pb_order)
+            except (PriceBuildValidationError, PriceBuildLockedError):
+                # Keep flow non-blocking: quote can still be sent with current values.
+                pass
+        refreshed_result = await db.execute(
+            select(RepairOrder)
+            .where(RepairOrder.id == order.id)
+            .options(
+                selectinload(RepairOrder.customer),
+                selectinload(RepairOrder.vehicle),
+                selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            )
+        )
+        refreshed_order = refreshed_result.scalar_one_or_none()
+        if refreshed_order:
+            order = refreshed_order
+    except Exception:
+        pass
     latest_total = get_order_subtotal(order)
     if quote.total_amount != latest_total:
         quote.total_amount = latest_total
@@ -667,6 +695,9 @@ async def send_quote_to_customer(
     # Mark as sent and reset declined status if resending
     quote.sent_to_customer = True
     quote.sent_at = datetime.now(timezone.utc)
+    if order.pricing_locked_at is None:
+        order.pricing_locked_at = quote.sent_at
+    order.pricing_lock_reason = "quote_sent"
     if quote.is_declined:
         quote.is_declined = False
         quote.decline_notes = None

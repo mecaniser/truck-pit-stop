@@ -16,6 +16,8 @@ import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
+import { useAuthStore } from '@/stores/authStore'
+import PriceBuilderPanel from './PriceBuilderPanel'
 
 interface NewCustomerForm {
   first_name: string
@@ -74,6 +76,7 @@ const truncateWithEllipsis = (value: string, maxLength = 36): string => {
 }
 
 export default function RepairOrdersPage() {
+  const currentUser = useAuthStore((s) => s.user)
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -351,6 +354,9 @@ export default function RepairOrdersPage() {
   const formatMoney = (value: string | number | null | undefined): string => {
     return `$${parseMoney(value).toFixed(2)}`
   }
+
+  const canEditPriceBuilderByRole = ['garage_owner', 'garage_admin', 'receptionist'].includes(currentUser?.role || '')
+  const showLegacyPriceEditor = false
 
   const createCustomerMutation = useMutation({
     mutationFn: async (payload: CreateCustomerPayload) => {
@@ -962,18 +968,30 @@ export default function RepairOrdersPage() {
           base_price: svc.base_price,
         })) || []
 
-      const internalNotes = selectedServicePayload.length
-        ? JSON.stringify({ selected_services: selectedServicePayload })
-        : null
-
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
 
       const createdOrder = await createRepairOrderMutation.mutateAsync({
         customer_id: finalCustomerId,
         vehicle_id: finalVehicleId,
         description: combinedDescription,
-        internal_notes: internalNotes,
+        internal_notes: null,
       })
+
+      if (selectedServicePayload.length > 0) {
+        try {
+          await Promise.all(
+            selectedServicePayload.map((svc) =>
+              api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
+                service_id: svc.id,
+                quantity: 1,
+              })
+            )
+          )
+        } catch (err) {
+          console.error('Failed to apply selected services to price builder', err)
+          toast.error('Repair order created, but some service lines could not be applied')
+        }
+      }
 
       let createdQuoteNumber: string | null = null
       try {
@@ -2098,6 +2116,19 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
+                <PriceBuilderPanel
+                  orderId={selectedOrder.id}
+                  orderStatus={(orderDetail ?? selectedOrder).status}
+                  services={services}
+                  canEdit={canEditPriceBuilderByRole}
+                  defaultLaborRate={taxFeeSettings?.labor_rate}
+                  onUpdated={() => {
+                    refetchOrderDetail()
+                    queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+                  }}
+                />
+
+                {showLegacyPriceEditor && (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Estimate</h3>
                   <div className="bg-gray-50 rounded-xl">
@@ -2445,6 +2476,7 @@ export default function RepairOrdersPage() {
                 })()}
                   </div>
                 </div>
+                )}
 
                 <div>
                   <button

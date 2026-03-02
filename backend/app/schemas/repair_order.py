@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
 from app.db.models.repair_order import RepairOrderStatus
+from app.db.models.labor import LaborLineType
 
 
 # --- Parts and labor line items ---
@@ -36,6 +37,11 @@ class LaborCreate(BaseModel):
     hourly_rate: Decimal
     mechanic_id: Optional[UUID] = None
     service_code: Optional[str] = None
+    line_type: LaborLineType = LaborLineType.MANUAL
+    provider: Optional[str] = None
+    provider_operation_id: Optional[str] = None
+    auto_recalc_enabled: bool = True
+    source_service_id: Optional[UUID] = None
 
 
 class LaborUpdate(BaseModel):
@@ -44,6 +50,11 @@ class LaborUpdate(BaseModel):
     hourly_rate: Optional[Decimal] = None
     mechanic_id: Optional[UUID] = None
     service_code: Optional[str] = None
+    line_type: Optional[LaborLineType] = None
+    provider: Optional[str] = None
+    provider_operation_id: Optional[str] = None
+    auto_recalc_enabled: Optional[bool] = None
+    source_service_id: Optional[UUID] = None
 
 
 class LaborResponse(BaseModel):
@@ -55,6 +66,11 @@ class LaborResponse(BaseModel):
     total_cost: Decimal
     mechanic_id: Optional[UUID] = None
     service_code: Optional[str] = None
+    line_type: LaborLineType = LaborLineType.MANUAL
+    provider: Optional[str] = None
+    provider_operation_id: Optional[str] = None
+    auto_recalc_enabled: bool = True
+    source_service_id: Optional[UUID] = None
     created_at: datetime
 
     class Config:
@@ -103,6 +119,8 @@ class RepairOrderResponse(RepairOrderBase):
     total_hold_minutes: Optional[int] = None
     assigned_at: Optional[datetime] = None
     acknowledged_at: Optional[datetime] = None
+    pricing_locked_at: Optional[datetime] = None
+    pricing_lock_reason: Optional[str] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
     pending_zelle_confirmation: bool = False
 
@@ -117,6 +135,60 @@ class RepairOrderDetailResponse(RepairOrderResponse):
 
 class RepairOrderStartWorkResponse(RepairOrderResponse):
     auto_clocked_in: bool = False
+
+
+class PriceBuildWarning(BaseModel):
+    code: str
+    message: str
+
+
+class PriceBuildFlatServiceRequest(BaseModel):
+    service_id: UUID
+    quantity: int = 1
+
+
+class PriceBuildRepairOpsSearchRequest(BaseModel):
+    query: str
+
+
+class RepairOperationCandidate(BaseModel):
+    operation_id: str
+    name: str
+    description: Optional[str] = None
+    estimated_hours: Decimal
+    provider: str = "motor"
+
+
+class PriceBuildRepairOpsApplyRequest(BaseModel):
+    operation_id: str
+    name: Optional[str] = None
+    description: Optional[str] = None
+    estimated_hours: Optional[Decimal] = None
+    auto_recalc_enabled: bool = True
+
+
+class PriceBuildLineUpdateRequest(BaseModel):
+    description: Optional[str] = None
+    hours: Optional[Decimal] = None
+    hourly_rate: Optional[Decimal] = None
+    auto_recalc_enabled: Optional[bool] = None
+
+
+class PriceBuildSummaryResponse(BaseModel):
+    order_id: UUID
+    labor_total: Decimal
+    parts_total: Decimal
+    total_cost: Decimal
+    pricing_locked: bool
+    pricing_locked_at: Optional[datetime] = None
+    pricing_lock_reason: Optional[str] = None
+    lines: List[LaborResponse] = []
+    warnings: List[PriceBuildWarning] = []
+
+
+class PriceBuildSearchResponse(BaseModel):
+    candidates: List[RepairOperationCandidate] = []
+    warnings: List[PriceBuildWarning] = []
 
 
 class QuickRepairOrderCreate(BaseModel):

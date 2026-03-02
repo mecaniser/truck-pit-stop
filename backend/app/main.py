@@ -577,6 +577,7 @@ if frontend_dist.exists():
     static_files = [
         "favicon.ico",
         "robots.txt",
+        "sitemap.xml",
         "DB_bridge_logo_favi_figma_public.svg",
         "DB_bridge_logo_favi_figma_public.png",
         "DB_bridge_logo_favi_figma_public_B.svg",

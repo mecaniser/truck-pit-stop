@@ -8,6 +8,7 @@ import { CheckCircle, XCircle, Truck, Wrench, AlertCircle, Loader2 } from 'lucid
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import BrandLogo from '../../components/brand/BrandLogo'
+import { usePlatformContact } from '../../hooks/usePlatformContact'
 
 interface QuoteDetail {
   quote: {
@@ -53,6 +54,7 @@ export default function QuoteApprovalPage() {
   const navigate = useNavigate()
   const { token } = useParams<{ token: string }>()
   const { login } = useAuthStore()
+  const { supportEmail, supportPhoneDisplay, mailtoHref, telHref } = usePlatformContact()
   const [declineNotes, setDeclineNotes] = useState('')
   const [showDeclineForm, setShowDeclineForm] = useState(false)
   const [password, setPassword] = useState('')
@@ -263,6 +265,24 @@ export default function QuoteApprovalPage() {
               </button>
             </div>
           )}
+          {(supportPhoneDisplay || supportEmail) && (
+            <p className="text-gray-500 text-xs mt-4">
+              Need help?{' '}
+              {supportPhoneDisplay && telHref && (
+                <>
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={telHref}>
+                    {supportPhoneDisplay}
+                  </a>
+                </>
+              )}
+              {supportPhoneDisplay && supportEmail && ' • '}
+              {supportEmail && mailtoHref && (
+                <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={mailtoHref}>
+                  {supportEmail}
+                </a>
+              )}
+            </p>
+          )}
         </div>
       </div>
     )
@@ -304,6 +324,24 @@ export default function QuoteApprovalPage() {
               Go to My Portal
             </Link>
           </div>
+          {(supportPhoneDisplay || supportEmail) && (
+            <p className="text-gray-500 text-xs mt-4">
+              Need help?{' '}
+              {supportPhoneDisplay && telHref && (
+                <>
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={telHref}>
+                    {supportPhoneDisplay}
+                  </a>
+                </>
+              )}
+              {supportPhoneDisplay && supportEmail && ' • '}
+              {supportEmail && mailtoHref && (
+                <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={mailtoHref}>
+                  {supportEmail}
+                </a>
+              )}
+            </p>
+          )}
         </div>
       </div>
     )
@@ -504,9 +542,30 @@ export default function QuoteApprovalPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-gray-500 text-sm mt-6">
-          Questions? Contact us directly and reference quote {quote.quote_number}.
-        </p>
+        <div className="text-center text-gray-500 text-sm mt-6 space-y-1">
+          <p>Questions? Contact platform support and reference quote {quote.quote_number}.</p>
+          {(supportPhoneDisplay || supportEmail) && (
+            <p className="text-gray-400">
+              {supportPhoneDisplay && telHref && (
+                <>
+                  Phone:{' '}
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={telHref}>
+                    {supportPhoneDisplay}
+                  </a>
+                </>
+              )}
+              {supportPhoneDisplay && supportEmail && ' • '}
+              {supportEmail && mailtoHref && (
+                <>
+                  Email:{' '}
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={mailtoHref}>
+                    {supportEmail}
+                  </a>
+                </>
+              )}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )

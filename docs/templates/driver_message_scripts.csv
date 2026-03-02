@@ -1,0 +1,11 @@
+script_id,channel,trigger,status_from,status_to,body,active
+S1,sms,lead_created,NEW_LEAD,OUTREACH_SENT,"Hi {first_name}, this is {company} recruiting. We saw your interest in our {lane} driver role. Want to do a 3-minute pre-screen now? {short_link} {stop_text}",true
+S2,sms,no_response_24h,OUTREACH_SENT,OUTREACH_SENT,"Hi {first_name}, quick follow-up from {company}. If you still want the {lane} role, complete the short pre-screen here: {short_link}. {stop_text}",true
+S3,sms,no_response_72h,OUTREACH_SENT,OUTREACH_SENT,"Hi {first_name}, we are still reviewing drivers for {lane}. If interested, finish the pre-screen today: {short_link}. {stop_text}",true
+S4,sms,screen_incomplete_24h,SCREENING_IN_PROGRESS,SCREENING_IN_PROGRESS,"Hi {first_name}, you are almost done. Finish your driver pre-screen here: {short_link}. Once complete, we can move quickly on interviews. {stop_text}",true
+S5,sms,screen_pass_auto,SCREENING_IN_PROGRESS,SCREEN_PASS_AUTO,"Thanks {first_name}. You look like a fit for the next step. Pick a quick call time with {recruiter_name}: {scheduler_link}",true
+S6,sms,verification_call_booked,VERIFICATION_CALL_SCHEDULED,VERIFICATION_CALL_SCHEDULED,"Confirmed: your call with {recruiter_name} is booked. Please have license details and recent driving history ready.",true
+S7,sms,screen_review_required,SCREENING_IN_PROGRESS,SCREEN_REVIEW_REQUIRED,"Thanks {first_name}. A recruiter is reviewing your info and will contact you shortly.",true
+S8,sms,screen_fail_auto,SCREENING_IN_PROGRESS,SCREEN_FAIL_AUTO,"Thanks for your time, {first_name}. We are not moving forward for this lane right now. If you want, we can keep your profile for future openings that match your background.",true
+S9,sms,compliance_docs_missing,COMPLIANCE_IN_PROGRESS,COMPLIANCE_IN_PROGRESS,"Hi {first_name}, to keep your application moving, please complete your pending compliance items here: {short_link}.",true
+S10,sms,offer_accepted,OFFER_EXTENDED,OFFER_EXTENDED,"Welcome aboard, {first_name}. Reminder: complete onboarding items before {earliest_start_date}. Contact {recruiter_name} with any questions.",true

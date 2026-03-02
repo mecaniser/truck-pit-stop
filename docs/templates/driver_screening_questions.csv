@@ -1,0 +1,13 @@
+question_id,field_key,input_type,prompt,allowed_values,required,hard_fail_when_true
+Q1,cdl_class,enum,"What CDL do you currently hold?","A|B|NONE",true,"value!='A'"
+Q2,endorsements,multi_enum,"Which endorsements do you currently have?","T|N|H|X|NONE",true,
+Q3,experience_months_class_a,integer,"How many months of verifiable Class A driving experience do you have?",,true,"value<6"
+Q4,accidents_3y,integer,"How many preventable accidents in the last 3 years?",,true,"value>=2"
+Q5,moving_violations_3y,integer,"How many moving violations in the last 3 years?",,true,"value>=4"
+Q6,dui_dwi_5y,enum,"Any DUI/DWI in the last 5 years?","YES|NO",true,"value=='YES'"
+Q7,clearinghouse_status,enum,"Are you currently clear in FMCSA Clearinghouse?","CLEAR|NOT_CLEAR|UNKNOWN",true,"value=='NOT_CLEAR'"
+Q8,home_zip,text,"What is your home ZIP code?",,true,
+Q9,preferred_home_time,enum,"Preferred home time?","WEEKLY|BIWEEKLY|EVERY_3_WEEKS|DAILY|FLEXIBLE",true,
+Q10,equipment_experience,multi_enum,"Which equipment have you operated?","DRY_VAN|REEFER|FLATBED|TANKER|STEP_DECK|DOUBLES|OTHER",true,
+Q11,target_pay,compound,"What pay are you targeting? (CPM, hourly, weekly)",,true,
+Q12,earliest_start_date,date,"What is your earliest available start date?",,true,

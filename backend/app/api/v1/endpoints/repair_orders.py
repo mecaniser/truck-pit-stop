@@ -16,11 +16,18 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.inventory import Inventory, PartsUsage
-from app.db.models.labor import Labor
+from app.db.models.labor import Labor, LaborLineType
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
+from app.services.pricing import get_selected_services_total
+from app.services.price_build_service import (
+    PriceBuildLockedError,
+    PriceBuildNotFoundError,
+    PriceBuildService,
+    PriceBuildValidationError,
+)
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
@@ -42,14 +49,28 @@ from app.schemas.repair_order import (
     LaborResponse,
     QuickRepairOrderCreate,
     RepairOrderStartWorkResponse,
+    PriceBuildFlatServiceRequest,
+    PriceBuildLineUpdateRequest,
+    PriceBuildRepairOpsApplyRequest,
+    PriceBuildRepairOpsSearchRequest,
+    PriceBuildSearchResponse,
+    PriceBuildSummaryResponse,
+    PriceBuildWarning,
+    RepairOperationCandidate,
 )
 
 logger = get_logger(__name__)
 
 router = APIRouter()
+price_build_service = PriceBuildService()
 
 # Only draft and quoted ROs can have parts/labor modified
 EDITABLE_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
+PRICE_BUILD_EDIT_ROLES = (
+    UserRole.GARAGE_OWNER,
+    UserRole.GARAGE_ADMIN,
+    UserRole.RECEPTIONIST,
+)
 
 
 def require_role(*allowed_roles: UserRole):
@@ -61,6 +82,37 @@ def require_role(*allowed_roles: UserRole):
             )
         return current_user
     return role_checker
+
+
+def _to_price_build_summary(
+    order: RepairOrder,
+    *,
+    warnings: Optional[list[PriceBuildWarning]] = None,
+) -> PriceBuildSummaryResponse:
+    labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    return PriceBuildSummaryResponse(
+        order_id=order.id,
+        labor_total=order.total_labor_cost,
+        parts_total=order.total_parts_cost,
+        total_cost=order.total_cost,
+        pricing_locked=order.pricing_locked_at is not None,
+        pricing_locked_at=order.pricing_locked_at,
+        pricing_lock_reason=order.pricing_lock_reason,
+        lines=labor_resp,
+        warnings=warnings or [],
+    )
+
+
+def _map_price_build_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
+    if isinstance(exc, PriceBuildNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, PriceBuildLockedError):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    if isinstance(exc, PriceBuildValidationError):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Price build operation failed")
 
 
 async def generate_order_number(db: AsyncSession, tenant_id: UUID) -> str:
@@ -1561,6 +1613,11 @@ def _check_ro_access(current_user: User, order: RepairOrder) -> None:
 
 
 def _require_editable_ro(order: RepairOrder) -> None:
+    if order.pricing_locked_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pricing is locked for this repair order",
+        )
     if order.status not in EDITABLE_RO_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1582,10 +1639,183 @@ async def _recompute_repair_order_totals(db: AsyncSession, order_id: UUID) -> No
         return
     total_parts = sum(Decimal(str(pu.total_price)) for pu in order.parts_usage)
     total_labor = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
+    if total_labor <= Decimal("0.00"):
+        total_labor = get_selected_services_total(order.internal_notes)
     order.total_parts_cost = total_parts
     order.total_labor_cost = total_labor
     order.total_cost = total_parts + total_labor
     await db.commit()
+
+
+# --- Price Builder ---
+
+
+@router.get("/{order_id}/price-build", response_model=PriceBuildSummaryResponse)
+async def get_price_build_summary(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    )),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        return _to_price_build_summary(order)
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
+@router.post("/{order_id}/price-build/flat-service", response_model=PriceBuildSummaryResponse)
+async def add_price_build_flat_service(
+    order_id: UUID,
+    body: PriceBuildFlatServiceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        result = await price_build_service.add_flat_service_line(
+            db,
+            order,
+            body.service_id,
+            quantity=body.quantity,
+        )
+        return _to_price_build_summary(
+            result.order,
+            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+        )
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
+@router.post("/{order_id}/price-build/repair-ops/search", response_model=PriceBuildSearchResponse)
+async def search_price_build_repair_operations(
+    order_id: UUID,
+    body: PriceBuildRepairOpsSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    )),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        candidates, warnings = await price_build_service.search_repair_operations(db, order, body.query)
+        return PriceBuildSearchResponse(
+            candidates=[
+                RepairOperationCandidate(
+                    operation_id=c.operation_id,
+                    name=c.name,
+                    description=c.description,
+                    estimated_hours=c.estimated_hours,
+                    provider=c.provider,
+                )
+                for c in candidates
+            ],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in warnings],
+        )
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
+@router.post("/{order_id}/price-build/repair-ops/apply", response_model=PriceBuildSummaryResponse)
+async def apply_price_build_repair_operation(
+    order_id: UUID,
+    body: PriceBuildRepairOpsApplyRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        result = await price_build_service.add_repair_operation_line(
+            db,
+            order,
+            operation_id=body.operation_id,
+            name=body.name,
+            description=body.description,
+            estimated_hours=body.estimated_hours,
+            auto_recalc_enabled=body.auto_recalc_enabled,
+        )
+        return _to_price_build_summary(
+            result.order,
+            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+        )
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
+@router.patch("/{order_id}/price-build/lines/{line_id}", response_model=PriceBuildSummaryResponse)
+async def update_price_build_line(
+    order_id: UUID,
+    line_id: UUID,
+    body: PriceBuildLineUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        result = await price_build_service.update_line(
+            db,
+            order,
+            line_id=line_id,
+            description=body.description,
+            hours=body.hours,
+            hourly_rate=body.hourly_rate,
+            auto_recalc_enabled=body.auto_recalc_enabled,
+        )
+        return _to_price_build_summary(
+            result.order,
+            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+        )
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
+@router.delete("/{order_id}/price-build/lines/{line_id}", response_model=PriceBuildSummaryResponse)
+async def delete_price_build_line(
+    order_id: UUID,
+    line_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        result = await price_build_service.remove_line(db, order, line_id=line_id)
+        return _to_price_build_summary(
+            result.order,
+            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+        )
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
+@router.post("/{order_id}/price-build/recalculate", response_model=PriceBuildSummaryResponse)
+async def recalculate_price_build(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        result = await price_build_service.recalculate_order(db, order)
+        return _to_price_build_summary(
+            result.order,
+            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+        )
+    except Exception as exc:
+        raise _map_price_build_error(exc)
 
 
 # --- Parts ---
@@ -1765,10 +1995,7 @@ async def add_labor_to_repair_order(
     body: LaborCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
+        *PRICE_BUILD_EDIT_ROLES,
     )),
 ):
     if not current_user.tenant_id:
@@ -1791,6 +2018,11 @@ async def add_labor_to_repair_order(
         total_cost=total_cost,
         mechanic_id=body.mechanic_id,
         service_code=body.service_code,
+        line_type=body.line_type,
+        provider=body.provider,
+        provider_operation_id=body.provider_operation_id,
+        auto_recalc_enabled=body.auto_recalc_enabled,
+        source_service_id=body.source_service_id,
     )
     db.add(labor)
     await db.commit()
@@ -1841,10 +2073,7 @@ async def update_repair_order_labor(
     body: LaborUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
+        *PRICE_BUILD_EDIT_ROLES,
     )),
 ):
     if not current_user.tenant_id:
@@ -1885,10 +2114,7 @@ async def remove_labor_from_repair_order(
     labor_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
+        *PRICE_BUILD_EDIT_ROLES,
     )),
 ):
     if not current_user.tenant_id:

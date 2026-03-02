@@ -68,6 +68,8 @@ class RepairOrder(BaseModel):
     # Status transition timestamps
     assigned_at = Column(DateTime(timezone=True), nullable=True)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
+    pricing_locked_at = Column(DateTime(timezone=True), nullable=True)
+    pricing_lock_reason = Column(String(64), nullable=True)
     
     # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)
@@ -75,5 +77,4 @@ class RepairOrder(BaseModel):
     
     parts_usage = relationship("PartsUsage", back_populates="repair_order", cascade="all, delete-orphan")
     labor_items = relationship("Labor", back_populates="repair_order", cascade="all, delete-orphan")
-
 

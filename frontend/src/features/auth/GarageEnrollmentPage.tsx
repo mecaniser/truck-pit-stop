@@ -17,6 +17,7 @@ import api from '../../lib/api'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import BrandLogo from '../../components/brand/BrandLogo'
+import { applySeo, removeStructuredData } from '../../lib/seo'
 
 // Step 1: Garage Info
 const garageInfoSchema = z.object({
@@ -265,20 +266,35 @@ export default function GarageEnrollmentPage() {
   useEffect(() => {
     const pageTitle = 'Apply for Founding Garage Access | DieselBridge Network'
     const pageDescription = 'Apply to join DieselBridge Network as a founding garage and launch your shop workspace after approval.'
+    const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
+    const canonicalUrl = `${siteOrigin}/enroll`
+    const ogImage = `${siteOrigin}/DB_bridge_logo_favi_figma_public_B.png`
+    const structuredDataId = 'seo-jsonld-enroll'
 
-    document.title = pageTitle
+    applySeo({
+      title: pageTitle,
+      description: pageDescription,
+      canonicalUrl,
+      robots: 'index, follow',
+      ogUrl: canonicalUrl,
+      ogImage,
+      ogSiteName: 'Diesel Bridge Network',
+      twitterImage: ogImage,
+      structuredData: {
+        id: structuredDataId,
+        data: {
+          '@context': 'https://schema.org',
+          '@type': 'WebPage',
+          url: canonicalUrl,
+          name: pageTitle,
+          description: pageDescription,
+        },
+      },
+    })
 
-    const upsertMetaByName = (name: string, content: string) => {
-      let metaTag = document.querySelector(`meta[name="${name}"]`) as HTMLMetaElement | null
-      if (!metaTag) {
-        metaTag = document.createElement('meta')
-        metaTag.setAttribute('name', name)
-        document.head.appendChild(metaTag)
-      }
-      metaTag.setAttribute('content', content)
+    return () => {
+      removeStructuredData(structuredDataId)
     }
-
-    upsertMetaByName('description', pageDescription)
   }, [])
 
   const primaryButtonClasses =

@@ -17,6 +17,7 @@ import toast from 'react-hot-toast'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
+import { usePlatformContact } from '../../hooks/usePlatformContact'
 import NotificationBanner from '../../components/NotificationBanner'
 import BrandLogo from '../../components/brand/BrandLogo'
 import { getStripeForAccount } from '../../lib/stripe'
@@ -458,6 +459,7 @@ function PaymentForm({
   invoiceId: string
   onSuccess: () => void 
 }) {
+  const { supportEmail, supportPhoneDisplay, mailtoHref, telHref } = usePlatformContact()
   const stripe = useStripe()
   const elements = useElements()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -505,7 +507,27 @@ function PaymentForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
       {error && (
-        <div className="text-red-400 text-sm bg-red-500/10 p-3 rounded-lg">{error}</div>
+        <div className="text-red-400 text-sm bg-red-500/10 p-3 rounded-lg space-y-1">
+          <p>{error}</p>
+          {(supportPhoneDisplay || supportEmail) && (
+            <p className="text-red-300/90 text-xs">
+              Support:{' '}
+              {supportPhoneDisplay && telHref && (
+                <>
+                  <a className="underline font-medium hover:text-red-200" href={telHref}>
+                    {supportPhoneDisplay}
+                  </a>
+                </>
+              )}
+              {supportPhoneDisplay && supportEmail && ' • '}
+              {supportEmail && mailtoHref && (
+                <a className="underline font-medium hover:text-red-200" href={mailtoHref}>
+                  {supportEmail}
+                </a>
+              )}
+            </p>
+          )}
+        </div>
       )}
       <button
         type="submit"

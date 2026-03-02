@@ -1,0 +1,32 @@
+{
+  "hard_fail_rules": [
+    {"field": "cdl_class", "operator": "!=", "value": "A", "disposition": "NO_CDL_A"},
+    {"field": "experience_months_class_a", "operator": "<", "value": 6, "disposition": "LOW_EXPERIENCE"},
+    {"field": "dui_dwi_5y", "operator": "==", "value": "YES", "disposition": "DUI_DWI_RECENT"},
+    {"field": "clearinghouse_status", "operator": "==", "value": "NOT_CLEAR", "disposition": "CLEARINGHOUSE_NOT_CLEAR"},
+    {"field": "accidents_3y", "operator": ">=", "value": 2, "disposition": "ACCIDENT_THRESHOLD"},
+    {"field": "moving_violations_3y", "operator": ">=", "value": 4, "disposition": "VIOLATION_THRESHOLD"}
+  ],
+  "score_weights": {
+    "experience_fit": 25,
+    "safety_fit": 25,
+    "endorsement_lane_fit": 10,
+    "home_geo_fit": 15,
+    "equipment_haul_fit": 15,
+    "comp_start_fit": 10
+  },
+  "routing": {
+    "pass_high": {"min_score": 80, "status": "SCREEN_PASS_AUTO", "disposition": "PASS_HIGH"},
+    "review_mid": {"min_score": 65, "max_score": 79, "status": "SCREEN_REVIEW_REQUIRED", "disposition": "REVIEW_MID"},
+    "low_score": {"max_score": 64, "status": "SCREEN_FAIL_AUTO", "disposition": "LOW_SCORE"}
+  },
+  "follow_up_tasks": {
+    "SCREEN_PASS_AUTO": {"task": "Recruiter call", "due_in": "4 business hours"},
+    "SCREEN_REVIEW_REQUIRED": {"task": "Manual review", "due_in": "1 business day"}
+  },
+  "messages": {
+    "SCREEN_PASS_AUTO": "S5",
+    "SCREEN_REVIEW_REQUIRED": "S7",
+    "SCREEN_FAIL_AUTO": "S8"
+  }
+}

@@ -11,6 +11,7 @@ import api from '../../lib/api'
 import { getStripeForAccount } from '../../lib/stripe'
 import type { InvoiceDetail } from '../../types'
 import { formatUSPhone } from '../../utils/phone'
+import { usePlatformContact } from '../../hooks/usePlatformContact'
 
 const getErrorDetail = (error: unknown, fallback: string): string => {
   if (error instanceof AxiosError) {
@@ -40,6 +41,7 @@ function InvoicePaymentForm({
   invoiceId: string
   onSuccess: () => void
 }) {
+  const { supportEmail, supportPhoneDisplay, mailtoHref, telHref } = usePlatformContact()
   const stripe = useStripe()
   const elements = useElements()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -84,7 +86,29 @@ function InvoicePaymentForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
-      {error && <div className="text-red-400 text-sm bg-red-500/10 p-3 rounded-lg">{error}</div>}
+      {error && (
+        <div className="text-red-400 text-sm bg-red-500/10 p-3 rounded-lg space-y-1">
+          <p>{error}</p>
+          {(supportPhoneDisplay || supportEmail) && (
+            <p className="text-red-300/90 text-xs">
+              Support:{' '}
+              {supportPhoneDisplay && telHref && (
+                <>
+                  <a className="underline font-medium hover:text-red-200" href={telHref}>
+                    {supportPhoneDisplay}
+                  </a>
+                </>
+              )}
+              {supportPhoneDisplay && supportEmail && ' • '}
+              {supportEmail && mailtoHref && (
+                <a className="underline font-medium hover:text-red-200" href={mailtoHref}>
+                  {supportEmail}
+                </a>
+              )}
+            </p>
+          )}
+        </div>
+      )}
       <button
         type="submit"
         disabled={!stripe || isProcessing}

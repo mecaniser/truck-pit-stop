@@ -2,6 +2,11 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /dashboard/
+Disallow: /mechanic/
+Disallow: /portal/
 Disallow: /platform-admin/
+Disallow: /login
+Disallow: /quote/
+Disallow: /invoice/
 
 Sitemap: https://www.dieselbridge.com/sitemap.xml
