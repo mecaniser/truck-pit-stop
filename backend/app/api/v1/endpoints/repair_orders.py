@@ -65,6 +65,7 @@ price_build_service = PriceBuildService()
 
 # Only draft and quoted ROs can have parts/labor modified
 EDITABLE_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
+DANGER_ACTION_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
 PRICE_BUILD_EDIT_ROLES = (
     UserRole.GARAGE_OWNER,
     UserRole.GARAGE_ADMIN,
@@ -537,6 +538,9 @@ async def update_repair_order(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    if order_data.status == RepairOrderStatus.CANCELLED and order.status != RepairOrderStatus.CANCELLED:
+        _require_cancelable_ro(order)
     
     # Update fields
     update_data = order_data.model_dump(exclude_unset=True)
@@ -1561,6 +1565,8 @@ async def delete_repair_order(
             detail="Access denied",
         )
 
+    _require_deletable_ro(order)
+
     # Save identifiers before deletion so we can broadcast cache invalidation.
     tenant_id = str(order.tenant_id)
     customer_id = str(order.customer_id)
@@ -1609,6 +1615,22 @@ def _check_ro_access(current_user: User, order: RepairOrder) -> None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     elif current_user.tenant_id != order.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+def _require_cancelable_ro(order: RepairOrder) -> None:
+    if order.status not in DANGER_ACTION_RO_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repair orders can only be cancelled when status is draft or quoted",
+        )
+
+
+def _require_deletable_ro(order: RepairOrder) -> None:
+    if order.status not in DANGER_ACTION_RO_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Repair orders can only be deleted when status is draft or quoted",
+        )
 
 
 def _require_editable_ro(order: RepairOrder) -> None:
@@ -1740,6 +1762,7 @@ async def apply_price_build_repair_operation(
             name=body.name,
             description=body.description,
             estimated_hours=body.estimated_hours,
+            provider=body.provider,
             auto_recalc_enabled=body.auto_recalc_enabled,
         )
         return _to_price_build_summary(

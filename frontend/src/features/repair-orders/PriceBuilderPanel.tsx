@@ -31,7 +31,7 @@ export default function PriceBuilderPanel({
 }: Props) {
   const queryClient = useQueryClient()
   const [serviceId, setServiceId] = useState('')
-  const [serviceQty, setServiceQty] = useState(1)
+  const [serviceHours, setServiceHours] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
@@ -55,7 +55,6 @@ export default function PriceBuilderPanel({
       .map((svc) => ({
         value: svc.id,
         label: svc.name,
-        subLabel: `$${parseFloat(svc.base_price || '0').toFixed(2)}`,
       }))
   }, [services])
 
@@ -67,20 +66,20 @@ export default function PriceBuilderPanel({
     onUpdated?.()
   }
 
-  const addFlatService = useMutation({
+  const addServiceLaborLine = useMutation({
     mutationFn: async () => {
       await api.post(`/repair-orders/${orderId}/price-build/flat-service`, {
         service_id: serviceId,
-        quantity: serviceQty,
+        quantity: serviceHours,
       })
     },
     onSuccess: async () => {
       setServiceId('')
-      setServiceQty(1)
+      setServiceHours(1)
       await invalidate()
-      toast.success('Service line added')
+      toast.success('Labor line added')
     },
-    onError: () => toast.error('Unable to add service line'),
+    onError: () => toast.error('Unable to add labor line'),
   })
 
   const searchOps = useMutation({
@@ -104,6 +103,7 @@ export default function PriceBuilderPanel({
         name: candidate.name,
         description: candidate.description,
         estimated_hours: candidate.estimated_hours,
+        provider: candidate.provider,
         auto_recalc_enabled: true,
       })
     },
@@ -152,6 +152,11 @@ export default function PriceBuilderPanel({
     onError: () => toast.error('Recalculation failed'),
   })
 
+  const lineTypeLabel = (line: { line_type: string; source_service_id?: string | null }) => {
+    if (line.source_service_id) return 'service labor'
+    return line.line_type.replace('_', ' ')
+  }
+
   useEffect(() => {
     if (!defaultLaborRate || !canMutate) return
     // No-op placeholder: keeps default labor rate available for future quick-add UX.
@@ -199,33 +204,35 @@ export default function PriceBuilderPanel({
       )}
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Flat Service</p>
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Diagnostics / Inspection (Hourly)</p>
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-[220px] flex-1">
             <BaseSelect
               options={serviceOptions}
               value={serviceId}
               onChange={setServiceId}
-              placeholder="Select diagnostics/inspection service"
+              placeholder="Select diagnostics or inspection service"
               allowAddNew={false}
             />
           </div>
           <input
             type="number"
             min={1}
-            value={serviceQty}
-            onChange={(e) => setServiceQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+            value={serviceHours}
+            onChange={(e) => setServiceHours(Math.max(1, parseInt(e.target.value, 10) || 1))}
             className="h-[42px] w-16 rounded-lg border border-gray-300 px-2 text-sm"
+            aria-label="Hours"
           />
           <button
             type="button"
-            onClick={() => addFlatService.mutate()}
-            disabled={!canMutate || !serviceId || addFlatService.isPending}
+            onClick={() => addServiceLaborLine.mutate()}
+            disabled={!canMutate || !serviceId || addServiceLaborLine.isPending}
             className="h-[42px] rounded-lg bg-amber-500 px-3 text-sm font-medium text-white disabled:bg-gray-300"
           >
             Add
           </button>
         </div>
+        <p className="text-[11px] text-gray-500">This adds labor hours at your shop hourly rate (no flat fee pricing).</p>
       </div>
 
       <div className="space-y-2">
@@ -279,7 +286,7 @@ export default function PriceBuilderPanel({
           <div className="space-y-2">
             {summary.lines.map((line) => (
               <div key={line.id} className="rounded-lg border border-gray-200 p-2">
-                <div className="mb-1 text-[11px] uppercase tracking-wide text-gray-400">{line.line_type.replace('_', ' ')}</div>
+                <div className="mb-1 text-[11px] uppercase tracking-wide text-gray-400">{lineTypeLabel(line)}</div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
                   <input
                     defaultValue={line.description}

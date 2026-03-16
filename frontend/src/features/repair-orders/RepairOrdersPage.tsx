@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -75,6 +75,67 @@ const truncateWithEllipsis = (value: string, maxLength = 36): string => {
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`
 }
 
+const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = ['draft', 'quoted']
+const LABOR_BREAKDOWN_STATUSES: RepairOrderStatus[] = ['pending_review', 'completed']
+const DANGER_ZONE_STATUSES: RepairOrderStatus[] = ['draft', 'quoted']
+
+function RepairOrderLaborBreakdown({
+  laborItems,
+  laborTotal,
+  isLoading,
+}: {
+  laborItems: Labor[]
+  laborTotal: string
+  isLoading: boolean
+}) {
+  const formatMoney = (value: string) => (parseFloat(value || '0') || 0).toFixed(2)
+  const formatHours = (value: string) => {
+    const hours = parseFloat(value || '0') || 0
+    return Number.isInteger(hours) ? `${hours.toFixed(0)}h` : `${hours.toFixed(2)}h`
+  }
+  const formatLineType = (line: Labor) => {
+    if (line.source_service_id) return 'service labor'
+    return line.line_type.replace('_', ' ')
+  }
+
+  return (
+    <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Labor Breakdown</h3>
+          <p className="mt-1 text-xs text-gray-500">Recorded labor for this repair order.</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-right">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Labor Total</p>
+          <p className="text-base font-bold text-gray-900">${formatMoney(laborTotal)}</p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p className="text-sm text-gray-500">Loading labor breakdown…</p>
+      ) : laborItems.length > 0 ? (
+        <div className="space-y-2">
+          {laborItems.map((line) => (
+            <div key={line.id} className="rounded-lg border border-gray-200 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{line.description || 'Labor line'}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {formatLineType(line)} · {formatHours(line.hours)} × ${formatMoney(line.hourly_rate)}/hr
+                  </p>
+                </div>
+                <p className="text-sm font-semibold text-gray-900">${formatMoney(line.total_cost)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500">No labor items recorded.</p>
+      )}
+    </div>
+  )
+}
+
 export default function RepairOrdersPage() {
   const currentUser = useAuthStore((s) => s.user)
   const { accentColors } = useTheme()
@@ -130,6 +191,7 @@ export default function RepairOrdersPage() {
   const [showReviewNotes, setShowReviewNotes] = useState(false)
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
   const [invoiceDiscountAmount, setInvoiceDiscountAmount] = useState('')
+  const [showInvoiceCreateOptions, setShowInvoiceCreateOptions] = useState(false)
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
   const [showZelleQrModal, setShowZelleQrModal] = useState(false)
@@ -224,7 +286,7 @@ export default function RepairOrdersPage() {
     },
   })
 
-  const { data: orderDetail, refetch: refetchOrderDetail } = useQuery<RepairOrderDetail>({
+  const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-detail', selectedOrder?.id],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`)
@@ -285,6 +347,12 @@ export default function RepairOrdersPage() {
       laborRateInitialized.current = true
     }
   }, [taxFeeSettings])
+
+  useEffect(() => {
+    setInvoiceDueDate('')
+    setInvoiceDiscountAmount('')
+    setShowInvoiceCreateOptions(false)
+  }, [selectedOrder?.id])
 
   const filteredVehicles = useMemo(() => {
     if (!vehicles) return []
@@ -357,6 +425,24 @@ export default function RepairOrdersPage() {
 
   const canEditPriceBuilderByRole = ['garage_owner', 'garage_admin', 'receptionist'].includes(currentUser?.role || '')
   const showLegacyPriceEditor = false
+  const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
+  const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
+  const showLaborBreakdown = detailStatus ? LABOR_BREAKDOWN_STATUSES.includes(detailStatus) : false
+  const showDangerZone = detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false
+  const invoiceOptionSummary = useMemo(() => {
+    const summary: string[] = []
+    if (invoiceDueDate) {
+      const parsed = new Date(`${invoiceDueDate}T00:00:00`)
+      summary.push(Number.isNaN(parsed.getTime()) ? `Due ${invoiceDueDate}` : `Due ${format(parsed, 'MMM d, yyyy')}`)
+    }
+    if (invoiceDiscountAmount.trim() !== '') {
+      const discountValue = parseFloat(invoiceDiscountAmount)
+      if (!Number.isNaN(discountValue) && discountValue > 0) {
+        summary.push(`Discount $${discountValue.toFixed(2)}`)
+      }
+    }
+    return summary.length > 0 ? summary.join(' · ') : 'Defaults: due today with no discount.'
+  }, [invoiceDueDate, invoiceDiscountAmount])
 
   const createCustomerMutation = useMutation({
     mutationFn: async (payload: CreateCustomerPayload) => {
@@ -507,6 +593,7 @@ export default function RepairOrdersPage() {
       }
       setInvoiceDueDate('')
       setInvoiceDiscountAmount('')
+      setShowInvoiceCreateOptions(false)
       toast.success('Invoice created and sent to customer')
     },
     onError: (error: unknown) => {
@@ -889,6 +976,9 @@ export default function RepairOrdersPage() {
     setShowPartComposer(false)
     setAddPartInventoryId('')
     setAddPartQuantity(1)
+    setInvoiceDueDate('')
+    setInvoiceDiscountAmount('')
+    setShowInvoiceCreateOptions(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -965,7 +1055,6 @@ export default function RepairOrdersPage() {
         .map((svc) => ({
           id: svc.id,
           name: svc.name,
-          base_price: svc.base_price,
         })) || []
 
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
@@ -1700,28 +1789,28 @@ export default function RepairOrdersPage() {
           })()
         }
         footer={
-          selectedOrder && (
-            <div className="space-y-4 -mx-6 -my-4 px-6 py-6 bg-red-50">
+          selectedOrder && showDangerZone && (
+            <div className="-mx-6 -my-4 space-y-2 bg-red-50 px-6 py-3">
               <button
                 type="button"
                 onClick={() => setShowDangerActions((prev) => !prev)}
-                className="w-full flex items-center justify-between text-left"
+                className="flex w-full items-center justify-between gap-4 text-left"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-red-100 text-red-700">
-                    <TriangleAlert className="w-5 h-5" />
+                  <div className="rounded-lg bg-red-100 p-1.5 text-red-700">
+                    <TriangleAlert className="h-4 w-4" />
                   </div>
                   <div className="text-sm font-semibold text-red-700 uppercase tracking-wide">
                     Danger Zone
                   </div>
                 </div>
-                <div className="p-2 text-red-700">
+                <div className="p-1 text-red-700">
                   {showDangerActions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </div>
               </button>
               {showDangerActions && (
                 <div className="flex flex-wrap gap-2 justify-end">
-                  <div className="w-full text-sm text-red-600">
+                  <div className="w-full text-sm leading-5 text-red-600">
                     Cancel stops work without deleting history. Delete will permanently remove this order.
                   </div>
                   <button
@@ -2116,19 +2205,29 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
-                <PriceBuilderPanel
-                  orderId={selectedOrder.id}
-                  orderStatus={(orderDetail ?? selectedOrder).status}
-                  services={services}
-                  canEdit={canEditPriceBuilderByRole}
-                  defaultLaborRate={taxFeeSettings?.labor_rate}
-                  onUpdated={() => {
-                    refetchOrderDetail()
-                    queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-                  }}
-                />
+                {showPriceBuilder && (
+                  <PriceBuilderPanel
+                    orderId={selectedOrder.id}
+                    orderStatus={(orderDetail ?? selectedOrder).status}
+                    services={services}
+                    canEdit={canEditPriceBuilderByRole}
+                    defaultLaborRate={taxFeeSettings?.labor_rate}
+                    onUpdated={() => {
+                      refetchOrderDetail()
+                      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+                    }}
+                  />
+                )}
 
-                {showLegacyPriceEditor && (
+                {showLaborBreakdown && (
+                  <RepairOrderLaborBreakdown
+                    laborItems={orderDetail?.labor_items ?? []}
+                    laborTotal={(orderDetail ?? selectedOrder)?.total_labor_cost ?? '0'}
+                    isLoading={isOrderDetailLoading}
+                  />
+                )}
+
+                {showPriceBuilder && showLegacyPriceEditor && (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Estimate</h3>
                   <div className="bg-gray-50 rounded-xl">
@@ -2212,7 +2311,7 @@ export default function RepairOrdersPage() {
                 })()}
 
                 {/* Parts and labor: use detail when available */}
-                {(() => {
+                {showPriceBuilder && (() => {
                   const displayOrder = orderDetail ?? selectedOrder
                   const partsUsage = orderDetail?.parts_usage ?? []
                   const laborItems = orderDetail?.labor_items ?? []
@@ -2433,7 +2532,7 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
-                {(() => {
+                {showPriceBuilder && (() => {
                   const totalsOrder = orderDetail ?? selectedOrder
                   const backendParts = parseFloat(totalsOrder?.total_parts_cost ?? '0') || 0
                   const backendLabor = parseFloat(totalsOrder?.total_labor_cost ?? '0') || 0
@@ -2625,28 +2724,47 @@ export default function RepairOrdersPage() {
                         <p className="text-sm text-indigo-700">Create invoice to send to customer for payment</p>
                       </div>
                     </div>
-                    <div className="mb-3">
-                      <label className="block text-sm font-medium text-indigo-700 mb-1">Due Date (optional)</label>
-                      <input
-                        type="date"
-                        value={invoiceDueDate}
-                        onChange={(e) => setInvoiceDueDate(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="block text-sm font-medium text-indigo-700 mb-1">Discount Amount (optional)</label>
-                      <input
-                        type="number"
-                        value={invoiceDiscountAmount}
-                        onChange={(e) => setInvoiceDiscountAmount(e.target.value)}
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="w-full px-3 py-2 border border-indigo-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      />
-                      <p className="mt-1 text-xs text-indigo-600">Applies to this invoice only.</p>
+                    <div className="mb-3 rounded-xl border border-indigo-200 bg-white/70">
+                      <button
+                        type="button"
+                        onClick={() => setShowInvoiceCreateOptions((prev) => !prev)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-indigo-900">Optional invoice settings</p>
+                          <p className="mt-0.5 text-xs text-indigo-700">{invoiceOptionSummary}</p>
+                        </div>
+                        <div className="p-1 text-indigo-600">
+                          {showInvoiceCreateOptions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </div>
+                      </button>
+                      {showInvoiceCreateOptions && (
+                        <div className="space-y-3 border-t border-indigo-200 px-3 py-3">
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-indigo-700">Due Date (optional)</label>
+                            <input
+                              type="date"
+                              value={invoiceDueDate}
+                              onChange={(e) => setInvoiceDueDate(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-indigo-700">Discount Amount (optional)</label>
+                            <input
+                              type="number"
+                              value={invoiceDiscountAmount}
+                              onChange={(e) => setInvoiceDiscountAmount(e.target.value)}
+                              min="0"
+                              step="0.01"
+                              placeholder="0.00"
+                              className="w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <p className="mt-1 text-xs text-indigo-600">Applies to this invoice only.</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
