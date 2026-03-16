@@ -431,3 +431,22 @@
 - No detached worktree produced a clean, non-stale code delta that should be merged into `main` without risking regression.
 - As a result, no detached worktree code was ported into the active tree during this audit.
 - The only commit created from this task is the audit record itself so the repository history reflects why no code merge was performed.
+
+---
+
+# Detached Worktree Cleanup (2026-03-16)
+
+## Plan
+- [x] Preserve any dirty detached worktree edits before removal.
+- [x] Remove all auxiliary git worktrees and prune stale metadata.
+- [x] Verify that only the main checkout remains and record the preservation path.
+
+## Progress Notes
+- [x] Stashed dirty detached worktrees with `pre-remove worktree backup` messages that include the original path and detached HEAD for traceability.
+- [x] Removed all auxiliary worktrees under `~/.codex/worktrees` and `~/.cursor/worktrees`, then pruned worktree metadata.
+- [x] Verified `git worktree list --porcelain` now reports only `/Users/sergio/GitHub/TruckPitStop` on `refs/heads/main`.
+
+## Review
+- Detached worktrees have been removed from the machine; only the primary checkout remains attached to `main`.
+- Dirty detached worktree contents were not discarded: 19 preservation stashes were created in the main repository before removal.
+- Residual risk: those preservation stashes remain in `git stash list` until they are manually reviewed and dropped.
