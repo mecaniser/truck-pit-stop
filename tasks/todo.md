@@ -409,3 +409,25 @@
   `feat(dashboard): improve queue fit and team readability`
   `docs(tasks): capture task history and commit workflow`
 - Push target: `origin/main`
+
+---
+
+# Detached Worktree Merge Audit (2026-03-16)
+
+## Plan
+- [x] Inventory all git worktrees and identify detached ones.
+- [x] Inspect detached worktrees for dirty state, unique commits, and practical merge candidates.
+- [x] Verify whether detached worktree behaviors are already present on `main` in newer form.
+- [x] Decide whether to merge, port selected deltas, or explicitly skip stale worktree edits.
+- [x] Record the audit result and commit only the audit if no safe code merge remains.
+
+## Progress Notes
+- [x] Confirmed the active branch is `main` at `a317fe4` before the audit started.
+- [x] Found many detached worktrees under `~/.codex/worktrees` and `~/.cursor/worktrees`, but every detached HEAD inspected is already an ancestor of `main`; there are no unique detached commits to merge.
+- [x] Narrowed the problem to uncommitted edits inside a subset of detached worktrees.
+- [x] Compared those edits against current `main` and confirmed the substantive feature areas are already present in newer form on `main`, including mechanic workflow statuses, mechanic portal routing, points/PTO flows, quote resend/approval behavior, and customer-linking during registration.
+
+## Review
+- No detached worktree produced a clean, non-stale code delta that should be merged into `main` without risking regression.
+- As a result, no detached worktree code was ported into the active tree during this audit.
+- The only commit created from this task is the audit record itself so the repository history reflects why no code merge was performed.
