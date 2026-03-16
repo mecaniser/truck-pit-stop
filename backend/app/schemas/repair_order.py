@@ -156,7 +156,7 @@ class RepairOperationCandidate(BaseModel):
     name: str
     description: Optional[str] = None
     estimated_hours: Decimal
-    provider: str = "motor"
+    provider: str = "internal_library"
 
 
 class PriceBuildRepairOpsApplyRequest(BaseModel):
@@ -164,6 +164,7 @@ class PriceBuildRepairOpsApplyRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     estimated_hours: Optional[Decimal] = None
+    provider: Optional[str] = None
     auto_recalc_enabled: bool = True
 
 

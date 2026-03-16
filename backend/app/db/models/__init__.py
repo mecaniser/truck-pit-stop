@@ -7,7 +7,7 @@ from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.supplier import Supplier
 from app.db.models.labor import Labor
 from app.db.models.labor import LaborLineType
-from app.db.models.motor_operation_cache import MotorOperationCache
+from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.quote import Quote
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
@@ -47,7 +47,7 @@ __all__ = [
     "PartsUsage",
     "Labor",
     "LaborLineType",
-    "MotorOperationCache",
+    "LaborOperationMemory",
     "Quote",
     "Invoice",
     "Payment",

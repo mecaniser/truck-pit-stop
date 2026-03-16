@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,7 +22,7 @@ sys.path.insert(0, ".")
 from app.db.session import AsyncSessionLocal  # noqa: E402
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus  # noqa: E402
 from app.db.models.labor import Labor, LaborLineType  # noqa: E402
-from app.services.pricing import get_selected_services_total  # noqa: E402
+from app.db.models.tenant import Tenant  # noqa: E402
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -32,7 +32,7 @@ def _to_decimal(value: Any) -> Decimal:
         return Decimal("0.00")
 
 
-def _parse_uuid(value: Any) -> UUID | None:
+def _parse_uuid(value: Any) -> Optional[UUID]:
     if value is None:
         return None
     try:
@@ -72,9 +72,13 @@ async def run_backfill(batch_size: int = 200) -> None:
             orders = result.scalars().all()
 
             for order in orders:
+                tenant_rate_result = await db.execute(
+                    select(Tenant.labor_rate).where(Tenant.id == order.tenant_id)
+                )
+                tenant_labor_rate = _to_decimal(tenant_rate_result.scalar_one_or_none())
                 notes = order.internal_notes
                 selected_services: list[dict] = []
-                parsed: dict[str, Any] | None = None
+                parsed: Optional[dict[str, Any]] = None
 
                 if notes:
                     try:
@@ -89,17 +93,15 @@ async def run_backfill(batch_size: int = 200) -> None:
                 if selected_services:
                     for svc in selected_services:
                         svc_name = str(svc.get("name") or "Service")
-                        svc_price = _to_decimal(svc.get("base_price", "0"))
                         source_service_id = _parse_uuid(svc.get("id"))
 
                         exists = any(
-                            li.line_type == LaborLineType.FLAT_SERVICE
+                            li.line_type in {LaborLineType.FLAT_SERVICE, LaborLineType.MANUAL}
                             and (
                                 (source_service_id and li.source_service_id == source_service_id)
                                 or (
                                     not source_service_id
                                     and li.description == svc_name
-                                    and Decimal(str(li.hourly_rate)) == svc_price
                                     and Decimal(str(li.hours)) == Decimal("1")
                                 )
                             )
@@ -115,9 +117,9 @@ async def run_backfill(batch_size: int = 200) -> None:
                                 service_code=None,
                                 description=svc_name,
                                 hours=Decimal("1.00"),
-                                hourly_rate=svc_price,
-                                total_cost=svc_price,
-                                line_type=LaborLineType.FLAT_SERVICE,
+                                hourly_rate=tenant_labor_rate,
+                                total_cost=tenant_labor_rate,
+                                line_type=LaborLineType.MANUAL,
                                 provider=None,
                                 provider_operation_id=None,
                                 auto_recalc_enabled=True,
@@ -137,8 +139,6 @@ async def run_backfill(batch_size: int = 200) -> None:
                 else:
                     parts_total = sum(_to_decimal(pu.total_price) for pu in order.parts_usage)
                     labor_total = sum(_to_decimal(li.total_cost) for li in order.labor_items)
-                    if labor_total <= Decimal("0.00"):
-                        labor_total = get_selected_services_total(order.internal_notes)
                     order.total_parts_cost = parts_total
                     order.total_labor_cost = labor_total
                     order.total_cost = parts_total + labor_total

@@ -1,32 +1,33 @@
 from __future__ import annotations
 
-import json
+import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from time import perf_counter
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.db.models.labor import Labor, LaborLineType
-from app.db.models.motor_operation_cache import MotorOperationCache
+from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service
 from app.db.models.tenant import Tenant
 from app.core.logging import get_logger
-from app.services.labor_provider.base import (
-    LaborProviderError,
-    ProviderWarning,
+from app.services.repair_operation_library import (
+    OperationEstimate,
+    OperationWarning,
     RepairOperationCandidate,
-    VehicleContext,
+    build_custom_candidate,
+    build_custom_estimate,
+    get_library_estimate,
+    search_operation_library,
 )
-from app.services.labor_provider.motor import MotorLaborProvider
-from app.services.pricing import get_selected_services_total
 
 
 class PriceBuildError(Exception):
@@ -53,7 +54,7 @@ logger = get_logger(__name__)
 @dataclass
 class PriceBuildResult:
     order: RepairOrder
-    warnings: list[ProviderWarning]
+    warnings: list[OperationWarning]
 
 
 def _money(value: Decimal) -> Decimal:
@@ -64,29 +65,67 @@ def _is_locked(order: RepairOrder) -> bool:
     return order.pricing_locked_at is not None
 
 
-def _vehicle_ctx(order: RepairOrder) -> VehicleContext:
-    vehicle = order.vehicle
-    if vehicle is None:
-        return VehicleContext()
-    return VehicleContext(
-        vin=vehicle.vin,
-        year=vehicle.year,
-        make=vehicle.make,
-        model=vehicle.model,
-    )
-
-
-def _vehicle_fingerprint(order: RepairOrder) -> str:
+def _vehicle_signature(order: RepairOrder) -> str:
     v = order.vehicle
     if not v:
         return "unknown"
-    return f"{v.year or 'na'}:{(v.make or '').lower()}:{(v.model or '').lower()}:{v.vin or 'na'}"
+    parts: list[str] = []
+
+    def add(label: str, value: Optional[object]) -> None:
+        normalized = _normalize_lookup(None if value is None else str(value))
+        if normalized:
+            parts.append(f"{label}:{normalized}")
+
+    add("year", getattr(v, "nhtsa_model_year", None) or v.year)
+    add("make", getattr(v, "nhtsa_make", None) or v.make)
+    add("model", getattr(v, "nhtsa_model", None) or v.model)
+    add("vehicle_type", getattr(v, "nhtsa_vehicle_type", None))
+    add("body_class", getattr(v, "nhtsa_body_class", None))
+    add("drive_type", getattr(v, "nhtsa_drive_type", None))
+    add("fuel_type", getattr(v, "nhtsa_fuel_type", None))
+    add("engine_cylinders", getattr(v, "nhtsa_engine_cylinders", None))
+    add("engine_displacement_l", getattr(v, "nhtsa_engine_displacement_l", None))
+    add("gvwr", getattr(v, "nhtsa_gvwr", None))
+
+    return "|".join(parts) if parts else "unknown"
+
+
+def _legacy_vehicle_signature(order: RepairOrder) -> str:
+    v = order.vehicle
+    if not v:
+        return "unknown"
+    return f"{v.year or 'na'}:{(v.make or '').lower()}:{(v.model or '').lower()}"
+
+
+def _vehicle_signatures(order: RepairOrder) -> list[str]:
+    signatures: list[str] = []
+    for candidate in (_vehicle_signature(order), _legacy_vehicle_signature(order)):
+        if candidate and candidate not in signatures:
+            signatures.append(candidate)
+    return signatures or ["unknown"]
+
+
+def _normalize_lookup(value: Optional[str]) -> str:
+    clean = re.sub(r"\s+", " ", (value or "").strip().lower())
+    return clean
+
+
+def _memory_operation_key(
+    *,
+    operation_id: Optional[str] = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Optional[str]:
+    if _normalize_lookup(operation_id):
+        return f"operation:{_normalize_lookup(operation_id)}"
+    if _normalize_lookup(name):
+        return f"name:{_normalize_lookup(name)}"
+    if _normalize_lookup(description):
+        return f"description:{_normalize_lookup(description)}"
+    return None
 
 
 class PriceBuildService:
-    def __init__(self) -> None:
-        self.provider = MotorLaborProvider()
-
     async def load_order(self, db: AsyncSession, order_id: UUID) -> RepairOrder:
         result = await db.execute(
             select(RepairOrder)
@@ -129,22 +168,24 @@ class PriceBuildService:
         if not service:
             raise PriceBuildNotFoundError("Service not found")
 
+        tenant = await self._get_tenant(db, order.tenant_id)
         qty = Decimal(quantity)
-        base_price = Decimal(str(service.base_price))
+        hourly_rate = Decimal(str(tenant.labor_rate))
 
         existing_line = next(
             (
                 li
                 for li in order.labor_items
-                if li.line_type == LaborLineType.FLAT_SERVICE and li.source_service_id == service.id
+                if li.source_service_id == service.id
             ),
             None,
         )
         if existing_line:
             existing_line.description = service.name
             existing_line.hours = qty
-            existing_line.hourly_rate = base_price
-            existing_line.total_cost = _money(qty * base_price)
+            existing_line.hourly_rate = hourly_rate
+            existing_line.total_cost = _money(qty * hourly_rate)
+            existing_line.line_type = LaborLineType.MANUAL
             existing_line.auto_recalc_enabled = True
         else:
             db.add(
@@ -154,9 +195,9 @@ class PriceBuildService:
                     service_code=None,
                     description=service.name,
                     hours=qty,
-                    hourly_rate=base_price,
-                    total_cost=_money(qty * base_price),
-                    line_type=LaborLineType.FLAT_SERVICE,
+                    hourly_rate=hourly_rate,
+                    total_cost=_money(qty * hourly_rate),
+                    line_type=LaborLineType.MANUAL,
                     provider=None,
                     provider_operation_id=None,
                     auto_recalc_enabled=True,
@@ -172,26 +213,31 @@ class PriceBuildService:
         db: AsyncSession,
         order: RepairOrder,
         query: str,
-    ) -> tuple[list[RepairOperationCandidate], list[ProviderWarning]]:
+    ) -> tuple[list[RepairOperationCandidate], list[OperationWarning]]:
         clean_query = (query or "").strip()
         if not clean_query:
-            return [], [ProviderWarning(code="invalid_query", message="Search query is required.")]
+            return [], [OperationWarning(code="invalid_query", message="Search query is required.")]
 
-        cache_key = f"search:{clean_query.lower()}"
-        cached = await self._read_cached_candidates(db, order, cache_key)
-        if cached:
-            return cached, []
-
-        candidates, warnings = await self.provider.search_operations(_vehicle_ctx(order), clean_query)
-        if candidates:
-            await self._write_cache(
-                db=db,
-                order=order,
-                operation_key=cache_key,
-                normalized_hours=candidates[0].estimated_hours,
-                payload=candidates,
+        learned_candidates = await self._search_internal_memory(db, order, clean_query)
+        library_candidates = search_operation_library(clean_query)
+        candidates = self._merge_candidates(learned_candidates, library_candidates)
+        warnings: list[OperationWarning] = []
+        if learned_candidates:
+            warnings.append(
+                OperationWarning(
+                    code="internal_memory_hit",
+                    message="Using saved labor hours from previous matching jobs.",
+                )
             )
-        return candidates, warnings
+        if candidates:
+            return candidates, warnings
+
+        return [build_custom_candidate(clean_query)], [
+            OperationWarning(
+                code="no_saved_match",
+                message="No saved labor match yet. Add hours once and future matching jobs will reuse them.",
+            )
+        ]
 
     async def add_repair_operation_line(
         self,
@@ -202,31 +248,25 @@ class PriceBuildService:
         name: Optional[str] = None,
         description: Optional[str] = None,
         estimated_hours: Optional[Decimal] = None,
+        provider: Optional[str] = None,
         auto_recalc_enabled: bool = True,
     ) -> PriceBuildResult:
         self._assert_editable(order)
 
         tenant = await self._get_tenant(db, order.tenant_id)
-        warnings: list[ProviderWarning] = []
+        warnings: list[OperationWarning] = []
 
         est_hours = estimated_hours
         est_name = name or operation_id
         est_description = description
+        resolved_provider = provider or "internal_library"
         if est_hours is None:
-            try:
-                estimate = await self._get_operation_estimate_cached(db, order, operation_id)
-                est_hours = estimate.estimated_hours
-                est_name = name or estimate.name
-                est_description = description or estimate.description
-                warnings.extend(estimate.warnings)
-            except LaborProviderError:
-                est_hours = Decimal("0.00")
-                warnings.append(
-                    ProviderWarning(
-                        code="provider_unavailable",
-                        message="MOTOR estimate unavailable. Enter labor hours manually.",
-                    )
-                )
+            estimate = await self._get_operation_estimate(db, order, operation_id, name=name)
+            est_hours = estimate.estimated_hours
+            est_name = name or estimate.name
+            est_description = description or estimate.description
+            warnings.extend(estimate.warnings)
+            resolved_provider = provider or estimate.provider
 
         hourly_rate = Decimal(str(tenant.labor_rate))
         line = Labor(
@@ -237,15 +277,22 @@ class PriceBuildService:
             hourly_rate=hourly_rate,
             total_cost=_money(Decimal(str(est_hours)) * hourly_rate),
             line_type=LaborLineType.REPAIR_OPERATION,
-            provider="motor",
+            provider=resolved_provider,
             provider_operation_id=operation_id,
             auto_recalc_enabled=auto_recalc_enabled,
             source_service_id=None,
         )
-        if est_description and est_description.strip():
-            line.description = est_description.strip()
 
         db.add(line)
+        await self._upsert_internal_memory(
+            db=db,
+            order=order,
+            operation_id=operation_id,
+            name=est_name,
+            description=est_description,
+            hours=Decimal(str(est_hours)),
+            source_provider=resolved_provider,
+        )
         await db.commit()
         order = await self.load_order(db, order.id)
         result = await self.recalculate_order(db, order)
@@ -289,6 +336,17 @@ class PriceBuildService:
         if hours is not None or hourly_rate is not None:
             line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
 
+        if line.line_type == LaborLineType.REPAIR_OPERATION:
+            await self._upsert_internal_memory(
+                db=db,
+                order=order,
+                operation_id=line.provider_operation_id,
+                name=line.description,
+                description=line.description,
+                hours=Decimal(str(line.hours)),
+                source_provider=line.provider or "internal_memory",
+            )
+
         await db.commit()
         order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
@@ -321,7 +379,7 @@ class PriceBuildService:
     async def recalculate_order(self, db: AsyncSession, order: RepairOrder) -> PriceBuildResult:
         started = perf_counter()
         self._assert_editable(order)
-        warnings: list[ProviderWarning] = []
+        warnings: list[OperationWarning] = []
 
         if settings.ENVIRONMENT != "development" and order.status in FINALIZED_STATUSES:
             totals = self._compute_totals(order)
@@ -343,7 +401,7 @@ class PriceBuildService:
             if not line.auto_recalc_enabled:
                 continue
 
-            if line.line_type == LaborLineType.FLAT_SERVICE and line.source_service_id:
+            if line.source_service_id:
                 svc_result = await db.execute(
                     select(Service).where(
                         and_(
@@ -355,25 +413,22 @@ class PriceBuildService:
                 service = svc_result.scalar_one_or_none()
                 if service:
                     line.description = service.name
-                    line.hourly_rate = Decimal(str(service.base_price))
-                    line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
-            elif (
-                line.line_type == LaborLineType.REPAIR_OPERATION
-                and line.provider == "motor"
-                and line.provider_operation_id
-            ):
-                try:
-                    estimate = await self._get_operation_estimate_cached(db, order, line.provider_operation_id)
-                    line.hours = estimate.estimated_hours
-                    line.hourly_rate = Decimal(str(tenant.labor_rate))
-                    line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
-                except LaborProviderError:
-                    warnings.append(
-                        ProviderWarning(
-                            code="provider_unavailable",
-                            message=f"Unable to refresh hours for operation {line.provider_operation_id}.",
-                        )
-                    )
+                # Service-sourced lines are billed as labor-hour units.
+                if line.line_type == LaborLineType.FLAT_SERVICE:
+                    line.line_type = LaborLineType.MANUAL
+                line.hourly_rate = Decimal(str(tenant.labor_rate))
+                line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
+            elif line.line_type == LaborLineType.REPAIR_OPERATION and line.provider_operation_id:
+                estimate = await self._get_operation_estimate(
+                    db,
+                    order,
+                    line.provider_operation_id,
+                    name=line.description,
+                )
+                line.hours = estimate.estimated_hours
+                line.hourly_rate = Decimal(str(tenant.labor_rate))
+                line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
+                warnings.extend(estimate.warnings)
 
         totals = self._compute_totals(order)
         order.total_parts_cost = totals["parts_total"]
@@ -425,10 +480,6 @@ class PriceBuildService:
     def _compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
         parts_total = _money(sum(Decimal(str(p.total_price)) for p in order.parts_usage))
         labor_total = _money(sum(Decimal(str(l.total_cost)) for l in order.labor_items))
-        if labor_total <= Decimal("0.00"):
-            legacy_total = _money(get_selected_services_total(order.internal_notes))
-            if legacy_total > Decimal("0.00"):
-                labor_total = legacy_total
         total_cost = _money(parts_total + labor_total)
         return {
             "parts_total": parts_total,
@@ -443,125 +494,187 @@ class PriceBuildService:
             raise PriceBuildNotFoundError("Tenant not found")
         return tenant
 
-    async def _get_operation_estimate_cached(
+    async def _get_operation_estimate(
         self,
         db: AsyncSession,
         order: RepairOrder,
         operation_id: str,
-    ):
-        cache_key = f"operation:{operation_id}"
-        cached_candidates = await self._read_cached_candidates(db, order, cache_key)
-        if cached_candidates:
-            first = cached_candidates[0]
-            from app.services.labor_provider.base import ProviderEstimate
-
-            return ProviderEstimate(
-                operation_id=first.operation_id,
-                name=first.name,
-                description=first.description,
-                estimated_hours=first.estimated_hours,
-                warnings=[],
-            )
-
-        estimate = await self.provider.get_operation_estimate(_vehicle_ctx(order), operation_id)
-        await self._write_cache(
-            db=db,
-            order=order,
-            operation_key=cache_key,
-            normalized_hours=estimate.estimated_hours,
-            payload=[
-                RepairOperationCandidate(
-                    operation_id=estimate.operation_id,
-                    name=estimate.name,
-                    description=estimate.description,
-                    estimated_hours=estimate.estimated_hours,
-                    provider="motor",
-                )
-            ],
+        *,
+        name: Optional[str] = None,
+    ) -> OperationEstimate:
+        learned_estimate = await self._read_internal_memory_estimate(
+            db,
+            order,
+            operation_id=operation_id,
         )
-        return estimate
+        if learned_estimate:
+            return learned_estimate
 
-    async def _read_cached_candidates(
+        library_estimate = get_library_estimate(operation_id)
+        if library_estimate:
+            return library_estimate
+
+        return build_custom_estimate(operation_id, name=name)
+
+    async def _search_internal_memory(
         self,
         db: AsyncSession,
         order: RepairOrder,
-        operation_key: str,
+        query: str,
     ) -> list[RepairOperationCandidate]:
-        expires_at = datetime.now(timezone.utc) - timedelta(seconds=settings.MOTOR_CACHE_TTL_SECONDS)
+        pattern = f"%{_normalize_lookup(query)}%"
         result = await db.execute(
-            select(MotorOperationCache).where(
+            select(LaborOperationMemory)
+            .where(
                 and_(
-                    MotorOperationCache.tenant_id == order.tenant_id,
-                    MotorOperationCache.vehicle_fingerprint == _vehicle_fingerprint(order),
-                    MotorOperationCache.operation_key == operation_key,
-                    MotorOperationCache.last_synced_at >= expires_at,
+                    LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.vehicle_signature.in_(_vehicle_signatures(order)),
+                    or_(
+                        LaborOperationMemory.operation_key.ilike(pattern),
+                        LaborOperationMemory.operation_name.ilike(pattern),
+                        LaborOperationMemory.operation_description.ilike(pattern),
+                        LaborOperationMemory.provider_operation_id.ilike(pattern),
+                    ),
                 )
             )
+            .order_by(
+                LaborOperationMemory.usage_count.desc(),
+                LaborOperationMemory.last_used_at.desc(),
+            )
+            .limit(8)
         )
-        row = result.scalar_one_or_none()
-        if not row:
-            return []
-        try:
-            parsed = json.loads(row.payload_json)
-            out: list[RepairOperationCandidate] = []
-            for item in parsed:
-                out.append(
-                    RepairOperationCandidate(
-                        operation_id=str(item.get("operation_id") or ""),
-                        name=str(item.get("name") or "Operation"),
-                        description=item.get("description"),
-                        estimated_hours=Decimal(str(item.get("estimated_hours") or "0")),
-                        provider=str(item.get("provider") or "motor"),
-                    )
-                )
-            return out
-        except Exception:
-            return []
+        rows = result.scalars().all()
+        seen: set[str] = set()
+        out: list[RepairOperationCandidate] = []
+        for row in rows:
+            candidate = self._memory_candidate(row)
+            dedupe_key = _normalize_lookup(candidate.operation_id or row.operation_key)
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            out.append(candidate)
+        return out
 
-    async def _write_cache(
+    async def _read_internal_memory_estimate(
         self,
         db: AsyncSession,
         order: RepairOrder,
-        operation_key: str,
-        normalized_hours: Decimal,
-        payload: list[RepairOperationCandidate],
-    ) -> None:
-        now = datetime.now(timezone.utc)
-        payload_json = json.dumps(
-            [
-                {
-                    "operation_id": p.operation_id,
-                    "name": p.name,
-                    "description": p.description,
-                    "estimated_hours": str(p.estimated_hours),
-                    "provider": p.provider,
-                }
-                for p in payload
-            ]
+        *,
+        operation_id: Optional[str] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Optional[OperationEstimate]:
+        operation_key = _memory_operation_key(
+            operation_id=operation_id,
+            name=name,
+            description=description,
         )
+        if not operation_key:
+            return None
+
         result = await db.execute(
-            select(MotorOperationCache).where(
+            select(LaborOperationMemory).where(
                 and_(
-                    MotorOperationCache.tenant_id == order.tenant_id,
-                    MotorOperationCache.vehicle_fingerprint == _vehicle_fingerprint(order),
-                    MotorOperationCache.operation_key == operation_key,
+                    LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.vehicle_signature.in_(_vehicle_signatures(order)),
+                    LaborOperationMemory.operation_key == operation_key,
                 )
             )
         )
-        row = result.scalar_one_or_none()
-        if row:
-            row.normalized_hours = normalized_hours
-            row.payload_json = payload_json
-            row.last_synced_at = now
-        else:
-            db.add(
-                MotorOperationCache(
-                    tenant_id=order.tenant_id,
-                    vehicle_fingerprint=_vehicle_fingerprint(order),
-                    operation_key=operation_key,
-                    normalized_hours=normalized_hours,
-                    payload_json=payload_json,
-                    last_synced_at=now,
+        rows = result.scalars().all()
+        if not rows:
+            return None
+        row = next((item for item in rows if item.vehicle_signature == _vehicle_signature(order)), rows[0])
+
+        return OperationEstimate(
+            operation_id=row.provider_operation_id or operation_id or row.operation_key,
+            name=row.operation_name,
+            description=row.operation_description,
+            estimated_hours=Decimal(str(row.normalized_hours)),
+            warnings=[],
+            provider="internal_memory",
+        )
+
+    async def _upsert_internal_memory(
+        self,
+        db: AsyncSession,
+        order: RepairOrder,
+        *,
+        operation_id: Optional[str],
+        name: Optional[str],
+        description: Optional[str],
+        hours: Decimal,
+        source_provider: Optional[str],
+    ) -> None:
+        operation_key = _memory_operation_key(
+            operation_id=operation_id,
+            name=name,
+            description=description,
+        )
+        if not operation_key:
+            return
+
+        now = datetime.now(timezone.utc)
+        preferred_signature = _vehicle_signature(order)
+        result = await db.execute(
+            select(LaborOperationMemory).where(
+                and_(
+                    LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.vehicle_signature.in_(_vehicle_signatures(order)),
+                    LaborOperationMemory.operation_key == operation_key,
                 )
             )
-        await db.commit()
+        )
+        rows = result.scalars().all()
+        row = next((item for item in rows if item.vehicle_signature == preferred_signature), rows[0] if rows else None)
+        operation_name = (name or description or operation_id or "Operation").strip()
+        operation_description = description.strip() if description else None
+        if row:
+            row.vehicle_signature = preferred_signature
+            row.operation_name = operation_name
+            row.operation_description = operation_description
+            row.provider_operation_id = operation_id
+            row.source_provider = source_provider or row.source_provider or "internal_memory"
+            row.normalized_hours = Decimal(str(hours))
+            row.usage_count = int(row.usage_count or 0) + 1
+            row.last_used_at = now
+            return
+
+        db.add(
+            LaborOperationMemory(
+                tenant_id=order.tenant_id,
+                vehicle_signature=preferred_signature,
+                operation_key=operation_key,
+                operation_name=operation_name,
+                operation_description=operation_description,
+                provider_operation_id=operation_id,
+                source_provider=source_provider or "internal_memory",
+                normalized_hours=Decimal(str(hours)),
+                usage_count=1,
+                last_used_at=now,
+            )
+        )
+
+    def _memory_candidate(self, row: LaborOperationMemory) -> RepairOperationCandidate:
+        return RepairOperationCandidate(
+            operation_id=row.provider_operation_id or row.operation_key,
+            name=row.operation_name,
+            description=row.operation_description,
+            estimated_hours=Decimal(str(row.normalized_hours)),
+            provider="internal_memory",
+        )
+
+    def _merge_candidates(
+        self,
+        preferred: list[RepairOperationCandidate],
+        secondary: list[RepairOperationCandidate],
+    ) -> list[RepairOperationCandidate]:
+        merged: list[RepairOperationCandidate] = []
+        seen: set[str] = set()
+        for candidate in [*preferred, *secondary]:
+            key = _normalize_lookup(candidate.operation_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(candidate)
+        return merged[:8]

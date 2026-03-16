@@ -9,6 +9,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
 from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleCustomerUpdate, VehicleResponse
+from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 
 router = APIRouter()
 
@@ -59,6 +60,7 @@ async def create_vehicle(
         customer_id=vehicle_data.customer_id,
         **vehicle_data.model_dump(exclude={"customer_id"}),
     )
+    await sync_vehicle_nhtsa_snapshot(vehicle)
     
     db.add(vehicle)
     await db.commit()
@@ -171,6 +173,9 @@ async def update_vehicle(
     update_data = vehicle_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(vehicle, field, value)
+
+    if {"vin", "year"} & set(update_data.keys()) or (vehicle.vin and vehicle.nhtsa_decoded_at is None):
+        await sync_vehicle_nhtsa_snapshot(vehicle)
     
     await db.commit()
     await db.refresh(vehicle)

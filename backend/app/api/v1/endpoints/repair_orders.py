@@ -21,7 +21,6 @@ from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
-from app.services.pricing import get_selected_services_total
 from app.services.price_build_service import (
     PriceBuildLockedError,
     PriceBuildNotFoundError,
@@ -1639,8 +1638,6 @@ async def _recompute_repair_order_totals(db: AsyncSession, order_id: UUID) -> No
         return
     total_parts = sum(Decimal(str(pu.total_price)) for pu in order.parts_usage)
     total_labor = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
-    if total_labor <= Decimal("0.00"):
-        total_labor = get_selected_services_total(order.internal_notes)
     order.total_parts_cost = total_parts
     order.total_labor_cost = total_labor
     order.total_cost = total_parts + total_labor

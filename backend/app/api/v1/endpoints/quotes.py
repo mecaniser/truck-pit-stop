@@ -35,7 +35,6 @@ from app.services.pricing import (
     get_order_labor_total,
     get_order_parts_total,
     get_order_subtotal,
-    get_selected_services_total,
 )
 from app.services.price_build_service import (
     PriceBuildLockedError,

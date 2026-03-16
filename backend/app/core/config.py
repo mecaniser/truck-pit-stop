@@ -71,14 +71,6 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
 
-    # MOTOR sandbox / API
-    MOTOR_ENABLED: bool = False
-    MOTOR_BASE_URL: str = "https://www.motor.com/daas-sandbox"
-    MOTOR_PUBLIC_KEY: str = ""
-    MOTOR_PRIVATE_KEY: str = ""
-    MOTOR_TIMEOUT_SECONDS: int = 10
-    MOTOR_CACHE_TTL_SECONDS: int = 3600
-    
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     PUBLIC_API_BASE_URL: str = "http://localhost:8000"

@@ -50,19 +50,19 @@ class TestGetOrderPartsTotal:
 
 
 class TestGetOrderLaborTotal:
-    def test_prefers_stored_labor_cost_over_selected_services(self):
+    def test_uses_stored_labor_cost_over_selected_services(self):
         notes = json.dumps({"selected_services": [{"base_price": "100"}]})
         order = SimpleNamespace(internal_notes=notes, total_labor_cost=50)
         assert get_order_labor_total(order) == Decimal("50")
 
-    def test_falls_back_to_labor_cost_when_no_services(self):
+    def test_uses_stored_labor_cost_when_no_services(self):
         order = SimpleNamespace(internal_notes=None, total_labor_cost=75)
         assert get_order_labor_total(order) == Decimal("75")
 
-    def test_falls_back_to_selected_services_when_stored_labor_is_zero(self):
+    def test_does_not_fallback_to_selected_services_when_stored_labor_is_zero(self):
         notes = json.dumps({"selected_services": [{"base_price": "100"}]})
         order = SimpleNamespace(internal_notes=notes, total_labor_cost=0)
-        assert get_order_labor_total(order) == Decimal("100")
+        assert get_order_labor_total(order) == Decimal("0")
 
 
 class TestGetOrderSubtotal:

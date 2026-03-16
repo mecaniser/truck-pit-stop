@@ -30,16 +30,8 @@ def get_order_parts_total(order: Any) -> Decimal:
 
 
 def get_order_labor_total(order: Any) -> Decimal:
-    # New source of truth is total_labor_cost computed from structured labor lines.
-    # Keep one-release fallback for legacy internal_notes.selected_services.
-    stored_labor = _to_decimal(getattr(order, "total_labor_cost", 0))
-    if stored_labor > 0:
-        return stored_labor
-
-    service_total = get_selected_services_total(getattr(order, "internal_notes", None))
-    if service_total > 0:
-        return service_total
-    return Decimal("0.00")
+    # Source of truth is total_labor_cost computed from structured labor lines.
+    return _to_decimal(getattr(order, "total_labor_cost", 0))
 
 
 def get_order_subtotal(order: Any) -> Decimal:

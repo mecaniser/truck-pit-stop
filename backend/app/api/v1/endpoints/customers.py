@@ -15,6 +15,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.appointment import Appointment
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerWithVehiclesResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
+from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
 router = APIRouter()
@@ -91,6 +92,7 @@ async def create_customer(
             customer_id=customer.id,
             **customer_data.initial_vehicle.model_dump(),
         )
+        await sync_vehicle_nhtsa_snapshot(vehicle)
         db.add(vehicle)
     
     await db.commit()
@@ -392,6 +394,7 @@ async def create_customer_vehicle(
         customer_id=customer_id,
         **vehicle_data.model_dump(),
     )
+    await sync_vehicle_nhtsa_snapshot(vehicle)
     
     db.add(vehicle)
     await db.commit()
@@ -482,6 +485,9 @@ async def update_customer_vehicle(
     update_data = vehicle_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(vehicle, field, value)
+
+    if {"vin", "year"} & set(update_data.keys()) or (vehicle.vin and vehicle.nhtsa_decoded_at is None):
+        await sync_vehicle_nhtsa_snapshot(vehicle)
     
     await db.commit()
     await db.refresh(vehicle)
