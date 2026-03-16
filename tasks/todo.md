@@ -377,6 +377,44 @@
 
 ---
 
+# Work Queue Header Status Cleanup (2026-03-16)
+
+## Plan
+- [x] Confirm where the duplicate work-order status badge is rendered inside the work queue.
+- [x] Remove the duplicate status badge from the queue card header while preserving lane-level readiness signals.
+- [x] Run targeted frontend verification and capture review notes.
+
+## Progress Notes
+- [x] Confirmed the duplicate is the order-level status badge rendered inside each `OrderCard`, even though the three work-queue lanes already categorize the orders by status/actionability.
+- [x] Removed the per-card status pill and the now-unused badge-color mapping so the queue cards rely on lane placement plus elapsed/mechanic details instead of repeating status in the header.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The work queue header/cards no longer repeat status information that is already conveyed by the lane structure.
+- `Needs Action`, `On the Floor`, and `Ready to Close` remain the primary status framing, which makes the queue header and cards less noisy.
+
+---
+
+# Work Queue Header Chip Correction (2026-03-16)
+
+## Plan
+- [x] Reconfirm the exact duplicated status indicators the user meant in the Work Queue header.
+- [x] Remove the top-right summary chips from the Work Queue header while preserving the refresh/last-updated control.
+- [x] Run targeted frontend verification and capture review notes.
+
+## Progress Notes
+- [x] Confirmed the correction: the user meant the header-level summary chips (`Needs Action`, `On Floor`, `Ready`) next to `Just Updated`, not the per-card status pill.
+- [x] Removed the header-level summary chip row and the now-unused `workQueueSummary` data, leaving the header with only title, info tooltip, and refresh/last-updated status.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The `WORK QUEUE` header no longer repeats the same lane summary chips that are already implied by the three queue columns below.
+- The refresh/last-updated control remains in place, so the header still communicates live status without the duplicated category pills.
+
+---
+
 # Scoped Commit And Push (2026-03-16)
 
 ## Plan
@@ -450,3 +488,401 @@
 - Detached worktrees have been removed from the machine; only the primary checkout remains attached to `main`.
 - Dirty detached worktree contents were not discarded: 19 preservation stashes were created in the main repository before removal.
 - Residual risk: those preservation stashes remain in `git stash list` until they are manually reviewed and dropped.
+
+---
+
+# My Garage Left-Rail Navigation (2026-03-16)
+
+## Plan
+- [x] Audit the current `MyGaragePage` shell and pin the target render order.
+- [x] Replace the top horizontal tab strip with a desktop left-side vertical navigation rail.
+- [x] Preserve a compact top navigation pattern on smaller screens so the layout remains usable on mobile.
+- [x] Refine the navigation styling so the garage sections read as a dedicated control rail, not generic stacked buttons.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] Confirmed the current shell order in `frontend/src/features/garage/MyGaragePage.tsx` is `horizontal tabs -> routed content`.
+- [x] Locked the requested desktop target order for this pass to `left navigation rail -> routed content pane`, with the section list remaining `Mechanics -> Services -> Inventory -> Suppliers -> Analytics`.
+- [x] Rebuilt the garage shell around a shared section config so desktop now renders a dedicated left navigation rail with icon-backed items and the content pane shows the active module context above routed content.
+- [x] Preserved a compact horizontal module strip for smaller screens so the new navigation pattern does not consume excessive vertical space on mobile.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- My Garage now uses a clearer desktop workspace layout: navigation lives on the left, content stays on the right, and the active module is reinforced with a dedicated header instead of a thin top tab row.
+- Mobile keeps the section switcher compact and horizontal, which preserves usability where a permanent left rail would crowd the viewport.
+- Residual risk: this is compile-verified, but a live browser pass is still worth doing to confirm the left rail feels balanced against the longest Mechanics and Inventory content states.
+
+---
+
+# My Garage Settings UX Alignment (2026-03-16)
+
+## Plan
+- [x] Capture the corrected UX target using the Settings page as the shell reference.
+- [x] Refactor `MyGaragePage` so its mobile and desktop navigation patterns match the Settings page behavior.
+- [x] Remove custom garage-shell framing that does not exist in the Settings page flow.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] User clarified the issue is UX, not aesthetics: My Garage should follow the Settings page interaction model shown in the screenshot.
+- [x] Locked the target shell for this pass to the Settings layout pattern: compact horizontal nav on mobile, sticky left sidebar on desktop, and direct routed content on the right without extra workspace headers.
+- [x] Replaced the custom My Garage hero and active-section header with a Settings-style shell that uses the same nav density, grouping, and active-state treatment as `UnifiedSettingsPage`.
+- [x] Kept My Garage route-driven so Mechanics, Services, Inventory, Suppliers, and Analytics still deep-link correctly while using the simpler Settings-style sidebar UX.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- My Garage now follows the same interaction structure as Settings instead of a custom workspace shell: compact mobile tabs, sticky desktop sidebar, and direct content rendering on the right.
+- The UX is flatter and more predictable because the extra “Shop control” and “Garage workspace” framing has been removed.
+- Residual risk: compile verification passed, but a browser pass is still worth doing to confirm the narrower Settings-style shell feels right for the widest Mechanics and Inventory states.
+
+---
+
+# My Garage Docked Sidebar And Settings Access (2026-03-16)
+
+## Plan
+- [x] Document the requested docked-sidebar behavior and settings access path.
+- [x] Expand the desktop My Garage sidebar so it fills the available viewport-height workspace and can hold a bottom-anchored utility action.
+- [x] Add a separate navigation action that routes tenants to `/dashboard/settings`.
+- [x] Run targeted frontend verification and summarize which existing Settings sections are the best candidates for future My Garage integration.
+
+## Progress Notes
+- [x] Confirmed the current My Garage shell already follows the Settings page interaction model, so this pass can stay focused on vertical sizing and settings access.
+- [x] Reviewed the existing Settings sections in `frontend/src/features/dashboard/UnifiedSettingsPage.tsx` to identify which ones are tenant-garage controls versus personal account controls.
+- [x] Expanded the desktop My Garage rail into a docked sidebar that fills the workspace height and reserves a dedicated bottom utility zone.
+- [x] Added `Profile & Settings` navigation affordances to both desktop and mobile so users can jump from My Garage to `/dashboard/settings`.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- My Garage now reads as a docked workspace: the left rail fills the viewport-height garage area on desktop, while `Profile & Settings` is separated from operational garage modules as a utility action at the bottom.
+- Mobile keeps the garage modules in a compact horizontal scroller but now also exposes the same settings jump as a separate action below the module strip.
+- After inspecting `UnifiedSettingsPage`, the best candidates to bring closer to My Garage later are garage-scoped controls only: `Garage Profile`, `Workforce`, `Notifications`, `Tax & Fees`, and optionally `Stripe Payments` / `Zelle` if the goal is an operations cockpit. Personal controls such as `Profile`, `Security`, and `Appearance` should stay in the dedicated Settings page.
+- Residual risk: viewport-height sizing is compile-verified, but a live browser pass is still worth doing to confirm the dock height feels correct against the actual breadcrumb/header stack on shorter laptop screens.
+
+---
+
+# My Garage Full-Page Sidebar Stretch (2026-03-16)
+
+## Plan
+- [x] Capture the correction that the desktop garage rail should stretch to the bottom of the page, not just the viewport.
+- [x] Remove the viewport-capped sticky sizing from the desktop garage rail.
+- [x] Keep garage module navigation pinned to the top of the rail and account/settings access anchored to the bottom.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] User clarified the desired behavior: the garage options belong at the top, while the account/profile settings route belongs at the true bottom of the page column.
+- [x] Confirmed the current issue in `frontend/src/features/garage/MyGaragePage.tsx`: the desktop rail uses `sticky` plus `h-[calc(100vh-9rem)]`, which caps it to viewport height instead of stretching with the page.
+- [x] Replaced the viewport-capped sticky rail with a full-height flex column so the sidebar now stretches with the page/content column while still respecting the minimum workspace height.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The desktop My Garage rail now stretches to the bottom of the page column instead of stopping at viewport height.
+- Garage modules stay grouped at the top of the rail, while the `Account` section with `Profile & Settings` remains anchored at the bottom.
+- Residual risk: compile verification passed, but a live browser pass is still worth doing to confirm the stretched rail looks correct on especially tall or especially short content states.
+
+---
+
+# My Garage Page-Floor Rail Fill (2026-03-16)
+
+## Plan
+- [x] Capture the correction that the rail must fill the remaining dashboard page column, not just rely on min-height.
+- [x] Make the My Garage route root participate in the dashboard flex layout as a filling child.
+- [x] Make the sidebar card inherit that full page-column height so `Account` stays at the true bottom.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] User clarified the remaining issue with the red outline: the left rail itself must reach the page floor, with `Profile & Settings` at the bottom of that full-height column.
+- [x] Confirmed the current shell still relies on `min-h-[calc(100vh-9rem)]`, which can leave a gap because the page wrapper is not growing as a true flex remainder inside `DashboardLayout`.
+- [x] Changed the My Garage route root to `flex-1` so it fills the remaining dashboard column and lets the desktop rail inherit that real page height.
+- [x] Replaced the desktop rail sizing with `min-h-full`/`flex-1` inheritance so the `Account` section now sits at the bottom of the full-height rail instead of a min-height approximation.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The left My Garage rail now fills the remaining dashboard page column, which matches the full-height outline you pointed out.
+- Garage navigation remains at the top of the rail, and the `Account` divider with `Profile & Settings` now sits at the bottom of that same full-height column.
+- Residual risk: compile verification passed, but I have not done a live browser pass to visually confirm the rail against the exact page chrome in your local viewport.
+
+---
+
+# My Garage Viewport-Constrained Rollback (2026-03-16)
+
+## Plan
+- [x] Capture the correction that the My Garage workspace should stay within the viewport and not expand with right-side content.
+- [x] Roll back the content-driven height behavior in the My Garage shell.
+- [x] Keep the left rail full-height within the visible workspace while making the right content pane scroll internally on desktop.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] User clarified that the prior page-floor fill should be rolled back because the right-side content should not exceed the viewport height.
+- [x] Confirmed the current shell issue in `frontend/src/features/garage/MyGaragePage.tsx`: the route root fills available space, but the right pane still grows with content instead of becoming the scroll container.
+- [x] Constrained the desktop My Garage workspace to `calc(100vh - 9rem)` and moved overflow ownership to the right content pane with `lg:overflow-y-auto`.
+- [x] Kept the desktop rail full-height within that visible workspace so the garage menu remains top-aligned and the `Account` section stays anchored at the bottom.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Desktop My Garage no longer expands with its routed content; the workspace stays within the viewport and the right pane scrolls internally.
+- The left rail still fills the visible workspace height, with garage navigation at the top and `Profile & Settings` at the bottom.
+- Residual risk: compile verification passed, but a live browser pass is still worth doing to confirm the new internal scrolling feels right in the Mechanics and Inventory pages.
+
+---
+
+# My Garage Content-Driven Height Restore (2026-03-16)
+
+## Plan
+- [x] Capture the correction that the My Garage page height should again follow the right-side content.
+- [x] Roll back the viewport-constrained shell introduced in the last pass.
+- [x] Keep the garage rail structure while restoring page-level expansion based on content height.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] User clarified that the intended behavior is the earlier content-driven page expansion, where the right-side content determines page height.
+- [x] Confirmed the current issue in `frontend/src/features/garage/MyGaragePage.tsx`: the desktop shell uses a fixed `lg:h-[calc(100vh-9rem)]` plus internal right-pane scrolling, which conflicts with that model.
+- [x] Removed the fixed desktop workspace height and internal right-pane scrolling so My Garage once again expands based on the routed content height.
+- [x] Kept the garage rail structure and bottom-anchored `Account` / `Profile & Settings` action intact while restoring page-level height growth.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- My Garage is back to content-driven page height on desktop, matching the earlier implementation you referenced.
+- The right pane no longer owns its own desktop scroll container; page height now follows the routed content again.
+- Residual risk: compile verification passed, but I have not done a live browser pass to confirm the rail still visually lands where you want for both short and very tall garage pages.
+
+---
+
+# My Garage Screenshot Overflow Correction (2026-03-16)
+
+## Plan
+- [x] Capture the correction indicated by the screenshot: right-side My Garage content should not push the page below the viewport.
+- [x] Reapply a viewport-constrained desktop shell for My Garage.
+- [x] Keep the left rail full-height within the visible workspace while restoring internal right-pane scrolling.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] The screenshot confirms the problem with the last restore: tall Services content is stretching the full page below the viewport.
+- [x] Locked the intended overflow owner for this pass to the desktop My Garage content pane, not the overall page.
+- [x] Reapplied the desktop workspace height constraint and internal right-pane scrolling in `frontend/src/features/garage/MyGaragePage.tsx`.
+- [x] Kept the left rail full-height within that visible workspace, with garage options at the top and `Account` / `Profile & Settings` anchored at the bottom.
+- [x] Used Playwright against the live local app with a seeded garage-owner session and mocked tall Services data to verify the rendered page behavior directly.
+- [x] Identified the remaining overflow root cause in Playwright: the My Garage route root was still computed as `flex: 1 1 0%` and rendered at `1187px` tall, so the fixed shell height was not actually taking effect.
+- [x] Fixed that conflict by switching the My Garage root to `lg:flex-none` and tightening the desktop shell height to `calc(100vh - 9.25rem)`.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The screenshoted overflow issue is corrected: Playwright measured the Services page at `1301px` on a `1300px` viewport, which no longer exceeds the viewport beyond measurement noise, and the My Garage shell now computes to `1152px` instead of `1187px`.
+- My Garage now behaves as a contained desktop workspace again, with scrolling owned by the right content pane instead of the overall page.
+- Verification completed with real browser automation on the live local app plus `npm run build`; no further code-only assumption remains on this point.
+
+---
+
+# My Garage Width Cap Rollback (2026-03-16)
+
+## Plan
+- [x] Record the rollback of the unintended My Garage width cap.
+- [x] Remove the centered max-width wrapper so My Garage fills the available dashboard width again.
+- [x] Verify the change with frontend build and a Playwright width check.
+
+## Progress Notes
+- [x] Confirmed the current width reduction is caused by `mx-auto max-w-[1400px]` on `frontend/src/features/garage/MyGaragePage.tsx`.
+- [x] Locked the rollback scope to width only: preserve the left rail and current overflow behavior, remove the unrequested workspace narrowing.
+- [x] Removed the centered max-width wrapper from `frontend/src/features/garage/MyGaragePage.tsx` while leaving the rail width and desktop overflow behavior intact.
+- [x] Verified with Playwright on the live Services page: on a `1920px` viewport, the My Garage wrapper now renders at `1845px` wide inside a `1909px` main content area, confirming the prior width cap is gone.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The unintended garage workspace narrowing has been rolled back; My Garage now fills the available dashboard width again.
+- The left rail remains in place, but the right content area is no longer constrained by the old `max-w-[1400px]` wrapper.
+- Residual risk: none specific to width after the Playwright check; any remaining spacing concerns would now be about the intentional left-rail footprint rather than a hidden outer width cap.
+
+---
+
+# Dashboard Mobile Work Queue Header Alignment (2026-03-16)
+
+## Plan
+- [x] Capture the correction that the Work Queue status update should stay on the same row as the section title on mobile.
+- [x] Adjust the Work Queue header layout so the title row and refresh/last-updated chip remain inline on small screens.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] Confirmed the current issue in `frontend/src/features/dashboard/DashboardHome.tsx`: the Work Queue header uses a mobile `flex-col` layout, which drops the refresh/last-updated status chip below the title instead of keeping it inline.
+- [x] Reworked the Work Queue header to use a single `justify-between` row on smaller screens, while keeping the title block flexible and the refresh/last-updated control fixed-width.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The Work Queue title and refresh/last-updated status chip now stay on the same header row on mobile instead of splitting into stacked rows.
+- The change is intentionally narrow: only the Work Queue header flex behavior was adjusted, so the queue lanes and larger-screen layout remain intact.
+- Residual risk: compile verification passed, but I have not done a live mobile browser pass to confirm the row still feels balanced with your exact font scaling and device width.
+
+---
+
+# Team Capacity Mobile UX Narrative Pass (2026-03-16)
+
+## Plan
+- [x] Audit the current Team Capacity mobile UX in code and against the supplied screenshot.
+- [x] Capture the intended mobile narrative before editing: summary first, mechanic board second, no abstract utilization framing or nested mobile scroll trap.
+- [x] Refactor Team Capacity so mobile uses a clearer floor snapshot and simplified mechanic cards.
+- [x] Run targeted verification and capture review notes, including the UX-audit limitation if browser automation stays blocked.
+
+## Progress Notes
+- [x] Activated the `frontend-design` and `ux-audit` skills for this pass.
+- [x] UX audit finding: the current mobile stack tells the same story three ways (`31 assigned`, `Team utilization`, per-mechanic load/status cards), but each block uses different language, which creates narrative conflict instead of clarity.
+- [x] UX audit finding: the internal mechanic-list scrollbar adds a second scroll context on mobile, so users have to parse both a summary card and a nested board in a compressed space.
+- [x] Locked the target mobile structure for this pass to `Team Capacity header -> Floor Snapshot summary -> Mechanic board list`, with concrete labels like jobs queued / techs ready instead of an abstract utilization percentage.
+- [x] Replaced the `Team utilization` percentage slab with a `Floor Snapshot` card, clarified the header total to `jobs assigned`, and added a dedicated `Mechanic Board` subheading so the section reads top-to-bottom instead of as three competing summaries.
+- [x] Simplified mechanic cards to one status pill plus `Active` / `Queued` stat tiles, prioritized the list by operational relevance, and removed the nested internal scroll behavior on mobile while preserving contained scrolling from `md` upward.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+- [x] Attempted live browser UX verification with Playwright on the running local app, but the tool could not launch because Chrome immediately exited with `Opening in existing browser session`.
+
+## Review
+- Team Capacity now tells a clearer mobile story: the top card answers “what is happening on the floor right now,” and the mechanic list below answers “who should I tap next.”
+- The old utilization percentage is gone because it was abstract and contradictory on mobile, especially in states like `0%` utilization with a large queued count.
+- Mobile no longer traps the mechanic list inside its own scrollbar, which removes the nested-scroll friction you called out.
+- Residual risk: compile verification passed, but the live mobile UX audit had to stop at code/screenshot analysis because Playwright could not take control of the browser in this environment.
+
+---
+
+# Team Capacity Desktop De-Emphasis Correction (2026-03-16)
+
+## Plan
+- [x] Capture the correction that the Team Capacity redesign should have remained mobile-only.
+- [x] Identify which current desktop Team Capacity elements are taking too much height away from Work Queue.
+- [x] Keep the clearer mobile narrative but compress desktop Team Capacity back to a low-emphasis summary and shorter mechanic cards.
+- [x] Run targeted frontend verification and capture review notes.
+
+## Progress Notes
+- [x] Confirmed the current desktop regression in `frontend/src/features/dashboard/DashboardHome.tsx`: the large `Floor Snapshot` block and the taller mobile stat-tile mechanic cards both apply at `lg+`, so Team Capacity is consuming vertical space that should go back to Work Queue.
+- [x] Locked the corrected scope for this pass to `mobile keeps the new summary/card treatment`, `desktop gets compact snapshot chips plus denser mechanic cards`.
+- [x] Moved the `Floor Snapshot` detail card back to mobile-only and converted desktop into compact inline snapshot chips in the Team Capacity header.
+- [x] Recompressed desktop mechanic cards into shorter rows with inline active/queued/load text and a thinner load bar, while leaving the taller stat-tile layout in place below `lg`.
+- [x] Tightened the desktop mechanic-board height cap so the section gives more vertical space back to Work Queue on larger screens.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Desktop Team Capacity is de-emphasized again: the snapshot metrics no longer occupy a full card, and mechanic cards no longer use the taller mobile treatment.
+- Mobile keeps the clearer summary-first narrative from the previous pass, so the rollback is scoped to desktop density rather than a full reversion.
+- Residual risk: compile verification passed, but I have not done a live desktop browser pass against your exact monitor width to confirm the reclaimed height feels right next to Work Queue.
+
+---
+
+# Team Capacity Header Count Deduplication (2026-03-16)
+
+## Plan
+- [x] Confirm whether the Team Capacity header count is duplicating the new summary metrics.
+- [x] Remove the redundant top-right assigned count from the Team Capacity header.
+- [x] Run targeted frontend verification and capture review notes.
+
+## Progress Notes
+- [x] Confirmed the duplication in `frontend/src/features/dashboard/DashboardHome.tsx`: the header-level `assigned` count now repeats workload information already expressed by the Team Capacity snapshot pills/cards, especially when queued work is the primary operational signal.
+- [x] Removed the top-right Team Capacity header count so the snapshot pills/cards are now the only workload-summary layer in that section.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The duplicated header count is gone, so Team Capacity no longer repeats workload totals in both the header and the summary pills/cards.
+- The section header is cleaner and the remaining snapshot pills carry the summary role by themselves.
+
+---
+
+# Team Capacity Header Pill Alignment (2026-03-16)
+
+## Plan
+- [x] Confirm why the Team Capacity summary pills are not occupying the old top-right header slot.
+- [x] Move the Team Capacity summary pills to the right side of the header on desktop.
+- [x] Run targeted frontend verification and capture review notes.
+
+## Progress Notes
+- [x] Confirmed the current issue in `frontend/src/features/dashboard/DashboardHome.tsx`: after removing the header count, the summary-pill wrapper still uses `lg:flex-1` with `lg:justify-center`, so the pills remain centered instead of shifting into the top-right header slot.
+- [x] Replaced the centered desktop pill wrapper with a right-aligned `lg:ml-auto` / `lg:justify-end` header group so the summary pills now occupy the same top-right slot as the old header count.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The Team Capacity summary pills now sit on the right side of the desktop header, which matches the slot previously occupied by the removed count.
+- The change is layout-only: the same summary pills remain, but they now anchor to the correct part of the header.
+
+---
+
+# Tenant Logo Import Flow (2026-03-16)
+
+## Plan
+- [x] Audit the current enrollment flow, tenant profile API, and any existing remote-image storage patterns.
+- [x] Implement backend website-logo discovery/import during garage enrollment, with graceful fallback when no logo can be found.
+- [x] Expose tenant logo management in the post-enrollment garage profile flow, including a manual import action from the saved website.
+- [x] Add focused backend and frontend tests for the new behavior.
+- [x] Run targeted verification and capture residual risks.
+
+## Progress Notes
+- [x] Confirmed enrollment already collects optional `website`, the tenant model already stores `website` and `logo_url`, and the garage profile API already persists `logo_url`.
+- [x] Confirmed the settings UI currently exposes `website` but not `logo_url`, so post-enrollment editing is incomplete.
+- [x] Confirmed Cloudinary is available in the backend and is the cleanest existing place to copy remote logos instead of hotlinking tenant sites.
+- [x] Added `backend/app/services/website_logo_service.py` to discover likely tenant logos from explicit logo images, JSON-LD logo fields, touch icons, manifest icons, and favicon fallback, with SSRF guards against private/local hosts.
+- [x] Wired automatic best-effort logo import into `/api/v1/auth/enroll-garage`; enrollment now continues even if logo discovery fails.
+- [x] Added `POST /api/v1/admin/garage-profile/import-logo` so garage owners/admins can re-import a logo from the saved website later.
+- [x] Extended `frontend/src/features/dashboard/UnifiedSettingsPage.tsx` with tenant logo preview, manual `logo_url` editing, clear action, and website-driven import action.
+- [x] Added focused tests:
+  `backend/tests/test_website_logo_service.py`
+  `backend/tests/test_tenant_logo_import.py`
+  `frontend/src/__tests__/UnifiedSettingsPage.test.tsx`
+- [x] Passed targeted verification:
+  `venv/bin/python -m pytest tests/test_website_logo_service.py tests/test_tenant_logo_import.py -q`
+  `npm run test -- --run src/__tests__/UnifiedSettingsPage.test.tsx`
+  `npm run build` (from `frontend/`)
+
+## Review
+- Tenant logos now import automatically during enrollment when a public website is provided, and garage owners/admins can re-import or override the logo later from Garage Profile settings.
+- The discovery logic prefers explicit logo signals first and falls back through icons safely, while rejecting private/local network fetches to avoid turning website import into an SSRF hole.
+- Residual risk: when Cloudinary is not configured, imported logos fall back to the discovered source URL instead of a copied hosted asset, so third-party hotlinking behavior still depends on the tenant site.
+
+---
+
+# Tenant Logo Import Heuristic Fix (2026-03-16)
+
+## Plan
+- [x] Reproduce why the current importer picks a secondary brand/logo asset instead of the lazy-loaded site header logo on `truckpitstop.com`.
+- [x] Update website logo discovery to read lazy-load image attributes and prefer explicit site-logo containers over generic downstream brand images.
+- [x] Add regression tests for lazy-loaded logo selection.
+- [x] Run targeted backend verification and capture the remaining best-effort limitation.
+
+## Progress Notes
+- [x] Confirmed `truckpitstop.com` renders the desired header logo via `data-src=\"...Trasp-white-1080x400-1.png\"`, while the current importer only scores `<img src=...>` candidates.
+- [x] Confirmed the current ranking gives generic `img.logo` hits the top priority, so a later page image like `Freightliner-Logo.png` can win when the actual header logo is lazy-loaded.
+- [x] Updated `backend/app/services/website_logo_service.py` to read lazy-load image attributes (`data-src`, `data-lazy-src`, `data-original`, related WordPress file attrs, and srcset variants) instead of relying only on `src`.
+- [x] Split image scoring so explicit site-logo class/id signals outrank generic filename matches, with a small bonus for wide wordmark-style aspect ratios.
+- [x] Added a regression test proving a lazy-loaded header logo beats `Freightliner-Logo.png`.
+- [x] Verified against the live tenant site markup with:
+  `venv/bin/python - <<'PY' ... parse_website_logo_candidates('https://truckpitstop.com') ... PY`
+  which now ranks `https://truckpitstop.com/wp-content/uploads/2025/01/Trasp-white-1080x400-1.png` first.
+- [x] Passed targeted backend verification:
+  `venv/bin/python -m pytest tests/test_website_logo_service.py tests/test_tenant_logo_import.py -q`
+
+## Review
+- `truckpitstop.com` now imports the intended lazy-loaded header logo instead of a downstream brand logo image.
+- This remains a best-effort import heuristic, not a guarantee of the exact browser-rendered logo for every site. Sites that render logos through CSS backgrounds, JS-only hydration, shadow DOM, canvas, or viewport-conditional swaps can still differ from what static HTML inspection finds.
+
+---
+
+# Dashboard Attention Banner Work Queue Reclaim (2026-03-16)
+
+## Plan
+- [x] Inspect the dashboard manager layout and determine why dismissing `Attention Required` does not let `Work Queue` reclaim the freed viewport space.
+- [x] Move the alert-dismiss visibility state into `DashboardHome` so dismissing the banner invalidates the queue height measurement immediately.
+- [x] Verify the queue expands after dismissal with `npm run build` and a live Playwright check on the dashboard page.
+
+## Progress Notes
+- [x] Confirmed `DashboardHome` already measures the queue against the viewport, but the `Attention Required` dismissal lives inside `AlertsBanner`, so closing it never re-runs the parent measurement effect.
+- [x] Lifted the attention-banner dismissal state into `DashboardHome` and wired `AlertsBanner` to an `onDismiss` callback so the queue height recalculates when the banner is removed.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+  Playwright on mocked `http://localhost:5173/dashboard` measured `Work Queue` at `736px` tall with the banner present, then `852px` tall after dismissing `Attention Required`, while the queue bottom alignment stayed pinned to the same viewport floor.
+
+## Review
+- `Attention Required` now behaves like a temporary layout participant instead of a dead-end height cap: when it is visible it consumes vertical space, and when it is dismissed the queue expands immediately into that reclaimed area.
+- The fix is state ownership, not new height math. `DashboardHome` now owns the banner visibility state, so the existing viewport-fit measurement reruns at the correct time.

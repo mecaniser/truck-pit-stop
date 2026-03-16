@@ -21,3 +21,48 @@
 - Correction: User asked to reduce the Danger Zone "size," but meant height only; I changed width/footprint instead.
 - Rule: When a user asks to make a UI element "smaller," identify whether they mean width, height, padding, or overall footprint before changing layout direction.
 - Prevention: In `tasks/todo.md`, spell out the specific dimension being changed for any sizing request and compare it against the current implementation before patching.
+- Correction: User referred to the work-queue header summary chips, but I removed the per-card status pill instead.
+- Rule: When a user points to duplicated UI status indicators, confirm the exact render location before removing a similar-looking status element elsewhere.
+- Prevention: For dashboard UI cleanup, capture the precise component/block name in `tasks/todo.md` and match it against the screenshot before editing.
+- Correction: User called out that website-based logo import should not be described as guaranteeing the exact browser-rendered tenant logo.
+- Rule: Treat remote website asset discovery as heuristic unless the flow actually renders and inspects the page in a browser context.
+- Prevention: When implementing import-from-website features, state the guarantee level explicitly in `tasks/todo.md` review notes and in the final handoff.
+- Correction: User wanted My Garage to follow the Settings page interaction model, not just share the same left-side navigation concept.
+- Rule: When a user references an existing page as the UX model, match that page's layout behavior and interaction density directly before adding custom framing or extra hierarchy.
+- Prevention: For UI shell refactors, note the exact reference page in `tasks/todo.md` and compare the new shell against that page's nav structure before finalizing.
+- Correction: User wanted the My Garage sidebar stretched to the bottom of the page, but I implemented a viewport-capped sticky dock instead.
+- Rule: When the user says a sidebar should reach the bottom of the page, prefer full-column stretching tied to page/content height over fixed viewport-height docks.
+- Prevention: In `tasks/todo.md`, specify whether a sidebar is meant to match viewport height or full page/content height before applying `sticky` or `100vh` sizing.
+- Correction: Even after removing the viewport cap, I still relied on min-height instead of making the My Garage page itself fill the remaining dashboard column.
+- Rule: When a child layout must reach the page floor inside a flex parent, use `flex-1`/full-height inheritance on the page wrapper instead of approximating with `min-h`.
+- Prevention: For dashboard subpages, inspect the parent container's flex model first and make the route root participate in that model before tuning child heights.
+- Correction: User then asked to roll back the content-driven expansion because the right pane should stay within the viewport and scroll internally instead of making the whole workspace taller.
+- Rule: When a dashboard subpage should stay within the viewport, constrain the page shell height and give the content pane its own overflow instead of letting content define container height.
+- Prevention: Before changing dashboard shell heights, decide explicitly whether overflow should belong to the page, the sidebar, or the content pane, and note that in `tasks/todo.md`.
+- Correction: User then clarified they actually wanted the earlier content-driven page expansion back, with height determined by the right-side content again.
+- Rule: When a user corrects the overflow model, follow the latest explicit owner of height/overflow even if it reverses the previous adjustment.
+- Prevention: In `tasks/todo.md`, record the current intended overflow owner as a single sentence before patching so reversals are obvious.
+- Correction: The screenshot then confirmed that content-driven page expansion was still wrong for My Garage because the right pane should remain inside the visible workspace.
+- Rule: When a screenshot demonstrates overflow extending below the viewport, treat that as a concrete rejection of content-driven height for that shell.
+- Prevention: After changing layout overflow ownership, validate the target page against a tall real-content state before finalizing.
+- Correction: The desktop height cap still failed because the My Garage route root remained a `flex-1` child, so the parent flex sizing overrode the intended shell height.
+- Rule: When a flex child must honor a fixed desktop shell height, remove or override conflicting `flex-grow` behavior at that breakpoint.
+- Prevention: After applying a fixed height inside a flex column, inspect computed height in the browser to verify the child is not still stretching from `flex: 1 1 0%`.
+- Correction: User said the Team Capacity mobile panel was confusing because an abstract `Team utilization` summary sat above a nested-scroll mechanic board that already conveyed the same workload/status story.
+- Rule: When a mobile dashboard section already contains per-person or per-item status cards, summarize it with concrete operational counts and avoid adding a second abstract metric block that reframes the same data.
+- Prevention: In `tasks/todo.md`, state the intended one-line mobile narrative for the section and check for duplicate signals or nested scroll regions before finalizing the UI.
+- Correction: I introduced a `max-w-[1400px]` width cap on My Garage without the user asking for a narrower workspace.
+- Rule: Do not add page-width constraints during a layout refactor unless the user explicitly asks for narrower content or there is an established app-wide container pattern to preserve.
+- Prevention: Before adding `max-w-*` or centering wrappers to dashboard pages, compare against the prior page width behavior and note the reason in `tasks/todo.md`.
+- Correction: User said the Team Capacity refactor should have applied to mobile only, but I let the larger summary/card treatment expand onto desktop where Work Queue needs the space more.
+- Rule: When the user scopes a dashboard UI change to mobile, keep desktop density unchanged unless they explicitly ask for a cross-breakpoint redesign.
+- Prevention: In `tasks/todo.md`, write the target breakpoint scope (`mobile-only`, `desktop-only`, or `all breakpoints`) before patching responsive UI blocks and verify each new layout branch is gated by the intended breakpoint classes.
+- Correction: After replacing the Team Capacity summary model, I left the old header-level `assigned` count in place even though the new snapshot pills were already expressing the same workload information.
+- Rule: When a section gains new summary pills or tiles, remove any older header counters that duplicate the same data unless the user explicitly wants both.
+- Prevention: During dashboard UI cleanup, compare every header badge/count against the new summary block and note which single element owns each data point in `tasks/todo.md`.
+- Correction: After removing the Team Capacity header count, I left the replacement summary pills centered instead of moving them into the same right-side header slot the user was pointing at.
+- Rule: When replacing a header metric with pills or chips, move the replacement into the same visual slot unless the user asks for a new hierarchy.
+- Prevention: In `tasks/todo.md`, note not just what element is being replaced but also where its replacement should sit in the layout.
+- Correction: The dashboard `Attention Required` banner was dismissing itself locally, so `DashboardHome` never re-measured the available viewport space for `Work Queue` after the banner disappeared.
+- Rule: When a temporary dashboard element affects measured layout space, keep its visibility state in the parent layout owner so size calculations rerun when it is shown or dismissed.
+- Prevention: For any viewport-fit panel, verify that dismiss/collapse state changes are part of the parent measurement dependencies before finalizing the layout.
