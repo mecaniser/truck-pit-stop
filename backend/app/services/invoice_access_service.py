@@ -40,6 +40,7 @@ async def generate_invoice_access_link(
     shop_name: Optional[str] = None,
     shop_phone: Optional[str] = None,
     shop_email: Optional[str] = None,
+    shop_logo_url: Optional[str] = None,
 ) -> str:
     """Generate a full frontend URL for tokenized invoice access."""
     token = await generate_invoice_access_token(invoice=invoice, order=order, customer=customer)
@@ -51,6 +52,8 @@ async def generate_invoice_access_link(
         query_params["shop_phone"] = shop_phone
     if shop_email:
         query_params["shop_email"] = shop_email
+    if shop_logo_url:
+        query_params["shop_logo_url"] = shop_logo_url
 
     if not query_params:
         return base_url

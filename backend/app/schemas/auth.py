@@ -42,6 +42,7 @@ class UserResponse(BaseModel):
     tenant_id: Optional[UUID] = None
     tenant_name: Optional[str] = None
     tenant_slug: Optional[str] = None
+    tenant_logo_url: Optional[str] = None
     customer_id: Optional[UUID] = None
     core_hours_target_minutes_override: Optional[int] = None
     shift_start_local_override: Optional[str] = None
@@ -56,6 +57,12 @@ class UserResponse(BaseModel):
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"
+
+
+class TenantBrandingResponse(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    logo_url: Optional[str] = None
 
 
 class ForgotPasswordRequest(BaseModel):

@@ -11,6 +11,7 @@ import api from '../../lib/api'
 import { getStripeForAccount } from '../../lib/stripe'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import { useAuthStore } from '../../stores/authStore'
+import TenantBrandLogo from '@/components/brand/TenantBrandLogo'
 import { formatUSPhone } from '@/utils/phone'
 
 interface InvoiceAccessResolve {
@@ -19,6 +20,8 @@ interface InvoiceAccessResolve {
   order_number: string
   customer_name: string
   vehicle_info: string
+  shop_name: string | null
+  shop_logo_url: string | null
   amount_due: string
   subtotal: string
   shop_supplies_amount: string
@@ -276,14 +279,17 @@ export default function InvoiceAccessPage() {
     const shopName = params.get('shop_name')?.trim() || null
     const shopEmailRaw = params.get('shop_email')?.trim() || null
     const shopPhoneRaw = params.get('shop_phone')?.trim() || null
+    const shopLogoUrl = params.get('shop_logo_url')?.trim() || null
     const shopEmail =
       shopEmailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shopEmailRaw) ? shopEmailRaw : null
     const normalizedPhone = shopPhoneRaw ? shopPhoneRaw.replace(/[^\d+]/g, '') : null
     const shopPhone =
       normalizedPhone && normalizedPhone.replace(/\D/g, '').length >= 10 ? shopPhoneRaw : null
     const telHref = shopPhone && normalizedPhone ? `tel:${normalizedPhone}` : null
-    return { shopName, shopEmail, shopPhone, telHref }
+    return { shopName, shopEmail, shopPhone, shopLogoUrl, telHref }
   })()
+  const pageBrandName = invoice?.shop_name || shopContact.shopName || 'Diesel Bridge Network'
+  const pageBrandLogoUrl = invoice?.shop_logo_url || shopContact.shopLogoUrl || null
 
   const createIntentMutation = useMutation({
     mutationFn: async (tokenValue: string) => {
@@ -399,6 +405,14 @@ export default function InvoiceAccessPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-yellow-100 flex items-center justify-center px-4">
         <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-red-200 p-8">
+          <div className="mb-6 flex justify-center">
+            <TenantBrandLogo
+              tenantLogoUrl={pageBrandLogoUrl}
+              tenantName={pageBrandName}
+              fallbackVariant="admin"
+              className="h-12 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
+            />
+          </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-3">{title}</h1>
           <p className="text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{detail}</p>
           <div className="mt-4 space-y-2">
@@ -440,6 +454,14 @@ export default function InvoiceAccessPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-yellow-100 py-8 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="text-center">
+          <div className="mb-4 flex justify-center">
+            <TenantBrandLogo
+              tenantLogoUrl={pageBrandLogoUrl}
+              tenantName={pageBrandName}
+              fallbackVariant="admin"
+              className="h-12 sm:h-14 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]"
+            />
+          </div>
           <h1 className="text-3xl font-bold text-gray-900">Invoice {invoice.invoice_number}</h1>
           <p className="text-gray-600 mt-1">
             Order {invoice.order_number}

@@ -27,6 +27,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.quote import Quote
 from app.db.models.customer import Customer
+from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage
 from app.services.email_service import send_email
@@ -95,6 +96,8 @@ class QuoteDetailResponse(BaseModel):
     parts: list[dict] = []
     labor_total: Decimal = Decimal("0.00")
     parts_total: Decimal = Decimal("0.00")
+    shop_name: Optional[str] = None
+    shop_logo_url: Optional[str] = None
     has_portal_account: bool = False
     requires_password_setup: bool = True
 
@@ -1002,6 +1005,8 @@ async def get_quote_by_token(
     customer = order.customer
     user_result = await db.execute(select(User).where(User.customer_id == order.customer_id))
     existing_user = user_result.scalar_one_or_none()
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
     
     return QuoteDetailResponse(
         quote=QuoteResponse.model_validate(quote),
@@ -1016,6 +1021,8 @@ async def get_quote_by_token(
         parts=parts,
         labor_total=get_order_labor_total(order),
         parts_total=get_order_parts_total(order),
+        shop_name=tenant.name if tenant else None,
+        shop_logo_url=tenant.logo_url if tenant else None,
         has_portal_account=existing_user is not None,
         requires_password_setup=existing_user is None,
     )

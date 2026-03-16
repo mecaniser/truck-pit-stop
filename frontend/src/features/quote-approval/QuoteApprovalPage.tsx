@@ -7,7 +7,7 @@ import api from '../../lib/api'
 import { CheckCircle, XCircle, Truck, Wrench, AlertCircle, Loader2 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
-import BrandLogo from '../../components/brand/BrandLogo'
+import TenantBrandLogo from '../../components/brand/TenantBrandLogo'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 
 interface QuoteDetail {
@@ -31,6 +31,8 @@ interface QuoteDetail {
   parts: Array<{ name: string; quantity: number; unit_price: string; total_price: string }>
   labor_total: string
   parts_total: string
+  shop_name: string | null
+  shop_logo_url: string | null
   has_portal_account: boolean
   requires_password_setup: boolean
 }
@@ -48,6 +50,25 @@ interface QuotePortalCreateResponse {
   token_type: string
   redirect_to: string
   user_exists: boolean
+}
+
+function QuotePageBrand({
+  shopName,
+  shopLogoUrl,
+}: {
+  shopName?: string | null
+  shopLogoUrl?: string | null
+}) {
+  return (
+    <div className="mb-2 flex justify-center">
+      <TenantBrandLogo
+        tenantLogoUrl={shopLogoUrl}
+        tenantName={shopName}
+        fallbackVariant="admin"
+        className="h-12 sm:h-14 w-auto object-contain drop-shadow-[0_1px_2px_rgba(15,23,42,0.45)]"
+      />
+    </div>
+  )
 }
 
 export default function QuoteApprovalPage() {
@@ -133,6 +154,7 @@ export default function QuoteApprovalPage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-white/5 rounded-2xl border border-white/10 p-8 max-w-md w-full text-center">
+          <QuotePageBrand />
           <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-2">Quote Not Found</h1>
           <p className="text-gray-400 mb-6">
@@ -201,6 +223,7 @@ export default function QuoteApprovalPage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-white/5 rounded-2xl border border-white/10 p-8 max-w-md w-full text-center">
+          <QuotePageBrand shopName={data.shop_name} shopLogoUrl={data.shop_logo_url} />
           <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-green-400" />
           </div>
@@ -293,6 +316,7 @@ export default function QuoteApprovalPage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
         <div className="bg-white/5 rounded-2xl border border-white/10 p-8 max-w-lg w-full text-center">
+          <QuotePageBrand shopName={data.shop_name} shopLogoUrl={data.shop_logo_url} />
           <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <XCircle className="w-10 h-10 text-red-400" />
           </div>
@@ -353,9 +377,7 @@ export default function QuoteApprovalPage() {
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="mb-2 flex justify-center">
-            <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-12 sm:h-14 w-auto" />
-          </div>
+          <QuotePageBrand shopName={data.shop_name} shopLogoUrl={data.shop_logo_url} />
           <p className="text-gray-400">Quote Approval</p>
         </div>
 

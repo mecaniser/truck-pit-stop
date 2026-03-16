@@ -19,6 +19,8 @@ import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
 import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
 import type { MessagesUnreadSummary } from '@/types'
 import BrandLogo from '../brand/BrandLogo'
+import TenantBrandLogo from '../brand/TenantBrandLogo'
+import useTenantBranding from '@/hooks/useTenantBranding'
 
 export default function DashboardLayout() {
   const { user } = useAuthStore()
@@ -38,6 +40,7 @@ export default function DashboardLayout() {
   })
   const unreadCount = unreadSummary?.unread_count_staff || 0
   const unreadBadge = unreadCount > 99 ? '99+' : `${unreadCount}`
+  const { data: tenantBranding } = useTenantBranding()
   
   // Get the hex color for the current accent
   const accentHex = accentColors[500]
@@ -72,6 +75,12 @@ export default function DashboardLayout() {
   }
 
   const isSuperAdmin = user?.role === 'super_admin'
+  const dashboardLogoAlt = isSuperAdmin
+    ? 'Diesel Bridge Network'
+    : tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
+  const dashboardAriaLabel = isSuperAdmin
+    ? 'Diesel Bridge Network dashboard'
+    : `${dashboardLogoAlt} dashboard`
 
   // Garage users get BlueNoir theme
   const isGarageUser = !isSuperAdmin
@@ -87,8 +96,17 @@ export default function DashboardLayout() {
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center gap-3">
-              <Link to="/dashboard" className="inline-flex items-center py-1" aria-label="Diesel Bridge Network dashboard">
-                <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
+              <Link to="/dashboard" className="inline-flex items-center py-1" aria-label={dashboardAriaLabel}>
+                {isSuperAdmin ? (
+                  <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
+                ) : (
+                  <TenantBrandLogo
+                    tenantLogoUrl={tenantBranding?.logo_url}
+                    tenantName={tenantBranding?.name || user?.tenant_name}
+                    fallbackVariant="admin"
+                    className="h-8 sm:h-10 w-auto object-contain"
+                  />
+                )}
               </Link>
               {isSuperAdmin && (
                 <span className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-gold-500/10 border border-gold-500/30 rounded-full text-gold-400 text-xs font-medium">

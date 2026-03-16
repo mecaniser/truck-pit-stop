@@ -47,10 +47,17 @@ export interface User {
   tenant_id: string | null
   tenant_name?: string | null
   tenant_slug?: string | null
+  tenant_logo_url?: string | null
   customer_id: string | null
   core_hours_target_minutes_override?: number | null
   shift_start_local_override?: string | null
   shift_end_local_override?: string | null
+}
+
+export interface TenantBranding {
+  name: string | null
+  slug: string | null
+  logo_url: string | null
 }
 
 export interface Customer {

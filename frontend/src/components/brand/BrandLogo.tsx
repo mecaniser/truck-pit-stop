@@ -1,4 +1,4 @@
-type BrandLogoVariant = 'public' | 'landing' | 'admin'
+export type BrandLogoVariant = 'public' | 'landing' | 'admin'
 
 const BRAND_LOGO_SOURCES: Record<BrandLogoVariant, { svg: string; png: string }> = {
   public: {

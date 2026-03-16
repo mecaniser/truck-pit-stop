@@ -14,6 +14,7 @@ interface User {
   tenant_id: string | null
   tenant_name?: string | null
   tenant_slug?: string | null
+  tenant_logo_url?: string | null
   customer_id: string | null
 }
 

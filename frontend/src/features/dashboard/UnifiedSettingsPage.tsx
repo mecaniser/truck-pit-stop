@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
+import { tenantBrandingQueryKey } from '@/hooks/useTenantBranding'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
 import { 
@@ -437,6 +438,7 @@ function GarageProfileSection() {
   const { user, setUser } = useAuthStore()
   const queryClient = useQueryClient()
   const [isEditing, setIsEditing] = useState(false)
+  const tenantBrandingKey = tenantBrandingQueryKey(user?.tenant_id)
 
   const { data: garageProfile, isLoading } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -465,6 +467,23 @@ function GarageProfileSection() {
   const websiteValue = watch('website') || ''
   const logoUrlValue = watch('logo_url') || ''
 
+  const syncTenantBranding = (updated: GarageProfile) => {
+    queryClient.setQueryData(['garage-profile'], updated)
+    queryClient.setQueryData(tenantBrandingKey, {
+      name: updated.name,
+      slug: updated.slug,
+      logo_url: updated.logo_url,
+    })
+    if (user) {
+      setUser({
+        ...user,
+        tenant_name: updated.name,
+        tenant_slug: updated.slug,
+        tenant_logo_url: updated.logo_url,
+      })
+    }
+  }
+
   const updateMutation = useMutation({
     mutationFn: async (data: GarageProfileFormData) => {
       const payload = {
@@ -479,14 +498,7 @@ function GarageProfileSection() {
       return response.data as GarageProfile
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(['garage-profile'], updated)
-      if (user) {
-        setUser({
-          ...user,
-          tenant_name: updated.name,
-          tenant_slug: updated.slug,
-        })
-      }
+      syncTenantBranding(updated)
       setIsEditing(false)
       toast.success('Garage profile updated')
     },
@@ -503,7 +515,7 @@ function GarageProfileSection() {
       return response.data as GarageProfile
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(['garage-profile'], updated)
+      syncTenantBranding(updated)
       setValue('website', updated.website || '', { shouldDirty: false, shouldValidate: true })
       setValue('logo_url', updated.logo_url || '', { shouldDirty: false, shouldValidate: true })
       toast.success('Logo imported from website')

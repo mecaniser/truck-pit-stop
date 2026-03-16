@@ -31,6 +31,7 @@ from app.schemas.auth import (
     UserLogin,
     UserRegister,
     UserResponse,
+    TenantBrandingResponse,
     Token,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -63,6 +64,7 @@ async def _build_user_response(user: User, db: AsyncSession) -> UserResponse:
         if tenant:
             response.tenant_name = tenant.name
             response.tenant_slug = tenant.slug
+            response.tenant_logo_url = tenant.logo_url
 
     return response
 
@@ -398,6 +400,26 @@ async def get_current_user_info(
     db: AsyncSession = Depends(get_db),
 ):
     return await _build_user_response(current_user, db)
+
+
+@router.get("/tenant-branding", response_model=TenantBrandingResponse)
+async def get_current_tenant_branding(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not current_user.tenant_id or current_user.role == UserRole.SUPER_ADMIN:
+        return TenantBrandingResponse()
+
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        return TenantBrandingResponse()
+
+    return TenantBrandingResponse(
+        name=tenant.name,
+        slug=tenant.slug,
+        logo_url=tenant.logo_url,
+    )
 
 
 class UserProfileUpdate(BaseModel):

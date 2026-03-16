@@ -255,6 +255,7 @@ async def create_invoice(
             shop_name=tenant.name if tenant else None,
             shop_phone=tenant.phone if tenant else None,
             shop_email=tenant.email if tenant else None,
+            shop_logo_url=tenant.logo_url if tenant else None,
         )
         
         # Build fee breakdown lines
@@ -520,6 +521,7 @@ async def resend_invoice(
         shop_name=tenant.name if tenant else None,
         shop_phone=tenant.phone if tenant else None,
         shop_email=tenant.email if tenant else None,
+        shop_logo_url=tenant.logo_url if tenant else None,
     )
     
     email_html = f"""

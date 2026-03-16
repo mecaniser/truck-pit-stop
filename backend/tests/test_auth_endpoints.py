@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.core.security import create_access_token, get_password_hash
+from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
 
@@ -12,6 +14,7 @@ LOGIN_URL = "/api/v1/auth/login"
 REFRESH_URL = "/api/v1/auth/refresh"
 LOGOUT_URL = "/api/v1/auth/logout"
 ME_URL = "/api/v1/auth/me"
+TENANT_BRANDING_URL = "/api/v1/auth/tenant-branding"
 PLATFORM_CONTACT_URL = "/api/v1/auth/platform-contact"
 
 VALID_USER = {
@@ -93,6 +96,76 @@ async def test_me_returns_user_info(client):
     assert body["email"] == VALID_USER["email"]
     assert body["first_name"] == VALID_USER["first_name"]
     assert body["role"] == "customer"
+
+
+@pytest.mark.asyncio
+async def test_me_includes_tenant_logo_url(client, db_session):
+    tenant = Tenant(
+        name="Truck Pit Stop",
+        slug="truck-pit-stop",
+        logo_url="https://cdn.example.com/tenant-logo.png",
+        is_active=True,
+        enrollment_status="approved",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+
+    user = User(
+        email="owner@garage.example.com",
+        hashed_password=get_password_hash("Str0ng@Pass!"),
+        first_name="Owner",
+        last_name="User",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    token = create_access_token({"sub": str(user.id)})
+    r = await client.get(ME_URL, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["tenant_name"] == "Truck Pit Stop"
+    assert body["tenant_slug"] == "truck-pit-stop"
+    assert body["tenant_logo_url"] == "https://cdn.example.com/tenant-logo.png"
+
+
+@pytest.mark.asyncio
+async def test_tenant_branding_returns_current_tenant_logo(client, db_session):
+    tenant = Tenant(
+        name="Truck Pit Stop",
+        slug="truck-pit-stop",
+        logo_url="https://cdn.example.com/tenant-logo.png",
+        is_active=True,
+        enrollment_status="approved",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+
+    user = User(
+        email="customer@garage.example.com",
+        hashed_password=get_password_hash("Str0ng@Pass!"),
+        first_name="Customer",
+        last_name="User",
+        role=UserRole.CUSTOMER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+
+    token = create_access_token({"sub": str(user.id)})
+    r = await client.get(TENANT_BRANDING_URL, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {
+        "name": "Truck Pit Stop",
+        "slug": "truck-pit-stop",
+        "logo_url": "https://cdn.example.com/tenant-logo.png",
+    }
 
 
 @pytest.mark.asyncio

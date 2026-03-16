@@ -62,6 +62,8 @@ class ResolveInvoiceLinkResponse(BaseModel):
     order_number: str
     customer_name: str
     vehicle_info: str
+    shop_name: Optional[str] = None
+    shop_logo_url: Optional[str] = None
     amount_due: Decimal
     subtotal: Decimal
     shop_supplies_amount: Decimal
@@ -338,6 +340,8 @@ async def resolve_invoice_link(
         order_number=order.order_number,
         customer_name=f"{customer.first_name} {customer.last_name}",
         vehicle_info=vehicle_info,
+        shop_name=tenant.name if tenant else None,
+        shop_logo_url=tenant.logo_url if tenant else None,
         amount_due=invoice.total_amount,
         subtotal=invoice.subtotal,
         shop_supplies_amount=invoice.shop_supplies_amount,

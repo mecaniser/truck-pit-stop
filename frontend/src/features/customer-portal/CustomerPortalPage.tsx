@@ -19,9 +19,10 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import NotificationBanner from '../../components/NotificationBanner'
-import BrandLogo from '../../components/brand/BrandLogo'
+import TenantBrandLogo from '../../components/brand/TenantBrandLogo'
 import { getStripeForAccount } from '../../lib/stripe'
 import { formatUSPhone } from '../../utils/phone'
+import useTenantBranding from '@/hooks/useTenantBranding'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -1224,6 +1225,7 @@ function CustomerRepairs() {
 export default function CustomerPortalPage() {
   const location = useLocation()
   const { accentColors } = useTheme()
+  const { data: tenantBranding } = useTenantBranding()
   
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
@@ -1251,6 +1253,7 @@ export default function CustomerPortalPage() {
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
   }
+  const portalBrandName = tenantBranding?.name || 'Diesel Bridge Network'
 
   return (
     <div className="min-h-screen">
@@ -1259,8 +1262,13 @@ export default function CustomerPortalPage() {
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
             <div className="flex items-center">
-              <Link to="/portal" className="inline-flex items-center py-1" aria-label="Diesel Bridge Network customer portal">
-                <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 sm:h-10 w-auto" />
+              <Link to="/portal" className="inline-flex items-center py-1" aria-label={`${portalBrandName} customer portal`}>
+                <TenantBrandLogo
+                  tenantLogoUrl={tenantBranding?.logo_url}
+                  tenantName={tenantBranding?.name}
+                  fallbackVariant="admin"
+                  className="h-8 sm:h-10 w-auto object-contain drop-shadow-[0_1px_1px_rgba(15,23,42,0.35)]"
+                />
               </Link>
             </div>
 
