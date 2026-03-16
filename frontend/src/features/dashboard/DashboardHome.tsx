@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   AlertTriangle,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   DollarSign,
   Phone,
   Plus,
@@ -266,6 +268,12 @@ export default function DashboardHome() {
   const [quickSubmitting, setQuickSubmitting] = useState(false)
   const [quickErrors, setQuickErrors] = useState<{ phone?: string; truck?: string; complaint?: string }>({})
   const [quickTouched, setQuickTouched] = useState(false)
+  const [isRevenueCollapsed, setIsRevenueCollapsed] = useState(true)
+  const [workQueueMaxHeight, setWorkQueueMaxHeight] = useState<number | null>(null)
+  const dashboardRootRef = useRef<HTMLDivElement | null>(null)
+  const workQueueRef = useRef<HTMLDivElement | null>(null)
+  const teamCapacityRef = useRef<HTMLDivElement | null>(null)
+  const revenueRef = useRef<HTMLDivElement | null>(null)
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
@@ -304,6 +312,106 @@ export default function DashboardHome() {
     queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
     queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
   }
+
+  // Format "last updated" time
+  const formatLastUpdated = () => {
+    if (!lastUpdated) return ''
+    const now = new Date()
+    const diffSecs = Math.floor((now.getTime() - lastUpdated.getTime()) / 1000)
+    if (diffSecs < 10) return 'just now'
+    if (diffSecs < 60) return `${diffSecs}s ago`
+    const diffMins = Math.floor(diffSecs / 60)
+    if (diffMins < 60) return `${diffMins}m ago`
+    return lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const metricValue = (value?: string) => parseFloat(value || '0')
+  const teamMembers = stats?.mechanic_workload || []
+  const teamStatusByMechanicId = new Map((teamBoard?.mechanics || []).map((mechanic) => [mechanic.mechanic_id, mechanic]))
+  const teamAssignedTotal = teamMembers.reduce((sum, m) => sum + m.assigned_count, 0)
+  const teamInProgressTotal = teamMembers.reduce((sum, m) => sum + m.in_progress_count, 0)
+  const teamQueuedTotal = Math.max(teamAssignedTotal - teamInProgressTotal, 0)
+  const teamUtilization = teamAssignedTotal > 0
+    ? Math.round((teamInProgressTotal / teamAssignedTotal) * 100)
+    : 0
+  const teamCapacityHeaderClass = isExpandedFont ? 'text-base 2xl:text-lg' : 'text-sm 2xl:text-base'
+  const teamCapacityMetaClass = isExpandedFont ? 'text-sm 2xl:text-base' : 'text-xs 2xl:text-sm'
+  const teamCapacityNameClass = isExpandedFont ? 'text-base 2xl:text-lg' : 'text-sm 2xl:text-[15px]'
+  const teamCapacityBodyClass = isExpandedFont ? 'text-sm 2xl:text-[15px]' : 'text-xs 2xl:text-sm'
+  const teamCapacityGridHeightClass = isExpandedFont ? 'max-h-52 2xl:max-h-48' : 'max-h-48 2xl:max-h-44'
+  const workQueueLaneHeightClass = isExpandedFont
+    ? 'min-h-[clamp(10.5rem,21vh,12rem)]'
+    : 'min-h-[clamp(10rem,20vh,11.75rem)]'
+  const workQueueSummary = [
+    {
+      label: 'Needs Action',
+      count: stats?.orders_needing_action?.length || 0,
+      className: 'border-red-500/20 bg-red-500/10 text-red-300',
+    },
+    {
+      label: 'On Floor',
+      count: stats?.orders_on_floor?.length || 0,
+      className: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
+    },
+    {
+      label: 'Ready',
+      count: stats?.orders_ready_to_close?.length || 0,
+      className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+    },
+  ]
+
+  const revenueCards = [
+    { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400' },
+    { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300' },
+    { label: 'Week Revenue', value: metricValue(stats?.revenue?.this_week), tone: 'text-emerald-400' },
+    { label: 'Month Revenue', value: metricValue(stats?.revenue?.this_month), tone: 'text-emerald-400' },
+  ]
+
+  useEffect(() => {
+    const measureWorkQueueHeight = () => {
+      if (typeof window === 'undefined') return
+      if (window.innerWidth < 1024) {
+        setWorkQueueMaxHeight(null)
+        return
+      }
+
+      const root = dashboardRootRef.current
+      const queue = workQueueRef.current
+      if (!root || !queue) return
+
+      const rootStyles = window.getComputedStyle(root)
+      const rowGap = parseFloat(rootStyles.rowGap || rootStyles.gap || '0')
+      const queueTop = queue.getBoundingClientRect().top
+      const teamHeight = teamCapacityRef.current?.getBoundingClientRect().height ?? 0
+      const revenueHeight = revenueRef.current?.getBoundingClientRect().height ?? 0
+      const gapsBelow = [teamHeight > 0, revenueHeight > 0].filter(Boolean).length
+      const viewportPadding = 20
+      const availableHeight = window.innerHeight - queueTop - teamHeight - revenueHeight - (rowGap * gapsBelow) - viewportPadding
+      const minQueueHeight = isExpandedFont ? 300 : 260
+      const nextHeight = Number.isFinite(availableHeight)
+        ? Math.max(Math.floor(availableHeight), minQueueHeight)
+        : null
+
+      setWorkQueueMaxHeight((current) => (current === nextHeight ? current : nextHeight))
+    }
+
+    measureWorkQueueHeight()
+    window.addEventListener('resize', measureWorkQueueHeight)
+    return () => window.removeEventListener('resize', measureWorkQueueHeight)
+  }, [
+    banners.length,
+    isExpandedFont,
+    isManager,
+    isRevenueCollapsed,
+    showQuickForm,
+    stats?.declined_quotes,
+    stats?.low_stock_count,
+    stats?.orders_needing_action?.length,
+    stats?.orders_on_floor?.length,
+    stats?.orders_ready_to_close?.length,
+    stats?.overdue_approvals,
+    teamMembers.length,
+  ])
 
   const validateQuickForm = () => {
     const errors: { phone?: string; complaint?: string } = {}
@@ -373,39 +481,9 @@ export default function DashboardHome() {
     )
   }
 
-  // Format "last updated" time
-  const formatLastUpdated = () => {
-    if (!lastUpdated) return ''
-    const now = new Date()
-    const diffSecs = Math.floor((now.getTime() - lastUpdated.getTime()) / 1000)
-    if (diffSecs < 10) return 'just now'
-    if (diffSecs < 60) return `${diffSecs}s ago`
-    const diffMins = Math.floor(diffSecs / 60)
-    if (diffMins < 60) return `${diffMins}m ago`
-    return lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-
-  const metricValue = (value?: string) => parseFloat(value || '0')
-  const teamMembers = stats?.mechanic_workload || []
-  const teamStatusByMechanicId = new Map((teamBoard?.mechanics || []).map((mechanic) => [mechanic.mechanic_id, mechanic]))
-  const teamAssignedTotal = teamMembers.reduce((sum, m) => sum + m.assigned_count, 0)
-  const teamInProgressTotal = teamMembers.reduce((sum, m) => sum + m.in_progress_count, 0)
-  const teamQueuedTotal = Math.max(teamAssignedTotal - teamInProgressTotal, 0)
-  const teamUtilization = teamAssignedTotal > 0
-    ? Math.round((teamInProgressTotal / teamAssignedTotal) * 100)
-    : 0
-
-  const revenueCards = [
-    { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400', note: 'Cash collected' },
-    { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300', note: 'Labor + parts margin' },
-    { label: 'Today PPI', value: metricValue(stats?.revenue?.today_ppi), tone: 'text-violet-300', note: 'Profit per paid invoice' },
-    { label: 'Week Revenue', value: metricValue(stats?.revenue?.this_week), tone: 'text-emerald-400', note: 'Completed payments' },
-    { label: 'Month Revenue', value: metricValue(stats?.revenue?.this_month), tone: 'text-emerald-400', note: 'Completed payments' },
-    { label: 'Parts Margin', value: metricValue(stats?.revenue?.today_parts_margin), tone: 'text-sky-400', note: 'Today (sell - cost)' },
-  ]
-
   return (
     <div
+      ref={dashboardRootRef}
       className={`flex flex-col flex-1 min-h-0 2xl:h-[calc(100vh-7.5rem)] 2xl:overflow-hidden ${
         isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'
       }`}
@@ -590,234 +668,269 @@ export default function DashboardHome() {
         />
       )}
 
-      {/* Swimlanes Section - Expands to fill space */}
-      <div className="flex-1 flex flex-col gap-2.5 2xl:gap-2 min-h-0">
-        {/* Swimlanes Header with Live Indicator */}
-        <div className="flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm 2xl:text-base font-semibold text-gray-400 uppercase tracking-wide">
-              Work Queue
-            </h2>
-            <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
-          </div>
-          <button
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-2 px-2 py-1 2xl:px-2.5 text-xs 2xl:text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
-            title="Refresh dashboard"
-          >
-            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>{formatLastUpdated() || 'Refresh'}</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          </button>
-        </div>
-
-        {/* Work Queue Swimlanes */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 2xl:gap-2.5 flex-1 min-h-0">
-        {/* Lane 1: Needs Action */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[190px] 2xl:min-h-[180px]">
-          <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
+      {/* Work Queue */}
+      <div
+        ref={workQueueRef}
+        className="flex flex-col gap-2.5 2xl:gap-2 min-h-0 flex-1"
+        style={workQueueMaxHeight ? { maxHeight: `${workQueueMaxHeight}px` } : undefined}
+      >
+        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-0 h-full">
+          <div className="flex flex-col gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-400" />
-              <h3 className="text-sm 2xl:text-base font-semibold text-white">Needs Action</h3>
-              <SectionInfoTooltip text="Orders blocked by approvals, missing info, or other manager actions that should be handled first." />
-            </div>
-            <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
-              {stats?.orders_needing_action?.length || 0}
-            </span>
-          </div>
-          <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
-            {!stats?.orders_needing_action?.length ? (
-              <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">All clear</p>
-            ) : (
-              stats.orders_needing_action.map((order) => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  accentColor={accentColors[400]}
-                  onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
-                />
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Lane 2: On the Floor */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[190px] 2xl:min-h-[180px]">
-          <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
-              <h3 className="text-sm 2xl:text-base font-semibold text-white">On the Floor</h3>
-              <SectionInfoTooltip text="Orders currently in production with mechanics assigned or actively working." />
-            </div>
-            <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
-              {stats?.orders_on_floor?.length || 0}
-            </span>
-          </div>
-          <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
-            {!stats?.orders_on_floor?.length ? (
-              <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No active work</p>
-            ) : (
-              stats.orders_on_floor.map((order) => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  accentColor={accentColors[400]}
-                  onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
-                />
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Lane 3: Ready to Close */}
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-[190px] 2xl:min-h-[180px]">
-          <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <DollarSign className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm 2xl:text-base font-semibold text-white">Ready to Close</h3>
-              <SectionInfoTooltip text="Orders that are operationally complete and ready for invoicing, payment, and closeout." />
-            </div>
-            <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-              {stats?.orders_ready_to_close?.length || 0}
-            </span>
-          </div>
-          <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
-            {!stats?.orders_ready_to_close?.length ? (
-              <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">Nothing pending</p>
-            ) : (
-              stats.orders_ready_to_close.map((order) => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  accentColor={accentColors[400]}
-                  onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
-                />
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-      </div>
-
-      {/* Bottom Bar: Revenue + Team Workload (managers only) */}
-      {isManager && (
-        <div className="grid grid-cols-1 xl:grid-cols-[1.9fr_1.1fr] gap-3 2xl:gap-2.5 flex-shrink-0">
-          {/* Revenue KPIs */}
-          <div className="bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
-            <div className="flex items-center justify-between gap-3 mb-2.5">
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider">Revenue KPIs</h3>
-                <SectionInfoTooltip text="Daily, weekly, and monthly financial indicators for revenue, gross profit, and profit-per-invoice performance." />
+              <div className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold text-gray-300 uppercase tracking-[0.14em]">
+                <span>Work Queue</span>
               </div>
-              <span className="text-xs 2xl:text-sm text-gray-400 bg-white/5 border border-white/10 rounded-full px-2 py-0.5">
-                {stats?.revenue?.total_paid_orders || 0} paid orders
-              </span>
+              <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-              {revenueCards.map((card) => (
-                <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2">
-                  <div className="text-[11px] 2xl:text-xs uppercase tracking-wide text-gray-500">{card.label}</div>
-                  <div className={`mt-1 text-base 2xl:text-lg font-semibold ${card.tone}`}>
-                    ${card.value.toLocaleString()}
-                  </div>
-                  <div className="mt-0.5 text-[11px] 2xl:text-xs text-gray-500">{card.note}</div>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Team Workload */}
-          <div className="bg-white/5 rounded-xl p-3 2xl:p-2.5 border border-white/10">
-            <div className="flex items-center justify-between gap-3 mb-1.5">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate('/dashboard/mechanics')}
-                  className="text-xs 2xl:text-sm font-semibold text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
+            <div className="flex flex-wrap items-center gap-2">
+              {workQueueSummary.map((item) => (
+                <span
+                  key={item.label}
+                  className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs 2xl:text-sm font-medium ${item.className}`}
                 >
-                  Team Capacity
-                </button>
-                <SectionInfoTooltip text="Mechanic staffing capacity snapshot with active vs queued work, per-mechanic load, and click-through to detailed timer boards." />
+                  <span className="text-white">{item.count}</span>
+                  <span>{item.label}</span>
+                </span>
+              ))}
+              <button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                className="flex items-center gap-2 px-2.5 py-1 text-xs 2xl:text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                title="Refresh dashboard"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span>{formatLastUpdated() || 'Refresh'}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 2xl:gap-2.5 p-3 2xl:p-2.5 flex-1 min-h-0">
+              {/* Lane 1: Needs Action */}
+              <div className={`bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col ${workQueueLaneHeightClass}`}>
+                <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400" />
+                    <h3 className="text-sm 2xl:text-base font-semibold text-white">Needs Action</h3>
+                    <SectionInfoTooltip text="Orders blocked by approvals, missing info, or other manager actions that should be handled first." />
+                  </div>
+                  <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                    {stats?.orders_needing_action?.length || 0}
+                  </span>
+                </div>
+                <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
+                  {!stats?.orders_needing_action?.length ? (
+                    <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">All clear</p>
+                  ) : (
+                    stats.orders_needing_action.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        accentColor={accentColors[400]}
+                        onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                      />
+                    ))
+                  )}
+                </div>
               </div>
-              <div className="text-[11px] 2xl:text-xs text-gray-500">
-                {teamAssignedTotal} assigned
+
+              {/* Lane 2: On the Floor */}
+              <div className={`bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col ${workQueueLaneHeightClass}`}>
+                <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
+                    <h3 className="text-sm 2xl:text-base font-semibold text-white">On the Floor</h3>
+                    <SectionInfoTooltip text="Orders currently in production with mechanics assigned or actively working." />
+                  </div>
+                  <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
+                    {stats?.orders_on_floor?.length || 0}
+                  </span>
+                </div>
+                <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
+                  {!stats?.orders_on_floor?.length ? (
+                    <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No active work</p>
+                  ) : (
+                    stats.orders_on_floor.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        accentColor={accentColors[400]}
+                        onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Lane 3: Ready to Close */}
+              <div className={`bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col ${workQueueLaneHeightClass}`}>
+                <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-sm 2xl:text-base font-semibold text-white">Ready to Close</h3>
+                    <SectionInfoTooltip text="Orders that are operationally complete and ready for invoicing, payment, and closeout." />
+                  </div>
+                  <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                    {stats?.orders_ready_to_close?.length || 0}
+                  </span>
+                </div>
+                <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto flex-1">
+                  {!stats?.orders_ready_to_close?.length ? (
+                    <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">Nothing pending</p>
+                  ) : (
+                    stats.orders_ready_to_close.map((order) => (
+                      <OrderCard
+                        key={order.id}
+                        order={order}
+                        accentColor={accentColors[400]}
+                        onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                      />
+                    ))
+                  )}
+                </div>
               </div>
             </div>
+        </div>
+      </div>
 
-            {!teamMembers.length ? (
-              <span className="text-xs 2xl:text-sm text-gray-500">No mechanics</span>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5">
-                  <div className="flex items-center justify-between gap-2 text-[11px] 2xl:text-xs uppercase tracking-wide text-gray-500">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="truncate">Team Utilization</span>
-                      <span className="text-gray-400 normal-case tracking-normal">
-                        <span className="text-white font-semibold">{teamInProgressTotal}</span> active
+      {isManager && (
+        <div ref={teamCapacityRef} className="flex-shrink-0 bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
+          <div className="flex items-center justify-between gap-3 mb-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard/mechanics')}
+                className={`${teamCapacityHeaderClass} font-semibold text-gray-300 uppercase tracking-[0.14em] hover:text-white transition-colors`}
+              >
+                Team Capacity
+              </button>
+              <SectionInfoTooltip text="Mechanic staffing capacity snapshot with active vs queued work, per-mechanic load, and click-through to detailed timer boards." />
+            </div>
+            <div className={`${teamCapacityMetaClass} text-gray-400`}>
+              {teamAssignedTotal} assigned
+            </div>
+          </div>
+
+          {!teamMembers.length ? (
+            <span className={`${teamCapacityMetaClass} text-gray-500`}>No mechanics</span>
+          ) : (
+            <div className="space-y-2.5">
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
+                      Team utilization
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm 2xl:text-[15px] text-gray-300">
+                      <span>
+                        <span className="font-semibold text-white">{teamInProgressTotal}</span> active now
                       </span>
-                      <span className="text-gray-400 normal-case tracking-normal">
-                        <span className="text-white font-semibold">{teamQueuedTotal}</span> queued
+                      <span>
+                        <span className="font-semibold text-white">{teamQueuedTotal}</span> queued next
                       </span>
                     </div>
-                    <span className="shrink-0">{teamUtilization}%</span>
                   </div>
-                  <div className="mt-1.5 h-2 rounded-full bg-white/10 overflow-hidden">
-                    <div
-                      className="h-2 rounded-full"
-                      style={{ width: `${teamUtilization}%`, backgroundColor: accentColors[500] }}
-                    />
-                  </div>
+                  <span className="shrink-0 text-base 2xl:text-lg font-semibold text-white">{teamUtilization}%</span>
                 </div>
+                <div className="mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-2.5 rounded-full"
+                    style={{ width: `${teamUtilization}%`, backgroundColor: accentColors[500] }}
+                  />
+                </div>
+              </div>
 
-                <div className={`grid grid-cols-1 lg:grid-cols-3 gap-2 overflow-y-auto pr-1 ${isExpandedFont ? 'max-h-40 2xl:max-h-36' : 'max-h-44 2xl:max-h-40'}`}>
-                  {teamMembers.slice(0, 9).map((m) => {
-                    const loadPct = m.assigned_count > 0
-                      ? Math.round((m.in_progress_count / m.assigned_count) * 100)
-                      : 0
-                    const queued = Math.max(m.assigned_count - m.in_progress_count, 0)
-                    const status = getTeamCapacityStatus(teamStatusByMechanicId.get(m.mechanic_id))
-                    return (
-                      <div
-                        key={m.mechanic_id}
-                        onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
-                        className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 2xl:px-2"
-                        title={`${m.mechanic_name}: ${status.label} · ${m.in_progress_count} active / ${m.assigned_count} assigned`}
-                      >
+              <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5 overflow-y-auto pr-1 ${teamCapacityGridHeightClass}`}>
+                {teamMembers.slice(0, 8).map((m) => {
+                  const loadPct = m.assigned_count > 0
+                    ? Math.round((m.in_progress_count / m.assigned_count) * 100)
+                    : 0
+                  const queued = Math.max(m.assigned_count - m.in_progress_count, 0)
+                  const status = getTeamCapacityStatus(teamStatusByMechanicId.get(m.mechanic_id))
+                  const loadLabel = m.assigned_count > 0 ? `${loadPct}% loaded` : 'No jobs queued'
+                  return (
+                    <button
+                      type="button"
+                      key={m.mechanic_id}
+                      onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
+                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left hover:bg-white/[0.06] transition-colors"
+                      title={`${m.mechanic_name}: ${status.label} · ${m.in_progress_count} active / ${m.assigned_count} assigned`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <div
-                            className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium shrink-0"
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0"
                             style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
                           >
                             {m.mechanic_name.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-xs 2xl:text-[13px] text-white truncate">{m.mechanic_name}</span>
+                          <span className={`${teamCapacityNameClass} font-semibold text-white truncate`}>{m.mechanic_name}</span>
                         </div>
-                        <div className={`mt-1 text-[11px] 2xl:text-xs flex items-center gap-1.5 ${status.textClass}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${status.dotClass}`} />
-                          <span className="truncate">{status.label}</span>
-                        </div>
-                        <div className="mt-1 text-[11px] 2xl:text-xs text-gray-400">
-                          {m.in_progress_count} active · {queued} queued
-                        </div>
-                        <div className="mt-1.5 h-1.5 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className="h-1.5 rounded-full"
-                            style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
-                          />
-                        </div>
+                        <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-2 py-1 text-[11px] 2xl:text-xs font-medium text-gray-300">
+                          {loadLabel}
+                        </span>
                       </div>
-                    )
-                  })}
-                  {teamMembers.length > 9 && (
-                    <div className="text-[11px] 2xl:text-xs text-gray-500 px-1 col-span-full">
-                      +{teamMembers.length - 9} more mechanics
-                    </div>
-                  )}
-                </div>
+                      <div className={`mt-2 ${teamCapacityBodyClass} flex items-center gap-2 ${status.textClass}`}>
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${status.dotClass}`} />
+                        <span className="truncate">{status.label}</span>
+                      </div>
+                      <div className={`mt-1.5 ${teamCapacityBodyClass} text-gray-300`}>
+                        <span className="font-semibold text-white">{m.in_progress_count}</span> active
+                        {' · '}
+                        <span className="font-semibold text-white">{queued}</span> queued
+                      </div>
+                      <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full"
+                          style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
+                        />
+                      </div>
+                    </button>
+                  )
+                })}
+                {teamMembers.length > 8 && (
+                  <div className={`${teamCapacityMetaClass} text-gray-500 px-1 col-span-full`}>
+                    +{teamMembers.length - 8} more mechanics
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isManager && (
+        <div ref={revenueRef} className="flex-shrink-0 bg-white/5 rounded-xl p-3 2xl:p-2.5 border border-white/10">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRevenueCollapsed((current) => !current)}
+                aria-expanded={!isRevenueCollapsed}
+                className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold text-gray-400 uppercase tracking-[0.14em] hover:text-white transition-colors"
+              >
+                {isRevenueCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                <span>Revenue KPIs</span>
+              </button>
+              <SectionInfoTooltip text="Minimal finance snapshot for the current garage day, week, and month." />
+            </div>
+            <span className="text-xs 2xl:text-sm text-gray-400 bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
+              {stats?.revenue?.total_paid_orders || 0} paid orders
+            </span>
           </div>
+          {!isRevenueCollapsed && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {revenueCards.map((card) => (
+                <div key={card.label} className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+                  <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.16em] text-gray-500">{card.label}</div>
+                  <div className={`mt-1.5 text-base 2xl:text-lg font-semibold ${card.tone}`}>
+                    ${card.value.toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
