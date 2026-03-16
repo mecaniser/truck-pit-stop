@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 """
 Cloudinary service for uploading work photos.
 """
+import base64
+
 import cloudinary
 import cloudinary.uploader
 from app.core.config import settings
@@ -85,6 +89,47 @@ async def upload_work_photo(
             error=str(e),
         )
         raise
+
+
+async def upload_tenant_logo(
+    *,
+    image_bytes: bytes,
+    tenant_id: str,
+    content_type: str,
+    source_url: str | None = None,
+) -> str:
+    """
+    Upload a tenant logo image to Cloudinary and return the hosted URL.
+    """
+    if not is_cloudinary_configured():
+        raise ValueError("Cloudinary is not configured. Please set CLOUDINARY_* environment variables.")
+
+    base64_image = base64.b64encode(image_bytes).decode("ascii")
+    data_uri = f"data:{content_type};base64,{base64_image}"
+
+    context = {"tenant_id": tenant_id}
+    if source_url:
+        context["source_url"] = source_url
+
+    result = cloudinary.uploader.upload(
+        data_uri,
+        folder=f"tenant_logos/{tenant_id}",
+        resource_type="image",
+        transformation=[
+            {"quality": "auto:good"},
+            {"fetch_format": "auto"},
+        ],
+        context=context,
+    )
+
+    logger.info(
+        "Tenant logo uploaded",
+        tenant_id=tenant_id,
+        public_id=result.get("public_id"),
+        source_url=source_url,
+    )
+
+    return result["secure_url"]
 
 
 async def delete_work_photo(public_id: str) -> bool:

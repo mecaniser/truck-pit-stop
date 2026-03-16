@@ -46,9 +46,12 @@ from app.services.email_service import (
     send_enrollment_received_email,
     send_new_enrollment_notification,
 )
+from app.services.website_logo_service import import_logo_from_website
+from app.core.logging import get_logger
 from app.core.password_policy import validate_password
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 async def _build_user_response(user: User, db: AsyncSession) -> UserResponse:
@@ -937,6 +940,17 @@ async def enroll_garage(
     
     db.add(tenant)
     await db.flush()  # Get tenant ID
+
+    if tenant.website:
+        try:
+            tenant.logo_url = await import_logo_from_website(tenant.website, tenant_id=str(tenant.id))
+        except Exception as exc:
+            logger.warning(
+                "tenant_logo_import_failed_during_enrollment",
+                tenant_id=str(tenant.id),
+                website=tenant.website,
+                error=str(exc),
+            )
     
     # Create owner user with inactive status
     owner = User(

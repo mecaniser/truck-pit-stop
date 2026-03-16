@@ -27,10 +27,13 @@ from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
 from app.schemas.tenant import TenantCreate, TenantUpdate, TenantResponse, TenantWithOwnerResponse
 from app.services import error_service
 from app.services.mechanic_time_service import validate_local_time_str, validate_timezone_name
+from app.services.website_logo_service import import_logo_from_website
+from app.core.logging import get_logger
 
 router = APIRouter()
 twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 SMS_PROVISION_COOLDOWN_SECONDS = 15
+logger = get_logger(__name__)
 
 
 class ProvisionSMSNumberRequest(BaseModel):
@@ -903,6 +906,10 @@ class GarageProfileUpdateRequest(BaseModel):
     logo_url: Optional[str] = Field(None, max_length=500)
 
 
+class GarageLogoImportRequest(BaseModel):
+    website: Optional[str] = Field(None, max_length=255)
+
+
 def require_garage_owner():
     """Dependency to ensure only garage owner/admin can access"""
     async def role_checker(current_user: User = Depends(get_current_active_user)):
@@ -973,6 +980,60 @@ async def update_garage_profile(
     tenant.email = clean_optional_text(str(body.email)) if body.email else None
     tenant.website = clean_optional_text(body.website)
     tenant.logo_url = clean_optional_text(body.logo_url)
+
+    await db.commit()
+    await db.refresh(tenant)
+
+    return GarageProfileResponse(
+        name=tenant.name,
+        slug=tenant.slug,
+        address=tenant.address,
+        phone=tenant.phone,
+        email=tenant.email,
+        website=tenant.website,
+        logo_url=tenant.logo_url,
+    )
+
+
+@router.post("/garage-profile/import-logo", response_model=GarageProfileResponse)
+async def import_garage_profile_logo(
+    body: GarageLogoImportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Import a tenant logo from the garage website and persist it to the tenant profile."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    website = (body.website or tenant.website or "").strip()
+    if not website:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Website is required before importing a logo")
+
+    tenant.website = website
+
+    try:
+        imported_logo_url = await import_logo_from_website(website, tenant_id=str(tenant.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.warning(
+            "tenant_logo_import_failed",
+            tenant_id=str(tenant.id),
+            website=website,
+            error=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Unable to import logo from the website right now") from exc
+
+    if not imported_logo_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo image was found on that website")
+
+    tenant.logo_url = imported_logo_url
 
     await db.commit()
     await db.refresh(tenant)

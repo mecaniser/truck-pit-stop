@@ -81,6 +81,18 @@ const staggeredReveal = (index: number) => ({
   animationDelay: `${index * 50}ms`,
 })
 
+const isValidOptionalUrl = (value?: string) => {
+  if (!value || !value.trim()) {
+    return true
+  }
+  try {
+    new URL(value.trim())
+    return true
+  } catch {
+    return false
+  }
+}
+
 // ============ SCHEMAS ============
 const profileSchema = z.object({
   first_name: z.string().min(1, 'First name is required').min(2, 'Min 2 characters'),
@@ -117,9 +129,20 @@ const garageProfileSchema = z.object({
   email: z.string().optional().refine((value) => !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), {
     message: 'Valid email required',
   }),
-  website: z.string().optional().refine((value) => !value || value.length <= 255, {
-    message: 'Maximum 255 characters',
-  }),
+  website: z.string().optional()
+    .refine((value) => !value || value.length <= 255, {
+      message: 'Maximum 255 characters',
+    })
+    .refine((value) => isValidOptionalUrl(value), {
+      message: 'Valid website URL required',
+    }),
+  logo_url: z.string().optional()
+    .refine((value) => !value || value.length <= 500, {
+      message: 'Maximum 500 characters',
+    })
+    .refine((value) => isValidOptionalUrl(value), {
+      message: 'Valid logo URL required',
+    }),
 })
 
 type ProfileFormData = z.infer<typeof profileSchema>
@@ -423,20 +446,24 @@ function GarageProfileSection() {
     },
   })
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<GarageProfileFormData>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<GarageProfileFormData>({
     resolver: zodResolver(garageProfileSchema),
   })
 
   useEffect(() => {
-    if (!garageProfile) return
+    if (!garageProfile || isEditing) return
     reset({
       name: garageProfile.name || '',
       address: garageProfile.address || '',
       phone: garageProfile.phone || '',
       email: garageProfile.email || '',
       website: garageProfile.website || '',
+      logo_url: garageProfile.logo_url || '',
     })
-  }, [garageProfile, reset])
+  }, [garageProfile, isEditing, reset])
+
+  const websiteValue = watch('website') || ''
+  const logoUrlValue = watch('logo_url') || ''
 
   const updateMutation = useMutation({
     mutationFn: async (data: GarageProfileFormData) => {
@@ -446,6 +473,7 @@ function GarageProfileSection() {
         phone: data.phone?.trim() || null,
         email: data.email?.trim() || null,
         website: data.website?.trim() || null,
+        logo_url: data.logo_url?.trim() || null,
       }
       const response = await api.put('/admin/garage-profile', payload)
       return response.data as GarageProfile
@@ -464,6 +492,24 @@ function GarageProfileSection() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to update garage profile')
+    },
+  })
+
+  const importLogoMutation = useMutation({
+    mutationFn: async (website: string) => {
+      const response = await api.post('/admin/garage-profile/import-logo', {
+        website: website.trim(),
+      })
+      return response.data as GarageProfile
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['garage-profile'], updated)
+      setValue('website', updated.website || '', { shouldDirty: false, shouldValidate: true })
+      setValue('logo_url', updated.logo_url || '', { shouldDirty: false, shouldValidate: true })
+      toast.success('Logo imported from website')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to import logo')
     },
   })
 
@@ -491,6 +537,33 @@ function GarageProfileSection() {
     updateMutation.mutate(data)
   }
 
+  const openEditMode = () => {
+    if (garageProfile) {
+      reset({
+        name: garageProfile.name || '',
+        address: garageProfile.address || '',
+        phone: garageProfile.phone || '',
+        email: garageProfile.email || '',
+        website: garageProfile.website || '',
+        logo_url: garageProfile.logo_url || '',
+      })
+    }
+    setIsEditing(true)
+  }
+
+  const handleImportLogo = () => {
+    const website = websiteValue.trim()
+    if (!website) {
+      toast.error('Add a website URL before importing a logo')
+      return
+    }
+    importLogoMutation.mutate(website)
+  }
+
+  const handleClearLogo = () => {
+    setValue('logo_url', '', { shouldDirty: true, shouldValidate: true })
+  }
+
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
       <IndustrialCard className="p-6 sm:p-8">
@@ -501,6 +574,45 @@ function GarageProfileSection() {
 
         {!isEditing ? (
           <div className="space-y-6">
+            <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <label className={industrialStyles.label}>Garage Logo</label>
+                  <p className="text-sm text-zinc-400">
+                    {garageProfile?.logo_url
+                      ? 'Imported logo currently used for this tenant.'
+                      : 'No tenant logo has been imported yet.'}
+                  </p>
+                </div>
+                {garageProfile?.logo_url && (
+                  <a
+                    href={garageProfile.logo_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-[var(--accent-400)] hover:text-[var(--accent-300)]"
+                  >
+                    Open logo
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                )}
+              </div>
+
+              <div className="mt-4 flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/50 p-6">
+                {garageProfile?.logo_url ? (
+                  <img
+                    src={garageProfile.logo_url}
+                    alt={`${garageProfile.name} logo`}
+                    className="max-h-24 w-auto max-w-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="text-center text-sm text-zinc-500">
+                    <p>Use the website importer or paste a logo URL in Garage Profile settings.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {[
                 { label: 'Garage Name', value: garageProfile?.name || '—' },
@@ -520,7 +632,7 @@ function GarageProfileSection() {
             </div>
 
             <button
-              onClick={() => setIsEditing(true)}
+              onClick={openEditMode}
               className={industrialStyles.btnPrimary}
             >
               <span className="flex items-center gap-2">
@@ -560,6 +672,81 @@ function GarageProfileSection() {
               {errors.website && <p className="mt-2 text-xs text-red-400">{errors.website.message}</p>}
             </div>
 
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="space-y-4">
+                <div>
+                  <label className={industrialStyles.label}>Logo URL</label>
+                  <input
+                    {...register('logo_url')}
+                    className={inputClasses(!!errors.logo_url)}
+                    placeholder="https://cdn.example.com/logo.png"
+                  />
+                  {errors.logo_url && <p className="mt-2 text-xs text-red-400">{errors.logo_url.message}</p>}
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Paste a logo URL manually or import from the website above.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleImportLogo}
+                    disabled={importLogoMutation.isPending || !websiteValue.trim()}
+                    className={industrialStyles.btnSecondary}
+                  >
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className={`h-4 w-4 ${importLogoMutation.isPending ? 'animate-spin' : ''}`} />
+                      {importLogoMutation.isPending ? 'Importing...' : 'Import from Website'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClearLogo}
+                    disabled={!logoUrlValue}
+                    className={industrialStyles.btnSecondary}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      Clear Logo
+                    </span>
+                  </button>
+
+                  {logoUrlValue && (
+                    <a
+                      href={logoUrlValue}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={industrialStyles.btnSecondary}
+                    >
+                      <span className="flex items-center gap-2">
+                        <ExternalLink className="h-4 w-4" />
+                        Open Logo
+                      </span>
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-4">
+                <label className={industrialStyles.label}>Logo Preview</label>
+                <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-zinc-700/60 bg-zinc-900/50 p-5">
+                  {logoUrlValue ? (
+                    <img
+                      src={logoUrlValue}
+                      alt="Tenant logo preview"
+                      className="max-h-24 w-auto max-w-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <p className="text-center text-sm text-zinc-500">
+                      No logo selected yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className={industrialStyles.label}>Address</label>
               <textarea {...register('address')} className={`${inputClasses(!!errors.address)} min-h-[96px]`} />
@@ -578,6 +765,7 @@ function GarageProfileSection() {
                       phone: garageProfile.phone || '',
                       email: garageProfile.email || '',
                       website: garageProfile.website || '',
+                      logo_url: garageProfile.logo_url || '',
                     })
                   }
                 }}
