@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Boxes, Clock, X, XCircle } from 'lucide-react'
-import { useState } from 'react'
 
 interface AlertsBannerProps {
   lowStockCount: number
   overdueApprovals?: number
   staleDrafts?: number
   declinedQuotes?: number
+  onDismiss?: () => void
 }
 
 export default function AlertsBanner({
@@ -14,12 +14,11 @@ export default function AlertsBanner({
   overdueApprovals = 0,
   staleDrafts = 0,
   declinedQuotes = 0,
+  onDismiss,
 }: AlertsBannerProps) {
-  const [dismissed, setDismissed] = useState(false)
-
   const hasAlerts = lowStockCount > 0 || overdueApprovals > 0 || staleDrafts > 0 || declinedQuotes > 0
 
-  if (!hasAlerts || dismissed) return null
+  if (!hasAlerts) return null
 
   return (
     <div className="bg-gradient-to-r from-amber-500/10 via-red-500/10 to-amber-500/10 border border-amber-500/20 rounded-xl p-3 sm:p-4">
@@ -29,7 +28,7 @@ export default function AlertsBanner({
           <span className="text-sm font-medium">Attention Required</span>
         </div>
         <button
-          onClick={() => setDismissed(true)}
+          onClick={onDismiss}
           className="text-gray-400 hover:text-white transition-colors"
         >
           <X className="w-4 h-4" />

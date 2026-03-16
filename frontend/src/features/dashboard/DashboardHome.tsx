@@ -19,7 +19,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
-import { formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { useAuthStore } from '../../stores/authStore'
 import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
@@ -109,23 +108,6 @@ interface DashboardStats {
   orders_ready_to_close: RecentOrder[]
 }
 
-const STATUS_BADGE_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  quoted: 'bg-blue-100 text-blue-700',
-  declined: 'bg-red-100 text-red-700',
-  approved: 'bg-cyan-100 text-cyan-700',
-  assigned: 'bg-cyan-100 text-cyan-700',
-  acknowledged: 'bg-cyan-100 text-cyan-700',
-  in_progress: 'bg-amber-100 text-amber-700',
-  on_hold: 'bg-orange-100 text-orange-700',
-  pending_review: 'bg-orange-100 text-orange-700',
-  completed: 'bg-green-100 text-green-700',
-  invoiced: 'bg-purple-100 text-purple-700',
-  pending_zelle: 'bg-amber-100 text-amber-800',
-  paid: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-red-100 text-red-700',
-}
-
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
@@ -161,44 +143,48 @@ const getTeamCapacityStatus = (mechanic: TeamCapacityStatusItem | undefined) => 
   if (!mechanic) {
     return {
       label: 'Status unavailable',
-      textClass: 'text-gray-500',
-      dotClass: 'bg-gray-500',
+      badgeLabel: 'Unknown',
+      badgeClass: 'border-gray-500/20 bg-gray-500/10 text-gray-300',
     }
   }
 
   if (mechanic.active_session) {
-    const sessionLabel = formatSessionType(mechanic.active_session.session_type)
-    const detail = mechanic.active_session.session_type === 'misc' && mechanic.active_session.misc_category
-      ? `${sessionLabel} (${formatMiscCategory(mechanic.active_session.misc_category)})`
-      : sessionLabel
     return {
-      label: `Running ${detail}`,
-      textClass: 'text-emerald-300',
-      dotClass: 'bg-emerald-400',
+      label: 'Working on assigned jobs',
+      badgeLabel: 'Working',
+      badgeClass: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200',
     }
   }
 
   if (mechanic.break_active) {
     return {
       label: 'On Break',
-      textClass: 'text-amber-300',
-      dotClass: 'bg-amber-400',
+      badgeLabel: 'On Break',
+      badgeClass: 'border-amber-500/20 bg-amber-500/10 text-amber-200',
     }
   }
 
   if (mechanic.attendance_active) {
     return {
-      label: 'Clocked In',
-      textClass: 'text-sky-300',
-      dotClass: 'bg-sky-400',
+      label: 'Clocked in and ready',
+      badgeLabel: 'Ready',
+      badgeClass: 'border-sky-500/20 bg-sky-500/10 text-sky-200',
     }
   }
 
   return {
     label: 'Clocked Out',
-    textClass: 'text-gray-400',
-    dotClass: 'bg-gray-500',
+    badgeLabel: 'Offline',
+    badgeClass: 'border-gray-500/20 bg-gray-500/10 text-gray-300',
   }
+}
+
+const getTeamCapacitySortPriority = (mechanic: TeamCapacityStatusItem | undefined) => {
+  if (mechanic?.active_session) return 0
+  if (mechanic?.attendance_active && !mechanic.break_active) return 1
+  if (mechanic?.break_active) return 2
+  if (mechanic?.attendance_active) return 3
+  return 4
 }
 
 function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClick: () => void; accentColor: string }) {
@@ -206,9 +192,6 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
   const elapsed = useElapsedTime(
     order.status === 'in_progress' && !isOnHold ? order.work_started_at : null,
   )
-  const isPendingZelle = order.status === 'invoiced' && !!order.pending_zelle_confirmation
-  const statusKey = isOnHold ? 'on_hold' : isPendingZelle ? 'pending_zelle' : order.status
-  const statusLabel = isOnHold ? 'on hold' : isPendingZelle ? 'awaiting zelle' : order.status.replace(/_/g, ' ')
 
   return (
     <button
@@ -219,11 +202,6 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-medium text-white text-sm 2xl:text-base">{order.order_number}</span>
-            <span
-              className={`px-2 py-0.5 rounded-full text-xs 2xl:text-[13px] font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[statusKey] || 'bg-gray-100 text-gray-700'}`}
-            >
-              {statusLabel}
-            </span>
             {elapsed && (
               <span className="text-xs 2xl:text-sm font-mono" style={{ color: accentColor }}>{elapsed}</span>
             )}
@@ -269,6 +247,7 @@ export default function DashboardHome() {
   const [quickErrors, setQuickErrors] = useState<{ phone?: string; truck?: string; complaint?: string }>({})
   const [quickTouched, setQuickTouched] = useState(false)
   const [isRevenueCollapsed, setIsRevenueCollapsed] = useState(true)
+  const [isAttentionDismissed, setIsAttentionDismissed] = useState(false)
   const [workQueueMaxHeight, setWorkQueueMaxHeight] = useState<number | null>(null)
   const dashboardRootRef = useRef<HTMLDivElement | null>(null)
   const workQueueRef = useRef<HTMLDivElement | null>(null)
@@ -331,41 +310,78 @@ export default function DashboardHome() {
   const teamAssignedTotal = teamMembers.reduce((sum, m) => sum + m.assigned_count, 0)
   const teamInProgressTotal = teamMembers.reduce((sum, m) => sum + m.in_progress_count, 0)
   const teamQueuedTotal = Math.max(teamAssignedTotal - teamInProgressTotal, 0)
-  const teamUtilization = teamAssignedTotal > 0
-    ? Math.round((teamInProgressTotal / teamAssignedTotal) * 100)
-    : 0
+  const teamWorkingCount = teamMembers.filter((m) => !!teamStatusByMechanicId.get(m.mechanic_id)?.active_session).length
+  const teamReadyCount = teamMembers.filter((m) => {
+    const status = teamStatusByMechanicId.get(m.mechanic_id)
+    return !!status?.attendance_active && !status?.break_active && !status?.active_session
+  }).length
+  const teamOfflineCount = teamMembers.filter((m) => {
+    const status = teamStatusByMechanicId.get(m.mechanic_id)
+    return !status?.attendance_active && !status?.active_session && !status?.break_active
+  }).length
+  const prioritizedTeamMembers = [...teamMembers].sort((a, b) => {
+    const priorityA = getTeamCapacitySortPriority(teamStatusByMechanicId.get(a.mechanic_id))
+    const priorityB = getTeamCapacitySortPriority(teamStatusByMechanicId.get(b.mechanic_id))
+
+    if (priorityA !== priorityB) return priorityA - priorityB
+    if (b.in_progress_count !== a.in_progress_count) return b.in_progress_count - a.in_progress_count
+    if (b.assigned_count !== a.assigned_count) return b.assigned_count - a.assigned_count
+    return a.mechanic_name.localeCompare(b.mechanic_name)
+  })
+  const teamSnapshotCards = [
+    {
+      label: 'Active Jobs',
+      value: teamInProgressTotal,
+      className: 'border-emerald-500/15 bg-emerald-500/5',
+      valueClass: 'text-emerald-300',
+    },
+    {
+      label: 'Queued Jobs',
+      value: teamQueuedTotal,
+      className: 'border-amber-500/15 bg-amber-500/5',
+      valueClass: 'text-amber-200',
+    },
+    {
+      label: 'On Floor',
+      value: teamReadyCount + teamWorkingCount,
+      className: 'border-sky-500/15 bg-sky-500/5',
+      valueClass: 'text-sky-200',
+    },
+    {
+      label: 'Offline',
+      value: teamOfflineCount,
+      className: 'border-gray-500/15 bg-gray-500/5',
+      valueClass: 'text-gray-200',
+    },
+  ]
   const teamCapacityHeaderClass = isExpandedFont ? 'text-base 2xl:text-lg' : 'text-sm 2xl:text-base'
   const teamCapacityMetaClass = isExpandedFont ? 'text-sm 2xl:text-base' : 'text-xs 2xl:text-sm'
   const teamCapacityNameClass = isExpandedFont ? 'text-base 2xl:text-lg' : 'text-sm 2xl:text-[15px]'
   const teamCapacityBodyClass = isExpandedFont ? 'text-sm 2xl:text-[15px]' : 'text-xs 2xl:text-sm'
-  const teamCapacityGridHeightClass = isExpandedFont ? 'max-h-52 2xl:max-h-48' : 'max-h-48 2xl:max-h-44'
+  const teamCapacityGridHeightClass = isExpandedFont
+    ? 'md:max-h-60 lg:max-h-40 2xl:max-h-44'
+    : 'md:max-h-56 lg:max-h-36 2xl:max-h-40'
   const workQueueLaneHeightClass = isExpandedFont
     ? 'min-h-[clamp(10.5rem,21vh,12rem)]'
     : 'min-h-[clamp(10rem,20vh,11.75rem)]'
-  const workQueueSummary = [
-    {
-      label: 'Needs Action',
-      count: stats?.orders_needing_action?.length || 0,
-      className: 'border-red-500/20 bg-red-500/10 text-red-300',
-    },
-    {
-      label: 'On Floor',
-      count: stats?.orders_on_floor?.length || 0,
-      className: 'border-sky-500/20 bg-sky-500/10 text-sky-300',
-    },
-    {
-      label: 'Ready',
-      count: stats?.orders_ready_to_close?.length || 0,
-      className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
-    },
-  ]
-
   const revenueCards = [
     { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400' },
     { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300' },
     { label: 'Week Revenue', value: metricValue(stats?.revenue?.this_week), tone: 'text-emerald-400' },
     { label: 'Month Revenue', value: metricValue(stats?.revenue?.this_month), tone: 'text-emerald-400' },
   ]
+  const hasAttentionRequired = isManager && (
+    (stats?.low_stock_count ?? 0) > 0 ||
+    (stats?.overdue_approvals ?? 0) > 0 ||
+    (stats?.declined_quotes ?? 0) > 0
+  )
+  const showAttentionRequired = hasAttentionRequired && !isAttentionDismissed
+
+  useEffect(() => {
+    if (!hasAttentionRequired) {
+      setIsAttentionDismissed(false)
+    }
+  }, [hasAttentionRequired])
 
   useEffect(() => {
     const measureWorkQueueHeight = () => {
@@ -400,6 +416,7 @@ export default function DashboardHome() {
     return () => window.removeEventListener('resize', measureWorkQueueHeight)
   }, [
     banners.length,
+    showAttentionRequired,
     isExpandedFont,
     isManager,
     isRevenueCollapsed,
@@ -660,11 +677,12 @@ export default function DashboardHome() {
       )}
 
       {/* Alerts Banner (managers only, conditional) */}
-      {isManager && ((stats?.low_stock_count ?? 0) > 0 || (stats?.overdue_approvals ?? 0) > 0 || (stats?.declined_quotes ?? 0) > 0) && (
+      {showAttentionRequired && (
         <AlertsBanner
           lowStockCount={stats?.low_stock_count || 0}
           overdueApprovals={stats?.overdue_approvals || 0}
           declinedQuotes={stats?.declined_quotes || 0}
+          onDismiss={() => setIsAttentionDismissed(true)}
         />
       )}
 
@@ -675,24 +693,15 @@ export default function DashboardHome() {
         style={workQueueMaxHeight ? { maxHeight: `${workQueueMaxHeight}px` } : undefined}
       >
         <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-0 h-full">
-          <div className="flex flex-col gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex items-start justify-between gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 sm:items-center">
+            <div className="flex min-w-0 items-center gap-2">
               <div className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold text-gray-300 uppercase tracking-[0.14em]">
                 <span>Work Queue</span>
               </div>
               <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {workQueueSummary.map((item) => (
-                <span
-                  key={item.label}
-                  className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs 2xl:text-sm font-medium ${item.className}`}
-                >
-                  <span className="text-white">{item.count}</span>
-                  <span>{item.label}</span>
-                </span>
-              ))}
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
@@ -796,7 +805,7 @@ export default function DashboardHome() {
 
       {isManager && (
         <div ref={teamCapacityRef} className="flex-shrink-0 bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
-          <div className="flex items-center justify-between gap-3 mb-2.5">
+          <div className="mb-2.5 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -807,57 +816,75 @@ export default function DashboardHome() {
               </button>
               <SectionInfoTooltip text="Mechanic staffing capacity snapshot with active vs queued work, per-mechanic load, and click-through to detailed timer boards." />
             </div>
-            <div className={`${teamCapacityMetaClass} text-gray-400`}>
-              {teamAssignedTotal} assigned
+
+            <div className="hidden lg:ml-auto lg:flex lg:flex-wrap lg:items-center lg:justify-end lg:gap-2 lg:pl-4">
+              {teamSnapshotCards.map((card) => (
+                <div
+                  key={card.label}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] text-gray-400 ${card.className}`}
+                >
+                  <span className={`text-sm font-semibold ${card.valueClass}`}>{card.value}</span>
+                  <span>{card.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
           {!teamMembers.length ? (
             <span className={`${teamCapacityMetaClass} text-gray-500`}>No mechanics</span>
           ) : (
-            <div className="space-y-2.5">
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
-                      Team utilization
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm 2xl:text-[15px] text-gray-300">
-                      <span>
-                        <span className="font-semibold text-white">{teamInProgressTotal}</span> active now
-                      </span>
-                      <span>
-                        <span className="font-semibold text-white">{teamQueuedTotal}</span> queued next
-                      </span>
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-base 2xl:text-lg font-semibold text-white">{teamUtilization}%</span>
+            <div className="space-y-3 lg:space-y-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 lg:hidden">
+                <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
+                  Floor Snapshot
                 </div>
-                <div className="mt-2 h-2.5 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-2.5 rounded-full"
-                    style={{ width: `${teamUtilization}%`, backgroundColor: accentColors[500] }}
-                  />
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {teamSnapshotCards.map((card) => (
+                    <div
+                      key={card.label}
+                      className={`rounded-lg border px-3 py-2.5 ${card.className}`}
+                    >
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                        {card.label}
+                      </div>
+                      <div className={`mt-1.5 text-lg 2xl:text-xl font-semibold ${card.valueClass}`}>
+                        {card.value}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5 overflow-y-auto pr-1 ${teamCapacityGridHeightClass}`}>
-                {teamMembers.slice(0, 8).map((m) => {
+              <div className="flex items-end justify-between gap-3 px-1 lg:items-center lg:px-0">
+                <div className="min-w-0">
+                  <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
+                    Mechanic Board
+                  </div>
+                  <p className="mt-1 text-xs 2xl:text-sm text-gray-500 lg:hidden">
+                    Tap a mechanic to open timers and assignments.
+                  </p>
+                </div>
+                <span className={`${teamCapacityMetaClass} shrink-0 text-gray-500`}>
+                  {teamMembers.length} techs
+                </span>
+              </div>
+
+              <div className={`grid grid-cols-1 gap-2.5 overflow-visible md:grid-cols-2 md:overflow-y-auto md:pr-1 xl:grid-cols-3 2xl:grid-cols-4 ${teamCapacityGridHeightClass}`}>
+                {prioritizedTeamMembers.slice(0, 8).map((m) => {
                   const loadPct = m.assigned_count > 0
                     ? Math.round((m.in_progress_count / m.assigned_count) * 100)
                     : 0
                   const queued = Math.max(m.assigned_count - m.in_progress_count, 0)
                   const status = getTeamCapacityStatus(teamStatusByMechanicId.get(m.mechanic_id))
-                  const loadLabel = m.assigned_count > 0 ? `${loadPct}% loaded` : 'No jobs queued'
                   return (
                     <button
                       type="button"
                       key={m.mechanic_id}
                       onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
-                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left hover:bg-white/[0.06] transition-colors"
+                      className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left hover:bg-white/[0.06] transition-colors lg:px-2.5 lg:py-2.5"
                       title={`${m.mechanic_name}: ${status.label} · ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                     >
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-2 min-w-0">
                           <div
                             className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0"
@@ -867,22 +894,52 @@ export default function DashboardHome() {
                           </div>
                           <span className={`${teamCapacityNameClass} font-semibold text-white truncate`}>{m.mechanic_name}</span>
                         </div>
-                        <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-2 py-1 text-[11px] 2xl:text-xs font-medium text-gray-300">
-                          {loadLabel}
+                        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] 2xl:text-xs font-medium ${status.badgeClass}`}>
+                          {status.badgeLabel}
                         </span>
                       </div>
-                      <div className={`mt-2 ${teamCapacityBodyClass} flex items-center gap-2 ${status.textClass}`}>
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${status.dotClass}`} />
+                      <div className="mt-3 grid grid-cols-2 gap-2 lg:hidden">
+                        <div className="rounded-lg border border-white/10 bg-black/10 px-2.5 py-2">
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                            Active
+                          </div>
+                          <div className="mt-1.5 text-sm 2xl:text-base font-semibold text-white">
+                            {m.in_progress_count}
+                          </div>
+                        </div>
+                        <div className={`rounded-lg border px-2.5 py-2 ${queued > 0 ? 'border-amber-500/20 bg-amber-500/10' : 'border-white/10 bg-black/10'}`}>
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
+                            Queued
+                          </div>
+                          <div className={`mt-1.5 text-sm 2xl:text-base font-semibold ${queued > 0 ? 'text-amber-200' : 'text-gray-300'}`}>
+                            {queued}
+                          </div>
+                        </div>
+                      </div>
+                      <div className={`mt-3 hidden md:flex lg:hidden items-center justify-between gap-2 ${teamCapacityBodyClass} text-gray-400`}>
                         <span className="truncate">{status.label}</span>
+                        <span className="shrink-0">{m.assigned_count > 0 ? `${loadPct}% load` : 'Open capacity'}</span>
                       </div>
-                      <div className={`mt-1.5 ${teamCapacityBodyClass} text-gray-300`}>
-                        <span className="font-semibold text-white">{m.in_progress_count}</span> active
-                        {' · '}
-                        <span className="font-semibold text-white">{queued}</span> queued
-                      </div>
-                      <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+                      <div className="mt-2 hidden md:block lg:hidden h-2 rounded-full bg-white/10 overflow-hidden">
                         <div
                           className="h-2 rounded-full"
+                          style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
+                        />
+                      </div>
+                      <div className={`mt-2 hidden lg:flex items-center gap-3 ${teamCapacityBodyClass} text-gray-300`}>
+                        <span>
+                          <span className="font-semibold text-white">{m.in_progress_count}</span> active
+                        </span>
+                        <span>
+                          <span className={`font-semibold ${queued > 0 ? 'text-amber-200' : 'text-white'}`}>{queued}</span> queued
+                        </span>
+                        <span className="ml-auto shrink-0 text-gray-400">
+                          {m.assigned_count > 0 ? `${loadPct}% load` : 'Open capacity'}
+                        </span>
+                      </div>
+                      <div className="mt-2 hidden lg:block h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-1.5 rounded-full"
                           style={{ width: `${loadPct}%`, backgroundColor: accentColors[500] }}
                         />
                       </div>
