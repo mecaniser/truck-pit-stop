@@ -9,7 +9,7 @@ export default defineConfig({
   reporter: 'html',
   timeout: 30_000,
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://127.0.0.1:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -21,13 +21,13 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'cd ../backend && python -m uvicorn app.main:app --port 8000',
+      command: 'cd ../backend && venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000',
       port: 8000,
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: 'cd ../frontend && npm run dev',
+      command: 'cd ../frontend && npm run dev -- --host 127.0.0.1',
       port: 5173,
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,

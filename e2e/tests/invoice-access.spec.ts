@@ -4,9 +4,8 @@ test.describe('Public invoice access', () => {
   test('invalid token shows error', async ({ page }) => {
     await page.goto('/invoice/invalid-token-abc')
 
-    // Should show some error state (invalid/expired token)
     await expect(
-      page.getByText(/invalid|expired|not found|error/i)
+      page.getByRole('heading', { name: /invoice link expired/i })
     ).toBeVisible({ timeout: 10000 })
   })
 
