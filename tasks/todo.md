@@ -218,6 +218,33 @@
 # Dashboard Dynamic Queue Fit (2026-03-16)
 
 ## Plan
+
+---
+
+# Railway Alembic Command Diagnosis (2026-03-16)
+
+## Plan
+- [x] Reproduce the `railway run alembic upgrade head` failure from the repo context.
+- [x] Verify whether the missing path is the local `alembic` executable, the Alembic config location, or another environment assumption.
+- [x] Apply the smallest corrective change needed, if any, and document the correct invocation path.
+- [x] Verify the corrected workflow and record review notes.
+
+## Progress Notes
+- [x] Confirmed the repository’s Alembic config and migration scripts live under `backend/`.
+- [x] Confirmed current project docs already instruct migration commands from within `backend/` after activating a Python virtual environment.
+- [x] Reproduced the exact Railway CLI failure from the repo root: `railway run alembic upgrade head` returns `No such file or directory (os error 2)` because `railway run` tries to execute a local `alembic` binary and none is present on the root PATH.
+- [x] Verified `railway run /bin/sh -lc 'command -v alembic || echo missing'` prints `missing`, which proves the missing file is the executable itself, not the migration folder.
+- [x] Verified the repo-root `.venv/bin/alembic` wrapper is also unusable in this checkout because its shebang points at `/Users/sergio/TruckPitStop/.venv/bin/python`, a stale path that no longer exists.
+- [x] Verified the backend virtualenv is valid and the safe Railway-backed command works when run from the backend directory context:
+  `railway run /bin/sh -lc 'cd backend && venv/bin/python -m alembic heads'`
+- [x] Verified root execution with `-c backend/alembic.ini` is still cwd-sensitive in the current config, so the reliable command is to `cd backend` before invoking Alembic.
+
+## Review
+- Root cause is local command resolution, not a missing migration file in Railway.
+- `railway run` injects Railway environment variables into a command that still runs on the local machine, so the command must reference a real local Python/Alembic executable.
+- Correct migration command for this checkout:
+  `railway run /bin/sh -lc 'cd backend && venv/bin/python -m alembic upgrade head'`
+- Residual risk: if `backend/venv` does not exist on another machine, the virtualenv must be created first with the documented backend setup steps.
 - [x] Confirm why the fixed queue reduction felt too aggressive.
 - [x] Replace the fixed queue cap with viewport-aware sizing tied to the actual available space.
 - [x] Run targeted frontend verification and capture the result.
@@ -886,3 +913,159 @@
 ## Review
 - `Attention Required` now behaves like a temporary layout participant instead of a dead-end height cap: when it is visible it consumes vertical space, and when it is dismissed the queue expands immediately into that reclaimed area.
 - The fix is state ownership, not new height math. `DashboardHome` now owns the banner visibility state, so the existing viewport-fit measurement reruns at the correct time.
+
+---
+
+# Inventory Toolbar And Overflow Cleanup (2026-03-16)
+
+## Plan
+- [x] Inspect the inventory page layout and identify which elements own overflow on desktop.
+- [x] Move the desktop `Search in` filters into the same top toolbar as the search input so the header consumes less vertical space.
+- [x] Constrain the desktop inventory workspace to the available page height so the list/cards area owns the only intended scroll region.
+- [x] Verify with `npm run build` and local browser inspection that the extra page scrollbar is gone in desktop inventory.
+
+## Progress Notes
+- [x] Confirmed `InventoryPage` rendered a separate desktop `Search in` row above a second desktop table/card shell, while list view also used its own `overflow-y-auto max-h-[calc(100vh-260px)]`.
+- [x] Rebuilt the desktop toolbar so the search input, `Search in` filters, and `Add part` action live in one row when space allows.
+- [x] Switched the desktop inventory shell to a `flex-1 min-h-0` layout so cards/list content owns the vertical scroll instead of stacking a nested max-height container on top of the garage pane scroll.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+  Playwright on mocked `http://localhost:5173/dashboard/garage/inventory` confirmed the desktop toolbar renders on a single 42px row and the garage content pane no longer overflows (`clientHeight=1023`, `scrollHeight=1023`) while the inventory list remains the sole vertical scroller (`clientHeight=908`, `scrollHeight=1228`).
+
+## Review
+- Desktop inventory now uses one top toolbar for search context and action controls, which frees vertical space before the list shell.
+- The double-scroll issue is resolved by making the inventory workspace height-aware and giving the list/cards region the only intentional desktop overflow.
+
+---
+
+# Inventory Toolbar Height Refinement (2026-03-16)
+
+## Plan
+- [x] Remove the `Search in:` label from the desktop inventory toolbar.
+- [x] Normalize the quick-filter control height to match the search field and `Add part` button.
+- [x] Verify the refined toolbar layout in build output and browser rendering.
+
+## Progress Notes
+- [x] Removed the standalone `Search in:` label so the segmented quick filters read as a direct companion control to the search input.
+- [x] Set the desktop filter group and `Add part` button to the same 42px control rail as the search field.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+  Playwright on mocked `http://localhost:5173/dashboard/garage/inventory` confirmed the label is gone and the visible desktop search field, filter rail, and `Add part` button all render at `42px` tall.
+
+## Review
+- The desktop inventory toolbar is now visually cleaner: the segmented quick filters sit directly beside the search field without a redundant label.
+- All three adjacent controls now share the same 42px height, so the toolbar reads as one aligned control rail instead of mixed-sized elements.
+
+---
+
+# Tenant Branding Cycle (2026-03-16)
+
+## Plan
+- [x] Audit every tenant-facing logo render point and confirm which payloads already expose tenant branding.
+- [x] Add a shared tenant-logo rendering path with Diesel Bridge fallback and permanent super-admin override.
+- [x] Expose tenant logo data to quote/invoice/customer-facing flows that currently lack it.
+- [x] Update garage settings cache invalidation so tenant branding changes propagate through active sessions.
+- [x] Add focused tests for tenant-logo fallback behavior.
+- [x] Run targeted verification and capture residual risks.
+
+## Progress Notes
+- [x] Confirmed the current hardcoded platform-logo render points are `DashboardLayout`, `CustomerPortalPage`, and `QuoteApprovalPage`.
+- [x] Confirmed `InvoiceAccessPage` does not render the Diesel Bridge mark today, but it is a tenant-branded customer flow and should use tenant branding in its header.
+- [x] Confirmed tenant logo storage already exists on `tenant.logo_url`, while customer-facing quote/invoice token responses do not yet expose that field.
+- [x] Confirmed Super Admin can remain on the existing Diesel Bridge path by short-circuiting tenant-branding lookup for `super_admin`.
+- [x] Added `/api/v1/auth/tenant-branding` plus `tenant_logo_url` on `/api/v1/auth/me`, so authenticated tenant users can resolve branding from one shared source.
+- [x] Added `TenantBrandLogo` + `useTenantBranding` on the frontend and wired them into the garage dashboard shell and customer portal nav.
+- [x] Extended quote token and invoice-access responses with `shop_name` and `shop_logo_url`, then rendered tenant branding on quote approval and invoice pages.
+- [x] Extended invoice access links with `shop_logo_url` query params so the invoice error state can still show tenant branding when the token cannot resolve.
+- [x] Updated Garage Profile saves/imports to refresh the shared tenant-branding cache and persisted auth user branding fields immediately.
+- [x] Added focused tests:
+  `backend/tests/test_auth_endpoints.py`
+  `backend/tests/test_tenant_branding_surfaces.py`
+  `frontend/src/__tests__/TenantBrandLogo.test.tsx`
+- [x] Passed targeted verification:
+  `cd backend && venv/bin/python -m pytest tests/test_auth_endpoints.py tests/test_tenant_branding_surfaces.py tests/test_tenant_logo_import.py -q`
+  `cd frontend && npm run test -- --run src/__tests__/TenantBrandLogo.test.tsx src/__tests__/UnifiedSettingsPage.test.tsx`
+  `cd frontend && npm run build`
+
+## Review
+- Tenant branding is now a full-cycle fallback model: garage staff and customer portal users see the tenant logo when one exists, quote/invoice customer flows receive the tenant logo from their token payloads, and Diesel Bridge remains the fallback when no tenant logo is available.
+- Super Admin stays permanently on the Diesel Bridge brand because tenant-branding fetches are disabled for that role and the dashboard shell still renders the platform mark explicitly in that path.
+- Residual risk: imported website logos can still be visually mismatched for some surfaces if the tenant site only exposes a light-on-transparent header asset. The product fallback is still functional, but those tenants may need to replace the imported logo with a more universal asset in Garage Profile.
+
+---
+
+# Playwright Localhost Diagnosis (2026-03-16)
+
+## Plan
+- [x] Inspect the repo's Playwright configuration and determine whether a project-specific MCP server is required.
+- [x] Check the frontend/backend local host bindings and ports that Playwright depends on.
+- [x] Document the likely cause of the flaky localhost access and the stable setup path.
+
+## Progress Notes
+- [x] Confirmed the repo already has Playwright test-runner config at `e2e/playwright.config.ts`; it does not depend on a project-defined MCP server.
+- [x] Confirmed Playwright test config expects the frontend at `http://localhost:5173` and starts the backend on port `8000` plus the frontend Vite dev server automatically via `webServer`.
+- [x] Confirmed `frontend/vite.config.ts` sets port `5173` but does not pin `server.host`, while its proxy targets `http://127.0.0.1:8000`.
+- [x] Observed the active local frontend listener on `[::1]:5173` and backend listeners on `127.0.0.1:8000`, which means the stack is currently split between IPv6 localhost and IPv4 loopback.
+- [x] Captured the operational conclusion: the flaky browser-tool behavior is more consistent with startup timing and localhost resolution mismatch than with missing Playwright/MCP infrastructure.
+
+## Review
+- This project does not need an extra MCP server for normal Playwright tests. Running `cd e2e && npx playwright test` should be sufficient once Playwright browsers are installed.
+- If an AI browser tool is being used instead of the Playwright test runner, the tool still needs the app servers to be reachable from the same environment; `localhost` can fail intermittently when frontend and backend bind to different loopback families.
+- The stable fix path is to bind both dev servers explicitly to the same host, preferably `127.0.0.1`, and use that exact host in Vite, the backend launch command, and Playwright `baseURL`.
+
+---
+
+# Playwright Host Pinning (2026-03-16)
+
+## Plan
+- [x] Update the Playwright config to use `127.0.0.1` consistently for `baseURL` and the managed backend server command.
+- [x] Update the Vite dev server config to bind explicitly to `127.0.0.1`.
+- [x] Run focused verification and capture any residual risk.
+
+## Progress Notes
+- [x] Confirmed the required pinning points are `e2e/playwright.config.ts` and `frontend/vite.config.ts`.
+- [x] Changed Playwright `baseURL` to `http://127.0.0.1:5173`.
+- [x] Updated the Playwright-managed backend launch to `venv/bin/python -m uvicorn ... --host 127.0.0.1 --port 8000` so it uses the repo's actual backend interpreter instead of relying on a missing bare `python` binary.
+- [x] Updated the Playwright-managed frontend launch to pass `--host 127.0.0.1` explicitly.
+- [x] Added `server.host = '127.0.0.1'` to `frontend/vite.config.ts` so manual `npm run dev` sessions bind to IPv4 loopback consistently.
+- [x] During verification, fixed two stale Playwright expectations that no longer matched the current UI:
+  `e2e/tests/staff-login.spec.ts`
+  `e2e/tests/invoice-access.spec.ts`
+- [x] Passed focused verification:
+  `cd frontend && npm run build`
+  `cd e2e && npx playwright test --list`
+  `cd e2e && npx playwright test tests/staff-login.spec.ts --project=chromium --grep "shows login form"`
+  `cd e2e && npx playwright test`
+
+## Review
+- Playwright is now pinned to a single loopback address family end-to-end instead of mixing `localhost`, IPv6, and IPv4 bindings.
+- The e2e runner is more reliable in this repo because it now uses the checked-in backend virtualenv rather than assuming `python` exists on the shell PATH.
+- Residual risk: local commands or docs elsewhere in the repo that still reference plain `localhost` may continue to work, but they will not benefit from this stricter IPv4 pinning unless updated separately.
+
+---
+
+# Scoped Commit Shipping (2026-03-16)
+
+## Plan
+- [x] Inspect the mixed working tree and generate draft scopes with the `scoped-commit-assistant` skill.
+- [x] Refine the draft into atomic commit boundaries based on the actual diffs.
+- [x] Re-run targeted validation so each commit message can cite real commands.
+- [x] Stage and commit each scope with structured commit messages.
+- [x] Record the shipped commit order and validation summary.
+
+## Progress Notes
+- [x] Ran `python3 /Users/sergio/.agents/skills/scoped-commit-assistant/scripts/suggest_scoped_commits.py --mode all` and treated the output as a draft, not the final boundary.
+- [x] Refined the plan into four commits: inventory desktop layout, garage-logo copy cleanup, Playwright/Vite host pinning, and task documentation.
+- [x] Re-ran targeted verification before staging:
+  `cd frontend && npm run build`
+  `cd e2e && npx playwright test --list`
+  `cd e2e && npx playwright test`
+- [x] Shipped the scoped commits in this order:
+  `fix(inventory): unify desktop toolbar and scroll ownership`
+  `fix(settings): remove misleading garage logo status copy`
+  `fix(e2e): pin local test servers to 127.0.0.1`
+  `docs(tasks): capture scoped shipping notes`
+
+## Review
+- The mixed working tree is now split into atomic commits instead of one broad checkpoint, so inventory UI work, garage copy cleanup, Playwright host pinning, and task docs each have their own history entry.
+- Validation cited in the commit bodies comes from commands re-run during this shipping pass, not placeholder text from the planner output.

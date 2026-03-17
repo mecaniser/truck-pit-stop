@@ -66,3 +66,9 @@
 - Correction: The dashboard `Attention Required` banner was dismissing itself locally, so `DashboardHome` never re-measured the available viewport space for `Work Queue` after the banner disappeared.
 - Rule: When a temporary dashboard element affects measured layout space, keep its visibility state in the parent layout owner so size calculations rerun when it is shown or dismissed.
 - Prevention: For any viewport-fit panel, verify that dismiss/collapse state changes are part of the parent measurement dependencies before finalizing the layout.
+- Correction: The inventory page mixed a page-level garage scroll container with an inner list `max-height` scroll region and an extra desktop filter row, which made the viewport fit brittle and introduced double-scroll behavior.
+- Rule: When a dashboard subpage already lives inside a scroll-managed shell, give the subpage a single deliberate overflow owner and avoid stacking independent vertical scroll regions unless the page root is explicitly height-constrained.
+- Prevention: For desktop data tables inside dashboard shells, decide whether the page or the list owns scrolling before adding `max-h`/`overflow-y-auto`, and check the final page in-browser for duplicate vertical scrollbars.
+- Correction: After moving inventory filters into the desktop toolbar, I left the `Search in:` label and filter pill heights inconsistent with the adjacent search and action controls.
+- Rule: When a user asks for control alignment in a dashboard toolbar, match the full control rail height and remove redundant labels if the grouped control is already self-explanatory.
+- Prevention: For toolbar refinements, compare the rendered heights of each adjacent control in the browser instead of relying on class-name intuition alone.
