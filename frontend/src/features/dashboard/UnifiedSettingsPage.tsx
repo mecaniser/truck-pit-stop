@@ -590,11 +590,6 @@ function GarageProfileSection() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <label className={industrialStyles.label}>Garage Logo</label>
-                  <p className="text-sm text-zinc-400">
-                    {garageProfile?.logo_url
-                      ? 'Imported logo currently used for this tenant.'
-                      : 'No tenant logo has been imported yet.'}
-                  </p>
                 </div>
                 {garageProfile?.logo_url && (
                   <a
