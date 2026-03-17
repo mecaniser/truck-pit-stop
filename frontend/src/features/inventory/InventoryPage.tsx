@@ -144,6 +144,13 @@ export default function InventoryPage() {
     return filtered
   }, [inventory, searchQuery, searchType, showLowStock, stockSort])
 
+  const searchFilters = [
+    { value: 'all', label: 'All' },
+    { value: 'sku', label: 'SKU' },
+    { value: 'name', label: 'Name' },
+    { value: 'category', label: 'Category' },
+  ] as const
+
   useEffect(() => {
     if (selectedItem) {
       setManageForm({
@@ -441,8 +448,8 @@ export default function InventoryPage() {
   }
 
   return (
-    <div>
-      {/* Search Bar */}
+    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+      {/* Mobile Search Bar */}
       <SearchAddBar
         value={searchQuery}
         onChange={setSearchQuery}
@@ -450,34 +457,52 @@ export default function InventoryPage() {
         onAdd={openAddPart}
         addLabel="Add part"
         addLabelMobile="Add"
-        className="mb-4"
+        className="mb-1 lg:hidden"
         inputWidthClass="sm:min-w-[320px] md:max-w-xl"
       />
 
-      {/* Desktop: Search in filters */}
-      <div className="hidden lg:flex items-center gap-2 mb-4">
-        <span className="text-xs text-gray-400 font-medium">Search in:</span>
-        <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-lg p-0.5">
-          {[
-            { value: 'all', label: 'All' },
-            { value: 'sku', label: 'SKU' },
-            { value: 'name', label: 'Name' },
-            { value: 'category', label: 'Category' },
-          ].map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => setSearchType(filter.value as typeof searchType)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                searchType === filter.value
-                  ? 'text-white'
-                  : 'text-white hover:bg-white/20'
-              }`}
-              style={searchType === filter.value ? { backgroundColor: accentColors[500] } : undefined}
-            >
-              {filter.label}
-            </button>
-          ))}
+      {/* Desktop Search Toolbar */}
+      <div className="hidden lg:flex items-center gap-4">
+        <div className="min-w-0 flex flex-1 flex-wrap items-center gap-3 xl:flex-nowrap">
+          <SearchAddBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search parts by SKU, name, or category..."
+            onAdd={openAddPart}
+            className="mb-0 min-w-[18rem] flex-1"
+            inputWidthClass=""
+            showAddButton={false}
+          />
+
+          <div className="flex shrink-0 items-center">
+            <div className="inline-flex h-[42px] items-center rounded-lg border border-white/15 bg-white/10">
+              {searchFilters.map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setSearchType(filter.value)}
+                  className={`h-full px-4 text-sm font-medium transition-colors whitespace-nowrap ${
+                    searchType === filter.value
+                      ? 'text-white'
+                      : 'text-white hover:bg-white/20'
+                  } ${filter.value === 'all' ? 'rounded-l-lg' : ''} ${filter.value === 'category' ? 'rounded-r-lg' : ''}`}
+                  style={searchType === filter.value ? { backgroundColor: accentColors[500] } : undefined}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={openAddPart}
+          className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
+          style={{ backgroundColor: accentColors[600] }}
+        >
+          <Plus className="w-4 h-4" />
+          Add part
+        </button>
       </div>
 
       {/* Mobile: Sort + Low stock filter */}
@@ -583,8 +608,8 @@ export default function InventoryPage() {
                 <button
                   onClick={() => openManage(item)}
                   className="inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-semibold transition"
-                  style={{ 
-                    color: accentColors[400], 
+                    style={{
+                      color: accentColors[400],
                     backgroundColor: `${accentColors[500]}1a`,
                     borderWidth: 1,
                     borderColor: `${accentColors[400]}66`
@@ -599,8 +624,8 @@ export default function InventoryPage() {
         })}
       </div>
 
-      <div className="hidden lg:block rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <div className="hidden lg:flex min-h-0 flex-1 flex-col rounded-xl border border-white/10 bg-white/5 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
           <ViewToggle value={viewMode} onChange={setViewMode} />
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400 font-medium">Sort:</span>
@@ -652,79 +677,81 @@ export default function InventoryPage() {
           </button>
         </div>
         {viewMode === 'cards' ? (
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredInventory?.map((item) => {
-              const stockStatus = getStockStatus(item)
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="text-xs uppercase text-gray-400">Inventory</div>
-                      <h3 className="text-lg font-semibold text-white leading-tight line-clamp-2 flex items-center gap-2">
-                        <span className="text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
-                          {item.sku}
-                        </span>
-                        {item.name}
-                      </h3>
-                      <p className="text-xs text-gray-400 line-clamp-2">
-                        {item.description || item.category || 'No description'}
-                      </p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
-                      {stockStatus.label}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm text-gray-200">
-                    <div>
-                      <p className="text-gray-400 text-xs">In stock</p>
-                      <p className="font-semibold">{item.stock_quantity}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400 text-xs">Reorder</p>
-                      <p className="font-semibold">{item.reorder_level}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400 text-xs">Cost</p>
-                      <p className="font-semibold">${parseFloat(item.cost).toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400 text-xs">Price</p>
-                      <p className="font-semibold">${parseFloat(item.selling_price).toFixed(2)}</p>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => openManage(item)}
-                    className="w-full px-3 py-2 text-sm font-medium rounded-lg transition inline-flex items-center justify-center gap-1"
-                    style={{ 
-                      color: accentColors[400], 
-                      backgroundColor: `${accentColors[500]}1a`,
-                      borderWidth: 1,
-                      borderColor: `${accentColors[400]}66`
-                    }}
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {filteredInventory?.map((item) => {
+                const stockStatus = getStockStatus(item)
+                return (
+            <div
+                    key={item.id}
+                    className="bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
                   >
-                    Manage Stock
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )
-            })}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="text-xs uppercase text-gray-400">Inventory</div>
+                        <h3 className="text-lg font-semibold text-white leading-tight line-clamp-2 flex items-center gap-2">
+                          <span className="text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                            {item.sku}
+                          </span>
+                          {item.name}
+                        </h3>
+                        <p className="text-xs text-gray-400 line-clamp-2">
+                          {item.description || item.category || 'No description'}
+                        </p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
+                        {stockStatus.label}
+                      </span>
+                    </div>
 
-            <div 
-              className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
-            >
-              <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
-                <Plus className="w-6 h-6 text-white" />
+                    <div className="grid grid-cols-2 gap-3 text-sm text-gray-200">
+                      <div>
+                        <p className="text-gray-400 text-xs">In stock</p>
+                        <p className="font-semibold">{item.stock_quantity}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-xs">Reorder</p>
+                        <p className="font-semibold">{item.reorder_level}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-xs">Cost</p>
+                        <p className="font-semibold">${parseFloat(item.cost).toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-400 text-xs">Price</p>
+                        <p className="font-semibold">${parseFloat(item.selling_price).toFixed(2)}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => openManage(item)}
+                      className="w-full px-3 py-2 text-sm font-medium rounded-lg transition inline-flex items-center justify-center gap-1"
+                      style={{
+                        color: accentColors[400],
+                        backgroundColor: `${accentColors[500]}1a`,
+                        borderWidth: 1,
+                        borderColor: `${accentColors[400]}66`
+                      }}
+                    >
+                      Manage Stock
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )
+              })}
+
+              <div
+                className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
+              >
+                <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
+                  <Plus className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-white font-medium">Add Part</span>
               </div>
-              <span className="text-white font-medium">Add Part</span>
             </div>
           </div>
         ) : (
-          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-260px)]">
+          <div className="min-h-0 flex-1 overflow-auto">
             <table className="min-w-full divide-y divide-white/10">
               <thead className="bg-white/5 border-b border-white/10">
                 <tr className="text-left text-xs font-medium text-gray-400 uppercase tracking-wide bg-white/5 border-b border-white/10">
