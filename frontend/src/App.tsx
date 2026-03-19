@@ -4,6 +4,8 @@ import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
 import { ThemeProvider } from './contexts/ThemeContext'
 import LandingPage from './features/landing/LandingPage'
+import PrivacyPolicyPage from './features/landing/PrivacyPolicyPage'
+import TermsOfServicePage from './features/landing/TermsOfServicePage'
 import LoginPage from './features/auth/LoginPage'
 import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
 import ResetPasswordPage from './features/auth/ResetPasswordPage'
@@ -181,6 +183,8 @@ function App() {
         />
         
         <Route path="/" element={<LandingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsOfServicePage />} />
       </Routes>
     </BrowserRouter>
     </ThemeProvider>

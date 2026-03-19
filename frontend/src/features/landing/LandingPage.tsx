@@ -236,6 +236,8 @@ export default function LandingPage() {
             © {new Date().getFullYear()} {BRAND.platformName}. All rights reserved.
           </p>
           <div className="flex items-center gap-4 text-sm text-gray-400">
+            <Link to="/privacy" className="hover:text-white">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-white">Terms of Service</Link>
             <Link to="/login" className="hover:text-white">Sign in</Link>
             <a href={mailtoHref || 'mailto:support@dieselbridge.network'} className="hover:text-white">Contact</a>
           </div>
