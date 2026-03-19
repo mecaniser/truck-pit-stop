@@ -59,13 +59,18 @@ class ThrottlingMiddleware:
         path = scope.get("path", "")
         member = f"{now_ms}:{secrets.token_hex(4)}:{method}:{path}"
 
-        pipe = redis.pipeline()
-        pipe.zremrangebyscore(window_key, 0, cutoff_ms)
-        pipe.zadd(window_key, {member: now_ms})
-        pipe.zcard(window_key)
-        pipe.expire(window_key, WINDOW_SECONDS * 2)
-        _, _, count, _ = await pipe.execute()
-        request_count = int(count)
+        try:
+            pipe = redis.pipeline()
+            pipe.zremrangebyscore(window_key, 0, cutoff_ms)
+            pipe.zadd(window_key, {member: now_ms})
+            pipe.zcard(window_key)
+            pipe.expire(window_key, WINDOW_SECONDS * 2)
+            _, _, count, _ = await pipe.execute()
+            request_count = int(count)
+        except Exception:
+            logger.warning("throttle_redis_unavailable", path=path, method=method)
+            await self.app(scope, receive, send)
+            return
         remaining = max(0, HARD_THRESHOLD - request_count)
         rate_limit_headers = {
             "X-RateLimit-Limit": str(HARD_THRESHOLD),
