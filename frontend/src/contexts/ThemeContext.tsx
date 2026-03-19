@@ -84,9 +84,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [fontFamily, setFontFamilyState] = useState<FontFamily>(() => 
     loadFromStorage(STORAGE_KEYS.fontFamily, FONT_FAMILY_OPTIONS, DEFAULT_THEME.fontFamily)
   )
-  const [fontSize, setFontSizeState] = useState<FontSize>(() => 
-    loadFromStorage(STORAGE_KEYS.fontSize, FONT_SIZE_OPTIONS, DEFAULT_THEME.fontSize)
-  )
+  const [fontSize, setFontSizeState] = useState<FontSize>(() => {
+    const viewportDefault: FontSize =
+      typeof window !== 'undefined' && window.innerWidth < 1024 ? 'compact' : 'default'
+    return loadFromStorage(STORAGE_KEYS.fontSize, FONT_SIZE_OPTIONS, viewportDefault)
+  })
 
   // Inject CSS variables whenever theme changes
   useEffect(() => {

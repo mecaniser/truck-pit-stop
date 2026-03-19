@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
 
@@ -32,6 +32,13 @@ interface SlidePanelProps {
   width?: string
   /** Use dark theme for entire panel */
   dark?: boolean
+  /** Prev/next navigation for browsing between items */
+  onPrev?: () => void
+  onNext?: () => void
+  prevDisabled?: boolean
+  nextDisabled?: boolean
+  /** e.g. "3 / 12" shown between prev/next buttons */
+  navigationLabel?: string
 }
 
 export default function SlidePanel({
@@ -48,6 +55,11 @@ export default function SlidePanel({
   footer,
   width = 'max-w-lg',
   dark = false,
+  onPrev,
+  onNext,
+  prevDisabled,
+  nextDisabled,
+  navigationLabel,
 }: SlidePanelProps) {
   if (!isOpen) return null
 
@@ -89,13 +101,40 @@ export default function SlidePanel({
                 <h2 className="text-lg font-semibold text-zinc-100 truncate">{title}</h2>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors flex-shrink-0"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {(onPrev !== undefined || onNext !== undefined) && (
+                <div className="flex items-center gap-0.5 mr-1">
+                  <button
+                    onClick={onPrev}
+                    disabled={prevDisabled}
+                    className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Previous"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {navigationLabel && (
+                    <span className="text-xs text-zinc-500 tabular-nums px-1 min-w-[3rem] text-center select-none">
+                      {navigationLabel}
+                    </span>
+                  )}
+                  <button
+                    onClick={onNext}
+                    disabled={nextDisabled}
+                    className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Next"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {headerExtra && (
@@ -138,12 +177,39 @@ export default function SlidePanel({
               {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
               <p className="text-lg font-semibold text-slate-800">{title}</p>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-1">
+              {(onPrev !== undefined || onNext !== undefined) && (
+                <div className="flex items-center gap-0.5 mr-1">
+                  <button
+                    onClick={onPrev}
+                    disabled={prevDisabled}
+                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Previous"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {navigationLabel && (
+                    <span className="text-xs text-gray-400 tabular-nums px-1 min-w-[3rem] text-center select-none">
+                      {navigationLabel}
+                    </span>
+                  )}
+                  <button
+                    onClick={onNext}
+                    disabled={nextDisabled}
+                    className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Next"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         ) : (
           <div className={`bg-gradient-to-r ${headerGradients[headerVariant as keyof typeof headerGradients]} px-6 py-8 text-white`}>
@@ -172,13 +238,40 @@ export default function SlidePanel({
                 </div>
                 {headerExtra && <div className="mt-4">{headerExtra}</div>}
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors flex-shrink-0 ml-2"
-                aria-label="Close"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                {(onPrev !== undefined || onNext !== undefined) && (
+                  <div className="flex items-center gap-0.5 mr-1">
+                    <button
+                      onClick={onPrev}
+                      disabled={prevDisabled}
+                      className="p-1.5 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      aria-label="Previous"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    {navigationLabel && (
+                      <span className="text-xs text-white/70 tabular-nums px-1 min-w-[3rem] text-center select-none">
+                        {navigationLabel}
+                      </span>
+                    )}
+                    <button
+                      onClick={onNext}
+                      disabled={nextDisabled}
+                      className="p-1.5 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      aria-label="Next"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
           </div>
         )}

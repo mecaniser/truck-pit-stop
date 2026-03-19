@@ -295,13 +295,12 @@ async def get_dashboard_stats(
             held_at=getattr(order, 'held_at', None),
         )
 
-    # Lane 1: Needs Action (draft, pending_review, completed, quoted, declined)
+    # Lane 1: Needs Action (draft, pending_review, quoted, declined)
     needs_action_statuses = [
         RepairOrderStatus.DRAFT,
         RepairOrderStatus.QUOTED,
         RepairOrderStatus.DECLINED,  # Customer declined, needs revision
         RepairOrderStatus.PENDING_REVIEW,
-        RepairOrderStatus.COMPLETED,
     ]
     # Newly created full/lightning orders are drafts and should float to the top briefly.
     new_order_float_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
@@ -314,11 +313,10 @@ async def get_dashboard_stats(
             0,
         ),
         (RepairOrder.status == RepairOrderStatus.PENDING_REVIEW, 1),
-        (RepairOrder.status == RepairOrderStatus.COMPLETED, 2),
-        (RepairOrder.status == RepairOrderStatus.QUOTED, 3),
-        (RepairOrder.status == RepairOrderStatus.DRAFT, 4),
-        (RepairOrder.status == RepairOrderStatus.DECLINED, 5),
-        else_=6,
+        (RepairOrder.status == RepairOrderStatus.QUOTED, 2),
+        (RepairOrder.status == RepairOrderStatus.DRAFT, 3),
+        (RepairOrder.status == RepairOrderStatus.DECLINED, 4),
+        else_=5,
     )
     result = await db.execute(
         select(RepairOrder, Customer, Vehicle, Mechanic)
@@ -363,7 +361,12 @@ async def get_dashboard_stats(
     )
     orders_on_floor = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
 
-    # Lane 3: Ready to Close (invoiced)
+    # Lane 3: Ready to Close (completed = needs invoice sent; invoiced = awaiting payment)
+    ready_to_close_priority = case(
+        (RepairOrder.status == RepairOrderStatus.COMPLETED, 0),
+        (RepairOrder.status == RepairOrderStatus.INVOICED, 1),
+        else_=2,
+    )
     result = await db.execute(
         select(RepairOrder, Customer, Vehicle, Mechanic)
         .join(Customer, RepairOrder.customer_id == Customer.id)
@@ -372,10 +375,13 @@ async def get_dashboard_stats(
         .where(
             and_(
                 RepairOrder.tenant_id == tenant_id,
-                RepairOrder.status == RepairOrderStatus.INVOICED,
+                RepairOrder.status.in_([
+                    RepairOrderStatus.COMPLETED,
+                    RepairOrderStatus.INVOICED,
+                ]),
             )
         )
-        .order_by(RepairOrder.updated_at.desc())
+        .order_by(ready_to_close_priority.asc(), RepairOrder.updated_at.desc())
         .limit(10)
     )
     ready_rows = result.all()

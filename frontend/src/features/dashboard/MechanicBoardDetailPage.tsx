@@ -318,7 +318,7 @@ export default function MechanicBoardDetailPage() {
   if (isError || !data) {
     return (
       <Card className="p-6">
-        <p className="text-red-400">Failed to load mechanic board detail.</p>
+        <p className="text-red-400">Failed to load technician board detail.</p>
       </Card>
     )
   }
@@ -403,7 +403,7 @@ export default function MechanicBoardDetailPage() {
           <Card className="space-y-4">
             <div className="flex items-center gap-2">
               <h2 className="text-zinc-100 font-semibold">Today Summary</h2>
-              <SectionInfoTooltip text="At-a-glance performance for this mechanic today: tracked hours, work mix, utilization, efficiency, and whether a timer is currently running." />
+              <SectionInfoTooltip text="At-a-glance performance for this technician today: tracked hours, work mix, utilization, efficiency, and whether a timer is currently running." />
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-8 gap-4 text-sm">
               <div className="text-zinc-400">Tracked<br /><span className="text-zinc-100 font-semibold">{(m.tracked_minutes / 60).toFixed(1)}h</span></div>
@@ -698,7 +698,7 @@ export default function MechanicBoardDetailPage() {
         <Card className="space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-zinc-100 font-semibold">Admin Override Controls</h2>
-            <SectionInfoTooltip text="Owner/admin controls to start or stop this mechanic's active timer with mandatory manager reason for audit tracking." />
+            <SectionInfoTooltip text="Owner/admin controls to start or stop this technician's active timer with mandatory manager reason for audit tracking." />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Card variant="subtle" padding="sm" className="space-y-3">
@@ -729,7 +729,7 @@ export default function MechanicBoardDetailPage() {
                 }`}
               >
                 {attendanceToggleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {m.attendance_active ? 'Clock Out Mechanic' : 'Clock In Mechanic'}
+                {m.attendance_active ? 'Clock Out Technician' : 'Clock In Technician'}
               </button>
             </Card>
             <Card variant="subtle" padding="sm" className="space-y-3">

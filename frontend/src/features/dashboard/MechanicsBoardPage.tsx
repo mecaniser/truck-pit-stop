@@ -181,7 +181,7 @@ export default function MechanicsBoardPage() {
   if (isError || !data) {
     return (
       <Card className="p-6">
-        <p className="text-red-400">Failed to load mechanics board.</p>
+        <p className="text-red-400">Failed to load technicians board.</p>
       </Card>
     )
   }
@@ -195,7 +195,7 @@ export default function MechanicsBoardPage() {
     <div className="space-y-4">
       {/* Header */}
       <Header
-        title="Mechanic Board"
+        title="Technician Board"
         subtitle={`${data.date} · ${data.timezone}`}
         icon={<Users className="w-5 h-5 text-[var(--accent-400)]" />}
         actions={
@@ -236,7 +236,7 @@ export default function MechanicsBoardPage() {
       {/* Mechanic cards */}
       {!sorted.length ? (
         <Card className="p-6">
-          <p className="text-zinc-400">No active mechanics.</p>
+          <p className="text-zinc-400">No active technicians.</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -261,7 +261,7 @@ export default function MechanicsBoardPage() {
                 <div
                   role="button"
                   tabIndex={0}
-                  aria-label={`Open mechanic board for ${m.mechanic_name}`}
+                  aria-label={`Open technician board for ${m.mechanic_name}`}
                   onClick={() => navigate(mechanicDetailPath)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {

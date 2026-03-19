@@ -539,10 +539,10 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
-      toast.success(variables.mechanicId ? 'Mechanic assigned and notified' : 'Mechanic unassigned')
+      toast.success(variables.mechanicId ? 'Technician assigned and notified' : 'Technician unassigned')
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to assign mechanic'))
+      toast.error(getErrorDetail(error, 'Failed to assign technician'))
     },
   })
 
@@ -848,13 +848,7 @@ export default function RepairOrdersPage() {
 
     // Filter by status
     if (statusFilter !== 'all') {
-      if (statusFilter === 'pending_zelle') {
-        filtered = filtered.filter((order) => !!order.pending_zelle_confirmation)
-      } else if (statusFilter === 'on_hold') {
-        filtered = filtered.filter((order) => order.status === 'in_progress' && !!order.hold_reason)
-      } else {
-        filtered = filtered.filter((order) => order.status === statusFilter)
-      }
+      filtered = filtered.filter((order) => order.status === statusFilter)
     }
 
     // Filter by search query
@@ -869,9 +863,46 @@ export default function RepairOrdersPage() {
     return filtered
   }, [orders, searchQuery, statusFilter])
 
+  // Keyboard left/right arrow navigation between orders when detail panel is open
+  useEffect(() => {
+    if (!isDetailOpen || !filteredOrders || !selectedOrder) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      const target = e.target as HTMLElement
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) return
+      const idx = filteredOrders.findIndex(o => o.id === selectedOrder.id)
+      let next: RepairOrder | null = null
+      if (e.key === 'ArrowLeft' && idx > 0) next = filteredOrders[idx - 1]
+      if (e.key === 'ArrowRight' && idx >= 0 && idx < filteredOrders.length - 1) next = filteredOrders[idx + 1]
+      if (next) {
+        setSelectedOrder(next)
+        setQuoteSent(false)
+        setShowReassignMechanic(false)
+        setReviewNotes('')
+        setShowReviewNotes(false)
+        setQuoteNeedsUpdate(false)
+        setShowDangerActions(false)
+        setShowPartComposer(false)
+        setAddPartInventoryId('')
+        setAddPartQuantity(1)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isDetailOpen, filteredOrders, selectedOrder])
+
   if (isLoading) {
     return <div className="text-white">Loading...</div>
   }
+
+  // Navigation state for prev/next browsing in the detail panel
+  const navigationOrders = filteredOrders ?? []
+  const currentNavIndex = selectedOrder
+    ? navigationOrders.findIndex(o => o.id === selectedOrder.id)
+    : -1
+  const showNavigation = navigationOrders.length > 1 && currentNavIndex >= 0
+  const hasPrev = currentNavIndex > 0
+  const hasNext = currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1
 
   const getStatusStyle = (status: string) => {
     const styles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -920,16 +951,40 @@ export default function RepairOrdersPage() {
     }
   }
 
+  const shortOrderNumber = (n: string) => {
+    const parts = n.split('-')
+    return '#' + (parts[parts.length - 1] ?? n)
+  }
+
+  const statusDescriptions: Record<string, string> = {
+    draft:          'New orders that have not been quoted yet.',
+    quoted:         'Quote sent to the customer — awaiting their approval.',
+    declined:       'Customer declined the quote — needs revision before resending.',
+    approved:       'Customer approved the quote — ready to assign a technician.',
+    assigned:       'Technician has been assigned — awaiting their acknowledgment.',
+    acknowledged:   'Technician acknowledged the job — starting work soon.',
+    in_progress:    'Work is actively underway on the vehicle.',
+    pending_review: 'Technician finished — waiting on admin to verify and approve the work.',
+    completed:      'Work approved — invoice needs to be sent to the customer.',
+    invoiced:       'Invoice sent — waiting on payment from the customer.',
+    paid:           'Payment received — order fully closed.',
+    cancelled:      'Orders that were cancelled and are no longer active.',
+  }
+
   const statusOptions = [
     { value: 'all', label: 'All' },
-    { value: 'pending_zelle', label: 'Pending Zelle' },
-    { value: 'on_hold', label: 'On Hold' },
-    { value: 'in_progress', label: 'In Progress' },
+    { value: 'draft', label: 'Draft' },
     { value: 'quoted', label: 'Quoted' },
     { value: 'declined', label: 'Declined' },
     { value: 'approved', label: 'Approved' },
+    { value: 'assigned', label: 'Assigned' },
+    { value: 'acknowledged', label: 'Acknowledged' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'pending_review', label: 'Pending Review' },
     { value: 'completed', label: 'Completed' },
+    { value: 'invoiced', label: 'Invoiced' },
     { value: 'paid', label: 'Paid' },
+    { value: 'cancelled', label: 'Cancelled' },
   ]
 
   const resetModal = () => {
@@ -1111,16 +1166,7 @@ export default function RepairOrdersPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Repair Orders</h1>
-        <button 
-          onClick={openModal}
-          className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"
-          style={{ backgroundColor: accentColors[500] }}
-        >
-          + New Repair Order
-        </button>
-      </div>
+      <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Repair Orders</h1>
 
       {/* Search Bar */}
       <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
@@ -1143,23 +1189,35 @@ export default function RepairOrdersPage() {
             />
           </div>
 
-          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="flex gap-2 min-w-max sm:min-w-0 sm:flex-wrap">
-              {statusOptions.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => setStatusFilter(option.value)}
-                  className={`h-10 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                    statusFilter === option.value
-                      ? 'text-white'
-                      : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
-                  }`}
-                  style={statusFilter === option.value ? { backgroundColor: accentColors[500] } : undefined}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+          {/* Mobile: compact select */}
+          <select
+            className="sm:hidden h-10 px-3 rounded-lg text-sm font-medium bg-white/20 text-white w-full border-0 outline-none"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value} className="text-gray-900 bg-white">
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Desktop: pill buttons */}
+          <div className="hidden sm:flex overflow-x-auto gap-2 flex-wrap">
+            {statusOptions.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setStatusFilter(option.value)}
+                className={`h-10 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                  statusFilter === option.value
+                    ? 'text-white'
+                    : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
+                }`}
+                style={statusFilter === option.value ? { backgroundColor: accentColors[500] } : undefined}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -1172,13 +1230,61 @@ export default function RepairOrdersPage() {
 
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         {/* Header with ViewToggle */}
-        <div className="hidden lg:flex items-center justify-start px-4 py-3 border-b border-white/10">
+        <div className="hidden lg:flex items-center gap-4 px-4 py-3 border-b border-white/10">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
+          {statusFilter !== 'all' && statusDescriptions[statusFilter] && (
+            <p className="text-xs text-white/50 italic">{statusDescriptions[statusFilter]}</p>
+          )}
         </div>
 
         <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
-          {activeViewMode === 'list' ? (
-            /* List View */
+          {isMobile ? (
+            /* Mobile: compact list cards */
+            <div className="divide-y divide-white/10">
+              {filteredOrders?.map((order) => {
+                const { label: displayStatus, style: statusStyle } = resolveOrderDisplayStatus(order)
+                const parsedServices = parseServiceNotes(order.internal_notes)
+                const serviceTotal = parsedServices?.reduce(
+                  (sum, svc) => sum + (parseFloat(svc.base_price || '0') || 0),
+                  0
+                ) || 0
+                const backendParts = parseFloat(order.total_parts_cost ?? '0') || 0
+                const backendLabor = parseFloat(order.total_labor_cost ?? '0') || 0
+                const laborTotal = serviceTotal > 0 ? serviceTotal : backendLabor
+                const displayTotal = backendParts + laborTotal
+                const customer = customerLookup.get(order.customer_id)
+                const vehicle = vehicleLookup.get(order.vehicle_id)
+                return (
+                  <div
+                    key={order.id}
+                    onClick={() => openDetail(order)}
+                    className="flex items-center gap-3 px-4 py-3 cursor-pointer active:bg-white/5 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-white font-mono text-xs font-semibold">{shortOrderNumber(order.order_number)}</span>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusStyle.bg} ${statusStyle.text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusStyle.dot}`}></span>
+                          {displayStatus}
+                        </span>
+                      </div>
+                      <p className="text-white/50 text-xs truncate">
+                        {customer ? `${customer.first_name} ${customer.last_name}` : ''}
+                        {vehicle ? ` · ${[vehicle.year, vehicle.make].filter(Boolean).join(' ')}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-white text-sm font-semibold">
+                        ${displayTotal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </div>
+                      <div className="text-white/40 text-xs">{format(new Date(order.created_at), 'MMM d')}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : activeViewMode === 'list' ? (
+            /* Desktop List View */
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
@@ -1217,7 +1323,7 @@ export default function RepairOrdersPage() {
                           <span className="text-white font-mono text-xs">{order.order_number}</span>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusStyle.bg} ${statusStyle.text}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
                             {displayStatus}
                           </span>
@@ -1279,7 +1385,7 @@ export default function RepairOrdersPage() {
                         <span className="text-xs font-mono text-slate-500">
                           {order.order_number}
                         </span>
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}>
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusStyle.bg} ${statusStyle.text}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></span>
                           {displayStatus}
                         </span>
@@ -1305,7 +1411,7 @@ export default function RepairOrdersPage() {
                         {showMechanic && (
                           <div className="flex items-center gap-2 text-xs text-slate-600">
                             <Wrench className="w-4 h-4 text-amber-600" />
-                            <span>{mechanicLookup.get(order.assigned_mechanic_id!) || 'Assigned mechanic'}</span>
+                            <span>{mechanicLookup.get(order.assigned_mechanic_id!) || 'Assigned technician'}</span>
                           </div>
                         )}
                       </div>
@@ -1769,6 +1875,11 @@ export default function RepairOrdersPage() {
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
         width="max-w-2xl"
+        onPrev={showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
+        onNext={showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
+        prevDisabled={!hasPrev}
+        nextDisabled={!hasNext}
+        navigationLabel={showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
         headerExtra={
           selectedOrder && (() => {
             const detailOrder = orderDetail ?? selectedOrder
@@ -1863,25 +1974,25 @@ export default function RepairOrdersPage() {
                         )}
 
                         {/* Workflow steps */}
-                        <div className="flex items-center gap-1 flex-wrap">
+                        <div className="flex items-center gap-0.5 overflow-x-auto pb-0.5 -mb-0.5">
                           {/* Step 1: Create/Update Quote Draft */}
                           {quoteNeedsUpdate && hasQuote ? (
                             <button
                               type="button"
                               onClick={() => quoteForOrder && updateQuoteMutation.mutate(quoteForOrder.id)}
                               disabled={updateQuoteMutation.isPending}
-                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
+                              className="shrink-0 px-2 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-medium rounded-md"
                             >
                               {updateQuoteMutation.isPending ? 'Updating...' : 'Update'}
                             </button>
                           ) : (
-                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                              hasQuote 
-                                ? 'bg-green-100 text-green-700' 
+                            <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
+                              hasQuote
+                                ? 'bg-green-100 text-green-700'
                                 : 'bg-amber-500 text-white'
                             }`}>
                               {hasQuote ? (
-                                <span className="flex items-center gap-1">✓ Draft Ready</span>
+                                <span className="flex items-center gap-0.5">✓ Draft Ready</span>
                               ) : (
                                 <button
                                   type="button"
@@ -1895,7 +2006,7 @@ export default function RepairOrdersPage() {
                             </span>
                           )}
 
-                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasQuote && !quoteNeedsUpdate ? 'text-amber-500' : 'text-gray-300'}`} />
+                          <ArrowRight className={`w-3 h-3 shrink-0 ${hasQuote && !quoteNeedsUpdate ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 2: Send to Customer */}
                           {hasQuote && !isApproved && !quoteNeedsUpdate ? (
@@ -1908,46 +2019,46 @@ export default function RepairOrdersPage() {
                                 }
                               }}
                               disabled={sendQuoteMutation.isPending}
-                              className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                                isSent 
-                                  ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' 
+                              className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
+                                isSent
+                                  ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                                   : 'bg-amber-500 hover:bg-amber-600 text-white'
                               }`}
                             >
                               {sendQuoteMutation.isPending ? 'Sending...' : (isSent ? '⏳ Resend' : 'Send')}
                             </button>
                           ) : (
-                            <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
+                            <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
                               isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
                             }`}>
                               {isApproved ? '✓ Sent' : 'Send'}
                             </span>
                           )}
 
-                          <ArrowRight className={`w-4 h-4 shrink-0 ${isApproved ? 'text-amber-500' : 'text-gray-300'}`} />
+                          <ArrowRight className={`w-3 h-3 shrink-0 ${isApproved ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 3: Customer Approved */}
-                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                            isApproved 
-                              ? 'bg-green-100 text-green-700' 
-                              : isSent 
-                                ? 'bg-amber-100 text-amber-700 animate-pulse' 
+                          <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
+                            isApproved
+                              ? 'bg-green-100 text-green-700'
+                              : isSent
+                                ? 'bg-amber-100 text-amber-700 animate-pulse'
                                 : 'bg-gray-200 text-gray-400'
                           }`}>
-                            {isApproved ? '✓ Approved' : isSent ? 'Awaiting Approval' : 'Approved'}
+                            {isApproved ? '✓ Approved' : isSent ? 'Awaiting…' : 'Approved'}
                           </span>
 
-                          <ArrowRight className={`w-4 h-4 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
+                          <ArrowRight className={`w-3 h-3 shrink-0 ${hasMechanic ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 4: Mechanic Assigned */}
-                          <span className={`px-3 py-1.5 text-sm font-medium rounded-lg ${
-                            hasMechanic 
-                              ? 'bg-green-100 text-green-700' 
-                              : isApproved 
-                                ? 'bg-amber-100 text-amber-700' 
+                          <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
+                            hasMechanic
+                              ? 'bg-green-100 text-green-700'
+                              : isApproved
+                                ? 'bg-amber-100 text-amber-700'
                                 : 'bg-gray-200 text-gray-400'
                           }`}>
-                            {hasMechanic ? `✓ ${mechanicName}` : isApproved ? 'Assign ↓' : 'Mechanic'}
+                            {hasMechanic ? `✓ ${mechanicName}` : isApproved ? 'Assign ↓' : 'Technician'}
                           </span>
                         </div>
 
@@ -1964,7 +2075,7 @@ export default function RepairOrdersPage() {
                         )}
                         {isApproved && !hasMechanic && (
                           <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                            Customer approved! Assign a mechanic to start work.
+                            Customer approved! Assign a technician to start work.
                           </p>
                         )}
                         {/* Declined quote alert */}
@@ -1983,7 +2094,7 @@ export default function RepairOrdersPage() {
                         {/* Mechanic Assignment - shown inline when approved but no mechanic */}
                         {isApproved && !hasMechanic && mechanics && mechanics.length > 0 && (
                           <div className="pt-3 border-t border-gray-200 space-y-3">
-                            <p className="text-xs font-medium text-gray-500 uppercase">Available Mechanics</p>
+                            <p className="text-xs font-medium text-gray-500 uppercase">Available Technicians</p>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                               {[...(mechanics || [])]
                                 .map((m) => {
@@ -2034,12 +2145,12 @@ export default function RepairOrdersPage() {
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                                 </svg>
-                                Reassign Mechanic
+                                Reassign Technician
                               </button>
                             ) : (
                               <div className="space-y-3">
                                 <div className="flex items-center justify-between">
-                                  <p className="text-xs font-medium text-gray-500 uppercase">Select New Mechanic</p>
+                                  <p className="text-xs font-medium text-gray-500 uppercase">Select New Technician</p>
                                   <button
                                     type="button"
                                     onClick={() => setShowReassignMechanic(false)}
@@ -2118,10 +2229,21 @@ export default function RepairOrdersPage() {
                     return ms > 0 ? Math.round(ms / 60000) : null
                   }
 
+                  const mechanic = selectedOrder.assigned_mechanic_id
+                    ? mechanicLookup.get(selectedOrder.assigned_mechanic_id)
+                    : null
+
                   return (
                     <div>
                       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Time Tracking</h3>
                       <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                        {mechanic && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Wrench className="w-4 h-4 text-amber-500 shrink-0" />
+                            <span className="text-gray-500">Technician:</span>
+                            <span className="font-medium text-gray-800">{mechanic}</span>
+                          </div>
+                        )}
                         {hasTimeData && (
                           <div className="flex flex-wrap gap-4 text-sm">
                             <div>
@@ -2646,13 +2768,13 @@ export default function RepairOrdersPage() {
                 {(orderDetail ?? selectedOrder).status === 'pending_review' && (
                   <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center shrink-0">
                         <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                       </div>
                       <div>
-                        <p className="font-semibold text-orange-900">Mechanic Completed Work</p>
+                        <p className="font-semibold text-orange-900">Technician Completed Work</p>
                         <p className="text-sm text-orange-700">Review and approve to notify customer</p>
                       </div>
                     </div>

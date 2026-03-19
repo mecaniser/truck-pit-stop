@@ -287,7 +287,7 @@ async def send_enrollment_approved_email(to: str, garage_name: str, owner_name: 
                 <p style="color: #065f46; margin: 0; font-weight: bold;">Getting Started:</p>
                 <ul style="color: #065f46; margin: 10px 0 0 0; padding-left: 20px;">
                     <li>Set up your Stripe account to accept payments</li>
-                    <li>Add your team members (mechanics, admins)</li>
+                    <li>Add your team members (technicians, admins)</li>
                     <li>Configure your services and pricing</li>
                     <li>Start taking repair orders!</li>
                 </ul>

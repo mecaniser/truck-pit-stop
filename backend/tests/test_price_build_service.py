@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -200,6 +201,105 @@ async def test_search_repair_operations_returns_custom_candidate_when_no_match(d
 
 
 @pytest.mark.asyncio
+async def test_custom_operation_is_not_learned_until_hours_are_entered(db_session):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+
+    created = await svc.add_repair_operation_line(
+        db_session,
+        loaded,
+        operation_id="custom:tire-replacement",
+        name="Tire Replacement",
+        description="New custom repair operation. Save hours once and the system will reuse them next time.",
+        estimated_hours=Decimal("0.00"),
+    )
+
+    first_line = next(li for li in created.order.labor_items if li.provider_operation_id == "custom:tire-replacement")
+    assert Decimal(str(first_line.hours)) == Decimal("0.00")
+
+    memory_rows = await db_session.execute(select(LaborOperationMemory))
+    assert memory_rows.scalars().all() == []
+
+    same_loaded = await svc.load_order(db_session, order.id)
+    candidates, warnings = await svc.search_repair_operations(db_session, same_loaded, "tire replacement")
+    assert len(candidates) == 1
+    assert candidates[0].provider == "internal_library"
+    assert candidates[0].operation_id == "custom:tire-replacement"
+    assert candidates[0].estimated_hours == Decimal("0.00")
+    assert warnings
+    assert warnings[0].code == "no_saved_match"
+
+    await svc.update_line(
+        db_session,
+        created.order,
+        line_id=first_line.id,
+        hours=Decimal("2.50"),
+    )
+
+    stored_rows = await db_session.execute(select(LaborOperationMemory))
+    stored = stored_rows.scalars().all()
+    assert len(stored) == 1
+    assert stored[0].provider_operation_id == "custom:tire-replacement"
+    assert Decimal(str(stored[0].normalized_hours)) == Decimal("2.50")
+
+    learned_candidates, learned_warnings = await svc.search_repair_operations(db_session, same_loaded, "tire replacement")
+    assert learned_candidates
+    assert learned_candidates[0].provider == "internal_memory"
+    assert learned_candidates[0].estimated_hours == Decimal("2.50")
+    assert learned_warnings
+    assert learned_warnings[0].code == "internal_memory_hit"
+
+
+@pytest.mark.asyncio
+async def test_zero_hour_memory_rows_are_ignored_for_known_operations(db_session):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    db_session.add(
+        LaborOperationMemory(
+            tenant_id=tenant.id,
+            vehicle_signature=(
+                "year:2021|make:freightliner|model:cascadia|vehicle_type:truck|"
+                "body_class:truck-tractor|drive_type:6x4|fuel_type:diesel|"
+                "engine_cylinders:6|engine_displacement_l:14.8|gvwr:class 8"
+            ),
+            operation_key="operation:brake-change",
+            operation_name="Brake Change",
+            operation_description="Bad zero-hour seed row",
+            provider_operation_id="brake-change",
+            source_provider="internal_memory",
+            normalized_hours=Decimal("0.00"),
+            usage_count=1,
+            last_used_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+
+    candidates, warnings = await svc.search_repair_operations(db_session, loaded, "brake")
+
+    assert candidates
+    assert candidates[0].provider == "internal_library"
+    assert candidates[0].operation_id == "brake-change"
+    assert candidates[0].estimated_hours == Decimal("2.50")
+    assert warnings == []
+
+    result = await svc.add_repair_operation_line(
+        db_session,
+        loaded,
+        operation_id="brake-change",
+    )
+
+    line = next(li for li in result.order.labor_items if li.provider_operation_id == "brake-change")
+    assert Decimal(str(line.hours)) == Decimal("2.50")
+
+    refreshed = await svc.recalculate_order(db_session, result.order)
+    refreshed_line = next(li for li in refreshed.order.labor_items if li.provider_operation_id == "brake-change")
+    assert Decimal(str(refreshed_line.hours)) == Decimal("2.50")
+
+
+@pytest.mark.asyncio
 async def test_recalculate_converts_legacy_flat_service_to_hourly_labor(db_session):
     tenant, _, _, order, service = await _seed_context(db_session)
     db_session.add(
@@ -347,3 +447,197 @@ async def test_internal_memory_uses_nhtsa_signature_over_manual_vehicle_text(db_
     assert candidates[0].estimated_hours == Decimal("4.25")
     assert warnings
     assert warnings[0].code == "internal_memory_hit"
+
+
+@pytest.mark.asyncio
+async def test_component_memory_hit_on_different_model_same_engine(db_session):
+    """Memory learned on one truck model surfaces on a different model with the same engine."""
+    tenant, _, _, order, _ = await _seed_context(db_session)  # Freightliner Cascadia, 6-cyl diesel 14.8L
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    created = await svc.add_repair_operation_line(
+        db_session, loaded, operation_id="egr-replacement", name="EGR Replacement",
+    )
+    first_line = next(li for li in created.order.labor_items if li.provider_operation_id == "egr-replacement")
+    await svc.update_line(db_session, created.order, line_id=first_line.id, hours=Decimal("6.50"))
+
+    # Different make/model but identical engine: fuel=Diesel, cylinders=6, displacement=14.8L
+    customer2 = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="Sam",
+        last_name="Fleet",
+        email=f"sam-{uuid4().hex[:8]}@example.com",
+    )
+    vehicle2 = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer2.id,
+        make="Kenworth",
+        model="T680",
+        year=2022,
+        nhtsa_make="KENWORTH",
+        nhtsa_model="T680",
+        nhtsa_model_year=2022,
+        nhtsa_vehicle_type="TRUCK",
+        nhtsa_body_class="Truck-Tractor",
+        nhtsa_drive_type="6x2",
+        nhtsa_fuel_type="Diesel",
+        nhtsa_engine_cylinders=6,
+        nhtsa_engine_displacement_l=14.8,
+        nhtsa_gvwr="Class 8",
+    )
+    order2 = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer2.id,
+        vehicle_id=vehicle2.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.DRAFT,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=Decimal("0.00"),
+        total_cost=Decimal("0.00"),
+    )
+    db_session.add_all([customer2, vehicle2, order2])
+    await db_session.commit()
+
+    loaded2 = await svc.load_order(db_session, order2.id)
+    candidates, warnings = await svc.search_repair_operations(db_session, loaded2, "egr")
+
+    assert candidates
+    assert candidates[0].provider == "internal_memory"
+    assert candidates[0].estimated_hours == Decimal("6.50")
+    assert warnings
+    assert warnings[0].code == "component_memory_hit"
+
+
+@pytest.mark.asyncio
+async def test_vehicle_match_takes_priority_over_component_match(db_session):
+    """When both a vehicle-sig and a component-sig row exist, the vehicle-sig hours win."""
+    tenant, _, _, order, _ = await _seed_context(db_session)
+
+    svc = PriceBuildService()
+
+    # Save 7.00h on the Cascadia (vehicle-sig match for future Cascadia lookups)
+    loaded = await svc.load_order(db_session, order.id)
+    created1 = await svc.add_repair_operation_line(
+        db_session, loaded, operation_id="egr-replacement", name="EGR Replacement",
+    )
+    line1 = next(li for li in created1.order.labor_items if li.provider_operation_id == "egr-replacement")
+    await svc.update_line(db_session, created1.order, line_id=line1.id, hours=Decimal("7.00"))
+
+    # Save 5.00h on a Kenworth with the same engine (component-sig match only)
+    customer2 = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="B",
+        last_name="B",
+        email=f"b-{uuid4().hex[:8]}@example.com",
+    )
+    vehicle2 = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer2.id,
+        make="Kenworth",
+        model="T680",
+        year=2022,
+        nhtsa_make="KENWORTH",
+        nhtsa_model="T680",
+        nhtsa_model_year=2022,
+        nhtsa_vehicle_type="TRUCK",
+        nhtsa_body_class="Truck-Tractor",
+        nhtsa_drive_type="6x2",
+        nhtsa_fuel_type="Diesel",
+        nhtsa_engine_cylinders=6,
+        nhtsa_engine_displacement_l=14.8,
+        nhtsa_gvwr="Class 8",
+    )
+    order2 = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer2.id,
+        vehicle_id=vehicle2.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.DRAFT,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=Decimal("0.00"),
+        total_cost=Decimal("0.00"),
+    )
+    db_session.add_all([customer2, vehicle2, order2])
+    await db_session.commit()
+
+    loaded2 = await svc.load_order(db_session, order2.id)
+    created2 = await svc.add_repair_operation_line(
+        db_session, loaded2, operation_id="egr-replacement", name="EGR Replacement",
+    )
+    line2 = next(li for li in created2.order.labor_items if li.provider_operation_id == "egr-replacement")
+    await svc.update_line(db_session, created2.order, line_id=line2.id, hours=Decimal("5.00"))
+
+    # Search on the original Cascadia: should get its own 7.00h, not the Kenworth's 5.00h
+    loaded_orig = await svc.load_order(db_session, order.id)
+    candidates, warnings = await svc.search_repair_operations(db_session, loaded_orig, "egr")
+
+    assert candidates
+    assert candidates[0].estimated_hours == Decimal("7.00")
+    assert warnings[0].code == "internal_memory_hit"  # vehicle match, not component
+
+
+@pytest.mark.asyncio
+async def test_component_match_requires_minimum_engine_fields(db_session):
+    """A vehicle missing enough engine fields produces no component signature and no component fallback."""
+    tenant, _, _, order, _ = await _seed_context(db_session)
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    created = await svc.add_repair_operation_line(
+        db_session, loaded, operation_id="egr-replacement", name="EGR Replacement",
+    )
+    line = next(li for li in created.order.labor_items if li.provider_operation_id == "egr-replacement")
+    await svc.update_line(db_session, created.order, line_id=line.id, hours=Decimal("6.50"))
+
+    # Vehicle with only fuel_type — not enough for a component signature (need ≥2 fields)
+    customer2 = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="C",
+        last_name="C",
+        email=f"c-{uuid4().hex[:8]}@example.com",
+    )
+    vehicle2 = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer2.id,
+        make="Peterbilt",
+        model="579",
+        year=2020,
+        nhtsa_make="PETERBILT",
+        nhtsa_model="579",
+        nhtsa_model_year=2020,
+        nhtsa_vehicle_type="TRUCK",
+        nhtsa_fuel_type="Diesel",
+        nhtsa_engine_cylinders=None,
+        nhtsa_engine_displacement_l=None,
+        nhtsa_gvwr="Class 8",
+    )
+    order2 = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer2.id,
+        vehicle_id=vehicle2.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.DRAFT,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=Decimal("0.00"),
+        total_cost=Decimal("0.00"),
+    )
+    db_session.add_all([customer2, vehicle2, order2])
+    await db_session.commit()
+
+    loaded2 = await svc.load_order(db_session, order2.id)
+    candidates, warnings = await svc.search_repair_operations(db_session, loaded2, "egr")
+
+    # No vehicle sig match, no component sig → falls through to library only
+    assert candidates
+    assert candidates[0].provider == "internal_library"
+    assert warnings == []

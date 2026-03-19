@@ -14,7 +14,7 @@ type GarageSection = {
 }
 
 const GARAGE_SECTIONS: GarageSection[] = [
-  { to: 'mechanics', label: 'Mechanics', shortLabel: 'Mechanics', icon: Wrench },
+  { to: 'mechanics', label: 'Technicians', shortLabel: 'Technicians', icon: Wrench },
   { to: 'services', label: 'Services', shortLabel: 'Services', icon: ClipboardList },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
   { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: Truck },

@@ -187,11 +187,30 @@ const getTeamCapacitySortPriority = (mechanic: TeamCapacityStatusItem | undefine
   return 4
 }
 
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  draft:          { label: 'Draft',         className: 'bg-gray-500/20 text-gray-300' },
+  quoted:         { label: 'Quoted',        className: 'bg-blue-500/20 text-blue-300' },
+  declined:       { label: 'Declined',      className: 'bg-red-500/20 text-red-300' },
+  pending_review: { label: 'Needs Review',  className: 'bg-amber-500/20 text-amber-300' },
+  completed:      { label: 'Invoice Customer', className: 'bg-teal-500/20 text-teal-300' },
+  invoiced:       { label: 'Payment Due',   className: 'bg-yellow-500/20 text-yellow-300' },
+  approved:       { label: 'Approved',      className: 'bg-green-500/20 text-green-300' },
+  assigned:       { label: 'Assigned',      className: 'bg-amber-500/20 text-amber-300' },
+  acknowledged:   { label: "Ack'd",         className: 'bg-sky-500/20 text-sky-300' },
+  in_progress:    { label: 'In Progress',   className: 'bg-green-500/20 text-green-300' },
+}
+
 function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClick: () => void; accentColor: string }) {
   const isOnHold = order.status === 'in_progress' && !!order.hold_reason
   const elapsed = useElapsedTime(
     order.status === 'in_progress' && !isOnHold ? order.work_started_at : null,
   )
+
+  const badge = isOnHold
+    ? { label: 'On Hold', className: 'bg-orange-500/20 text-orange-300' }
+    : order.pending_zelle_confirmation
+    ? { label: 'Pending Zelle', className: 'bg-yellow-500/20 text-yellow-300' }
+    : STATUS_BADGE[order.status] ?? { label: order.status.replace(/_/g, ' '), className: 'bg-gray-500/20 text-gray-300' }
 
   return (
     <button
@@ -202,6 +221,7 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-medium text-white text-sm 2xl:text-base">{order.order_number}</span>
+            <span className={`text-[10px] 2xl:text-xs font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${badge.className}`}>{badge.label}</span>
             {elapsed && (
               <span className="text-xs 2xl:text-sm font-mono" style={{ color: accentColor }}>{elapsed}</span>
             )}
@@ -209,9 +229,6 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
           <p className="text-gray-400 text-xs 2xl:text-sm truncate mt-1">
             {order.customer_name} &bull; {order.vehicle_info}
           </p>
-          {order.mechanic_name && (
-            <p className="text-xs 2xl:text-sm mt-0.5" style={{ color: accentColor, opacity: 0.7 }}>&rarr; {order.mechanic_name}</p>
-          )}
           {isOnHold && order.hold_reason && (
             <p className="text-xs mt-0.5 text-orange-400 truncate">
               Hold: {order.hold_reason.replace(/_/g, ' ')}
@@ -750,7 +767,7 @@ export default function DashboardHome() {
                   <div className="flex items-center gap-2">
                     <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
                     <h3 className="text-sm 2xl:text-base font-semibold text-white">On the Floor</h3>
-                    <SectionInfoTooltip text="Orders currently in production with mechanics assigned or actively working." />
+                    <SectionInfoTooltip text="Orders currently in production with technicians assigned or actively working." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
                     {stats?.orders_on_floor?.length || 0}
@@ -778,7 +795,7 @@ export default function DashboardHome() {
                   <div className="flex items-center gap-2">
                     <DollarSign className="w-4 h-4 text-emerald-400" />
                     <h3 className="text-sm 2xl:text-base font-semibold text-white">Ready to Close</h3>
-                    <SectionInfoTooltip text="Orders that are operationally complete and ready for invoicing, payment, and closeout." />
+                    <SectionInfoTooltip text="Completed work waiting for invoice to be sent, plus invoiced orders awaiting payment." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
                     {stats?.orders_ready_to_close?.length || 0}
@@ -814,7 +831,7 @@ export default function DashboardHome() {
               >
                 Team Capacity
               </button>
-              <SectionInfoTooltip text="Mechanic staffing capacity snapshot with active vs queued work, per-mechanic load, and click-through to detailed timer boards." />
+              <SectionInfoTooltip text="Technician staffing capacity snapshot with active vs queued work, per-technician load, and click-through to detailed timer boards." />
             </div>
 
             <div className="hidden lg:ml-auto lg:flex lg:flex-wrap lg:items-center lg:justify-end lg:gap-2 lg:pl-4">
@@ -831,7 +848,7 @@ export default function DashboardHome() {
           </div>
 
           {!teamMembers.length ? (
-            <span className={`${teamCapacityMetaClass} text-gray-500`}>No mechanics</span>
+            <span className={`${teamCapacityMetaClass} text-gray-500`}>No technicians</span>
           ) : (
             <div className="space-y-3 lg:space-y-2">
               <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 lg:hidden">
@@ -858,10 +875,10 @@ export default function DashboardHome() {
               <div className="flex items-end justify-between gap-3 px-1 lg:items-center lg:px-0">
                 <div className="min-w-0">
                   <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
-                    Mechanic Board
+                    Technician Board
                   </div>
                   <p className="mt-1 text-xs 2xl:text-sm text-gray-500 lg:hidden">
-                    Tap a mechanic to open timers and assignments.
+                    Tap a technician to open timers and assignments.
                   </p>
                 </div>
                 <span className={`${teamCapacityMetaClass} shrink-0 text-gray-500`}>
@@ -948,7 +965,7 @@ export default function DashboardHome() {
                 })}
                 {teamMembers.length > 8 && (
                   <div className={`${teamCapacityMetaClass} text-gray-500 px-1 col-span-full`}>
-                    +{teamMembers.length - 8} more mechanics
+                    +{teamMembers.length - 8} more technicians
                   </div>
                 )}
               </div>

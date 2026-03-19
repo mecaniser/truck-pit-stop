@@ -205,8 +205,8 @@ export default function PriceBuilderPanel({
 
       <div className="space-y-2">
         <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Diagnostics / Inspection (Hourly)</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="min-w-[220px] flex-1">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0">
             <BaseSelect
               options={serviceOptions}
               value={serviceId}
@@ -220,14 +220,14 @@ export default function PriceBuilderPanel({
             min={1}
             value={serviceHours}
             onChange={(e) => setServiceHours(Math.max(1, parseInt(e.target.value, 10) || 1))}
-            className="h-[42px] w-16 rounded-lg border border-gray-300 px-2 text-sm"
+            className="h-[42px] w-14 shrink-0 rounded-lg border border-gray-300 px-2 text-sm"
             aria-label="Hours"
           />
           <button
             type="button"
             onClick={() => addServiceLaborLine.mutate()}
             disabled={!canMutate || !serviceId || addServiceLaborLine.isPending}
-            className="h-[42px] rounded-lg bg-amber-500 px-3 text-sm font-medium text-white disabled:bg-gray-300"
+            className="h-[42px] shrink-0 rounded-lg bg-amber-500 px-3 text-sm font-medium text-white disabled:bg-gray-300"
           >
             Add
           </button>
@@ -286,55 +286,66 @@ export default function PriceBuilderPanel({
           <div className="space-y-2">
             {summary.lines.map((line) => (
               <div key={line.id} className="rounded-lg border border-gray-200 p-2">
-                <div className="mb-1 text-[11px] uppercase tracking-wide text-gray-400">{lineTypeLabel(line)}</div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
-                  <input
-                    defaultValue={line.description}
-                    onBlur={(e) => {
-                      const value = e.target.value.trim()
-                      if (value !== line.description) {
-                        updateLine.mutate({ lineId: line.id, body: { description: value } })
-                      }
-                    }}
-                    disabled={!canMutate}
-                    className="sm:col-span-5 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                  />
-                  <input
-                    type="number"
-                    step="0.25"
-                    min="0"
-                    defaultValue={line.hours}
-                    onBlur={(e) => {
-                      const value = parseFloat(e.target.value || '0')
-                      if (!Number.isNaN(value) && value.toString() !== line.hours) {
-                        updateLine.mutate({ lineId: line.id, body: { hours: value } })
-                      }
-                    }}
-                    disabled={!canMutate}
-                    className="sm:col-span-2 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    defaultValue={line.hourly_rate}
-                    onBlur={(e) => {
-                      const value = parseFloat(e.target.value || '0')
-                      if (!Number.isNaN(value) && value.toString() !== line.hourly_rate) {
-                        updateLine.mutate({ lineId: line.id, body: { hourly_rate: value } })
-                      }
-                    }}
-                    disabled={!canMutate}
-                    className="sm:col-span-2 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                  />
-                  <div className="sm:col-span-2 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-semibold text-gray-800">
-                    ${parseFloat(line.total_cost || '0').toFixed(2)}
+                <div className="mb-1.5 text-[11px] uppercase tracking-wide text-gray-400">{lineTypeLabel(line)}</div>
+                {/* Description — full width */}
+                <input
+                  defaultValue={line.description}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim()
+                    if (value !== line.description) {
+                      updateLine.mutate({ lineId: line.id, body: { description: value } })
+                    }
+                  }}
+                  disabled={!canMutate}
+                  className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                />
+                {/* Compact numbers row */}
+                <div className="flex items-end gap-1.5">
+                  <div className="flex flex-col gap-0.5 w-16">
+                    <span className="text-[10px] text-gray-400">Hours</span>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      defaultValue={line.hours}
+                      onBlur={(e) => {
+                        const value = parseFloat(e.target.value || '0')
+                        if (!Number.isNaN(value) && value.toString() !== line.hours) {
+                          updateLine.mutate({ lineId: line.id, body: { hours: value } })
+                        }
+                      }}
+                      disabled={!canMutate}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-0.5 w-20">
+                    <span className="text-[10px] text-gray-400">Rate/hr</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      defaultValue={line.hourly_rate}
+                      onBlur={(e) => {
+                        const value = parseFloat(e.target.value || '0')
+                        if (!Number.isNaN(value) && value.toString() !== line.hourly_rate) {
+                          updateLine.mutate({ lineId: line.id, body: { hourly_rate: value } })
+                        }
+                      }}
+                      disabled={!canMutate}
+                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-0.5 flex-1">
+                    <span className="text-[10px] text-gray-400">Total</span>
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-semibold text-gray-800">
+                      ${parseFloat(line.total_cost || '0').toFixed(2)}
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeLine.mutate(line.id)}
                     disabled={!canMutate || removeLine.isPending}
-                    className="sm:col-span-1 inline-flex items-center justify-center rounded-md border border-red-200 text-red-600 disabled:opacity-50"
+                    className="inline-flex items-center justify-center rounded-md border border-red-200 p-1.5 text-red-600 disabled:opacity-50 shrink-0"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>

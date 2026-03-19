@@ -193,7 +193,7 @@ export default function MechanicsPage() {
       queryClient.invalidateQueries({ queryKey: ['mechanics'] }) // refresh assignment dropdowns that use dashboard stats
     },
     onError: (err: any) => {
-      const detail = err?.response?.data?.detail || 'Failed to add mechanic'
+      const detail = err?.response?.data?.detail || 'Failed to add technician'
       setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
     },
   })
@@ -212,7 +212,7 @@ export default function MechanicsPage() {
       queryClient.invalidateQueries({ queryKey: ['mechanics'] })
     },
     onError: (err: any) => {
-      const detail = err?.response?.data?.detail || 'Failed to update mechanic'
+      const detail = err?.response?.data?.detail || 'Failed to update technician'
       setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
     },
   })
@@ -372,8 +372,8 @@ export default function MechanicsPage() {
     <div className="space-y-6">
       {user?.role !== 'garage_owner' && user?.role !== 'garage_admin' ? (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-          <h1 className="text-lg font-semibold text-white mb-2">Mechanics</h1>
-          <p className="text-sm text-gray-400">Only garage admins can manage mechanics.</p>
+          <h1 className="text-lg font-semibold text-white mb-2">Technicians</h1>
+          <p className="text-sm text-gray-400">Only garage admins can manage technicians.</p>
         </div>
       ) : (
         <>
@@ -440,9 +440,9 @@ export default function MechanicsPage() {
         <SearchAddBar
           value={search}
           onChange={setSearch}
-          placeholder="Search mechanics by name, email, phone, or address..."
+          placeholder="Search technicians by name, email, phone, or address..."
           onAdd={handleStartAdd}
-          addLabel="Add mechanic"
+          addLabel="Add technician"
           addLabelMobile="Add"
           className="flex-1"
           inputWidthClass="sm:min-w-[320px] md:max-w-xl"
@@ -457,11 +457,11 @@ export default function MechanicsPage() {
       </div>
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {isLoading ? (
-          <div className="text-gray-400 text-sm p-6">Loading mechanics...</div>
+          <div className="text-gray-400 text-sm p-6">Loading technicians...</div>
         ) : mechanicRows.length === 0 ? (
-          <div className="text-gray-400 text-sm p-6">No mechanics yet. Use Add mechanic to get started.</div>
+          <div className="text-gray-400 text-sm p-6">No technicians yet. Use Add technician to get started.</div>
         ) : filteredMechanics.length === 0 ? (
-          <div className="text-gray-400 text-sm p-6">No mechanics match your search.</div>
+          <div className="text-gray-400 text-sm p-6">No technicians match your search.</div>
         ) : activeViewMode === 'list' ? (
           <>
             <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
@@ -525,7 +525,7 @@ export default function MechanicsPage() {
                             {workLoading ? (
                               <p className="text-gray-400 text-sm">Loading work...</p>
                             ) : !workItems || workItems.length === 0 ? (
-                              <p className="text-gray-400 text-sm">No work found for this mechanic.</p>
+                              <p className="text-gray-400 text-sm">No work found for this technician.</p>
                             ) : (
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                 {workItems.map((item) => {
@@ -668,7 +668,7 @@ export default function MechanicsPage() {
                 {workLoading ? (
                   <p className="text-gray-400 text-sm">Loading work...</p>
                 ) : !workItems || workItems.length === 0 ? (
-                  <p className="text-gray-400 text-sm">No work found for this mechanic.</p>
+                  <p className="text-gray-400 text-sm">No work found for this technician.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {workItems.map((item) => {
@@ -724,16 +724,16 @@ export default function MechanicsPage() {
               isAdding ? 'translate-x-0' : 'translate-x-full'
             }`}
             role="dialog"
-            aria-label={editingMechanic ? 'Edit mechanic' : 'Add mechanic'}
+            aria-label={editingMechanic ? 'Edit technician' : 'Add technician'}
           >
             <form onSubmit={handleSubmit(onSubmit)} className="h-full flex flex-col">
               <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase text-gray-500 font-semibold">
-                    {editingMechanic ? 'Edit mechanic' : 'Add mechanic'}
+                    {editingMechanic ? 'Edit technician' : 'Add technician'}
                   </p>
                   <p className="text-lg font-semibold text-slate-800">
-                    {editingMechanic ? `${editingMechanic.first_name} ${editingMechanic.last_name}` : 'Onboard a mechanic'}
+                    {editingMechanic ? `${editingMechanic.first_name} ${editingMechanic.last_name}` : 'Onboard a technician'}
                   </p>
                 </div>
                 <button
@@ -965,8 +965,8 @@ export default function MechanicsPage() {
                   {createMechanicMutation.isPending || updateMechanicMutation.isPending
                     ? 'Saving...'
                     : editingMechanic
-                    ? 'Update mechanic'
-                    : 'Add mechanic'}
+                    ? 'Update technician'
+                    : 'Add technician'}
                 </button>
               </div>
             </form>

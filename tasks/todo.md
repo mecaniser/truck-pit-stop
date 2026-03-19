@@ -1069,3 +1069,27 @@
 ## Review
 - The mixed working tree is now split into atomic commits instead of one broad checkpoint, so inventory UI work, garage copy cleanup, Playwright host pinning, and task docs each have their own history entry.
 - Validation cited in the commit bodies comes from commands re-run during this shipping pass, not placeholder text from the planner output.
+
+---
+
+# Repair Operation Memory Zero-Hour Correction (2026-03-19)
+
+## Plan
+- [x] Audit the repair-operation search/apply/update flow and confirm why new custom operations are being reused with `0.00` hours.
+- [x] Update the labor-memory rules so only positive-hour repair operations are learned and reused.
+- [x] Ignore previously stored zero-hour memory rows during search/recalc so existing bad data stops surfacing.
+- [x] Add targeted backend tests for the zero-hour custom-operation path.
+- [x] Run focused verification and capture review notes.
+
+## Progress Notes
+- [x] Confirmed the current internal flow: library defaults seed known operations, tenant-specific `labor_operation_memory` stores learned hours by normalized vehicle signature, and unknown searches fall back to a custom operation with `0.00` hours.
+- [x] Confirmed the bug: `add_repair_operation_line()` immediately upserts internal memory even when a brand-new custom operation still has `0.00` hours, so the system "learns" and reuses an empty estimate before staff enter real hours.
+- [x] Updated `PriceBuildService` so labor memory only reads and writes positive-hour entries; zero-hour rows are ignored during search, apply, and recalc.
+- [x] Added regression tests covering both the new custom-operation path and legacy zero-hour memory rows.
+- [x] Passed focused verification:
+  `cd backend && venv/bin/python -m pytest tests/test_price_build_service.py -q`
+
+## Review
+- Custom repair operations now behave as "unlearned" until someone enters real hours on the RO line; only then do they become reusable memory for matching vehicles.
+- Existing zero-hour memory rows no longer win search/apply/recalc decisions, so they stop poisoning the internal labor library without requiring an immediate data cleanup.
+- Residual risk: the UX still applies unknown custom operations at `0.00` hours first and expects staff to edit the line afterward; the next refinement should be a custom-operation hours prompt in the repair-order UI so teaching happens at apply time instead of as a second step.

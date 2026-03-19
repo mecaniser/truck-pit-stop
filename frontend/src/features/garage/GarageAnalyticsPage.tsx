@@ -276,7 +276,7 @@ export default function GarageAnalyticsPage() {
       {stats.mechanic_workload && stats.mechanic_workload.length > 0 && (
         <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Mechanic Workload</h2>
+            <h2 className="text-lg font-semibold text-white">Technician Workload</h2>
             <Wrench className="w-5 h-5 text-gray-400" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

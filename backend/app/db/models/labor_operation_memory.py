@@ -15,6 +15,7 @@ class LaborOperationMemory(BaseModel):
     tenant = relationship("Tenant", backref="labor_operation_memory_entries")
 
     vehicle_signature = Column(String(255), nullable=False, index=True)
+    component_signature = Column(String(255), nullable=True, index=True)
     operation_key = Column(String(255), nullable=False, index=True)
     operation_name = Column(String(255), nullable=False)
     operation_description = Column(Text, nullable=True)

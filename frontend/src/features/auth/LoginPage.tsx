@@ -158,7 +158,7 @@ export default function LoginPage() {
                 </li>
                 <li className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/60 p-3">
                   <Clock3 className="mt-0.5 h-4 w-4 text-[var(--accent-400)]" />
-                  <span>Live time tracking and progress updates by mechanic and job.</span>
+                  <span>Live time tracking and progress updates by technician and job.</span>
                 </li>
               </ul>
             </div>

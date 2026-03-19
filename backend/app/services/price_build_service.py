@@ -61,6 +61,10 @@ def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"))
 
 
+def _has_reusable_hours(value: Decimal) -> bool:
+    return Decimal(str(value)) > Decimal("0.00")
+
+
 def _is_locked(order: RepairOrder) -> bool:
     return order.pricing_locked_at is not None
 
@@ -103,6 +107,30 @@ def _vehicle_signatures(order: RepairOrder) -> list[str]:
         if candidate and candidate not in signatures:
             signatures.append(candidate)
     return signatures or ["unknown"]
+
+
+def _component_signature(order: RepairOrder) -> Optional[str]:
+    """Build a normalized engine-component fingerprint for cross-model matching.
+
+    Uses fuel type, cylinder count, and displacement — enough to uniquely identify
+    most heavy-truck engine families (e.g. Cummins ISX15, Detroit DD15).
+    Requires at least two populated fields to avoid over-broad matches.
+    """
+    v = order.vehicle
+    if not v:
+        return None
+    parts: list[str] = []
+
+    def add(label: str, value: Optional[object]) -> None:
+        normalized = _normalize_lookup(None if value is None else str(value))
+        if normalized:
+            parts.append(f"{label}:{normalized}")
+
+    add("fuel_type", getattr(v, "nhtsa_fuel_type", None))
+    add("cylinders", getattr(v, "nhtsa_engine_cylinders", None))
+    add("displacement_l", getattr(v, "nhtsa_engine_displacement_l", None))
+
+    return "|".join(parts) if len(parts) >= 2 else None
 
 
 def _normalize_lookup(value: Optional[str]) -> str:
@@ -218,17 +246,25 @@ class PriceBuildService:
         if not clean_query:
             return [], [OperationWarning(code="invalid_query", message="Search query is required.")]
 
-        learned_candidates = await self._search_internal_memory(db, order, clean_query)
+        learned_candidates, match_tier = await self._search_internal_memory(db, order, clean_query)
         library_candidates = search_operation_library(clean_query)
         candidates = self._merge_candidates(learned_candidates, library_candidates)
         warnings: list[OperationWarning] = []
         if learned_candidates:
-            warnings.append(
-                OperationWarning(
-                    code="internal_memory_hit",
-                    message="Using saved labor hours from previous matching jobs.",
+            if match_tier == "component":
+                warnings.append(
+                    OperationWarning(
+                        code="component_memory_hit",
+                        message="Using saved labor hours from a truck with the same engine configuration.",
+                    )
                 )
-            )
+            else:
+                warnings.append(
+                    OperationWarning(
+                        code="internal_memory_hit",
+                        message="Using saved labor hours from previous matching jobs.",
+                    )
+                )
         if candidates:
             return candidates, warnings
 
@@ -521,20 +557,30 @@ class PriceBuildService:
         db: AsyncSession,
         order: RepairOrder,
         query: str,
-    ) -> list[RepairOperationCandidate]:
+    ) -> tuple[list[RepairOperationCandidate], str]:
+        """Two-pass memory search.
+
+        Pass 1 — exact vehicle signature match (same make/model/year/engine).
+        Pass 2 — component signature fallback (same engine family, different model).
+
+        Returns (candidates, match_tier) where match_tier is "vehicle", "component", or "".
+        """
         pattern = f"%{_normalize_lookup(query)}%"
+        keyword_filter = or_(
+            LaborOperationMemory.operation_key.ilike(pattern),
+            LaborOperationMemory.operation_name.ilike(pattern),
+            LaborOperationMemory.operation_description.ilike(pattern),
+            LaborOperationMemory.provider_operation_id.ilike(pattern),
+        )
+
         result = await db.execute(
             select(LaborOperationMemory)
             .where(
                 and_(
                     LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.normalized_hours > 0,
                     LaborOperationMemory.vehicle_signature.in_(_vehicle_signatures(order)),
-                    or_(
-                        LaborOperationMemory.operation_key.ilike(pattern),
-                        LaborOperationMemory.operation_name.ilike(pattern),
-                        LaborOperationMemory.operation_description.ilike(pattern),
-                        LaborOperationMemory.provider_operation_id.ilike(pattern),
-                    ),
+                    keyword_filter,
                 )
             )
             .order_by(
@@ -544,6 +590,33 @@ class PriceBuildService:
             .limit(8)
         )
         rows = result.scalars().all()
+        if rows:
+            return self._dedupe_candidates(rows), "vehicle"
+
+        comp_sig = _component_signature(order)
+        if not comp_sig:
+            return [], ""
+
+        comp_result = await db.execute(
+            select(LaborOperationMemory)
+            .where(
+                and_(
+                    LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.normalized_hours > 0,
+                    LaborOperationMemory.component_signature == comp_sig,
+                    keyword_filter,
+                )
+            )
+            .order_by(
+                LaborOperationMemory.usage_count.desc(),
+                LaborOperationMemory.last_used_at.desc(),
+            )
+            .limit(8)
+        )
+        comp_rows = comp_result.scalars().all()
+        return self._dedupe_candidates(comp_rows), ("component" if comp_rows else "")
+
+    def _dedupe_candidates(self, rows: list[LaborOperationMemory]) -> list[RepairOperationCandidate]:
         seen: set[str] = set()
         out: list[RepairOperationCandidate] = []
         for row in rows:
@@ -572,20 +645,54 @@ class PriceBuildService:
         if not operation_key:
             return None
 
+        # Pass 1: exact vehicle signature match
         result = await db.execute(
             select(LaborOperationMemory).where(
                 and_(
                     LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.normalized_hours > 0,
                     LaborOperationMemory.vehicle_signature.in_(_vehicle_signatures(order)),
                     LaborOperationMemory.operation_key == operation_key,
                 )
             )
         )
         rows = result.scalars().all()
-        if not rows:
-            return None
-        row = next((item for item in rows if item.vehicle_signature == _vehicle_signature(order)), rows[0])
+        if rows:
+            row = next((item for item in rows if item.vehicle_signature == _vehicle_signature(order)), rows[0])
+            return OperationEstimate(
+                operation_id=row.provider_operation_id or operation_id or row.operation_key,
+                name=row.operation_name,
+                description=row.operation_description,
+                estimated_hours=Decimal(str(row.normalized_hours)),
+                warnings=[],
+                provider="internal_memory",
+            )
 
+        # Pass 2: component signature fallback
+        comp_sig = _component_signature(order)
+        if not comp_sig:
+            return None
+
+        comp_result = await db.execute(
+            select(LaborOperationMemory)
+            .where(
+                and_(
+                    LaborOperationMemory.tenant_id == order.tenant_id,
+                    LaborOperationMemory.normalized_hours > 0,
+                    LaborOperationMemory.component_signature == comp_sig,
+                    LaborOperationMemory.operation_key == operation_key,
+                )
+            )
+            .order_by(
+                LaborOperationMemory.usage_count.desc(),
+                LaborOperationMemory.last_used_at.desc(),
+            )
+            .limit(1)
+        )
+        comp_rows = comp_result.scalars().all()
+        if not comp_rows:
+            return None
+        row = comp_rows[0]
         return OperationEstimate(
             operation_id=row.provider_operation_id or operation_id or row.operation_key,
             name=row.operation_name,
@@ -611,11 +718,12 @@ class PriceBuildService:
             name=name,
             description=description,
         )
-        if not operation_key:
+        if not operation_key or not _has_reusable_hours(hours):
             return
 
         now = datetime.now(timezone.utc)
         preferred_signature = _vehicle_signature(order)
+        comp_sig = _component_signature(order)
         result = await db.execute(
             select(LaborOperationMemory).where(
                 and_(
@@ -631,6 +739,7 @@ class PriceBuildService:
         operation_description = description.strip() if description else None
         if row:
             row.vehicle_signature = preferred_signature
+            row.component_signature = comp_sig
             row.operation_name = operation_name
             row.operation_description = operation_description
             row.provider_operation_id = operation_id
@@ -644,6 +753,7 @@ class PriceBuildService:
             LaborOperationMemory(
                 tenant_id=order.tenant_id,
                 vehicle_signature=preferred_signature,
+                component_signature=comp_sig,
                 operation_key=operation_key,
                 operation_name=operation_name,
                 operation_description=operation_description,
