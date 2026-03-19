@@ -68,8 +68,8 @@ export default function DashboardLayout() {
   
   const getCurrentPageLabel = () => {
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
-    if (location.pathname === '/dashboard/mechanics') return 'Mechanic Board'
-    if (location.pathname.startsWith('/dashboard/mechanics/')) return 'Mechanic Detail'
+    if (location.pathname === '/dashboard/mechanics') return 'Technician Board'
+    if (location.pathname.startsWith('/dashboard/mechanics/')) return 'Technician Detail'
     const current = navLinks.find(link => location.pathname === link.to)
     return current?.label || ''
   }

@@ -209,7 +209,7 @@ export default function MechanicsBoardPage() {
           </div>
         }
       />
-      <SectionInfoTooltip text="Team-wide mechanic monitoring. Cards are sorted by attention priority — red needs action now, yellow worth checking, green on track." />
+      <SectionInfoTooltip text="Team-wide technician monitoring. Cards are sorted by attention priority — red needs action now, yellow worth checking, green on track." />
 
       {/* Attention summary banner */}
       {sorted.length > 0 ? (
