@@ -35,6 +35,19 @@ export default function PriceBuilderPanel({
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
+  // Local edits per line: tracks hours/rate as user types for live total preview
+  const [lineEdits, setLineEdits] = useState<Record<string, { hours: string; rate: string }>>({})
+
+  const getLineHours = (id: string, fallback: string) => lineEdits[id]?.hours ?? fallback
+  const getLineRate  = (id: string, fallback: string) => lineEdits[id]?.rate  ?? fallback
+  const getLineTotal = (id: string, fallback: string, serverTotal: string) => {
+    if (!lineEdits[id]) return serverTotal
+    const h = parseFloat(lineEdits[id].hours) || 0
+    const r = parseFloat(lineEdits[id].rate)  || 0
+    return (h * r).toFixed(2)
+  }
+  const clearLineEdit = (id: string) =>
+    setLineEdits((prev) => { const next = { ...prev }; delete next[id]; return next })
 
   const { data: summary, refetch, isLoading } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
@@ -307,12 +320,19 @@ export default function PriceBuilderPanel({
                       type="number"
                       step="0.25"
                       min="0"
-                      defaultValue={line.hours}
+                      value={getLineHours(line.id, line.hours)}
+                      onChange={(e) =>
+                        setLineEdits((prev) => ({
+                          ...prev,
+                          [line.id]: { hours: e.target.value, rate: getLineRate(line.id, line.hourly_rate) },
+                        }))
+                      }
                       onBlur={(e) => {
                         const value = parseFloat(e.target.value || '0')
                         if (!Number.isNaN(value) && value.toString() !== line.hours) {
                           updateLine.mutate({ lineId: line.id, body: { hours: value } })
                         }
+                        clearLineEdit(line.id)
                       }}
                       disabled={!canMutate}
                       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
@@ -324,12 +344,19 @@ export default function PriceBuilderPanel({
                       type="number"
                       step="0.01"
                       min="0"
-                      defaultValue={line.hourly_rate}
+                      value={getLineRate(line.id, line.hourly_rate)}
+                      onChange={(e) =>
+                        setLineEdits((prev) => ({
+                          ...prev,
+                          [line.id]: { hours: getLineHours(line.id, line.hours), rate: e.target.value },
+                        }))
+                      }
                       onBlur={(e) => {
                         const value = parseFloat(e.target.value || '0')
                         if (!Number.isNaN(value) && value.toString() !== line.hourly_rate) {
                           updateLine.mutate({ lineId: line.id, body: { hourly_rate: value } })
                         }
+                        clearLineEdit(line.id)
                       }}
                       disabled={!canMutate}
                       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
@@ -338,7 +365,7 @@ export default function PriceBuilderPanel({
                   <div className="flex flex-col gap-0.5 flex-1">
                     <span className="text-[10px] text-gray-400">Total</span>
                     <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-semibold text-gray-800">
-                      ${parseFloat(line.total_cost || '0').toFixed(2)}
+                      ${getLineTotal(line.id, line.hours, line.total_cost || '0')}
                     </div>
                   </div>
                   <button
