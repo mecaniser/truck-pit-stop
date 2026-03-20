@@ -1132,11 +1132,15 @@
 ## Plan
 - [x] Identify the dashboard KPI section and its current responsive wrapper.
 - [x] Hide the KPI section on mobile screens at the outer container level.
-- [ ] Verify the responsive behavior with build output and a browser check.
+- [x] Verify the responsive behavior with build output and a browser check.
 
 ## Progress Notes
 - [x] Confirmed the KPI section is the manager-only `Revenue KPIs` card at the bottom of `DashboardHome`.
 - [x] Updated the KPI wrapper to stay hidden below `lg`, which removes the entire section from mobile instead of only hiding inner content.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+  Playwright on mocked `http://localhost:5173/dashboard` confirmed `Revenue KPIs` is not visible at `390px` width and becomes visible again at `1280px`.
 
 ## Review
-- Pending verification.
+- The KPI section is now absent from mobile screens because the entire outer card is hidden below `lg`.
+- Desktop behavior is preserved: the same `Revenue KPIs` card still renders once the viewport reaches desktop width.
