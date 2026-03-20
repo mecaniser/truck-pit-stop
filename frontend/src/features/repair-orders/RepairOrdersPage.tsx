@@ -222,6 +222,7 @@ export default function RepairOrdersPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
+
   const activeViewMode = isMobile ? 'list' : viewMode
 
   const queryClient = useQueryClient()
@@ -1202,79 +1203,79 @@ export default function RepairOrdersPage() {
   }
 
   return (
-    <div>
-      <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Repair Orders</h1>
+    <div className="flex flex-col h-full">
+      <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
 
-      {/* Search Bar */}
-      <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 relative">
-            <svg 
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by order # or description..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-          </div>
-
-          {/* Mobile: compact select */}
-          <select
-            className="sm:hidden h-10 px-3 rounded-lg text-sm font-medium bg-white/20 text-white w-full border-0 outline-none"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+      {/* Search + Filters */}
+      <div className="mb-4 flex-shrink-0 bg-white/10 backdrop-blur rounded-xl p-4">
+        {/* Search — always full width */}
+        <div className="relative">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value} className="text-gray-900 bg-white">
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search by order # or description..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+        </div>
 
-          {/* Desktop: pill buttons */}
-          <div className="hidden sm:flex overflow-x-auto gap-2 flex-wrap">
-            {statusOptions.map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setStatusFilter(option.value)}
-                className={`h-10 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                  statusFilter === option.value
-                    ? 'text-white'
-                    : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
-                }`}
-                style={statusFilter === option.value ? { backgroundColor: accentColors[500] } : undefined}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+        {/* Filters — below search on all sizes */}
+        {/* < sm: compact select */}
+        <select
+          className="sm:hidden mt-3 h-10 px-3 rounded-lg text-sm font-medium bg-white/20 text-white w-full border-0 outline-none"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          {statusOptions.map((option) => (
+            <option key={option.value} value={option.value} className="text-gray-900 bg-white">
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        {/* sm+: single-row horizontal scroll pills */}
+        <div className="hidden sm:flex mt-3 overflow-x-auto gap-2 scrollbar-hide pb-0.5">
+          {statusOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setStatusFilter(option.value)}
+              className={`h-9 px-3 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                statusFilter === option.value
+                  ? 'text-white'
+                  : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
+              }`}
+              style={statusFilter === option.value ? { backgroundColor: accentColors[500] } : undefined}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
         {(searchQuery || statusFilter !== 'all') && (
-          <div className="mt-3 text-sm text-white/70">
+          <div className="mt-2 text-sm text-white/70">
             Found {filteredOrders?.length || 0} order{filteredOrders?.length !== 1 ? 's' : ''}
           </div>
         )}
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         {/* Header with ViewToggle */}
-        <div className="hidden lg:flex items-center gap-4 px-4 py-3 border-b border-white/10">
+        <div className="hidden lg:flex flex-shrink-0 items-center gap-4 px-4 py-3 border-b border-white/10">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
           {statusFilter !== 'all' && statusDescriptions[statusFilter] && (
             <p className="text-xs text-white/50 italic">{statusDescriptions[statusFilter]}</p>
           )}
         </div>
 
-        <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
+        <div className="flex-1 min-h-0 scrollbar-dark" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
           {isMobile ? (
             /* Mobile: compact list cards */
             <div className="divide-y divide-white/10">

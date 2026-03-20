@@ -426,7 +426,7 @@ export default function PriceBuilderPanel({
                 />
                 {/* Compact numbers row */}
                 <div className="flex items-end gap-1.5">
-                  <div className="flex flex-col gap-0.5 w-16">
+                  <div className="flex flex-col gap-0.5 flex-1">
                     <span className="text-[10px] text-gray-400">Hours</span>
                     <input
                       type="number"
@@ -450,13 +450,12 @@ export default function PriceBuilderPanel({
                       className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
                     />
                   </div>
-                  <div className="flex flex-col gap-0.5 w-20">
+                  <div className="flex flex-col gap-0.5 flex-1">
                     <span className="text-[10px] text-gray-400">Rate/hr</span>
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={getLineRate(line.id, line.hourly_rate)}
+                      type="text"
+                      inputMode="decimal"
+                      value={lineEdits[line.id]?.rate ?? parseFloat(line.hourly_rate).toFixed(2)}
                       onChange={(e) =>
                         setLineEdits((prev) => ({
                           ...prev,
