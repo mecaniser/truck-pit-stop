@@ -265,16 +265,21 @@ export default function DashboardHome() {
   const [quickTouched, setQuickTouched] = useState(false)
   const [isRevenueCollapsed, setIsRevenueCollapsed] = useState(true)
   const [isAttentionDismissed, setIsAttentionDismissed] = useState(false)
-  const [workQueueMaxHeight, setWorkQueueMaxHeight] = useState<number | null>(null)
-  const dashboardRootRef = useRef<HTMLDivElement | null>(null)
-  const workQueueRef = useRef<HTMLDivElement | null>(null)
-  const teamCapacityRef = useRef<HTMLDivElement | null>(null)
-  const revenueRef = useRef<HTMLDivElement | null>(null)
+  const [isAttentionDismissing, setIsAttentionDismissing] = useState(false)
+  const alertsBannerRef = useRef<HTMLDivElement | null>(null)
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isExpandedFont = fontSize === 'comfortable' || fontSize === 'large'
-  
+
+  // Per-font-size lane min-height tokens
+  const WORK_QUEUE_LANE_HEIGHT = {
+    compact:     'min-h-[clamp(9rem,18vh,10.5rem)]',
+    default:     'min-h-[clamp(10rem,20vh,11.75rem)]',
+    comfortable: 'min-h-[clamp(10.5rem,21vh,12rem)]',
+    large:       'min-h-[clamp(11rem,22vh,12.5rem)]',
+  } as const
+
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
   
@@ -378,9 +383,7 @@ export default function DashboardHome() {
   const teamCapacityGridHeightClass = isExpandedFont
     ? 'md:max-h-60 lg:max-h-40 2xl:max-h-44'
     : 'md:max-h-56 lg:max-h-36 2xl:max-h-40'
-  const workQueueLaneHeightClass = isExpandedFont
-    ? 'min-h-[clamp(10.5rem,21vh,12rem)]'
-    : 'min-h-[clamp(10rem,20vh,11.75rem)]'
+  const workQueueLaneHeightClass = WORK_QUEUE_LANE_HEIGHT[fontSize]
   const revenueCards = [
     { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400' },
     { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300' },
@@ -393,59 +396,22 @@ export default function DashboardHome() {
     (stats?.declined_quotes ?? 0) > 0
   )
   const showAttentionRequired = hasAttentionRequired && !isAttentionDismissed
+  // True while the banner is animating out — keeps it in the DOM during exit animation
+  const showBannerElement = showAttentionRequired || isAttentionDismissing
+
+  const handleAttentionDismiss = () => {
+    setIsAttentionDismissing(true)
+    setIsAttentionDismissed(true) // immediately triggers work queue height recalc
+    setTimeout(() => setIsAttentionDismissing(false), 220)
+  }
 
   useEffect(() => {
     if (!hasAttentionRequired) {
       setIsAttentionDismissed(false)
+      setIsAttentionDismissing(false)
     }
   }, [hasAttentionRequired])
 
-  useEffect(() => {
-    const measureWorkQueueHeight = () => {
-      if (typeof window === 'undefined') return
-      if (window.innerWidth < 1024) {
-        setWorkQueueMaxHeight(null)
-        return
-      }
-
-      const root = dashboardRootRef.current
-      const queue = workQueueRef.current
-      if (!root || !queue) return
-
-      const rootStyles = window.getComputedStyle(root)
-      const rowGap = parseFloat(rootStyles.rowGap || rootStyles.gap || '0')
-      const queueTop = queue.getBoundingClientRect().top
-      const teamHeight = teamCapacityRef.current?.getBoundingClientRect().height ?? 0
-      const revenueHeight = revenueRef.current?.getBoundingClientRect().height ?? 0
-      const gapsBelow = [teamHeight > 0, revenueHeight > 0].filter(Boolean).length
-      const viewportPadding = 20
-      const availableHeight = window.innerHeight - queueTop - teamHeight - revenueHeight - (rowGap * gapsBelow) - viewportPadding
-      const minQueueHeight = isExpandedFont ? 300 : 260
-      const nextHeight = Number.isFinite(availableHeight)
-        ? Math.max(Math.floor(availableHeight), minQueueHeight)
-        : null
-
-      setWorkQueueMaxHeight((current) => (current === nextHeight ? current : nextHeight))
-    }
-
-    measureWorkQueueHeight()
-    window.addEventListener('resize', measureWorkQueueHeight)
-    return () => window.removeEventListener('resize', measureWorkQueueHeight)
-  }, [
-    banners.length,
-    showAttentionRequired,
-    isExpandedFont,
-    isManager,
-    isRevenueCollapsed,
-    showQuickForm,
-    stats?.declined_quotes,
-    stats?.low_stock_count,
-    stats?.orders_needing_action?.length,
-    stats?.orders_on_floor?.length,
-    stats?.orders_ready_to_close?.length,
-    stats?.overdue_approvals,
-    teamMembers.length,
-  ])
 
   const validateQuickForm = () => {
     const errors: { phone?: string; complaint?: string } = {}
@@ -517,8 +483,7 @@ export default function DashboardHome() {
 
   return (
     <div
-      ref={dashboardRootRef}
-      className={`flex flex-col flex-1 min-h-0 2xl:h-[calc(100vh-7.5rem)] 2xl:overflow-hidden ${
+      className={`flex flex-col flex-1 min-h-0 lg:overflow-hidden ${
         isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'
       }`}
     >
@@ -693,22 +658,23 @@ export default function DashboardHome() {
         </form>
       )}
 
-      {/* Alerts Banner (managers only, conditional) */}
-      {showAttentionRequired && (
-        <AlertsBanner
-          lowStockCount={stats?.low_stock_count || 0}
-          overdueApprovals={stats?.overdue_approvals || 0}
-          declinedQuotes={stats?.declined_quotes || 0}
-          onDismiss={() => setIsAttentionDismissed(true)}
-        />
+      {/* Alerts Banner (managers only) — kept in DOM during exit animation via showBannerElement */}
+      {showBannerElement && (
+        <div
+          ref={alertsBannerRef}
+          className={isAttentionDismissing ? 'attention-banner-exit' : 'attention-banner-enter'}
+        >
+          <AlertsBanner
+            lowStockCount={stats?.low_stock_count || 0}
+            overdueApprovals={stats?.overdue_approvals || 0}
+            declinedQuotes={stats?.declined_quotes || 0}
+            onDismiss={handleAttentionDismiss}
+          />
+        </div>
       )}
 
       {/* Work Queue */}
-      <div
-        ref={workQueueRef}
-        className="flex flex-col gap-2.5 2xl:gap-2 min-h-0 flex-1"
-        style={workQueueMaxHeight ? { maxHeight: `${workQueueMaxHeight}px` } : undefined}
-      >
+      <div className="flex flex-col gap-2.5 2xl:gap-2 min-h-0 flex-1">
         <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-0 h-full">
           <div className="flex items-start justify-between gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 sm:items-center">
             <div className="flex min-w-0 items-center gap-2">
@@ -821,7 +787,7 @@ export default function DashboardHome() {
       </div>
 
       {isManager && (
-        <div ref={teamCapacityRef} className="flex-shrink-0 bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
+        <div className="flex-shrink-0 bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
           <div className="mb-2.5 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               <button
@@ -975,7 +941,7 @@ export default function DashboardHome() {
       )}
 
       {isManager && (
-        <div ref={revenueRef} className="flex-shrink-0 bg-white/5 rounded-xl p-3 2xl:p-2.5 border border-white/10">
+        <div className="flex-shrink-0 bg-white/5 rounded-xl p-3 2xl:p-2.5 border border-white/10">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2.5">
             <div className="flex items-center gap-2">
               <button

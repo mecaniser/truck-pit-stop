@@ -65,6 +65,7 @@ export default function DashboardLayout() {
     exact ? location.pathname === path : location.pathname.startsWith(path)
 
   const isOnSubPage = location.pathname !== '/dashboard'
+  const isDashboardHome = location.pathname === '/dashboard'
   
   const getCurrentPageLabel = () => {
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
@@ -194,7 +195,10 @@ export default function DashboardLayout() {
         </div>
       </nav>
 
-      <main className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col" style={{ minHeight: 'calc(100vh - 4rem)' }}>
+      <main
+        className={`px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col${isDashboardHome ? ' lg:h-[calc(100vh-4rem)] lg:overflow-hidden' : ''}`}
+        style={{ minHeight: 'calc(100vh - 4rem)' }}
+      >
         {/* Breadcrumb - only show on sub-pages */}
         {isOnSubPage && (
           <div className="mb-4 flex items-center gap-2 text-sm">

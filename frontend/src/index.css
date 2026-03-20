@@ -119,3 +119,34 @@ html {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Attention Required banner enter/exit animations */
+@keyframes attention-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes attention-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.attention-banner-enter {
+  animation: attention-enter 0.25s ease-out forwards;
+}
+
+.attention-banner-exit {
+  animation: attention-exit 0.2s ease-in forwards;
+}
