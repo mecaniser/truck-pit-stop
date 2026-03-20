@@ -1093,3 +1093,50 @@
 - Custom repair operations now behave as "unlearned" until someone enters real hours on the RO line; only then do they become reusable memory for matching vehicles.
 - Existing zero-hour memory rows no longer win search/apply/recalc decisions, so they stop poisoning the internal labor library without requiring an immediate data cleanup.
 - Residual risk: the UX still applies unknown custom operations at `0.00` hours first and expects staff to edit the line afterward; the next refinement should be a custom-operation hours prompt in the repair-order UI so teaching happens at apply time instead of as a second step.
+
+---
+
+# Frontend Mobile UX Shipping (2026-03-20)
+
+## Plan
+- [x] Inspect the staged and unstaged frontend diffs and define clean commit boundaries instead of pushing one mixed change set.
+- [x] Confirm how the shared select-component changes are consumed so they land with the right feature scope.
+- [x] Record the final commit scopes and push plan.
+- [x] Run targeted frontend verification for the combined shipping state.
+- [x] Commit each scope with structured messages and push to `origin/main`.
+
+## Progress Notes
+- [x] Confirmed the current worktree is almost fully staged, with one extra unstaged follow-up in `frontend/src/features/dashboard/DashboardHome.tsx`.
+- [x] The scoped-commit planner suggested one broad frontend refactor, but diff review shows three better scopes:
+  `messages` for the inbox/compose redesign plus shared customer select support,
+  `dashboard` for shell overflow management and mobile work-queue behavior,
+  `repair-orders` for the filter rail and price-builder input refinements.
+- [x] Confirmed the new `CustomerSelect` dark-mode and phone-capture props are currently consumed by `MessagesInboxPage`, while the repair-orders diff is limited to layout/scroll and price input behavior.
+- [x] Re-ran targeted verification for the combined shipping state:
+  `cd frontend && npm run build`
+  `git diff --check`
+- [x] Shipped the scoped commits in this order:
+  `fix(dashboard): tighten shell overflow and mobile cockpit`
+  `feat(messages): redesign inbox and outbound compose flow`
+  `fix(repair-orders): streamline filters and rate editing`
+  `docs(tasks): capture mobile frontend shipping notes`
+
+## Review
+- The frontend shipping set is now split by user-facing intent instead of one oversized checkpoint, which keeps dashboard shell work, inbox UX, and repair-order refinements independently reviewable.
+- Validation for the shipped state is a fresh frontend build plus a clean diff check, which is appropriate for this UI-only batch.
+
+---
+
+# Mobile KPI Hide (2026-03-20)
+
+## Plan
+- [x] Identify the dashboard KPI section and its current responsive wrapper.
+- [x] Hide the KPI section on mobile screens at the outer container level.
+- [ ] Verify the responsive behavior with build output and a browser check.
+
+## Progress Notes
+- [x] Confirmed the KPI section is the manager-only `Revenue KPIs` card at the bottom of `DashboardHome`.
+- [x] Updated the KPI wrapper to stay hidden below `lg`, which removes the entire section from mobile instead of only hiding inner content.
+
+## Review
+- Pending verification.

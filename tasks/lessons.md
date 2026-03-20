@@ -72,3 +72,6 @@
 - Correction: After moving inventory filters into the desktop toolbar, I left the `Search in:` label and filter pill heights inconsistent with the adjacent search and action controls.
 - Rule: When a user asks for control alignment in a dashboard toolbar, match the full control rail height and remove redundant labels if the grouped control is already self-explanatory.
 - Prevention: For toolbar refinements, compare the rendered heights of each adjacent control in the browser instead of relying on class-name intuition alone.
+- Correction: The user asked to hide the KPI section on mobile, so the responsive change needed to target the whole KPI card rather than only adjusting its internal layout.
+- Rule: When a section should disappear on a breakpoint, apply the responsive display class at the outer section wrapper so the entire footprint is removed.
+- Prevention: For breakpoint-specific hides, identify the section’s outermost container first and patch that node rather than scattering `hidden` classes inside the section.
