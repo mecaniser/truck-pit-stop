@@ -18,6 +18,7 @@ import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import PriceBuilderPanel from './PriceBuilderPanel'
+import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 
 interface NewCustomerForm {
   first_name: string
@@ -2799,19 +2800,31 @@ export default function RepairOrdersPage() {
                       {/* Mileage, PO, warranty/comeback row */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm border-t border-gray-200 pt-3">
                         <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Mileage In</p>
+                          <span className="inline-flex items-center gap-1 mb-0.5">
+                            <p className="text-xs text-gray-400 uppercase tracking-wide">Mileage In</p>
+                            <SectionInfoTooltip text="Odometer reading recorded when the vehicle was checked in. Used for service history tracking." />
+                          </span>
                           <p className="font-medium text-gray-800">{selectedOrder.mileage_in ?? '—'}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Mileage Out</p>
+                          <span className="inline-flex items-center gap-1 mb-0.5">
+                            <p className="text-xs text-gray-400 uppercase tracking-wide">Mileage Out</p>
+                            <SectionInfoTooltip text="Odometer reading at vehicle return. The difference from Mileage In shows how much was driven during the repair process." />
+                          </span>
                           <p className="font-medium text-gray-800">{selectedOrder.mileage_out ?? '—'}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">PO Number</p>
+                          <span className="inline-flex items-center gap-1 mb-0.5">
+                            <p className="text-xs text-gray-400 uppercase tracking-wide">PO Number</p>
+                            <SectionInfoTooltip text="Purchase Order number provided by fleet or corporate customers for billing purposes. Appears on the invoice for their accounting records." />
+                          </span>
                           <p className="font-medium text-gray-800">{selectedOrder.po_number || '—'}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Type</p>
+                          <span className="inline-flex items-center gap-1 mb-0.5">
+                            <p className="text-xs text-gray-400 uppercase tracking-wide">Type</p>
+                            <SectionInfoTooltip text="Standard: normal billable repair. Warranty: a repeat repair covered under a prior job's guarantee — typically not charged to the customer. Comeback: vehicle returned for the same issue, linked to the original order." tooltipClassName="w-72 -translate-x-[85%]" />
+                          </span>
                           {selectedOrder.is_warranty_repair ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
                               Warranty
@@ -3274,13 +3287,19 @@ export default function RepairOrdersPage() {
                     onClick={() => setShowAddRecService((prev) => !prev)}
                     className="w-full flex items-center justify-between text-left bg-gray-50 p-3 hover:bg-gray-100 transition-colors"
                   >
-                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
-                      Recommended Services
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+                        Recommended Services
+                      </span>
                       {recommendedServices && recommendedServices.filter(s => !s.is_resolved).length > 0 && (
-                        <span className="ml-2 px-1.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 font-semibold normal-case">
+                        <span className="px-1.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 font-semibold">
                           {recommendedServices.filter(s => !s.is_resolved).length}
                         </span>
                       )}
+                      <SectionInfoTooltip
+                        text="Additional work noticed during the repair that the customer chose to defer. Use Urgent / Soon / Monitor to prioritize. Mark as Resolved when completed in a future visit — this builds a service history for the vehicle."
+                        tooltipClassName="w-72 -translate-x-[80%]"
+                      />
                     </span>
                     <Plus className="w-4 h-4 text-gray-400" />
                   </button>

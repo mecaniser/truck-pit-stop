@@ -5,6 +5,7 @@ import { RefreshCcw, Search, Trash2 } from 'lucide-react'
 
 import api from '@/lib/api'
 import BaseSelect from '@/components/BaseSelect'
+import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import { PriceBuildSummary, RepairOperationCandidate, RepairOrderStatus, Service } from '@/types'
 
 type Props = {
@@ -198,7 +199,13 @@ export default function PriceBuilderPanel({
   return (
     <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Price Builder</h3>
+        <span className="inline-flex items-center gap-1.5">
+          <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Price Builder</h3>
+          <SectionInfoTooltip
+            text="Builds the billable price for this repair order. Add diagnostic hours, repair operations, or sublet work. Lock pricing once you're ready to quote the customer — no changes allowed after that."
+            tooltipClassName="w-72"
+          />
+        </span>
         <button
           type="button"
           onClick={() => recalc.mutate()}
@@ -237,7 +244,10 @@ export default function PriceBuilderPanel({
       )}
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Diagnostics / Inspection (Hourly)</p>
+        <span className="inline-flex items-center gap-1">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Diagnostics / Inspection (Hourly)</p>
+          <SectionInfoTooltip text="Select a diagnostic or inspection service and enter the number of hours. Billed at your shop's standard hourly rate — not a flat fee. Use this for initial check-ups, not specific repairs." />
+        </span>
         <div className="flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <BaseSelect
@@ -269,7 +279,10 @@ export default function PriceBuilderPanel({
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Repair Operation</p>
+        <span className="inline-flex items-center gap-1">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Repair Operation</p>
+          <SectionInfoTooltip text="Search your repair operation library for standard jobs (e.g. brake pad replacement, EGR cleaning, tire rotation). Estimated hours come from historical data and auto-recalculate as rates change. Adjust hours or rate manually at any time." tooltipClassName="w-72" />
+        </span>
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -313,7 +326,10 @@ export default function PriceBuilderPanel({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Sublet Work</p>
+          <span className="inline-flex items-center gap-1">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Sublet Work</p>
+            <SectionInfoTooltip text="Work outsourced to an external vendor or subcontractor — e.g. frame alignment, glass replacement, or specialty welding. Record the vendor's invoice cost and the amount you'll charge the customer. The markup is your shop's revenue on the job." tooltipClassName="w-72" />
+          </span>
           {canMutate && (
             <button
               type="button"
@@ -385,7 +401,10 @@ export default function PriceBuilderPanel({
       </div>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Labor/Service Lines</p>
+        <span className="inline-flex items-center gap-1">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Labor/Service Lines</p>
+          <SectionInfoTooltip text="All billable labor entries on this order. Each line is Hours × Rate = Total. Edit hours or rate directly — the total updates live as you type. Changes save when you click away. Delete a line with the trash icon." tooltipClassName="w-72" />
+        </span>
         {isLoading ? (
           <p className="text-sm text-gray-500">Loading…</p>
         ) : summary?.lines?.length ? (
