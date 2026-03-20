@@ -75,3 +75,6 @@
 - Correction: The user asked to hide the KPI section on mobile, so the responsive change needed to target the whole KPI card rather than only adjusting its internal layout.
 - Rule: When a section should disappear on a breakpoint, apply the responsive display class at the outer section wrapper so the entire footprint is removed.
 - Prevention: For breakpoint-specific hides, identify the section’s outermost container first and patch that node rather than scattering `hidden` classes inside the section.
+- Correction: The user clarified that on mobile the dashboard should preserve the same priority model as desktop: Work Queue owns the remaining viewport space, while Team Capacity stays anchored below it and transient sections only borrow from the queue’s space.
+- Rule: When a dashboard section is declared the priority viewport owner, make the page shell explicitly allocate remaining height to that section rather than relying on normal document flow.
+- Prevention: For mobile dashboard changes, identify the single viewport-priority section in `tasks/todo.md` before patching, then verify in-browser that dismissing top sections increases that section’s measured height without moving the bottom sibling.

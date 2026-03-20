@@ -283,9 +283,6 @@ export default function DashboardHome() {
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isExpandedFont = fontSize === 'comfortable' || fontSize === 'large'
 
-  // Per-font-size expanded lane height on mobile (px). Desktop uses CSS grid stretch (no inline style).
-  const MOBILE_LANE_EXPANDED_H = { compact: 240, default: 260, comfortable: 280, large: 300 } as const
-
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
   
@@ -389,16 +386,20 @@ export default function DashboardHome() {
   const teamCapacityGridHeightClass = isExpandedFont
     ? 'md:max-h-60 lg:max-h-40 2xl:max-h-44'
     : 'md:max-h-56 lg:max-h-36 2xl:max-h-40'
-  // Applied to the content wrapper inside each lane (not the outer card).
-  // height: 0 + overflow: hidden = perfectly clean collapse with no content bleed.
-  const mobileContentStyle = (idx: 0 | 1 | 2) =>
-    !isDesktop
-      ? {
-          height: activeMobileLane === idx ? MOBILE_LANE_EXPANDED_H[fontSize] : 0,
-          overflow: 'hidden' as const,
-          transition: 'height 300ms ease-in-out',
-        }
-      : undefined
+  const getLaneContainerClass = (idx: 0 | 1 | 2) =>
+    `bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col ${
+      isDesktop
+        ? 'min-h-0'
+        : activeMobileLane === idx
+          ? 'flex-1 min-h-0'
+          : 'flex-none'
+    }`
+  const getLaneBodyClass = (idx: 0 | 1 | 2) =>
+    isDesktop
+      ? 'flex-1 min-h-0'
+      : activeMobileLane === idx
+        ? 'flex-1 min-h-0 overflow-hidden'
+        : 'h-0 overflow-hidden'
   const revenueCards = [
     { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400' },
     { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300' },
@@ -498,7 +499,7 @@ export default function DashboardHome() {
 
   return (
     <div
-      className={`flex flex-col lg:flex-1 lg:min-h-0 lg:overflow-hidden ${
+      className={`flex flex-1 min-h-0 flex-col overflow-hidden ${
         isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'
       }`}
     >
@@ -688,9 +689,10 @@ export default function DashboardHome() {
         </div>
       )}
 
-      {/* Work Queue */}
-      <div className="flex flex-col gap-2.5 2xl:gap-2 lg:min-h-0 lg:flex-1">
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col lg:min-h-0 lg:h-full">
+      <div className={`flex flex-1 min-h-0 flex-col ${isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'}`}>
+        {/* Work Queue */}
+        <div className="flex flex-1 min-h-0 flex-col gap-2.5 2xl:gap-2">
+          <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-0 h-full">
           <div className="flex items-start justify-between gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 sm:items-center">
             <div className="flex min-w-0 items-center gap-2">
               <div className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold text-gray-300 uppercase tracking-[0.14em]">
@@ -713,9 +715,9 @@ export default function DashboardHome() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 2xl:gap-2.5 p-3 2xl:p-2.5 lg:flex-1 lg:min-h-0">
+          <div className="flex flex-1 min-h-0 flex-col gap-3 p-3 2xl:gap-2.5 2xl:p-2.5 lg:grid lg:grid-cols-3">
               {/* Lane 1: Needs Action */}
-              <div className="bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col">
+              <div className={getLaneContainerClass(0)}>
                 <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0 cursor-pointer lg:cursor-default" onClick={() => setActiveMobileLane(0)}>
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-400" />
@@ -726,7 +728,7 @@ export default function DashboardHome() {
                     {stats?.orders_needing_action?.length || 0}
                   </span>
                 </div>
-                <div className="lg:flex-1 lg:min-h-0" style={mobileContentStyle(0)}>
+                <div className={getLaneBodyClass(0)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
                     {!stats?.orders_needing_action?.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">All clear</p>
@@ -745,7 +747,7 @@ export default function DashboardHome() {
               </div>
 
               {/* Lane 2: On the Floor */}
-              <div className="bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col">
+              <div className={getLaneContainerClass(1)}>
                 <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0 cursor-pointer lg:cursor-default" onClick={() => setActiveMobileLane(1)}>
                   <div className="flex items-center gap-2">
                     <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
@@ -756,7 +758,7 @@ export default function DashboardHome() {
                     {stats?.orders_on_floor?.length || 0}
                   </span>
                 </div>
-                <div className="lg:flex-1 lg:min-h-0" style={mobileContentStyle(1)}>
+                <div className={getLaneBodyClass(1)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
                     {!stats?.orders_on_floor?.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No active work</p>
@@ -775,7 +777,7 @@ export default function DashboardHome() {
               </div>
 
               {/* Lane 3: Ready to Close */}
-              <div className="bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col">
+              <div className={getLaneContainerClass(2)}>
                 <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0 cursor-pointer lg:cursor-default" onClick={() => setActiveMobileLane(2)}>
                   <div className="flex items-center gap-2">
                     <DollarSign className="w-4 h-4 text-emerald-400" />
@@ -786,7 +788,7 @@ export default function DashboardHome() {
                     {stats?.orders_ready_to_close?.length || 0}
                   </span>
                 </div>
-                <div className="lg:flex-1 lg:min-h-0" style={mobileContentStyle(2)}>
+                <div className={getLaneBodyClass(2)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
                     {!stats?.orders_ready_to_close?.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">Nothing pending</p>
@@ -804,11 +806,11 @@ export default function DashboardHome() {
                 </div>
               </div>
             </div>
+          </div>
         </div>
-      </div>
 
-      {isManager && (
-        <div className="flex-shrink-0 bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
+        {isManager && (
+          <div className="flex-shrink-0 bg-white/5 rounded-xl p-3.5 2xl:p-3 border border-white/10">
           <div className="mb-2.5 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               {/* Mobile: collapse toggle */}
@@ -972,7 +974,8 @@ export default function DashboardHome() {
           )}
           </div>
         </div>
-      )}
+        )}
+      </div>
 
       {isManager && (
         <div className="hidden flex-shrink-0 rounded-xl border border-white/10 bg-white/5 p-3 lg:block 2xl:p-2.5">

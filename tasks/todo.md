@@ -1144,3 +1144,42 @@
 ## Review
 - The KPI section is now absent from mobile screens because the entire outer card is hidden below `lg`.
 - Desktop behavior is preserved: the same `Revenue KPIs` card still renders once the viewport reaches desktop width.
+
+---
+
+# Mobile Work Queue Priority Layout (2026-03-20)
+
+## Plan
+- [x] Inspect the current mobile dashboard shell and identify why Work Queue does not own the remaining viewport space above Team Capacity.
+- [x] Refactor the mobile dashboard layout so transient top sections stay above a remaining-space frame, with Work Queue as `flex-1` and Team Capacity anchored below it.
+- [x] Verify on mobile that dismissing `Attention Required` expands Work Queue while Team Capacity stays pinned to the same bottom slot.
+
+## Progress Notes
+- [x] Confirmed the mobile dashboard still flowed as content: `DashboardHome` was not a viewport-bounded flex item on mobile, `Work Queue` only had `flex-1` at `lg`, and the active mobile lane used fixed pixel heights instead of filling the remaining queue area.
+- [x] Updated `DashboardHome` to be a full flex child of the dashboard viewport on mobile, wrapped `Work Queue` + `Team Capacity` in a `flex-1 min-h-0` frame, and switched mobile lane sizing from fixed heights to active-lane flex expansion.
+- [x] Verified on a mocked mobile dashboard in Playwright (`390x844`) that dismissing `Attention Required` increased `Work Queue` height from `377.25px` to `516.25px` while `Team Capacity` stayed pinned at the same bottom position (`bottom: 775px` before and after).
+- [x] Confirmed the mobile dashboard shell itself did not start page-scrolling after the change: the route scroller stayed `clientHeight=767` and `scrollHeight=767` before and after dismissing the banner.
+
+## Review
+- `DashboardHome` now treats mobile the same way as desktop in terms of section priority: `Work Queue` owns the remaining viewport space, and `Team Capacity` remains the bottom sibling inside that shared frame.
+- Dismissing `Attention Required` no longer leaves dead space on mobile; the queue immediately reclaims the banner footprint while keeping `Team Capacity` anchored below it.
+- Verification completed with `npm run build` in `frontend/` plus Playwright mobile layout checks against mocked dashboard data.
+
+---
+
+# Dashboard Profile Trigger Refresh (2026-03-20)
+
+## Plan
+- [x] Inspect the shared dashboard header to locate the outdated profile icon treatment and compare it against the current application UI language.
+- [x] Replace the old animated circular profile trigger with a cleaner profile control that matches the dashboard and Settings styling.
+- [x] Verify the updated profile trigger in-browser and with a frontend build.
+
+## Progress Notes
+- [x] Confirmed the stale treatment lives in `frontend/src/components/layout/DashboardLayout.tsx`: the desktop settings trigger still renders a custom animated circular SVG ring that no longer matches the card-based industrial styling used elsewhere in the app.
+- [x] Replaced the ringed icon with a compact rounded profile tile that uses the signed-in user’s monogram, a subtle accent wash, and a small live-status dot derived from the same visual language as the Settings avatar.
+- [x] Verified on the live desktop dashboard in Playwright that the header now exposes `Open profile settings for Alexandru Popescu` with `AP` rendered inside a rounded tile, and that the trigger contains no legacy SVG ring markup (`hasSvg: false`, `pathCount: 0`).
+
+## Review
+- The outdated animated circle is gone from the shared dashboard header; the settings trigger now reads like a native part of the app instead of a standalone ornament.
+- The new profile control preserves the existing nav footprint while aligning with the card-based industrial styling used in Settings and the rest of the dashboard.
+- Verification completed with `npm run build` in `frontend/` plus a Playwright desktop inspection against the live dashboard.

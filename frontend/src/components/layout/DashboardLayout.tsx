@@ -81,6 +81,20 @@ export default function DashboardLayout() {
   const dashboardAriaLabel = isSuperAdmin
     ? 'Diesel Bridge Network dashboard'
     : `${dashboardLogoAlt} dashboard`
+  const profileNameParts = [user?.first_name, user?.last_name].filter(
+    (part): part is string => Boolean(part?.trim()),
+  )
+  const profileDisplayName = profileNameParts.join(' ').trim() || user?.email || 'Profile Settings'
+  const profileMonogram = (
+    profileNameParts.map((part) => part.charAt(0)).join('') ||
+    user?.email?.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) ||
+    'ME'
+  ).slice(0, 2).toUpperCase()
+  const profileTileBorder = isSuperAdmin ? 'rgba(212, 168, 75, 0.45)' : `${accentHex}55`
+  const profileTileGlow = isSuperAdmin ? 'rgba(184, 134, 11, 0.22)' : `${accentHex}26`
+  const profileTileInset = isSuperAdmin
+    ? 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(184,134,11,0.08))'
+    : `linear-gradient(180deg, ${accentHex}29, rgba(255,255,255,0.04))`
 
   // Garage users get BlueNoir theme
   const isGarageUser = !isSuperAdmin
@@ -145,48 +159,36 @@ export default function DashboardLayout() {
               ))}
               <Link
                 to="/dashboard/settings"
-                className={`relative p-2.5 rounded-full transition-colors ${
+                aria-label={`Open profile settings for ${profileDisplayName}`}
+                className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border bg-white/[0.03] transition-all ${
                   location.pathname === '/dashboard/settings'
                     ? isSuperAdmin
-                      ? 'bg-gold-500/20 text-gold-400'
-                      : 'bg-white/10'
+                      ? 'border-gold-500/40 bg-gold-500/10 text-gold-300'
+                      : 'bg-white/[0.08] text-white'
                     : isSuperAdmin
-                      ? 'text-gray-400 hover:bg-gold-500/10 hover:text-gold-400'
-                      : 'text-gray-400 hover:bg-white/10 hover:text-white'
+                      ? 'border-white/10 text-gray-400 hover:border-gold-500/30 hover:bg-gold-500/10 hover:text-gold-300'
+                      : 'border-white/10 text-gray-400 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
                 }`}
-                style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
-                title={`${user?.first_name} ${user?.last_name}`}
+                style={{
+                  color: !isSuperAdmin && location.pathname === '/dashboard/settings' ? accentHex : undefined,
+                  borderColor: !isSuperAdmin && location.pathname === '/dashboard/settings' ? profileTileBorder : undefined,
+                  boxShadow: `0 10px 24px ${profileTileGlow}`,
+                }}
+                title={profileDisplayName}
               >
-                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
-                  <style>{`
-                    @keyframes ps1 { 0%, 100% { stroke: ${isSuperAdmin ? '#B8860B' : accentHex} } 50% { stroke: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } }
-                    @keyframes ps2 { 0%, 100% { stroke: ${isSuperAdmin ? '#D4A84B' : '#ffffff'} } 50% { stroke: ${isSuperAdmin ? '#B8860B' : accentHex} } }
-                    .ps1 { animation: ps1 2.5s ease-in-out infinite }
-                    .ps2 { animation: ps2 2.5s ease-in-out infinite }
-                  `}</style>
-                  {[...Array(8)].map((_, i) => {
-                    const startAngle = i * 45 - 90
-                    const endAngle = startAngle + 45
-                    const r = 17
-                    const x1 = 20 + r * Math.cos(startAngle * Math.PI / 180)
-                    const y1 = 20 + r * Math.sin(startAngle * Math.PI / 180)
-                    const x2 = 20 + r * Math.cos(endAngle * Math.PI / 180)
-                    const y2 = 20 + r * Math.sin(endAngle * Math.PI / 180)
-                    return (
-                      <path
-                        key={i}
-                        d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
-                        fill="none"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        className={i % 2 === 0 ? 'ps1' : 'ps2'}
-                      />
-                    )
-                  })}
-                </svg>
-                <svg className="w-5 h-5 relative" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <div
+                  className="absolute inset-[3px] rounded-[14px] border border-white/5"
+                  style={{ background: profileTileInset }}
+                />
+                <div className="relative flex h-full w-full items-center justify-center rounded-[14px]">
+                  <span className="text-[11px] font-semibold tracking-[0.18em]">
+                    {profileMonogram}
+                  </span>
+                </div>
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 shadow-[0_0_10px_rgba(52,211,153,0.6)]"
+                  style={{ backgroundColor: '#34d399', borderColor: isSuperAdmin ? '#0a0b0d' : '#10151f' }}
+                />
               </Link>
             </div>
 
