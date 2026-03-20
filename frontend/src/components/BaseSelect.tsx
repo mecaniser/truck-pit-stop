@@ -18,6 +18,7 @@ interface BaseSelectProps {
   addNewLabel?: string
   onAddNew?: () => void
   disabled?: boolean
+  variant?: 'light' | 'dark'
 }
 
 export default function BaseSelect({
@@ -30,7 +31,9 @@ export default function BaseSelect({
   addNewLabel = '+ Add new',
   onAddNew,
   disabled = false,
+  variant = 'light',
 }: BaseSelectProps) {
+  const dark = variant === 'dark'
   const { accentColors } = useTheme()
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -93,13 +96,17 @@ export default function BaseSelect({
           type="button"
           onClick={() => !disabled && setIsOpen(true)}
           disabled={disabled}
-          className={`w-full h-[42px] px-4 border border-gray-300 rounded-lg bg-white text-left text-gray-900 focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
-            disabled ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
+          className={`w-full h-[42px] px-4 border rounded-lg text-left focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
+            dark
+              ? 'border-white/20 bg-white/10 text-white'
+              : 'border-gray-300 bg-white text-gray-900'
+          } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
           style={{ ['--tw-ring-color' as string]: accentColors[500] }}
         >
-          <span className="block truncate">{selected ? selected.label : placeholder}</span>
-          <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+          <span className={`block truncate ${!selected && (dark ? 'text-gray-500' : 'text-gray-400')}`}>
+            {selected ? selected.label : placeholder}
+          </span>
+          <ChevronDown className={`w-4 h-4 shrink-0 ${dark ? 'text-gray-400' : 'text-gray-400'}`} />
         </button>
       ) : (
         /* Open state: show search input */
@@ -110,14 +117,24 @@ export default function BaseSelect({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={selected ? selected.label : placeholder}
-          className="w-full h-[42px] px-4 border rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 transition-colors"
+          className={`w-full h-[42px] px-4 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+            dark
+              ? 'border-white/40 bg-white/10 text-white placeholder:text-gray-500'
+              : 'bg-white text-gray-900'
+          }`}
           style={{ borderColor: accentColors[500], ['--tw-ring-color' as string]: accentColors[500] }}
         />
       )}
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg bg-white py-1 shadow-xl ring-1 ring-black/10">
+        <div
+          className={`absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg py-1 shadow-xl ${
+            dark
+              ? 'bg-gray-900 border border-white/20'
+              : 'bg-white ring-1 ring-black/10'
+          }`}
+        >
           {filtered.map((opt) => (
             <button
               key={opt.value}
@@ -128,13 +145,21 @@ export default function BaseSelect({
                 handleSelect(opt.value)
               }}
               className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                opt.value === value ? 'text-gray-900' : 'text-gray-900 hover:bg-gray-50'
+                dark
+                  ? opt.value === value
+                    ? 'text-white'
+                    : 'text-gray-200 hover:bg-white/10'
+                  : opt.value === value
+                    ? 'text-gray-900'
+                    : 'text-gray-900 hover:bg-gray-50'
               }`}
-              style={opt.value === value ? { backgroundColor: `${accentColors[500]}1a`, color: accentColors[600] } : undefined}
+              style={opt.value === value ? { backgroundColor: `${accentColors[500]}1a`, color: accentColors[400] } : undefined}
             >
               <div className="flex flex-col">
                 <span className="font-medium">{opt.label}</span>
-                {opt.subLabel && <span className="text-xs text-gray-500">{opt.subLabel}</span>}
+                {opt.subLabel && (
+                  <span className={`text-xs ${dark ? 'text-gray-400' : 'text-gray-500'}`}>{opt.subLabel}</span>
+                )}
               </div>
             </button>
           ))}
@@ -155,7 +180,7 @@ export default function BaseSelect({
           )}
 
           {filtered.length === 0 && !allowAddNew && (
-            <div className="px-4 py-2 text-sm text-gray-500">No results</div>
+            <div className={`px-4 py-2 text-sm ${dark ? 'text-gray-500' : 'text-gray-500'}`}>No results</div>
           )}
         </div>
       )}
