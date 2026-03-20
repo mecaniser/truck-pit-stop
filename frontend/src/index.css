@@ -38,6 +38,24 @@ html {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
+html::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+html::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
 *::-webkit-scrollbar {
   width: var(--scrollbar-size);
   height: var(--scrollbar-size);

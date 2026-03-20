@@ -65,7 +65,6 @@ export default function DashboardLayout() {
     exact ? location.pathname === path : location.pathname.startsWith(path)
 
   const isOnSubPage = location.pathname !== '/dashboard'
-  const isDashboardHome = location.pathname === '/dashboard'
   
   const getCurrentPageLabel = () => {
     if (location.pathname === '/dashboard/settings') return 'Profile Settings'
@@ -87,7 +86,7 @@ export default function DashboardLayout() {
   const isGarageUser = !isSuperAdmin
 
   return (
-    <div className={`min-h-screen ${isGarageUser ? 'bg-blueNoir-900' : ''}`}>
+    <div className={`h-screen overflow-hidden ${isGarageUser ? 'bg-blueNoir-900' : ''}`}>
       <nav className={`sticky top-0 z-50 ${
         isSuperAdmin 
           ? 'bg-noir-900/95 backdrop-blur-xl border-b border-gold-500/20 shadow-lg shadow-gold-500/5' 
@@ -196,14 +195,13 @@ export default function DashboardLayout() {
       </nav>
 
       <main
-        className={`px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col${isDashboardHome ? ' lg:h-[calc(100vh-4rem)] lg:overflow-hidden' : ''}`}
-        style={{ minHeight: 'calc(100vh - 4rem)' }}
+        className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 flex flex-col h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-hidden"
       >
         {/* Breadcrumb - only show on sub-pages */}
         {isOnSubPage && (
-          <div className="mb-4 flex items-center gap-2 text-sm">
-            <Link 
-              to="/dashboard" 
+          <div className="mb-4 flex-shrink-0 flex items-center gap-2 text-sm">
+            <Link
+              to="/dashboard"
               className="transition-colors flex items-center gap-1 text-gray-400 hover:text-white"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,7 +210,7 @@ export default function DashboardLayout() {
               Dashboard
             </Link>
             <span className="text-gray-600">/</span>
-            <span 
+            <span
               className="font-medium"
               style={{ color: isSuperAdmin ? '#D4A84B' : accentHex }}
             >
@@ -220,31 +218,35 @@ export default function DashboardLayout() {
             </span>
           </div>
         )}
-        <Routes>
-          {/* Platform Admin Routes (SUPER_ADMIN only) */}
-          {user?.role === 'super_admin' ? (
-            <>
-              <Route path="garages" element={<GaragesPage />} />
-              <Route path="garages/:garageId/analytics" element={<GarageAnalyticsPage />} />
-              <Route path="pending-enrollments" element={<PendingEnrollmentsPage />} />
-              <Route path="analytics" element={<PlatformAnalyticsPage />} />
-              <Route path="settings" element={<UnifiedSettingsPage />} />
-              <Route path="" element={<PlatformDashboard />} />
-            </>
-          ) : (
-            /* Garage Staff Routes */
-            <>
-              <Route path="customers" element={<CustomersPage />} />
-              <Route path="repair-orders" element={<RepairOrdersPage />} />
-              <Route path="messages" element={<MessagesInboxPage />} />
-              <Route path="mechanics" element={<MechanicsBoardPage />} />
-              <Route path="mechanics/:mechanicId" element={<MechanicBoardDetailPage />} />
-              <Route path="garage/*" element={<MyGaragePage />} />
-              <Route path="settings" element={<UnifiedSettingsPage />} />
-              <Route path="" element={<DashboardHome />} />
-            </>
-          )}
-        </Routes>
+        <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-dark">
+          <Routes>
+            {/* Platform Admin Routes (SUPER_ADMIN only) */}
+            {user?.role === 'super_admin' ? (
+              <>
+                <Route path="garages" element={<GaragesPage />} />
+                <Route path="garages/:garageId/analytics" element={<GarageAnalyticsPage />} />
+                <Route path="pending-enrollments" element={<PendingEnrollmentsPage />} />
+                <Route path="analytics" element={<PlatformAnalyticsPage />} />
+                <Route path="settings" element={<UnifiedSettingsPage />} />
+                <Route path="" element={<PlatformDashboard />} />
+              </>
+            ) : (
+              /* Garage Staff Routes */
+              <>
+                <Route path="customers" element={<CustomersPage />} />
+                <Route path="repair-orders" element={<RepairOrdersPage />} />
+                <Route path="messages" element={<MessagesInboxPage />} />
+                <Route path="mechanics" element={<MechanicsBoardPage />} />
+                <Route path="mechanics/:mechanicId" element={<MechanicBoardDetailPage />} />
+                <Route path="garage/*" element={<MyGaragePage />} />
+                <Route path="settings" element={<UnifiedSettingsPage />} />
+                <Route path="" element={<DashboardHome />} />
+              </>
+            )}
+          </Routes>
+          {/* Spacer so content clears the fixed bottom nav on mobile */}
+          <div className="h-16 md:hidden flex-shrink-0" />
+        </div>
       </main>
 
       {/* Mobile Bottom Navigation */}
@@ -295,8 +297,6 @@ export default function DashboardLayout() {
         </div>
       </div>
 
-      {/* Spacer for bottom nav on mobile */}
-      <div className="h-16 md:hidden" />
     </div>
   )
 }
