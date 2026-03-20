@@ -47,6 +47,7 @@ export default function InventoryPage() {
   })
   const [manageForm, setManageForm] = useState({
     stock_quantity: '',
+    on_order_quantity: '',
     reorder_level: '',
     cost: '',
     selling_price: '',
@@ -155,6 +156,7 @@ export default function InventoryPage() {
     if (selectedItem) {
       setManageForm({
         stock_quantity: String(selectedItem.stock_quantity ?? ''),
+        on_order_quantity: String(selectedItem.on_order_quantity ?? ''),
         reorder_level: String(selectedItem.reorder_level ?? ''),
         cost: selectedItem.cost ? String(selectedItem.cost) : '',
         selling_price: selectedItem.selling_price ? String(selectedItem.selling_price) : '',
@@ -198,7 +200,7 @@ export default function InventoryPage() {
       if (!selectedItem) return
       const payload: Record<string, any> = {}
 
-      const numericFields: Array<keyof typeof manageForm> = ['stock_quantity', 'reorder_level', 'cost', 'selling_price']
+      const numericFields: Array<keyof typeof manageForm> = ['stock_quantity', 'on_order_quantity', 'reorder_level', 'cost', 'selling_price']
       numericFields.forEach((field) => {
         const value = manageForm[field]
         if (value !== '') {
@@ -590,6 +592,12 @@ export default function InventoryPage() {
                   <span className="text-gray-400">Stock</span>
                   <span className="font-semibold text-white">{item.stock_quantity}</span>
                 </div>
+                {item.on_order_quantity > 0 && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400">On Order</span>
+                    <span className="font-semibold text-blue-300">{item.on_order_quantity}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1">
                   <span className="text-gray-400">Reorder</span>
                   <span className="font-semibold text-white">{item.reorder_level}</span>
@@ -710,6 +718,10 @@ export default function InventoryPage() {
                         <p className="font-semibold">{item.stock_quantity}</p>
                       </div>
                       <div>
+                        <p className="text-gray-400 text-xs">On order</p>
+                        <p className={`font-semibold ${item.on_order_quantity > 0 ? 'text-blue-300' : ''}`}>{item.on_order_quantity}</p>
+                      </div>
+                      <div>
                         <p className="text-gray-400 text-xs">Reorder</p>
                         <p className="font-semibold">{item.reorder_level}</p>
                       </div>
@@ -759,6 +771,7 @@ export default function InventoryPage() {
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Stock</th>
+                  <th className="px-4 py-3">On Order</th>
                   <th className="px-4 py-3">Reorder</th>
                   <th className="px-4 py-3">Cost</th>
                   <th className="px-4 py-3">Price</th>
@@ -784,6 +797,7 @@ export default function InventoryPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-gray-200">{item.stock_quantity}</td>
+                      <td className={`px-4 py-3 ${item.on_order_quantity > 0 ? 'text-blue-300 font-semibold' : 'text-gray-200'}`}>{item.on_order_quantity}</td>
                       <td className="px-4 py-3 text-gray-200">{item.reorder_level}</td>
                       <td className="px-4 py-3 text-gray-200">${item.cost}</td>
                       <td className="px-4 py-3 text-gray-200">${item.selling_price}</td>
@@ -842,6 +856,15 @@ export default function InventoryPage() {
               type="number"
               value={manageForm.stock_quantity}
               onChange={(e) => handleManageChange('stock_quantity', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>On Order</span>
+            <input
+              type="number"
+              value={manageForm.on_order_quantity}
+              onChange={(e) => handleManageChange('on_order_quantity', e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
           </label>

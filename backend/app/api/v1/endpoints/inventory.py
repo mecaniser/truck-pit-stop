@@ -22,6 +22,7 @@ class InventoryResponse(BaseModel):
     description: Optional[str]
     category: Optional[str]
     stock_quantity: int
+    on_order_quantity: int
     reorder_level: int
     cost: Decimal
     selling_price: Decimal
@@ -40,6 +41,7 @@ class InventoryCreate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     stock_quantity: int = 0
+    on_order_quantity: int = 0
     reorder_level: int = 0
     cost: Decimal
     selling_price: Decimal
@@ -53,6 +55,7 @@ class InventoryUpdate(BaseModel):
     description: Optional[str] = None
     category: Optional[str] = None
     stock_quantity: Optional[int] = None
+    on_order_quantity: Optional[int] = None
     reorder_level: Optional[int] = None
     cost: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
@@ -113,6 +116,7 @@ async def list_inventory(
             description=item.description,
             category=item.category,
             stock_quantity=item.stock_quantity,
+            on_order_quantity=item.on_order_quantity,
             reorder_level=item.reorder_level,
             cost=item.cost,
             selling_price=item.selling_price,

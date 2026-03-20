@@ -214,11 +214,13 @@ export interface Labor {
   total_cost: string
   mechanic_id: string | null
   service_code: string | null
-  line_type: 'flat_service' | 'repair_operation' | 'manual'
+  line_type: 'flat_service' | 'repair_operation' | 'manual' | 'sublet'
   provider: string | null
   provider_operation_id: string | null
   auto_recalc_enabled: boolean
   source_service_id: string | null
+  vendor_name: string | null
+  vendor_cost: string | null
   created_at: string
 }
 
@@ -252,6 +254,11 @@ export interface RepairOrder {
   work_completed_at?: string | null
   pricing_locked_at?: string | null
   pricing_lock_reason?: string | null
+  mileage_in?: number | null
+  mileage_out?: number | null
+  po_number?: string | null
+  parent_repair_order_id?: string | null
+  is_warranty_repair?: boolean
 }
 
 export interface RepairOrderDetail extends RepairOrder {
@@ -319,6 +326,7 @@ export interface InventoryItem {
   description: string | null
   category: string | null
   stock_quantity: number
+  on_order_quantity: number
   reorder_level: number
   cost: string
   selling_price: string
@@ -326,6 +334,21 @@ export interface InventoryItem {
   supplier_contact: string | null
   created_at: string
   updated_at: string
+}
+
+export type RecommendedServicePriority = 'urgent' | 'soon' | 'monitor'
+
+export interface RecommendedService {
+  id: string
+  repair_order_id: string
+  tenant_id: string
+  description: string
+  estimated_cost: string | null
+  priority: RecommendedServicePriority
+  notes: string | null
+  is_resolved: boolean
+  resolved_by_repair_order_id: string | null
+  created_at: string
 }
 
 export interface ServiceCategory {

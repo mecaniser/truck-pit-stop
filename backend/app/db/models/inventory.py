@@ -17,6 +17,7 @@ class Inventory(BaseModel):
     category = Column(String(100), nullable=True)
     
     stock_quantity = Column(Integer, default=0, nullable=False)
+    on_order_quantity = Column(Integer, default=0, nullable=False)
     reorder_level = Column(Integer, default=0, nullable=False)
     cost = Column(Numeric(10, 2), nullable=False)
     selling_price = Column(Numeric(10, 2), nullable=False)

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Enum as SQLEnum
+from sqlalchemy import Column, String, Numeric, ForeignKey, Text, DateTime, Integer, Boolean, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -44,6 +44,9 @@ class RepairOrder(BaseModel):
     description = Column(Text, nullable=True)
     customer_notes = Column(Text, nullable=True)
     internal_notes = Column(Text, nullable=True)
+    po_number = Column(String(100), nullable=True)
+    mileage_in = Column(Integer, nullable=True)
+    mileage_out = Column(Integer, nullable=True)
     
     assigned_mechanic_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     assigned_mechanic = relationship("User", foreign_keys=[assigned_mechanic_id])
@@ -70,11 +73,20 @@ class RepairOrder(BaseModel):
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     pricing_locked_at = Column(DateTime(timezone=True), nullable=True)
     pricing_lock_reason = Column(String(64), nullable=True)
-    
+
+    # Comeback / warranty tracking
+    parent_repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=True)
+    is_warranty_repair = Column(Boolean, nullable=False, default=False)
+
     # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)
     invoice = relationship("Invoice", back_populates="repair_order", uselist=False)
     
+    parent_repair_order = relationship("RepairOrder", remote_side="RepairOrder.id", foreign_keys=[parent_repair_order_id])
+
     parts_usage = relationship("PartsUsage", back_populates="repair_order", cascade="all, delete-orphan")
     labor_items = relationship("Labor", back_populates="repair_order", cascade="all, delete-orphan")
+    recommended_services = relationship("RecommendedService", back_populates="repair_order",
+                                        foreign_keys="RecommendedService.repair_order_id",
+                                        cascade="all, delete-orphan")
 

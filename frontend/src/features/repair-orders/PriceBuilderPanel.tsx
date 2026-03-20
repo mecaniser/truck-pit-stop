@@ -37,10 +37,12 @@ export default function PriceBuilderPanel({
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
   // Local edits per line: tracks hours/rate as user types for live total preview
   const [lineEdits, setLineEdits] = useState<Record<string, { hours: string; rate: string }>>({})
+  const [showSubletForm, setShowSubletForm] = useState(false)
+  const [subletForm, setSubletForm] = useState({ description: '', vendor_name: '', vendor_cost: '', charge_to_customer: '' })
 
   const getLineHours = (id: string, fallback: string) => lineEdits[id]?.hours ?? fallback
   const getLineRate  = (id: string, fallback: string) => lineEdits[id]?.rate  ?? fallback
-  const getLineTotal = (id: string, fallback: string, serverTotal: string) => {
+  const getLineTotal = (id: string, _fallback: string, serverTotal: string) => {
     if (!lineEdits[id]) return serverTotal
     const h = parseFloat(lineEdits[id].hours) || 0
     const r = parseFloat(lineEdits[id].rate)  || 0
@@ -165,6 +167,24 @@ export default function PriceBuilderPanel({
     onError: () => toast.error('Recalculation failed'),
   })
 
+  const addSublet = useMutation({
+    mutationFn: async () => {
+      await api.post(`/repair-orders/${orderId}/price-build/sublet`, {
+        description: subletForm.description,
+        vendor_name: subletForm.vendor_name,
+        vendor_cost: parseFloat(subletForm.vendor_cost),
+        charge_to_customer: parseFloat(subletForm.charge_to_customer),
+      })
+    },
+    onSuccess: async () => {
+      setSubletForm({ description: '', vendor_name: '', vendor_cost: '', charge_to_customer: '' })
+      setShowSubletForm(false)
+      await invalidate()
+      toast.success('Sublet work added')
+    },
+    onError: () => toast.error('Unable to add sublet work'),
+  })
+
   const lineTypeLabel = (line: { line_type: string; source_service_id?: string | null }) => {
     if (line.source_service_id) return 'service labor'
     return line.line_type.replace('_', ' ')
@@ -287,6 +307,79 @@ export default function PriceBuilderPanel({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Sublet Work</p>
+          {canMutate && (
+            <button
+              type="button"
+              onClick={() => setShowSubletForm((v) => !v)}
+              className="text-xs text-amber-600 hover:text-amber-700 font-medium"
+            >
+              {showSubletForm ? 'Cancel' : '+ Add sublet'}
+            </button>
+          )}
+        </div>
+        {showSubletForm && (
+          <div className="space-y-2 rounded-lg border border-gray-200 p-3 bg-gray-50">
+            <input
+              type="text"
+              value={subletForm.description}
+              onChange={(e) => setSubletForm((p) => ({ ...p, description: e.target.value }))}
+              placeholder="Description (e.g. Frame alignment)"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            />
+            <input
+              type="text"
+              value={subletForm.vendor_name}
+              onChange={(e) => setSubletForm((p) => ({ ...p, vendor_name: e.target.value }))}
+              placeholder="Vendor / subcontractor name"
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="text-[10px] text-gray-400">Vendor cost</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={subletForm.vendor_cost}
+                  onChange={(e) => setSubletForm((p) => ({ ...p, vendor_cost: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400">Charge to customer</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={subletForm.charge_to_customer}
+                  onChange={(e) => setSubletForm((p) => ({ ...p, charge_to_customer: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => addSublet.mutate()}
+              disabled={
+                !subletForm.description.trim() ||
+                !subletForm.vendor_name.trim() ||
+                !subletForm.vendor_cost ||
+                !subletForm.charge_to_customer ||
+                addSublet.isPending
+              }
+              className="w-full rounded-lg bg-amber-500 py-1.5 text-sm font-medium text-white disabled:bg-gray-300"
+            >
+              Add Sublet
+            </button>
           </div>
         )}
       </div>

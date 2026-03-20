@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -200,6 +200,8 @@ export default function RepairOrdersPage() {
   const [zelleSenderPhone, setZelleSenderPhone] = useState('')
   const [captureZelleSender, setCaptureZelleSender] = useState(false)
   const [showAmountBreakdown, setShowAmountBreakdown] = useState(false)
+  const [showAddRecService, setShowAddRecService] = useState(false)
+  const [recServiceForm, setRecServiceForm] = useState({ description: '', priority: 'soon' as RecommendedServicePriority, estimated_cost: '', notes: '' })
 
   const openZellePaymentModal = (mode: ZelleModalMode = 'collect') => {
     setShowInvoicePaymentOptions(false)
@@ -321,6 +323,40 @@ export default function RepairOrdersPage() {
       return invoices.length > 0 ? invoices[0] : null
     },
     enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
+  })
+
+  const { data: recommendedServices, refetch: refetchRecServices } = useQuery<RecommendedService[]>({
+    queryKey: ['recommended-services', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/recommended-services`)
+      return response.data
+    },
+    enabled: !!(selectedOrder?.id && isDetailOpen),
+  })
+
+  const addRecServiceMutation = useMutation({
+    mutationFn: async (data: { description: string; priority: RecommendedServicePriority; estimated_cost?: number; notes?: string }) => {
+      await api.post(`/repair-orders/${selectedOrder!.id}/recommended-services`, data)
+    },
+    onSuccess: () => {
+      refetchRecServices()
+      setShowAddRecService(false)
+      setRecServiceForm({ description: '', priority: 'soon', estimated_cost: '', notes: '' })
+    },
+  })
+
+  const resolveRecServiceMutation = useMutation({
+    mutationFn: async (serviceId: string) => {
+      await api.patch(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`, { is_resolved: true })
+    },
+    onSuccess: () => refetchRecServices(),
+  })
+
+  const deleteRecServiceMutation = useMutation({
+    mutationFn: async (serviceId: string) => {
+      await api.delete(`/repair-orders/${selectedOrder!.id}/recommended-services/${serviceId}`)
+    },
+    onSuccess: () => refetchRecServices(),
   })
 
   const { data: zelleSettings } = useQuery<{ zelle_email: string | null; zelle_phone: string | null; zelle_qr_image: string | null }>({
@@ -2509,7 +2545,7 @@ export default function RepairOrdersPage() {
                                         .map((i) => ({
                                           value: i.id,
                                           label: i.name,
-                                          subLabel: `${i.sku} — ${i.stock_quantity} in stock`,
+                                          subLabel: `${i.sku} — ${i.stock_quantity} in stock${i.on_order_quantity > 0 ? ` (${i.on_order_quantity} on order)` : ''}`,
                                         }))}
                                       value={addPartInventoryId}
                                       onChange={setAddPartInventoryId}
@@ -2720,7 +2756,7 @@ export default function RepairOrdersPage() {
                     </div>
                   </button>
                   {customerSectionExpanded && (
-                    <div className="bg-gray-50 rounded-b-xl p-4 border-t border-gray-200 -mt-1 pt-4">
+                    <div className="bg-gray-50 rounded-b-xl p-4 border-t border-gray-200 -mt-1 pt-4 space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="flex items-start gap-3">
                           <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-sm shrink-0">
@@ -2756,6 +2792,36 @@ export default function RepairOrdersPage() {
                             </>
                           ) : (
                             <p className="text-gray-500 text-sm">Vehicle not found</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Mileage, PO, warranty/comeback row */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm border-t border-gray-200 pt-3">
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Mileage In</p>
+                          <p className="font-medium text-gray-800">{selectedOrder.mileage_in ?? '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Mileage Out</p>
+                          <p className="font-medium text-gray-800">{selectedOrder.mileage_out ?? '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">PO Number</p>
+                          <p className="font-medium text-gray-800">{selectedOrder.po_number || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-400 uppercase tracking-wide mb-0.5">Type</p>
+                          {selectedOrder.is_warranty_repair ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                              Warranty
+                            </span>
+                          ) : selectedOrder.parent_repair_order_id ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
+                              Comeback
+                            </span>
+                          ) : (
+                            <span className="text-gray-500 text-sm">Standard</span>
                           )}
                         </div>
                       </div>
@@ -3200,6 +3266,131 @@ export default function RepairOrdersPage() {
                     )}
                   </div>
                 )}
+
+                {/* Recommended / Deferred Services */}
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddRecService((prev) => !prev)}
+                    className="w-full flex items-center justify-between text-left bg-gray-50 p-3 hover:bg-gray-100 transition-colors"
+                  >
+                    <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+                      Recommended Services
+                      {recommendedServices && recommendedServices.filter(s => !s.is_resolved).length > 0 && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700 font-semibold normal-case">
+                          {recommendedServices.filter(s => !s.is_resolved).length}
+                        </span>
+                      )}
+                    </span>
+                    <Plus className="w-4 h-4 text-gray-400" />
+                  </button>
+
+                  {showAddRecService && (
+                    <div className="p-3 border-t border-gray-200 bg-white space-y-2">
+                      <textarea
+                        value={recServiceForm.description}
+                        onChange={(e) => setRecServiceForm(p => ({ ...p, description: e.target.value }))}
+                        placeholder="Service description..."
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          value={recServiceForm.priority}
+                          onChange={(e) => setRecServiceForm(p => ({ ...p, priority: e.target.value as RecommendedServicePriority }))}
+                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="urgent">Urgent</option>
+                          <option value="soon">Soon</option>
+                          <option value="monitor">Monitor</option>
+                        </select>
+                        <input
+                          type="number"
+                          value={recServiceForm.estimated_cost}
+                          onChange={(e) => setRecServiceForm(p => ({ ...p, estimated_cost: e.target.value }))}
+                          placeholder="Est. cost"
+                          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddRecService(false); setRecServiceForm({ description: '', priority: 'soon', estimated_cost: '', notes: '' }) }}
+                          className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!recServiceForm.description.trim() || addRecServiceMutation.isPending}
+                          onClick={() => addRecServiceMutation.mutate({
+                            description: recServiceForm.description.trim(),
+                            priority: recServiceForm.priority,
+                            estimated_cost: recServiceForm.estimated_cost ? parseFloat(recServiceForm.estimated_cost) : undefined,
+                            notes: recServiceForm.notes || undefined,
+                          })}
+                          className="flex-1 py-2 text-sm text-white bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 rounded-lg font-medium"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {recommendedServices && recommendedServices.length > 0 && (
+                    <ul className="divide-y divide-gray-100">
+                      {recommendedServices.map((svc) => (
+                        <li key={svc.id} className={`flex items-start gap-3 p-3 ${svc.is_resolved ? 'opacity-50' : ''}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${
+                                svc.priority === 'urgent' ? 'bg-red-100 text-red-700' :
+                                svc.priority === 'soon' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {svc.priority.charAt(0).toUpperCase() + svc.priority.slice(1)}
+                              </span>
+                              {svc.estimated_cost && (
+                                <span className="text-xs text-gray-500">${parseFloat(svc.estimated_cost).toFixed(2)}</span>
+                              )}
+                              {svc.is_resolved && <span className="text-xs text-green-600 font-medium">Resolved</span>}
+                            </div>
+                            <p className="text-sm text-gray-800 mt-0.5">{svc.description}</p>
+                          </div>
+                          {!svc.is_resolved && (
+                            <div className="flex gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => resolveRecServiceMutation.mutate(svc.id)}
+                                disabled={resolveRecServiceMutation.isPending}
+                                className="p-1.5 rounded-lg text-green-600 hover:bg-green-50"
+                                title="Mark resolved"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteRecServiceMutation.mutate(svc.id)}
+                                disabled={deleteRecServiceMutation.isPending}
+                                className="p-1.5 rounded-lg text-red-400 hover:bg-red-50"
+                                title="Delete"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {(!recommendedServices || recommendedServices.length === 0) && !showAddRecService && (
+                    <p className="text-xs text-gray-400 px-3 py-2">No recommended services recorded.</p>
+                  )}
+                </div>
               </div>
             )}
       </SlidePanel>

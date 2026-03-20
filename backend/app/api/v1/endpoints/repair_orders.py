@@ -17,6 +17,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
+from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.services.email_service import send_email
@@ -53,9 +54,13 @@ from app.schemas.repair_order import (
     PriceBuildRepairOpsApplyRequest,
     PriceBuildRepairOpsSearchRequest,
     PriceBuildSearchResponse,
+    PriceBuildSubletRequest,
     PriceBuildSummaryResponse,
     PriceBuildWarning,
     RepairOperationCandidate,
+    RecommendedServiceCreate,
+    RecommendedServiceUpdate,
+    RecommendedServiceResponse,
 )
 
 logger = get_logger(__name__)
@@ -1838,6 +1843,44 @@ async def recalculate_price_build(
         raise _map_price_build_error(exc)
 
 
+@router.post("/{order_id}/price-build/sublet", response_model=PriceBuildSummaryResponse, status_code=status.HTTP_201_CREATED)
+async def add_sublet_to_price_build(
+    order_id: UUID,
+    body: PriceBuildSubletRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*PRICE_BUILD_EDIT_ROLES)),
+):
+    try:
+        order = await price_build_service.load_order(db, order_id)
+        _check_ro_access(current_user, order)
+        if not current_user.tenant_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+        # Sublet: we store vendor cost and charge the customer the charge_to_customer amount.
+        # hours=1, hourly_rate=charge_to_customer gives total_cost = charge_to_customer.
+        labor = Labor(
+            tenant_id=current_user.tenant_id,
+            repair_order_id=order_id,
+            description=body.description,
+            hours=Decimal("1"),
+            hourly_rate=body.charge_to_customer,
+            total_cost=body.charge_to_customer,
+            line_type=LaborLineType.SUBLET,
+            vendor_name=body.vendor_name,
+            vendor_cost=body.vendor_cost,
+            auto_recalc_enabled=False,
+        )
+        db.add(labor)
+        await db.commit()
+        await db.refresh(labor)
+        await _recompute_repair_order_totals(db, order_id)
+        order = await price_build_service.load_order(db, order_id)
+        return _to_price_build_summary(order)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_price_build_error(exc)
+
+
 # --- Parts ---
 
 
@@ -2160,4 +2203,137 @@ async def remove_labor_from_repair_order(
     await db.delete(labor)
     await db.commit()
     await _recompute_repair_order_totals(db, order_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Recommended Services ---
+
+RECOMMENDED_SERVICES_ROLES = (
+    UserRole.GARAGE_OWNER,
+    UserRole.GARAGE_ADMIN,
+    UserRole.RECEPTIONIST,
+    UserRole.MECHANIC,
+)
+
+
+@router.post(
+    "/{order_id}/recommended-services",
+    response_model=RecommendedServiceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_recommended_service(
+    order_id: UUID,
+    body: RecommendedServiceCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RECOMMENDED_SERVICES_ROLES)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    svc = RecommendedService(
+        tenant_id=current_user.tenant_id,
+        repair_order_id=order_id,
+        description=body.description,
+        estimated_cost=body.estimated_cost,
+        priority=body.priority,
+        notes=body.notes,
+    )
+    db.add(svc)
+    await db.commit()
+    await db.refresh(svc)
+    return RecommendedServiceResponse.model_validate(svc)
+
+
+@router.get("/{order_id}/recommended-services", response_model=List[RecommendedServiceResponse])
+async def list_recommended_services(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RECOMMENDED_SERVICES_ROLES)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    svcs_result = await db.execute(
+        select(RecommendedService).where(
+            and_(
+                RecommendedService.repair_order_id == order_id,
+                RecommendedService.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    svcs = svcs_result.scalars().all()
+    return [RecommendedServiceResponse.model_validate(s) for s in svcs]
+
+
+@router.patch("/{order_id}/recommended-services/{service_id}", response_model=RecommendedServiceResponse)
+async def update_recommended_service(
+    order_id: UUID,
+    service_id: UUID,
+    body: RecommendedServiceUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RECOMMENDED_SERVICES_ROLES)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    svc_result = await db.execute(
+        select(RecommendedService).where(
+            and_(
+                RecommendedService.id == service_id,
+                RecommendedService.repair_order_id == order_id,
+                RecommendedService.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    svc = svc_result.scalar_one_or_none()
+    if not svc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommended service not found")
+    update_data = body.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(svc, field, value)
+    await db.commit()
+    await db.refresh(svc)
+    return RecommendedServiceResponse.model_validate(svc)
+
+
+@router.delete("/{order_id}/recommended-services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recommended_service(
+    order_id: UUID,
+    service_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RECOMMENDED_SERVICES_ROLES)),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    svc_result = await db.execute(
+        select(RecommendedService).where(
+            and_(
+                RecommendedService.id == service_id,
+                RecommendedService.repair_order_id == order_id,
+                RecommendedService.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    svc = svc_result.scalar_one_or_none()
+    if not svc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommended service not found")
+    await db.delete(svc)
+    await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -5,6 +5,7 @@ from uuid import UUID
 from decimal import Decimal
 from app.db.models.repair_order import RepairOrderStatus
 from app.db.models.labor import LaborLineType
+from app.db.models.recommended_service import RecommendedServicePriority
 
 
 # --- Parts and labor line items ---
@@ -42,6 +43,8 @@ class LaborCreate(BaseModel):
     provider_operation_id: Optional[str] = None
     auto_recalc_enabled: bool = True
     source_service_id: Optional[UUID] = None
+    vendor_name: Optional[str] = None
+    vendor_cost: Optional[Decimal] = None
 
 
 class LaborUpdate(BaseModel):
@@ -55,6 +58,8 @@ class LaborUpdate(BaseModel):
     provider_operation_id: Optional[str] = None
     auto_recalc_enabled: Optional[bool] = None
     source_service_id: Optional[UUID] = None
+    vendor_name: Optional[str] = None
+    vendor_cost: Optional[Decimal] = None
 
 
 class LaborResponse(BaseModel):
@@ -71,6 +76,8 @@ class LaborResponse(BaseModel):
     provider_operation_id: Optional[str] = None
     auto_recalc_enabled: bool = True
     source_service_id: Optional[UUID] = None
+    vendor_name: Optional[str] = None
+    vendor_cost: Optional[Decimal] = None
     created_at: datetime
 
     class Config:
@@ -81,12 +88,16 @@ class RepairOrderBase(BaseModel):
     description: Optional[str] = None
     customer_notes: Optional[str] = None
     internal_notes: Optional[str] = None
+    po_number: Optional[str] = None
+    mileage_in: Optional[int] = None
 
 
 class RepairOrderCreate(RepairOrderBase):
     customer_id: UUID
     vehicle_id: UUID
     assigned_mechanic_id: Optional[UUID] = None
+    parent_repair_order_id: Optional[UUID] = None
+    is_warranty_repair: bool = False
 
 
 class RepairOrderUpdate(BaseModel):
@@ -95,6 +106,11 @@ class RepairOrderUpdate(BaseModel):
     customer_notes: Optional[str] = None
     internal_notes: Optional[str] = None
     assigned_mechanic_id: Optional[UUID] = None
+    po_number: Optional[str] = None
+    mileage_in: Optional[int] = None
+    mileage_out: Optional[int] = None
+    parent_repair_order_id: Optional[UUID] = None
+    is_warranty_repair: Optional[bool] = None
 
 
 class RepairOrderResponse(RepairOrderBase):
@@ -123,6 +139,10 @@ class RepairOrderResponse(RepairOrderBase):
     pricing_lock_reason: Optional[str] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
     pending_zelle_confirmation: bool = False
+    mileage_out: Optional[int] = None
+    po_number: Optional[str] = None
+    parent_repair_order_id: Optional[UUID] = None
+    is_warranty_repair: bool = False
 
     class Config:
         from_attributes = True
@@ -196,3 +216,43 @@ class QuickRepairOrderCreate(BaseModel):
     phone: Optional[str] = None
     vehicle_description: Optional[str] = None
     complaint: Optional[str] = None
+
+
+class PriceBuildSubletRequest(BaseModel):
+    description: str
+    vendor_name: str
+    vendor_cost: Decimal
+    charge_to_customer: Decimal
+    hourly_rate: Optional[Decimal] = None  # if None, use charge_to_customer as flat amount
+
+
+class RecommendedServiceCreate(BaseModel):
+    description: str
+    estimated_cost: Optional[Decimal] = None
+    priority: RecommendedServicePriority = RecommendedServicePriority.SOON
+    notes: Optional[str] = None
+
+
+class RecommendedServiceUpdate(BaseModel):
+    description: Optional[str] = None
+    estimated_cost: Optional[Decimal] = None
+    priority: Optional[RecommendedServicePriority] = None
+    notes: Optional[str] = None
+    is_resolved: Optional[bool] = None
+    resolved_by_repair_order_id: Optional[UUID] = None
+
+
+class RecommendedServiceResponse(BaseModel):
+    id: UUID
+    repair_order_id: UUID
+    tenant_id: UUID
+    description: str
+    estimated_cost: Optional[Decimal] = None
+    priority: RecommendedServicePriority
+    notes: Optional[str] = None
+    is_resolved: bool
+    resolved_by_repair_order_id: Optional[UUID] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

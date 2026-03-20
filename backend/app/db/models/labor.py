@@ -10,6 +10,7 @@ class LaborLineType(str, enum.Enum):
     FLAT_SERVICE = "flat_service"
     REPAIR_OPERATION = "repair_operation"
     MANUAL = "manual"
+    SUBLET = "sublet"
 
 
 class Labor(BaseModel):
@@ -36,6 +37,9 @@ class Labor(BaseModel):
     provider_operation_id = Column(String(120), nullable=True)
     auto_recalc_enabled = Column(Boolean, nullable=False, default=True)
     source_service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=True, index=True)
+
+    vendor_name = Column(String(255), nullable=True)
+    vendor_cost = Column(Numeric(10, 2), nullable=True)
 
     mechanic_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     mechanic = relationship("User", foreign_keys=[mechanic_id])
