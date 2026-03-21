@@ -10,7 +10,7 @@ import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
-import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Copy, ChevronDown, ChevronUp } from 'lucide-react'
+import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Copy, ChevronDown, ChevronUp, Download } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -67,6 +67,12 @@ const getOrderTotal = (order: RepairOrder | RepairOrderDetail): number => {
   const combined = labor + backendParts
   const backendTotal = parseFloat(order.total_cost || '0') || 0
   return combined > 0 ? combined : backendTotal
+}
+
+const getVehicleLabel = (order: { vehicle_year?: number | null; vehicle_make?: string; vehicle_model?: string; vehicle_unit_number?: string | null }): string => {
+  const desc = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ')
+  const unit = order.vehicle_unit_number ? `Unit #${order.vehicle_unit_number}` : ''
+  return [desc, unit].filter(Boolean).join(' · ')
 }
 
 const copyText = async (value: string | null | undefined, label: string) => {
@@ -220,6 +226,9 @@ function CustomerDashboard() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-white text-sm">{order.order_number}</p>
+                      {getVehicleLabel(order) && (
+                        <p className="text-amber-300 text-xs font-medium mt-0.5">{getVehicleLabel(order)}</p>
+                      )}
                       {order.description && (
                         <p className="text-gray-300 text-xs truncate mt-0.5">{order.description}</p>
                       )}
@@ -618,6 +627,23 @@ function CustomerRepairs() {
     enabled: !!invoice && selectedOrder?.status === 'invoiced',
   })
 
+  const handleDownloadPdf = async () => {
+    if (!invoice) return
+    try {
+      const response = await api.get(`/invoices/${invoice.id}/pdf`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Invoice-${invoice.invoice_number}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to download PDF')
+    }
+  }
+
   // Fetch quote for selected order if it's quoted
   const { data: selectedQuote } = useQuery<Quote | null>({
     queryKey: ['quote', selectedOrder?.id],
@@ -777,7 +803,10 @@ function CustomerRepairs() {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-white">{selectedOrder.order_number}</h1>
-            <p className="text-gray-400">
+            {getVehicleLabel(selectedOrder) && (
+              <p className="text-amber-300 text-sm font-medium mt-0.5">{getVehicleLabel(selectedOrder)}</p>
+            )}
+            <p className="text-gray-400 text-sm">
               {format(new Date(selectedOrder.created_at), 'MMMM d, yyyy')}
             </p>
           </div>
@@ -858,9 +887,14 @@ function CustomerRepairs() {
               </div>
             </div>
             <div className="flex justify-between items-center text-lg border-t border-white/10 pt-3">
-              <span className="font-medium text-white">Total</span>
+              <span className="font-medium text-white">
+                {invoice ? 'Subtotal' : 'Total'}
+              </span>
               <span className="font-bold text-white">${getOrderTotal(displayOrder).toFixed(2)}</span>
             </div>
+            {invoice && (
+              <p className="text-xs text-gray-500 mt-1">Taxes & fees included in invoice below</p>
+            )}
           </div>
         </div>
 
@@ -950,10 +984,20 @@ function CustomerRepairs() {
           <div className="bg-purple-500/10 rounded-xl border border-purple-500/30 p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-4">
               <FileText className="w-6 h-6 text-purple-400" />
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-white">Invoice {invoice.invoice_number}</h3>
+                {getVehicleLabel(selectedOrder) && (
+                  <p className="text-amber-300 text-xs font-medium">{getVehicleLabel(selectedOrder)}</p>
+                )}
                 <p className="text-sm text-gray-400">Ready for payment</p>
               </div>
+              <button
+                onClick={handleDownloadPdf}
+                title="Download Invoice PDF"
+                className="shrink-0 p-2 text-purple-300 hover:text-white transition-colors"
+              >
+                <Download className="w-5 h-5" />
+              </button>
             </div>
 
             <div className="bg-white/5 rounded-lg p-4 mb-4">
@@ -991,7 +1035,11 @@ function CustomerRepairs() {
               >
                 <div>
                   <p className="font-medium text-blue-100">Pay with Zelle</p>
-                  <p className="text-xs text-blue-200">Tap to view payment details and copy email</p>
+                  <p className="text-xs text-blue-200">
+                    {parseFloat(invoice.service_fee_amount || '0') > 0
+                      ? `Save $${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee`
+                      : 'Tap to view payment details and copy email'}
+                  </p>
                   {invoice.pending_zelle_confirmation && (
                     <p className="text-xs text-yellow-300 mt-1">Pending staff confirmation</p>
                   )}
@@ -1002,7 +1050,7 @@ function CustomerRepairs() {
               {showZelleDetails && (
                 <div className="bg-blue-500/10 rounded-lg border border-blue-500/30 p-4 mt-2">
                   <p className="text-sm text-blue-200 mb-3">
-                    Send exactly <strong>${parseFloat(invoice.total_amount).toFixed(2)}</strong> to {zelleInfo?.garage_name || 'the garage'} and include invoice{' '}
+                    Send exactly <strong>${(parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)}</strong> to {zelleInfo?.garage_name || 'the garage'} and include invoice{' '}
                     <strong>#{invoice.invoice_number}</strong> in the memo.
                   </p>
 
@@ -1119,12 +1167,21 @@ function CustomerRepairs() {
           <div className="bg-green-500/10 rounded-xl border border-green-500/30 p-4 sm:p-6">
             <div className="flex items-center gap-3">
               <CheckCircle className="w-8 h-8 text-green-400" />
-              <div>
+              <div className="flex-1">
                 <h3 className="font-semibold text-white">Payment Complete</h3>
                 <p className="text-sm text-gray-400">
                   Thank you for your payment{invoice?.paid_at ? ` on ${format(new Date(invoice.paid_at), 'MMM d, yyyy')}` : ''}
                 </p>
               </div>
+              {invoice && (
+                <button
+                  onClick={handleDownloadPdf}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-green-700/40 hover:bg-green-700/60 text-green-200 text-sm font-medium rounded-lg transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Receipt
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1185,6 +1242,9 @@ function CustomerRepairs() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-white text-sm sm:text-base">{order.order_number}</h3>
+                      {getVehicleLabel(order) && (
+                        <p className="text-amber-300 text-xs font-medium mt-0.5">{getVehicleLabel(order)}</p>
+                      )}
                       {order.description && (
                         <p className="text-gray-400 text-xs sm:text-sm mt-1 line-clamp-1">{order.description}</p>
                       )}
@@ -1226,6 +1286,21 @@ export default function CustomerPortalPage() {
   const location = useLocation()
   const { accentColors } = useTheme()
   const { data: tenantBranding } = useTenantBranding()
+  const { user } = useAuthStore()
+
+  const accentHex = accentColors[500]
+  const profileNameParts = [user?.first_name, user?.last_name].filter(
+    (part): part is string => Boolean(part?.trim()),
+  )
+  const profileDisplayName = profileNameParts.join(' ').trim() || user?.email || 'Profile Settings'
+  const profileMonogram = (
+    profileNameParts.map((part) => part.charAt(0)).join('') ||
+    user?.email?.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) ||
+    'ME'
+  ).slice(0, 2).toUpperCase()
+  const profileTileBorder = `${accentHex}55`
+  const profileTileGlow = `${accentHex}26`
+  const profileTileInset = `linear-gradient(180deg, ${accentHex}18, rgba(0,0,0,0.04))`
   
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
@@ -1290,44 +1365,32 @@ export default function CustomerPortalPage() {
               ))}
               <Link
                 to="/portal/settings"
-                className={`relative p-2.5 rounded-full transition-colors ${
+                aria-label={`Open profile settings for ${profileDisplayName}`}
+                className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border transition-all ${
                   location.pathname === '/portal/settings'
-                    ? 'bg-gray-100'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                    ? 'bg-white text-gray-800'
+                    : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:bg-white hover:text-gray-700'
                 }`}
-                style={location.pathname === '/portal/settings' ? { color: accentColors[500] } : undefined}
-                title="Profile Settings"
+                style={{
+                  borderColor: location.pathname === '/portal/settings' ? profileTileBorder : undefined,
+                  boxShadow: `0 10px 24px ${profileTileGlow}`,
+                  color: location.pathname === '/portal/settings' ? accentHex : undefined,
+                }}
+                title={profileDisplayName}
               >
-                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
-                  <style>{`
-                    @keyframes ps1 { 0%, 100% { stroke: #1e293b } 50% { stroke: ${accentColors[500]} } }
-                    @keyframes ps2 { 0%, 100% { stroke: ${accentColors[500]} } 50% { stroke: #1e293b } }
-                    .ps1 { animation: ps1 2.5s ease-in-out infinite }
-                    .ps2 { animation: ps2 2.5s ease-in-out infinite }
-                  `}</style>
-                  {[...Array(8)].map((_, i) => {
-                    const startAngle = i * 45 - 90
-                    const endAngle = startAngle + 45
-                    const r = 17
-                    const x1 = 20 + r * Math.cos(startAngle * Math.PI / 180)
-                    const y1 = 20 + r * Math.sin(startAngle * Math.PI / 180)
-                    const x2 = 20 + r * Math.cos(endAngle * Math.PI / 180)
-                    const y2 = 20 + r * Math.sin(endAngle * Math.PI / 180)
-                    return (
-                      <path
-                        key={i}
-                        d={`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`}
-                        fill="none"
-                        strokeWidth="3"
-                        strokeLinecap="round"
-                        className={i % 2 === 0 ? 'ps1' : 'ps2'}
-                      />
-                    )
-                  })}
-                </svg>
-                <svg className="w-5 h-5 relative" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+                <div
+                  className="absolute inset-[3px] rounded-[14px] border border-black/5"
+                  style={{ background: location.pathname === '/portal/settings' ? profileTileInset : undefined }}
+                />
+                <div className="relative flex h-full w-full items-center justify-center rounded-[14px]">
+                  <span className="text-[11px] font-semibold tracking-[0.18em]">
+                    {profileMonogram}
+                  </span>
+                </div>
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white shadow-[0_0_10px_rgba(52,211,153,0.6)]"
+                  style={{ backgroundColor: '#34d399' }}
+                />
               </Link>
             </div>
           </div>

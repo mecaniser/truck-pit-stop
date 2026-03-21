@@ -18,6 +18,7 @@ from app.core.websocket import (
 )
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.quote import Quote
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import Inventory, PartsUsage
@@ -74,6 +75,7 @@ class RecentOrder(BaseModel):
     work_started_at: Optional[datetime] = None
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
+    quote_sent: Optional[bool] = None
 
 
 class LowStockItem(BaseModel):
@@ -274,7 +276,7 @@ async def get_dashboard_stats(
     # --- Work Queue Lanes ---
     Mechanic = aliased(User)
 
-    def _build_order(order, customer, vehicle, mechanic=None, pending_zelle_confirmation: bool = False):
+    def _build_order(order, customer, vehicle, mechanic=None, pending_zelle_confirmation: bool = False, quote_sent: Optional[bool] = None):
         mech_name = None
         if mechanic and mechanic.first_name:
             mech_name = f"{mechanic.first_name} {mechanic.last_name}"
@@ -293,6 +295,7 @@ async def get_dashboard_stats(
             work_started_at=getattr(order, 'work_started_at', None),
             hold_reason=getattr(order, 'hold_reason', None),
             held_at=getattr(order, 'held_at', None),
+            quote_sent=quote_sent,
         )
 
     # Lane 1: Needs Action (draft, pending_review, quoted, declined)
@@ -336,7 +339,17 @@ async def get_dashboard_stats(
         )
         .limit(10)
     )
-    orders_needing_action = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
+    needs_action_rows = result.all()
+    needs_action_ids = [o.id for o, c, v, m in needs_action_rows]
+    quote_sent_result = await db.execute(
+        select(Quote.repair_order_id, Quote.sent_to_customer)
+        .where(Quote.repair_order_id.in_(needs_action_ids))
+    ) if needs_action_ids else None
+    quote_sent_map = {row[0]: row[1] for row in quote_sent_result.fetchall()} if quote_sent_result else {}
+    orders_needing_action = [
+        _build_order(o, c, v, m, quote_sent=quote_sent_map.get(o.id))
+        for o, c, v, m in needs_action_rows
+    ]
 
     # Lane 2: On the Floor (approved, assigned, acknowledged, in_progress)
     on_floor_statuses = [

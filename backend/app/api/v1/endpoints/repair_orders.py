@@ -15,6 +15,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.tenant import Tenant
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
@@ -391,7 +392,10 @@ async def list_repair_orders(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    result = await db.execute(query.offset(skip).limit(limit).order_by(RepairOrder.created_at.desc()))
+    result = await db.execute(
+        query.offset(skip).limit(limit).order_by(RepairOrder.created_at.desc())
+        .options(selectinload(RepairOrder.vehicle))
+    )
     orders = result.scalars().all()
     
     # Get quote_sent status for all orders
@@ -415,9 +419,16 @@ async def list_repair_orders(
         quote_sent_map = {}
         pending_zelle_map = {}
     
+    def _vehicle_fields(v) -> dict:
+        if not v:
+            return {"vehicle_make": "", "vehicle_model": "", "vehicle_year": None, "vehicle_unit_number": None, "vehicle_vin": None}
+        return {"vehicle_make": v.make or "", "vehicle_model": v.model or "", "vehicle_year": v.year, "vehicle_unit_number": v.unit_number, "vehicle_vin": v.vin}
+
+    _vf_exclude = {'quote_sent', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_unit_number', 'vehicle_vin'}
     items = [
         RepairOrderResponse(
-            **RepairOrderResponse.model_validate(o).model_dump(exclude={'quote_sent', 'pending_zelle_confirmation'}),
+            **RepairOrderResponse.model_validate(o).model_dump(exclude=_vf_exclude),
+            **_vehicle_fields(o.vehicle),
             quote_sent=quote_sent_map.get(o.id),
             pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
         )
@@ -438,6 +449,7 @@ async def get_repair_order_detail(
         .options(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
+            selectinload(RepairOrder.vehicle),
         )
     )
     order = result.scalar_one_or_none()
@@ -467,8 +479,15 @@ async def get_repair_order_detail(
     pending_zelle_confirmation = bool(
         invoice and invoice.zelle_pending_submitted_at is not None and invoice.status != InvoiceStatus.PAID
     )
+    _detail_vf_exclude = {'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_unit_number', 'vehicle_vin'}
+    v = order.vehicle
     return RepairOrderDetailResponse(
-        **RepairOrderResponse.model_validate(order).model_dump(exclude={'pending_zelle_confirmation'}),
+        **RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude),
+        vehicle_make=v.make or "" if v else "",
+        vehicle_model=v.model or "" if v else "",
+        vehicle_year=v.year if v else None,
+        vehicle_unit_number=v.unit_number if v else None,
+        vehicle_vin=v.vin if v else None,
         pending_zelle_confirmation=pending_zelle_confirmation,
         parts_usage=parts_resp,
         labor_items=labor_resp,
@@ -1540,7 +1559,17 @@ async def approve_completion(
             )
         except Exception:
             pass
-    
+
+    # Auto-create invoice immediately so the customer sees the correct total with all fees
+    try:
+        from app.api.v1.endpoints.invoices import auto_create_invoice_for_order
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+        auto_tenant = tenant_result.scalar_one_or_none()
+        if auto_tenant:
+            await auto_create_invoice_for_order(db=db, order=order, tenant=auto_tenant)
+    except Exception:
+        logger.exception("Auto-invoice creation failed for order %s", order_id)
+
     return RepairOrderResponse.model_validate(order)
 
 

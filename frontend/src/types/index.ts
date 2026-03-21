@@ -229,6 +229,11 @@ export interface RepairOrder {
   tenant_id: string
   customer_id: string
   vehicle_id: string
+  vehicle_make: string
+  vehicle_model: string
+  vehicle_year: number | null
+  vehicle_unit_number: string | null
+  vehicle_vin: string | null
   order_number: string
   status: RepairOrderStatus
   description: string | null

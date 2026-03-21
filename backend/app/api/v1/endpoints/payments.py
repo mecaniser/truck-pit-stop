@@ -21,6 +21,7 @@ from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
 from app.db.models.tenant import Tenant
+from app.db.models.vehicle import Vehicle
 from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
@@ -442,23 +443,29 @@ async def confirm_payment(
     if current_user.role != UserRole.CUSTOMER or not current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
-    # Get invoice
+    # Get invoice (with repair order + vehicle eagerly loaded)
     result = await db.execute(
         select(Invoice)
-        .options(selectinload(Invoice.repair_order))
+        .options(selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle))
         .where(Invoice.id == body.invoice_id)
     )
     invoice = result.scalar_one_or_none()
-    
+
     if not invoice:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
-    
+
     if invoice.repair_order.customer_id != current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
+
     # Get tenant to check for Stripe Connect
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
+
+    # Load customer for confirmation email
+    customer_result = await db.execute(
+        select(Customer).where(Customer.id == current_user.customer_id)
+    )
+    customer = customer_result.scalar_one_or_none()
     
     # Verify payment intent status with Stripe
     # If using Connect, retrieve from connected account
@@ -598,10 +605,10 @@ async def record_manual_payment(
     if body.method not in method_map:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid payment method: {body.method}")
     
-    # Get invoice
+    # Get invoice (with repair order + vehicle eagerly loaded)
     result = await db.execute(
         select(Invoice)
-        .options(selectinload(Invoice.repair_order))
+        .options(selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle))
         .where(Invoice.id == body.invoice_id, Invoice.tenant_id == current_user.tenant_id)
     )
     invoice = result.scalar_one_or_none()

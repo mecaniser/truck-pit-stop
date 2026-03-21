@@ -47,6 +47,7 @@ interface RecentOrder {
   work_started_at: string | null
   hold_reason: string | null
   held_at: string | null
+  quote_sent: boolean | null
 }
 
 interface MechanicWorkload {
@@ -139,6 +140,49 @@ function useElapsedTime(startedAt: string | null) {
   return elapsed
 }
 
+// Ticks every minute so alert priority scores stay current without user interaction
+function useNow(): number {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60000)
+    return () => clearInterval(id)
+  }, [])
+  return now
+}
+
+type OrderAlertLevel = 'red' | 'amber' | 'none'
+interface OrderAlert {
+  level: OrderAlertLevel
+  /** Higher number = more urgent. Used to rank animation slots globally. */
+  priority: number
+  /** When false the card shows a colored state but never consumes an animation slot. */
+  canAnimate: boolean
+}
+
+function getOrderAlert(order: RecentOrder, nowMs: number): OrderAlert {
+  const isOnHold = order.status === 'in_progress' && !!order.hold_reason
+  const statusMins = Math.floor((nowMs - new Date(order.updated_at).getTime()) / 60000)
+  const holdMins = isOnHold && order.held_at
+    ? Math.floor((nowMs - new Date(order.held_at).getTime()) / 60000)
+    : 0
+  // Priority 1 — critical: on hold > 2 h
+  if (isOnHold && holdMins >= 120)
+    return { level: 'red', priority: 10000 + holdMins, canAnimate: true }
+  // Priority 2 — high: pending review blocks invoice/payment — immediate, no threshold
+  if (order.status === 'pending_review')
+    return { level: 'amber', priority: 2500, canAnimate: true }
+  // Priority 3 — high: approved, no technician > 30 min
+  if (order.status === 'approved' && !order.mechanic_name && statusMins >= 30)
+    return { level: 'amber', priority: 2000 + statusMins, canAnimate: true }
+  // Priority 3 — medium: assigned, no acknowledgment > 15 min
+  if (order.status === 'assigned' && statusMins >= 15)
+    return { level: 'amber', priority: 1000 + statusMins, canAnimate: true }
+  // Priority 4 — low: quoted AND sent, no customer reply > 4 h — color only, never animated
+  if (order.status === 'quoted' && order.quote_sent === true && statusMins >= 240)
+    return { level: 'amber', priority: 0, canAnimate: false }
+  return { level: 'none', priority: -1, canAnimate: false }
+}
+
 const getTeamCapacityStatus = (mechanic: TeamCapacityStatusItem | undefined) => {
   if (!mechanic) {
     return {
@@ -200,11 +244,24 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   in_progress:    { label: 'In Progress',   className: 'bg-green-500/20 text-green-300' },
 }
 
-function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClick: () => void; accentColor: string }) {
+function OrderCard({
+  order,
+  onClick,
+  accentColor,
+  alert,
+  animated,
+}: {
+  order: RecentOrder
+  onClick: () => void
+  accentColor: string
+  alert: OrderAlert
+  animated: boolean
+}) {
   const isOnHold = order.status === 'in_progress' && !!order.hold_reason
   const elapsed = useElapsedTime(
     order.status === 'in_progress' && !isOnHold ? order.work_started_at : null,
   )
+  const holdElapsed = useElapsedTime(isOnHold ? order.held_at : null)
 
   const badge = isOnHold
     ? { label: 'On Hold', className: 'bg-orange-500/20 text-orange-300' }
@@ -212,18 +269,54 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
     ? { label: 'Pending Zelle', className: 'bg-yellow-500/20 text-yellow-300' }
     : STATUS_BADGE[order.status] ?? { label: order.status.replace(/_/g, ' '), className: 'bg-gray-500/20 text-gray-300' }
 
+  // Contextual sub-note shown below the customer/vehicle line
+  const contextNote: { text: string; color: string } | null = (() => {
+    if (order.status === 'quoted' || order.status === 'draft') {
+      if (!order.quote_sent)
+        return { text: 'Quote ready — not sent to customer yet', color: 'text-gray-400' }
+      if (alert.level === 'amber')
+        return { text: 'No response · follow up needed', color: 'text-amber-400' }
+      return { text: 'Awaiting customer response', color: 'text-blue-400' }
+    }
+    if (order.status === 'pending_review')
+      return { text: 'Pending review · approve to send invoice', color: 'text-amber-400' }
+    if (isOnHold) return null
+    if (order.status === 'approved' && !order.mechanic_name)
+      return alert.level === 'amber'
+        ? { text: 'Approved · no technician assigned yet', color: 'text-amber-400' }
+        : { text: 'Approved · needs technician assignment', color: 'text-amber-400' }
+    if ((order.status === 'approved' || order.status === 'assigned') && order.mechanic_name)
+      return alert.level === 'amber'
+        ? { text: `Assigned to ${order.mechanic_name} · not picked up yet`, color: 'text-amber-400' }
+        : { text: `Assigned to ${order.mechanic_name}`, color: 'text-sky-400' }
+    if (order.status === 'acknowledged' && order.mechanic_name)
+      return { text: `${order.mechanic_name} acknowledged`, color: 'text-sky-400' }
+    if (order.status === 'in_progress' && order.mechanic_name)
+      return { text: `${order.mechanic_name} is working on this`, color: 'text-green-400' }
+    return null
+  })()
+
   return (
     <button
       onClick={onClick}
-      className="w-full text-left bg-white/5 rounded-lg p-3 2xl:p-2.5 hover:bg-white/10 transition-colors border border-white/5 group"
+      className={`w-full text-left rounded-lg p-3 2xl:p-2.5 hover:bg-white/10 transition-colors border group ${
+        alert.level === 'red'
+          ? `bg-red-500/5 border-red-500/30${animated ? ' order-alert-red' : ''}`
+          : alert.level === 'amber'
+          ? `bg-amber-500/5 border-amber-500/30${animated ? ' order-alert-amber' : ''}`
+          : 'bg-white/5 border-white/5'
+      }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-white text-sm 2xl:text-base">{order.order_number}</span>
             <span className={`text-[10px] 2xl:text-xs font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${badge.className}`}>{badge.label}</span>
             {elapsed && (
               <span className="text-xs 2xl:text-sm font-mono" style={{ color: accentColor }}>{elapsed}</span>
+            )}
+            {holdElapsed && (
+              <span className="text-xs 2xl:text-sm font-mono text-orange-400">{holdElapsed} on hold</span>
             )}
           </div>
           <p className="text-gray-400 text-xs 2xl:text-sm truncate mt-1">
@@ -232,6 +325,11 @@ function OrderCard({ order, onClick, accentColor }: { order: RecentOrder; onClic
           {isOnHold && order.hold_reason && (
             <p className="text-xs mt-0.5 text-orange-400 truncate">
               Hold: {order.hold_reason.replace(/_/g, ' ')}
+            </p>
+          )}
+          {contextNote && (
+            <p className={`text-xs mt-0.5 truncate ${contextNote.color}`}>
+              {contextNote.text}
             </p>
           )}
         </div>
@@ -278,6 +376,7 @@ export default function DashboardHome() {
   const [isAttentionDismissed, setIsAttentionDismissed] = useState(false)
   const [isAttentionDismissing, setIsAttentionDismissing] = useState(false)
   const alertsBannerRef = useRef<HTMLDivElement | null>(null)
+  const nowMs = useNow()
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
@@ -400,6 +499,30 @@ export default function DashboardHome() {
       : activeMobileLane === idx
         ? 'flex-1 min-h-0 overflow-hidden'
         : 'h-0 overflow-hidden'
+  // Global alert priority — computed once per render (nowMs ticks every minute)
+  const allOrders: RecentOrder[] = [
+    ...(stats?.orders_needing_action ?? []),
+    ...(stats?.orders_on_floor ?? []),
+    ...(stats?.orders_ready_to_close ?? []),
+  ]
+  const animatedIds = new Set(
+    allOrders
+      .map(o => ({ id: o.id, ...getOrderAlert(o, nowMs) }))
+      .filter(a => a.canAnimate)
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, 3)
+      .map(a => a.id)
+  )
+  const alertCounts = allOrders.reduce(
+    (acc, o) => {
+      const { level } = getOrderAlert(o, nowMs)
+      if (level === 'red') acc.critical++
+      else if (level === 'amber') acc.warning++
+      return acc
+    },
+    { critical: 0, warning: 0 },
+  )
+
   const revenueCards = [
     { label: 'Today Revenue', value: metricValue(stats?.revenue?.today), tone: 'text-emerald-400' },
     { label: 'Today Gross', value: metricValue(stats?.revenue?.today_gross_profit), tone: 'text-amber-300' },
@@ -694,11 +817,21 @@ export default function DashboardHome() {
         <div className="flex flex-1 min-h-0 flex-col gap-2.5 2xl:gap-2">
           <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden flex flex-col min-h-0 h-full">
           <div className="flex items-start justify-between gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 sm:items-center">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2 flex-wrap">
               <div className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold text-gray-300 uppercase tracking-[0.14em]">
                 <span>Work Queue</span>
               </div>
               <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
+              {alertCounts.critical > 0 && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 whitespace-nowrap">
+                  {alertCounts.critical} critical
+                </span>
+              )}
+              {alertCounts.warning > 0 && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 whitespace-nowrap">
+                  {alertCounts.warning} {alertCounts.warning === 1 ? 'warning' : 'warnings'}
+                </span>
+              )}
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
@@ -739,6 +872,8 @@ export default function DashboardHome() {
                           order={order}
                           accentColor={accentColors[400]}
                           onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                          alert={getOrderAlert(order, nowMs)}
+                          animated={animatedIds.has(order.id)}
                         />
                       ))
                     )}
@@ -769,6 +904,8 @@ export default function DashboardHome() {
                           order={order}
                           accentColor={accentColors[400]}
                           onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                          alert={getOrderAlert(order, nowMs)}
+                          animated={animatedIds.has(order.id)}
                         />
                       ))
                     )}
@@ -799,6 +936,8 @@ export default function DashboardHome() {
                           order={order}
                           accentColor={accentColors[400]}
                           onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                          alert={getOrderAlert(order, nowMs)}
+                          animated={animatedIds.has(order.id)}
                         />
                       ))
                     )}

@@ -1,8 +1,6 @@
 export const MISC_WORK_OPTIONS = [
-  { value: 'shop_cleanup', label: 'Shop Cleanup' },
+  { value: 'shop_cleanup', label: 'Shop Work' },
   { value: 'parts_runner', label: 'Parts Runner' },
-  { value: 'admin_paperwork', label: 'Admin Paperwork' },
-  { value: 'training', label: 'Training' },
 ] as const
 
 const MISC_WORK_LABEL_MAP: Record<string, string> = Object.fromEntries(

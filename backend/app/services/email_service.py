@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from app.core.config import settings
 from app.db.models.notification import Notification, NotificationType, NotificationStatus
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,8 +15,12 @@ async def send_email(
     subject: str,
     body: str,
     template_name: Optional[str] = None,
+    attachments: Optional[List[dict]] = None,
 ) -> Notification:
-    """Send email via Resend and create notification record"""
+    """Send email via Resend and create notification record.
+
+    attachments: list of {"filename": str, "content": bytes} dicts.
+    """
     notification = Notification(
         tenant_id=tenant_id,
         type=NotificationType.EMAIL,
@@ -26,10 +30,10 @@ async def send_email(
         body=body,
         template_name=template_name,
     )
-    
+
     db.add(notification)
     await db.commit()
-    
+
     try:
         params = {
             "from": settings.RESEND_FROM_EMAIL,
@@ -37,6 +41,11 @@ async def send_email(
             "subject": subject,
             "html": body,
         }
+        if attachments:
+            params["attachments"] = [
+                {"filename": a["filename"], "content": list(a["content"])}
+                for a in attachments
+            ]
         email = resend.Emails.send(params)
         
         notification.status = NotificationStatus.SENT
@@ -53,18 +62,19 @@ async def send_email(
     return notification
 
 
-async def send_password_reset_email(to: str, reset_token: str):
+async def send_password_reset_email(to: str, reset_token: str, shop_name: Optional[str] = None):
     """Send password reset email without database notification (for security)"""
+    brand = shop_name or "Your Account"
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-    
+
     html_body = f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #d97706;">Password Reset Request</h2>
-        <p>You requested to reset your password for DieselBridge Network.</p>
+        <p>You requested to reset your password for <strong>{brand}</strong>.</p>
         <p>Click the link below to reset your password:</p>
         <p style="margin: 30px 0;">
-            <a href="{reset_url}" 
+            <a href="{reset_url}"
                style="background-color: #d97706; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
                 Reset Password
             </a>
@@ -75,15 +85,16 @@ async def send_password_reset_email(to: str, reset_token: str):
             This link will expire in 1 hour.<br>
             If you didn't request this, please ignore this email.
         </p>
+        <p style="color: #d1d5db; font-size: 11px; margin-top: 6px;">Powered by DieselBridge Network</p>
     </body>
     </html>
     """
-    
+
     try:
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": "Reset Your Password - DieselBridge Network",
+            "subject": f"Reset Your Password – {brand}",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -93,24 +104,25 @@ async def send_password_reset_email(to: str, reset_token: str):
         raise Exception("Failed to send password reset email")
 
 
-async def send_email_verification(to: str, verification_token: str):
+async def send_email_verification(to: str, verification_token: str, shop_name: Optional[str] = None):
     """Send email verification link for email change"""
+    brand = shop_name or "Your Account"
     verify_url = f"{settings.FRONTEND_URL}/verify-email?token={verification_token}"
-    
+
     html_body = f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">📧 Verify Your Email</h1>
+            <h1 style="color: white; margin: 0; font-size: 28px;">Verify Your Email</h1>
         </div>
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
             <h2 style="color: #1f2937; margin-top: 0;">Confirm Your Email Change</h2>
             <p style="color: #4b5563; line-height: 1.6;">
-                You requested to change your email address on DieselBridge Network. 
+                You requested to change your email address on <strong>{brand}</strong>.
                 To confirm this change, please click the button below:
             </p>
             <div style="margin: 30px 0; text-align: center;">
-                <a href="{verify_url}" 
+                <a href="{verify_url}"
                    style="background-color: #d97706; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px;">
                     Verify Email Address
                 </a>
@@ -121,22 +133,23 @@ async def send_email_verification(to: str, verification_token: str):
             </p>
             <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
                 <p style="color: #9ca3af; font-size: 13px; margin: 5px 0;">
-                    ⏱️ This link will expire in 1 hour
+                    This link will expire in 1 hour
                 </p>
                 <p style="color: #9ca3af; font-size: 13px; margin: 5px 0;">
-                    🔒 If you didn't request this change, please ignore this email and your account will remain secure
+                    If you didn't request this change, please ignore this email and your account will remain secure
                 </p>
             </div>
+            <p style="color: #d1d5db; font-size: 11px; margin-top: 20px; text-align: center;">Powered by DieselBridge Network</p>
         </div>
     </body>
     </html>
     """
-    
+
     try:
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": to,
-            "subject": "Verify Your Email Address - DieselBridge Network",
+            "subject": f"Verify Your Email Address – {brand}",
             "html": html_body,
         }
         resend.Emails.send(params)
@@ -145,8 +158,9 @@ async def send_email_verification(to: str, verification_token: str):
         raise Exception("Failed to send verification email")
 
 
-async def send_email_change_notification(old_email: str, new_email: str, user_name: str):
+async def send_email_change_notification(old_email: str, new_email: str, user_name: str, shop_name: Optional[str] = None):
     """Send notification to old email about email change request"""
+    brand = shop_name or "Your Account"
     
     # Mask part of the new email for security
     email_parts = new_email.split('@')
@@ -167,7 +181,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         
         <div style="background: #f9fafb; padding: 25px; border-radius: 8px;">
             <p style="color: #374151; line-height: 1.6;">
-                Someone requested to change the email address for your DieselBridge Network account from:
+                Someone requested to change the email address for your <strong>{brand}</strong> account from:
             </p>
             <div style="background: white; padding: 15px; border-radius: 6px; margin: 15px 0; border: 1px solid #e5e7eb;">
                 <p style="margin: 0; color: #6b7280; font-size: 14px;">Current Email:</p>
@@ -196,7 +210,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         </div>
         
         <p style="color: #9ca3af; font-size: 12px; margin-top: 30px; text-align: center;">
-            This is an automated security notification from DieselBridge Network
+            This is an automated security notification from {brand}
         </p>
     </body>
     </html>
@@ -206,7 +220,7 @@ async def send_email_change_notification(old_email: str, new_email: str, user_na
         params = {
             "from": settings.RESEND_FROM_EMAIL,
             "to": old_email,
-            "subject": "🔔 Email Change Request - DieselBridge Network",
+            "subject": f"Email Change Request – {brand}",
             "html": html_body,
         }
         resend.Emails.send(params)

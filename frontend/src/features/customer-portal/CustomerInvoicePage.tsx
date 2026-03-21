@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { CreditCard, FileText, Copy, ChevronDown, ChevronUp } from 'lucide-react'
+import { CreditCard, FileText, Copy, ChevronDown, ChevronUp, Download, Printer } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { AxiosError } from 'axios'
@@ -251,8 +251,25 @@ export default function CustomerInvoicePage() {
             Order {invoice.order_number}
             {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
           </p>
+          <div className="flex gap-2 mt-3 print:hidden">
+            <a
+              href={`/api/v1/invoices/${invoiceId}/pdf`}
+              download
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg hover:bg-amber-500/20"
+            >
+              <Download className="w-4 h-4" />
+              Download PDF
+            </a>
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-300 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+          </div>
         </div>
-        <Link to="/portal/repairs" className="text-sm text-amber-300 hover:text-amber-200">
+        <Link to="/portal/repairs" className="text-sm text-amber-300 hover:text-amber-200 print:hidden">
           Back to history
         </Link>
       </div>
@@ -308,7 +325,11 @@ export default function CustomerInvoicePage() {
               >
                 <div>
                   <p className="font-medium text-blue-100">Pay with Zelle</p>
-                  <p className="text-xs text-blue-200">Tap to view payment details and copy email</p>
+                  <p className="text-xs text-blue-200">
+                    {parseFloat(invoice.service_fee_amount || '0') > 0
+                      ? `Save $${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee`
+                      : 'Tap to view payment details and copy email'}
+                  </p>
                   {invoice.pending_zelle_confirmation && (
                     <p className="text-xs text-yellow-300 mt-1">Pending staff confirmation</p>
                   )}
@@ -319,7 +340,7 @@ export default function CustomerInvoicePage() {
               {showZelleDetails && (
                 <div className="bg-blue-500/10 rounded-lg border border-blue-500/30 p-4 mt-2">
                   <p className="text-sm text-blue-200 mb-3">
-                    Send exactly <strong>${parseFloat(invoice.total_amount).toFixed(2)}</strong> to {zelleInfo?.garage_name || 'the garage'} and include invoice{' '}
+                    Send exactly <strong>${(parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)}</strong> to {zelleInfo?.garage_name || 'the garage'} and include invoice{' '}
                     <strong>#{invoice.invoice_number}</strong> in the memo.
                   </p>
 

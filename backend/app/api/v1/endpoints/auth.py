@@ -555,22 +555,31 @@ async def update_current_user(
             f"{current_user.id}:{new_email}"
         )
         
+        # Resolve shop name for branding
+        shop_name = None
+        if current_user.tenant_id:
+            from app.db.models.tenant import Tenant
+            tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+            tenant = tenant_result.scalar_one_or_none()
+            shop_name = tenant.name if tenant else None
+
         # Send verification email to NEW address
         try:
-            await send_email_verification(new_email, verification_token)
+            await send_email_verification(new_email, verification_token, shop_name=shop_name)
         except Exception as e:
             print(f"Error sending verification email: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to send verification email",
             )
-        
+
         # Send notification to OLD address
         try:
             await send_email_change_notification(
-                old_email, 
-                new_email, 
-                f"{current_user.first_name} {current_user.last_name}"
+                old_email,
+                new_email,
+                f"{current_user.first_name} {current_user.last_name}",
+                shop_name=shop_name,
             )
         except Exception as e:
             print(f"Error sending notification email: {e}")
@@ -706,13 +715,21 @@ async def forgot_password(
     if user and user.is_active:
         # Generate secure random token
         reset_token = secrets.token_urlsafe(32)
-        
+
         # Store token in Redis (expires in 1 hour)
         await store_password_reset_token(forgot_request.email, reset_token, expires_in=3600)
-        
+
+        # Resolve shop name for tenant-specific branding
+        shop_name = None
+        if user.tenant_id:
+            from app.db.models.tenant import Tenant
+            tenant_result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+            tenant = tenant_result.scalar_one_or_none()
+            shop_name = tenant.name if tenant else None
+
         # Send email
         try:
-            await send_password_reset_email(forgot_request.email, reset_token)
+            await send_password_reset_email(forgot_request.email, reset_token, shop_name=shop_name)
         except Exception:
             # Log error but don't reveal to user
             pass

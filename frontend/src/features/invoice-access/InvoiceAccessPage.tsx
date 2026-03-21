@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { CreditCard, Lock, FileText, UserPlus } from 'lucide-react'
+import { CreditCard, Lock, FileText, UserPlus, Download, Printer } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { AxiosError } from 'axios'
@@ -29,6 +29,7 @@ interface InvoiceAccessResolve {
   tax_amount: string
   discount_amount: string
   total_amount: string
+  zelle_amount: string
   status: string
   due_date: string | null
   paid_at: string | null
@@ -467,6 +468,23 @@ export default function InvoiceAccessPage() {
             Order {invoice.order_number}
             {invoice.due_date ? ` • Due ${format(new Date(invoice.due_date), 'MMM d, yyyy')}` : ''}
           </p>
+          <div className="flex gap-2 mt-3 print:hidden">
+            <a
+              href={`/api/v1/invoice-access/pdf/${token}`}
+              download
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100"
+            >
+              <Download className="w-4 h-4" />
+              Download PDF
+            </a>
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl border border-amber-100 p-6">
@@ -540,9 +558,14 @@ export default function InvoiceAccessPage() {
           ) : (
             <div className="space-y-6">
               <section className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Pay with Zelle</h3>
+                <h3 className="font-semibold text-blue-900 mb-1">Pay with Zelle</h3>
+                {parseFloat(invoice.service_fee_amount) > 0 && (
+                  <p className="text-xs text-blue-700 font-medium mb-2">
+                    Save ${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee
+                  </p>
+                )}
                 <p className="text-sm text-blue-800 mb-3">
-                  Send exactly <strong>{formatMoney(invoice.amount_due)}</strong> via Zelle and include invoice{' '}
+                  Send exactly <strong>{formatMoney(invoice.zelle_amount)}</strong> via Zelle and include invoice{' '}
                   <strong>#{invoice.invoice_number}</strong> in the memo.
                 </p>
                 {(invoice.zelle_email || invoice.zelle_phone) && (
@@ -699,6 +722,12 @@ export default function InvoiceAccessPage() {
             <Link to="/login" className="text-amber-700 hover:text-amber-800 font-medium">
               Staff login
             </Link>
+          </p>
+          <p className="text-xs text-gray-400 mt-4">
+            Powered by{' '}
+            <a href="/" className="hover:text-gray-500 transition-colors">
+              DieselBridge Network
+            </a>
           </p>
         </div>
       </div>

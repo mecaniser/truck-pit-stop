@@ -71,6 +71,7 @@ class ResolveInvoiceLinkResponse(BaseModel):
     tax_amount: Decimal
     discount_amount: Decimal
     total_amount: Decimal
+    zelle_amount: Decimal  # total_amount minus service_fee (no processing fee for Zelle)
     status: str
     due_date: Optional[datetime] = None
     paid_at: Optional[datetime] = None
@@ -334,6 +335,8 @@ async def resolve_invoice_link(
     existing_user = user_result.scalar_one_or_none()
 
     vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+    _service_fee = Decimal(str(invoice.service_fee_amount or 0))
+    _zelle_amount = (Decimal(str(invoice.total_amount)) - _service_fee).quantize(Decimal("0.01"))
     return ResolveInvoiceLinkResponse(
         invoice_id=str(invoice.id),
         invoice_number=invoice.invoice_number,
@@ -349,6 +352,7 @@ async def resolve_invoice_link(
         tax_amount=invoice.tax_amount,
         discount_amount=invoice.discount_amount,
         total_amount=invoice.total_amount,
+        zelle_amount=_zelle_amount,
         status=invoice.status.value,
         due_date=invoice.due_date,
         paid_at=invoice.paid_at,
@@ -803,4 +807,44 @@ async def create_portal_from_invoice_link(
         token_type="bearer",
         redirect_to=f"/portal/invoices/{invoice.id}",
         user_exists=user_exists,
+    )
+
+
+@router.get("/pdf/{token}")
+async def download_invoice_pdf_by_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public PDF download via invoice access token (no login required)."""
+    from app.db.models.inventory import PartsUsage
+    from app.db.models.labor import Labor
+    from app.services.pdf_service import generate_invoice_pdf
+    from app.api.v1.endpoints.invoices import _load_line_items, _build_invoice_pdf_bytes
+
+    payload = await get_invoice_access_payload(token)
+    if not payload:
+        if await is_invoice_access_token_consumed(token):
+            raise HTTPException(status_code=status.HTTP_410_GONE, detail="This invoice link has already been used.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired invoice link.")
+
+    invoice, order, customer, vehicle = await _load_invoice_context(db, payload["invoice_id"])
+    _validate_invoice_link_subject(payload, invoice, order)
+
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+
+    labor_items, parts_items = await _load_line_items(db, order.id)
+
+    pdf_bytes = _build_invoice_pdf_bytes(
+        invoice=invoice, order=order, customer=customer,
+        vehicle=vehicle, tenant=tenant,
+        labor_items=labor_items, parts_items=parts_items,
+        invoice_access_url=None,
+    )
+
+    filename = f"Invoice-{invoice.invoice_number}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
