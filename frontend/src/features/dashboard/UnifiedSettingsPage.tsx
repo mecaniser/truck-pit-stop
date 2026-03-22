@@ -1166,54 +1166,63 @@ function ZelleSection() {
         </div>
 
         {/* Zelle contact details */}
-        <div className="mb-6 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={industrialStyles.label}>Zelle Email</label>
-              <input
-                type="email"
-                value={zelleEmail}
-                onChange={(e) => { setZelleEmail(e.target.value); setContactEditing(true) }}
-                placeholder="zelle@yourshop.com"
-                className={industrialStyles.input}
-              />
+        {(() => {
+          const emailInvalid = zelleEmail.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(zelleEmail.trim())
+          const phoneInvalid = zellePhone.trim() !== '' && !isValidUSPhone(zellePhone)
+          const canSave = !emailInvalid && !phoneInvalid
+          return (
+            <div className="mb-6 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={industrialStyles.label}>Zelle Email</label>
+                  <input
+                    type="email"
+                    value={zelleEmail}
+                    onChange={(e) => { setZelleEmail(e.target.value); setContactEditing(true) }}
+                    placeholder="zelle@yourshop.com"
+                    className={emailInvalid ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
+                  />
+                  {emailInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid email address</p>}
+                </div>
+                <div>
+                  <label className={industrialStyles.label}>Zelle Phone</label>
+                  <input
+                    type="tel"
+                    value={zellePhone}
+                    onChange={(e) => { setZellePhone(formatUSPhone(e.target.value)); setContactEditing(true) }}
+                    placeholder="(555) 000-0000"
+                    className={phoneInvalid ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
+                  />
+                  {phoneInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid US phone number</p>}
+                </div>
+              </div>
+              {contactEditing && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => saveContactMutation.mutate()}
+                    disabled={saveContactMutation.isPending || !canSave}
+                    className={industrialStyles.btnPrimary}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Save className="w-4 h-4" />
+                      {saveContactMutation.isPending ? 'Saving...' : 'Save'}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setZelleEmail(zelleSettings?.zelle_email || garageProfile?.email || '')
+                      setZellePhone(zelleSettings?.zelle_phone || garageProfile?.phone || '')
+                      setContactEditing(false)
+                    }}
+                    className={industrialStyles.btnSecondary}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
-            <div>
-              <label className={industrialStyles.label}>Zelle Phone</label>
-              <input
-                type="tel"
-                value={zellePhone}
-                onChange={(e) => { setZellePhone(e.target.value); setContactEditing(true) }}
-                placeholder="+1 (555) 000-0000"
-                className={industrialStyles.input}
-              />
-            </div>
-          </div>
-          {contactEditing && (
-            <div className="flex gap-3">
-              <button
-                onClick={() => saveContactMutation.mutate()}
-                disabled={saveContactMutation.isPending}
-                className={industrialStyles.btnPrimary}
-              >
-                <span className="flex items-center gap-2">
-                  <Save className="w-4 h-4" />
-                  {saveContactMutation.isPending ? 'Saving...' : 'Save'}
-                </span>
-              </button>
-              <button
-                onClick={() => {
-                  setZelleEmail(zelleSettings?.zelle_email || '')
-                  setZellePhone(zelleSettings?.zelle_phone || '')
-                  setContactEditing(false)
-                }}
-                className={industrialStyles.btnSecondary}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
+          )
+        })()}
 
         <div className="flex flex-col sm:flex-row items-start gap-6">
           {/* QR Preview */}
