@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, field_serializer
-from typing import Optional
+from typing import Optional, List
 from uuid import UUID
 from app.db.models.user import UserRole
 
@@ -8,6 +8,19 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    requires_shop_selection: bool = False
+    shops: Optional[List["ShopOption"]] = None
+
+
+class ShopOption(BaseModel):
+    id: str
+    name: str
+    slug: str
+    logo_url: Optional[str] = None
+
+
+class SelectTenantRequest(BaseModel):
+    tenant_id: UUID
 
 
 class TokenData(BaseModel):
@@ -47,13 +60,13 @@ class UserResponse(BaseModel):
     core_hours_target_minutes_override: Optional[int] = None
     shift_start_local_override: Optional[str] = None
     shift_end_local_override: Optional[str] = None
-    
+
     model_config = {"from_attributes": True}
-    
+
     @field_serializer('id', 'tenant_id', 'customer_id')
     def serialize_uuid(self, v: Optional[UUID]) -> Optional[str]:
         return str(v) if v else None
-    
+
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"

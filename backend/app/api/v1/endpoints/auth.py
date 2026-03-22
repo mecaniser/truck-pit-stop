@@ -7,6 +7,7 @@ from app.core.security import (
     get_password_hash,
     create_access_token,
     create_refresh_token,
+    create_shop_select_token,
     decode_token,
     get_token_expiry_seconds,
 )
@@ -27,12 +28,15 @@ from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
+from app.db.models.user_customer_link import UserCustomerLink
 from app.schemas.auth import (
     UserLogin,
     UserRegister,
     UserResponse,
     TenantBrandingResponse,
     Token,
+    ShopOption,
+    SelectTenantRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     ResetPasswordRequest,
@@ -118,16 +122,9 @@ async def register(
 ):
     # Validate password complexity
     validate_password(user_data.password)
-    
-    # Check if user exists
-    result = await db.execute(select(User).where(User.email == user_data.email))
-    existing_user = result.scalar_one_or_none()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
-    
+
+    normalized_phone = normalize_phone(user_data.phone)
+
     # Resolve tenant from explicit slug first, then optional garage name fallback.
     target_tenant_id = None
     if user_data.tenant_slug:
@@ -156,50 +153,91 @@ async def register(
                 detail="Multiple garages match this name. Please use your garage code.",
             )
         target_tenant_id = matching_tenants[0].id
-    
-    # Check if there's an existing Customer record with this email or phone
-    # This links the new User account to the Customer created by staff (including walk-ins)
-    existing_customer = None
-    normalized_phone = normalize_phone(user_data.phone)
-    
-    # First try email match (scoped to target tenant if specified)
-    if target_tenant_id:
-        result = await db.execute(
-            select(Customer).where(
-                and_(Customer.email == user_data.email, Customer.tenant_id == target_tenant_id)
+
+    # Check if a global user identity already exists for this email
+    result = await db.execute(select(User).where(User.email == user_data.email))
+    existing_user = result.scalar_one_or_none()
+
+    if existing_user:
+        # --- Cross-tenant registration: link existing identity to a new shop ---
+        # Security: require password verification before linking to prevent account takeover
+        if not verify_password(user_data.password, existing_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+            )
+        if not existing_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Inactive user",
+            )
+        if not target_tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A garage is required to link your existing account to a new shop.",
+            )
+
+        # Reject if already linked to this shop
+        link_result = await db.execute(
+            select(UserCustomerLink).where(
+                and_(
+                    UserCustomerLink.user_id == existing_user.id,
+                    UserCustomerLink.tenant_id == target_tenant_id,
+                    UserCustomerLink.deleted_at.is_(None),
+                )
             )
         )
-    else:
-        result = await db.execute(select(Customer).where(Customer.email == user_data.email))
-    existing_customer = result.scalar_one_or_none()
-    
-    # If no email match and phone provided, try phone match (for walk-ins with placeholder emails)
-    # MUST be scoped to target tenant to avoid cross-tenant linking
-    if not existing_customer and normalized_phone and target_tenant_id:
-        result = await db.execute(
-            select(Customer).where(
-                and_(Customer.phone == normalized_phone, Customer.tenant_id == target_tenant_id)
+        if link_result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Already registered at this shop. Please log in.",
             )
+
+        # Find or match an existing Customer record in the target tenant
+        customer_id = await _resolve_or_create_customer(
+            db, user_data, normalized_phone, target_tenant_id
         )
-        existing_customer = result.scalar_one_or_none()
-        
-        # If found by phone within the target tenant, update placeholder email to real email
-        if existing_customer and "@placeholder" in (existing_customer.email or ""):
-            existing_customer.email = user_data.email
-            existing_customer.first_name = user_data.first_name
-            existing_customer.last_name = user_data.last_name
-    
+
+        link = UserCustomerLink(
+            user_id=existing_user.id,
+            customer_id=customer_id,
+            tenant_id=target_tenant_id,
+        )
+        db.add(link)
+        await db.commit()
+
+        token_version = await get_token_version(str(existing_user.id))
+        access_token = create_access_token(
+            data={"sub": str(existing_user.id)},
+            tenant_id=str(target_tenant_id),
+            token_version=token_version,
+        )
+        refresh_token = create_refresh_token(
+            data={"sub": str(existing_user.id)},
+            tenant_id=str(target_tenant_id),
+            token_version=token_version,
+        )
+        set_auth_cookies(response, access_token, refresh_token)
+        return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+    # --- New user: create global identity + customer profile + link ---
     customer_id = None
     tenant_id = None
-    
-    if existing_customer:
-        # Link to existing customer - inherit their tenant
-        customer_id = existing_customer.id
-        tenant_id = existing_customer.tenant_id
-    elif target_tenant_id:
+
+    if target_tenant_id:
+        customer_id = await _resolve_or_create_customer(
+            db, user_data, normalized_phone, target_tenant_id
+        )
         tenant_id = target_tenant_id
-    
-    # Create user linked to existing customer (if any)
+    else:
+        # No tenant specified — check for an existing Customer by email across all tenants
+        result = await db.execute(select(Customer).where(Customer.email == user_data.email))
+        existing_customer = result.scalar_one_or_none()
+        if existing_customer:
+            customer_id = existing_customer.id
+            tenant_id = existing_customer.tenant_id
+            target_tenant_id = tenant_id
+
     user = User(
         email=user_data.email,
         hashed_password=get_password_hash(user_data.password),
@@ -212,23 +250,69 @@ async def register(
         is_active=True,
         is_verified=False,
     )
-    
     db.add(user)
+    await db.flush()
+
+    if customer_id and target_tenant_id:
+        db.add(UserCustomerLink(
+            user_id=user.id,
+            customer_id=customer_id,
+            tenant_id=target_tenant_id,
+        ))
+
     await db.commit()
     await db.refresh(user)
-    
-    # Generate tokens with version 0 for new users
-    access_token = create_access_token(data={"sub": str(user.id)}, token_version=0)
-    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=0)
-    
-    # Set httpOnly cookies
+
+    tid = str(target_tenant_id) if target_tenant_id else None
+    access_token = create_access_token(data={"sub": str(user.id)}, tenant_id=tid, token_version=0)
+    refresh_token = create_refresh_token(data={"sub": str(user.id)}, tenant_id=tid, token_version=0)
     set_auth_cookies(response, access_token, refresh_token)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+
+async def _resolve_or_create_customer(
+    db: AsyncSession,
+    user_data,
+    normalized_phone: Optional[str],
+    tenant_id,
+) -> "UUID":
+    """Find an existing Customer in this tenant by email or phone, or create one."""
+    # Try email match first
+    result = await db.execute(
+        select(Customer).where(
+            and_(Customer.email == user_data.email, Customer.tenant_id == tenant_id)
+        )
+    )
+    customer = result.scalar_one_or_none()
+
+    # Try phone match for walk-ins with placeholder emails
+    if not customer and normalized_phone:
+        result = await db.execute(
+            select(Customer).where(
+                and_(Customer.phone == normalized_phone, Customer.tenant_id == tenant_id)
+            )
+        )
+        customer = result.scalar_one_or_none()
+        if customer and "@placeholder" in (customer.email or ""):
+            customer.email = user_data.email
+            customer.first_name = user_data.first_name
+            customer.last_name = user_data.last_name
+
+    if customer:
+        return customer.id
+
+    # No existing record — create a fresh Customer profile for this tenant
+    new_customer = Customer(
+        tenant_id=tenant_id,
+        first_name=user_data.first_name,
+        last_name=user_data.last_name,
+        email=user_data.email,
+        phone=normalized_phone,
+        source="portal",
+    )
+    db.add(new_customer)
+    await db.flush()
+    return new_customer.id
 
 
 @router.post("/login", response_model=Token)
@@ -241,37 +325,140 @@ async def login(
 ):
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
-    tenant_id = str(user.tenant_id) if user and user.tenant_id else "unknown"
-    
+    tenant_id_str = str(user.tenant_id) if user and user.tenant_id else "unknown"
+
     if not user or not verify_password(credentials.password, user.hashed_password):
-        record_login(success=False, tenant_id=tenant_id)
+        record_login(success=False, tenant_id=tenant_id_str)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
-    
+
     if not user.is_active:
-        record_login(success=False, tenant_id=tenant_id)
+        record_login(success=False, tenant_id=tenant_id_str)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user",
         )
-    
-    # Get current token version for this user
+
     token_version = await get_token_version(str(user.id))
-    
-    access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version)
-    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version, remember_me=credentials.remember_me)
-    
-    # Set httpOnly cookies
+
+    # For customers: check how many shops they belong to
+    if user.role == UserRole.CUSTOMER:
+        links_result = await db.execute(
+            select(UserCustomerLink, Tenant)
+            .join(Tenant, Tenant.id == UserCustomerLink.tenant_id)
+            .where(
+                and_(
+                    UserCustomerLink.user_id == user.id,
+                    UserCustomerLink.deleted_at.is_(None),
+                )
+            )
+        )
+        rows = links_result.all()
+
+        if len(rows) > 1:
+            # Multiple shops: return shop list and a short-lived selection token.
+            # No cookies are set yet — the customer must pick a shop first.
+            shops = [
+                ShopOption(
+                    id=str(tenant.id),
+                    name=tenant.name,
+                    slug=tenant.slug,
+                    logo_url=tenant.logo_url,
+                )
+                for _, tenant in rows
+            ]
+            selection_token = create_shop_select_token(
+                data={"sub": str(user.id)}, token_version=token_version
+            )
+            record_login(success=True, tenant_id="multi")
+            return Token(
+                access_token=selection_token,
+                refresh_token="",
+                requires_shop_selection=True,
+                shops=shops,
+            )
+
+        # Single shop (or legacy user with no link yet): auto-select
+        tid = str(rows[0][0].tenant_id) if rows else (str(user.tenant_id) if user.tenant_id else None)
+    else:
+        # Staff: no shop selection needed
+        tid = None
+
+    access_token = create_access_token(
+        data={"sub": str(user.id)}, tenant_id=tid, token_version=token_version
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id)},
+        tenant_id=tid,
+        token_version=token_version,
+        remember_me=credentials.remember_me,
+    )
     set_auth_cookies(response, access_token, refresh_token, remember_me=credentials.remember_me)
-    record_login(success=True, tenant_id=tenant_id)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
+    record_login(success=True, tenant_id=tid or tenant_id_str)
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+
+@router.post("/select-tenant", response_model=Token)
+@limiter.limit("10/minute")
+async def select_tenant(
+    request: Request,
+    response: Response,
+    body: SelectTenantRequest,
+    token: str = Depends(get_token_from_request),
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange a shop-select token + tenant choice for a full scoped JWT."""
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "shop_select":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired shop selection token",
+        )
+
+    user_id: Optional[str] = payload.get("sub")
+    jti: Optional[str] = payload.get("jti")
+    token_version: int = payload.get("ver", 0)
+
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    if jti and await is_token_blacklisted(jti):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
+
+    current_version = await get_token_version(user_id)
+    if token_version < current_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been invalidated")
+
+    # Validate that this user actually belongs to the requested tenant
+    link_result = await db.execute(
+        select(UserCustomerLink).where(
+            and_(
+                UserCustomerLink.user_id == user_id,
+                UserCustomerLink.tenant_id == body.tenant_id,
+                UserCustomerLink.deleted_at.is_(None),
+            )
+        )
+    )
+    if not link_result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    # Blacklist the selection token — it's single-use
+    if jti:
+        expiry = get_token_expiry_seconds(token)
+        if expiry > 0:
+            await blacklist_token(jti, expiry)
+
+    tid = str(body.tenant_id)
+    access_token = create_access_token(
+        data={"sub": user_id}, tenant_id=tid, token_version=current_version
+    )
+    new_refresh_token = create_refresh_token(
+        data={"sub": user_id}, tenant_id=tid, token_version=current_version
+    )
+    set_auth_cookies(response, access_token, new_refresh_token)
+    return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
 
 class RefreshTokenRequest(BaseModel):
@@ -336,11 +523,16 @@ async def refresh_token_endpoint(
         if expiry > 0:
             await blacklist_token(jti, expiry)
     
-    # Preserve remember_me preference from original token
+    # Preserve remember_me and tenant scope from original token
     remember_me = payload.get("rem", False)
-    
-    access_token = create_access_token(data={"sub": str(user.id)}, token_version=current_version)
-    new_refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=current_version, remember_me=remember_me)
+    tid = payload.get("tid")
+
+    access_token = create_access_token(
+        data={"sub": str(user.id)}, token_version=current_version, tenant_id=tid
+    )
+    new_refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}, token_version=current_version, remember_me=remember_me, tenant_id=tid
+    )
     
     # Set httpOnly cookies
     set_auth_cookies(response, access_token, new_refresh_token, remember_me=remember_me)
