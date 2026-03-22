@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { CreditCard, Lock, FileText, UserPlus, Download, Printer, Copy, Check, Share2, ChevronDown } from 'lucide-react'
@@ -12,6 +12,7 @@ import { getStripeForAccount } from '../../lib/stripe'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import { useAuthStore } from '../../stores/authStore'
 import TenantBrandLogo from '@/components/brand/TenantBrandLogo'
+import { formatUSPhone } from '../../utils/phone'
 
 interface InvoiceAccessResolve {
   invoice_id: string
@@ -426,7 +427,7 @@ export default function InvoiceAccessPage() {
                   <p>
                     Phone:{' '}
                     <a className="text-amber-800 font-medium underline" href={shopContact.telHref}>
-                      {shopContact.shopPhone}
+                      {formatUSPhone(shopContact.shopPhone!)}
                     </a>
                   </p>
                 )}
@@ -752,7 +753,7 @@ export default function InvoiceAccessPage() {
                 <>
                   Phone:{' '}
                   <a className="text-amber-700 hover:text-amber-800 font-medium underline" href={shopContact.telHref}>
-                    {shopContact.shopPhone}
+                    {formatUSPhone(shopContact.shopPhone!)}
                   </a>
                 </>
               )}
@@ -770,11 +771,6 @@ export default function InvoiceAccessPage() {
               )}
             </p>
           ) : null}
-          <p>
-            <Link to="/login" className="text-amber-700 hover:text-amber-800 font-medium">
-              Staff login
-            </Link>
-          </p>
           <p className="text-xs text-gray-400 mt-4">
             Powered by{' '}
             <a href="/" className="hover:text-gray-500 transition-colors">
