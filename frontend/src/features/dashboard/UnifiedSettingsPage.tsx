@@ -1119,6 +1119,7 @@ function ZelleSection() {
     onSuccess: (data) => {
       if (data.valid) {
         setIsUnlocked(true)
+        setContactEditing(true)
         setUnlockPassword('')
         setUnlockError(null)
       } else {
