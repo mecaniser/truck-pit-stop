@@ -24,6 +24,7 @@ from app.core.metrics import record_quote
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
 from app.core.password_policy import validate_password
 from app.db.models.user import User, UserRole
+from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.quote import Quote
 from app.db.models.customer import Customer
@@ -243,16 +244,11 @@ def _validate_quote_portal_subject(payload: dict, quote: Quote, order: RepairOrd
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid portal link.")
 
 
-def _validate_existing_customer_user(email_user: User, customer_id: UUID) -> None:
+def _validate_existing_customer_user(email_user: User) -> None:
     if email_user.role != UserRole.CUSTOMER:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This email belongs to another account type. Please contact the shop for assistance.",
-        )
-    if email_user.customer_id and email_user.customer_id != customer_id:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This email is already linked to another account. Please contact the shop for assistance.",
         )
 
 
@@ -269,6 +265,7 @@ def _validate_new_password_or_400(password: str) -> None:
 
 
 async def _resolve_customer_user_after_conflict(db: AsyncSession, customer: Customer) -> User:
+    """Recover canonical customer user after unique-key races."""
     result = await db.execute(select(User).where(User.customer_id == customer.id))
     user = result.scalar_one_or_none()
     if user:
@@ -282,24 +279,17 @@ async def _resolve_customer_user_after_conflict(db: AsyncSession, customer: Cust
             detail="Portal account setup is in progress. Please retry in a moment.",
         )
 
-    _validate_existing_customer_user(email_user, customer.id)
-    if not email_user.customer_id:
-        email_user.customer_id = customer.id
-        email_user.tenant_id = customer.tenant_id
-        email_user.is_active = True
-        try:
-            await db.commit()
-            await db.refresh(email_user)
-        except IntegrityError:
-            await db.rollback()
-            result = await db.execute(select(User).where(User.customer_id == customer.id))
-            user = result.scalar_one_or_none()
-            if user:
-                return user
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Portal account setup is in progress. Please retry in a moment.",
-            )
+    _validate_existing_customer_user(email_user)
+    db.add(UserCustomerLink(
+        user_id=email_user.id,
+        customer_id=customer.id,
+        tenant_id=customer.tenant_id,
+    ))
+    try:
+        await db.commit()
+        await db.refresh(email_user)
+    except IntegrityError:
+        await db.rollback()  # Link already exists — that's fine
 
     return email_user
 
@@ -1005,9 +995,14 @@ async def get_quote_by_token(
     customer = order.customer
     user_result = await db.execute(select(User).where(User.customer_id == order.customer_id))
     existing_user = user_result.scalar_one_or_none()
+    if not existing_user and customer:
+        user_result = await db.execute(
+            select(User).where(User.email == customer.email, User.role == UserRole.CUSTOMER)
+        )
+        existing_user = user_result.scalar_one_or_none()
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
-    
+
     return QuoteDetailResponse(
         quote=QuoteResponse.model_validate(quote),
         order_number=order.order_number,
@@ -1095,6 +1090,11 @@ async def resolve_quote_portal_access(
 
     result = await db.execute(select(User).where(User.customer_id == order.customer_id))
     existing_user = result.scalar_one_or_none()
+    if not existing_user:
+        result = await db.execute(
+            select(User).where(User.email == order.customer.email, User.role == UserRole.CUSTOMER)
+        )
+        existing_user = result.scalar_one_or_none()
 
     portal_enrollment_token = await generate_quote_portal_enrollment_token(
         quote=quote,
@@ -1155,17 +1155,19 @@ async def create_portal_from_quote_link(
         result = await db.execute(select(User).where(User.email == customer.email))
         email_user = result.scalar_one_or_none()
         if email_user:
-            _validate_existing_customer_user(email_user, customer.id)
+            _validate_existing_customer_user(email_user)
             user = email_user
-            user.customer_id = customer.id
-            user.tenant_id = customer.tenant_id
-            user.is_active = True
+            db.add(UserCustomerLink(
+                user_id=user.id,
+                customer_id=customer.id,
+                tenant_id=customer.tenant_id,
+            ))
             try:
                 await db.commit()
                 await db.refresh(user)
             except IntegrityError:
-                await db.rollback()
-                user = await _resolve_customer_user_after_conflict(db, customer)
+                await db.rollback()  # Link already exists — proceed
+                await db.refresh(user)
             user_exists = True
         else:
             if not body.new_password:
@@ -1188,6 +1190,8 @@ async def create_portal_from_quote_link(
             )
             db.add(user)
             try:
+                await db.flush()
+                db.add(UserCustomerLink(user_id=user.id, customer_id=customer.id, tenant_id=customer.tenant_id))
                 await db.commit()
                 await db.refresh(user)
                 user_exists = False
@@ -1210,8 +1214,8 @@ async def create_portal_from_quote_link(
         )
 
     token_version = await get_token_version(str(user.id))
-    access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version)
-    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version)
+    access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer.tenant_id))
+    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer.tenant_id))
     _set_auth_cookies(response, access_token, refresh_token)
 
     return QuotePortalCreateResponse(
