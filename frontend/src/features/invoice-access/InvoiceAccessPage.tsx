@@ -245,8 +245,6 @@ export default function InvoiceAccessPage() {
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
   const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
   const [showPayment, setShowPayment] = useState(false)
-  const [zelleNotes, setZelleNotes] = useState('')
-  const [showZelleNote, setShowZelleNote] = useState(false)
   const [showQrCode, setShowQrCode] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [paymentResult, setPaymentResult] = useState<{
@@ -335,17 +333,12 @@ export default function InvoiceAccessPage() {
 
   const submitZelleMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post('/invoice-access/submit-zelle', {
-        token,
-        notes: zelleNotes.trim() || null,
-      })
+      const response = await api.post('/invoice-access/submit-zelle', { token })
       return response.data as SubmitGuestZellePaymentResponse
     },
     onSuccess: (data) => {
       toast.success(data.message || 'Zelle payment submitted')
       queryClient.invalidateQueries({ queryKey: ['invoice-access', token] })
-      setZelleNotes('')
-      setShowZelleNote(false)
     },
     onError: (err: unknown) => {
       toast.error(getErrorDetail(err, 'Unable to submit Zelle payment'))
@@ -666,23 +659,6 @@ export default function InvoiceAccessPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {!showZelleNote ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowZelleNote(true)}
-                        className="text-xs text-blue-600 underline underline-offset-2"
-                      >
-                        Add a note for garage staff (optional)
-                      </button>
-                    ) : (
-                      <textarea
-                        value={zelleNotes}
-                        onChange={(e) => setZelleNotes(e.target.value)}
-                        rows={2}
-                        placeholder="Optional note for garage staff"
-                        className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm resize-none"
-                      />
-                    )}
                     <button
                       onClick={() => submitZelleMutation.mutate()}
                       disabled={submitZelleMutation.isPending}
