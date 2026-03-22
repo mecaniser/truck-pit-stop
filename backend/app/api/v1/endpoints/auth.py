@@ -11,7 +11,7 @@ from app.core.security import (
     decode_token,
     get_token_expiry_seconds,
 )
-from app.core.dependencies import get_db, get_current_active_user
+from app.core.dependencies import get_db, get_current_active_user, get_token_from_request
 from app.core.redis import (
     get_token_version,
     increment_token_version,
