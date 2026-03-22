@@ -1206,12 +1206,16 @@ async def create_portal_from_quote_link(
             detail="This account is inactive. Please contact the shop.",
         )
 
-    consumed = await consume_quote_portal_enrollment_token(body.token)
-    if consumed is None:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="This portal link has already been used. Please return to your quote link.",
-        )
+    # Only consume the token when creating a new account (first-time enrollment).
+    # Returning users logging in via a quote link should not burn the token —
+    # the link must remain usable on future visits until it naturally expires.
+    if not user_exists:
+        consumed = await consume_quote_portal_enrollment_token(body.token)
+        if consumed is None:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="This portal link has already been used. Please return to your quote link.",
+            )
 
     token_version = await get_token_version(str(user.id))
     access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer.tenant_id))

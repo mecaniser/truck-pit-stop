@@ -788,15 +788,19 @@ async def create_portal_from_invoice_link(
             detail="This account is inactive. Please contact the shop.",
         )
 
-    if token_type == "invoice_access":
-        consumed = await consume_invoice_access_token(body.token)
-    else:
-        consumed = await consume_portal_enrollment_token(body.token)
-    if consumed is None:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="This invoice link has already been used. Please request a new invoice link.",
-        )
+    # Only consume the token when creating a new account (first-time enrollment).
+    # Returning users logging in via an invoice link should not burn the token —
+    # the link must remain usable on future visits until it naturally expires (7 days).
+    if not user_exists:
+        if token_type == "invoice_access":
+            consumed = await consume_invoice_access_token(body.token)
+        else:
+            consumed = await consume_portal_enrollment_token(body.token)
+        if consumed is None:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="This invoice link has already been used. Please request a new invoice link.",
+            )
 
     token_version = await get_token_version(str(user.id))
     access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer.tenant_id))
