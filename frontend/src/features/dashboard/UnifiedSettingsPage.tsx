@@ -1080,6 +1080,9 @@ function ZelleSection() {
   const [zelleEmail, setZelleEmail] = useState('')
   const [zellePhone, setZellePhone] = useState('')
   const [contactEditing, setContactEditing] = useState(false)
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [unlockPassword, setUnlockPassword] = useState('')
+  const [unlockError, setUnlockError] = useState<string | null>(null)
 
   const { data: garageProfile } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -1108,6 +1111,25 @@ function ZelleSection() {
     }
   }, [zelleSettings, garageProfile, contactEditing])
 
+  const unlockMutation = useMutation({
+    mutationFn: async (password: string) => {
+      const response = await api.post('/auth/verify-password', { password })
+      return response.data as { valid: boolean }
+    },
+    onSuccess: (data) => {
+      if (data.valid) {
+        setIsUnlocked(true)
+        setUnlockPassword('')
+        setUnlockError(null)
+      } else {
+        setUnlockError('Incorrect password.')
+      }
+    },
+    onError: () => {
+      setUnlockError('Incorrect password.')
+    },
+  })
+
   const saveContactMutation = useMutation({
     mutationFn: async () => {
       const response = await api.put('/admin/zelle-settings', {
@@ -1120,6 +1142,7 @@ function ZelleSection() {
       toast.success('Zelle contact details saved')
       queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
       setContactEditing(false)
+      setIsUnlocked(false)
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to save Zelle settings')
@@ -1165,117 +1188,180 @@ function ZelleSection() {
           <span>Zelle Payments</span>
         </div>
 
-        {/* Zelle contact details */}
-        {(() => {
-          const emailInvalid = zelleEmail.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(zelleEmail.trim())
-          const phoneInvalid = zellePhone.trim() !== '' && !isValidUSPhone(zellePhone)
-          const canSave = !emailInvalid && !phoneInvalid
-          return (
-            <div className="mb-6 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={industrialStyles.label}>Zelle Email</label>
-                  <input
-                    type="email"
-                    value={zelleEmail}
-                    onChange={(e) => { setZelleEmail(e.target.value); setContactEditing(true) }}
-                    placeholder="zelle@yourshop.com"
-                    className={emailInvalid ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
-                  />
-                  {emailInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid email address</p>}
-                </div>
-                <div>
-                  <label className={industrialStyles.label}>Zelle Phone</label>
-                  <input
-                    type="tel"
-                    value={zellePhone}
-                    onChange={(e) => { setZellePhone(formatUSPhone(e.target.value)); setContactEditing(true) }}
-                    placeholder="(555) 000-0000"
-                    className={phoneInvalid ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
-                  />
-                  {phoneInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid US phone number</p>}
+        {!isUnlocked ? (
+          /* Lock gate */
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 bg-amber-950/30 border border-amber-700/40 rounded-xl p-4">
+              <Shield className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-sm text-amber-300">
+                Zelle payment details are protected. Confirm your password to make changes.
+              </p>
+            </div>
+            {/* Current values read-only preview */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={industrialStyles.label}>Zelle Email</label>
+                <div className={`${industrialStyles.input} opacity-50 cursor-not-allowed select-none`}>
+                  {zelleEmail || <span className="text-zinc-600">Not set</span>}
                 </div>
               </div>
-              {contactEditing && (
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => saveContactMutation.mutate()}
-                    disabled={saveContactMutation.isPending || !canSave}
-                    className={industrialStyles.btnPrimary}
-                  >
-                    <span className="flex items-center gap-2">
-                      <Save className="w-4 h-4" />
-                      {saveContactMutation.isPending ? 'Saving...' : 'Save'}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setZelleEmail(zelleSettings?.zelle_email || garageProfile?.email || '')
-                      setZellePhone(zelleSettings?.zelle_phone || garageProfile?.phone || '')
-                      setContactEditing(false)
-                    }}
-                    className={industrialStyles.btnSecondary}
-                  >
-                    Cancel
-                  </button>
+              <div>
+                <label className={industrialStyles.label}>Zelle Phone</label>
+                <div className={`${industrialStyles.input} opacity-50 cursor-not-allowed select-none`}>
+                  {zellePhone || <span className="text-zinc-600">Not set</span>}
                 </div>
-              )}
+              </div>
             </div>
-          )
-        })()}
-
-        <div className="flex flex-col sm:flex-row items-start gap-6">
-          {/* QR Preview */}
-          <div className="w-32 h-32 bg-zinc-800/60 border border-zinc-600/50 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0">
-            {zelleQrPreview || zelleSettings?.zelle_qr_image ? (
-              <img src={zelleQrPreview || zelleSettings?.zelle_qr_image || ''} alt="Zelle QR" className="w-full h-full object-contain" />
-            ) : (
-              <QrCode className="w-12 h-12 text-zinc-600" />
-            )}
-          </div>
-
-          <div className="flex-1 space-y-4">
-            <div>
-              <label className={industrialStyles.label}>Upload QR Code</label>
+            <div className="max-w-sm space-y-2">
+              <label className={industrialStyles.label}>Your Password</label>
               <input
-                type="file"
-                accept="image/*"
-                onChange={handleQrFileChange}
-                className="block w-full text-sm text-zinc-400
-                  file:mr-4 file:py-2.5 file:px-4 file:rounded-lg
-                  file:border file:border-zinc-600/50 file:bg-zinc-800/80
-                  file:text-xs file:font-medium file:text-zinc-300
-                  hover:file:bg-zinc-700 file:transition-colors file:cursor-pointer"
+                type="password"
+                value={unlockPassword}
+                onChange={(e) => { setUnlockPassword(e.target.value); setUnlockError(null) }}
+                onKeyDown={(e) => e.key === 'Enter' && unlockPassword && unlockMutation.mutate(unlockPassword)}
+                placeholder="Enter your password to unlock"
+                className={unlockError ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
               />
-            </div>
-            <div className="flex gap-3">
-              {zelleQrPreview && (
-                <button
-                  onClick={() => uploadQrMutation.mutate(zelleQrPreview)}
-                  disabled={uploadQrMutation.isPending}
-                  className={industrialStyles.btnPrimary}
-                >
-                  <span className="flex items-center gap-2">
-                    <Save className="w-4 h-4" />
-                    Save
-                  </span>
-                </button>
-              )}
-              {(zelleSettings?.zelle_qr_image || zelleQrPreview) && (
-                <button
-                  onClick={() => { uploadQrMutation.mutate(null); setZelleQrPreview(null) }}
-                  disabled={uploadQrMutation.isPending}
-                  className={industrialStyles.btnDanger}
-                >
-                  <span className="flex items-center gap-2">
-                    <Trash2 className="w-4 h-4" />
-                    Remove
-                  </span>
-                </button>
-              )}
+              {unlockError && <p className="text-xs text-red-400">{unlockError}</p>}
+              <button
+                onClick={() => unlockMutation.mutate(unlockPassword)}
+                disabled={!unlockPassword || unlockMutation.isPending}
+                className={industrialStyles.btnPrimary}
+              >
+                <span className="flex items-center gap-2">
+                  <Lock className="w-4 h-4" />
+                  {unlockMutation.isPending ? 'Verifying...' : 'Unlock to Edit'}
+                </span>
+              </button>
             </div>
           </div>
-        </div>
+        ) : (
+          /* Unlocked — editable */
+          <div className="space-y-6">
+            <div className="flex items-center justify-between bg-green-950/30 border border-green-700/40 rounded-xl px-4 py-2">
+              <span className="text-sm text-green-400 flex items-center gap-2">
+                <Shield className="w-4 h-4" /> Editing unlocked
+              </span>
+              <button
+                onClick={() => { setIsUnlocked(false); setContactEditing(false) }}
+                className="text-xs text-zinc-400 hover:text-zinc-200 underline"
+              >
+                Lock
+              </button>
+            </div>
+
+            {/* Contact fields */}
+            {(() => {
+              const emailInvalid = zelleEmail.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(zelleEmail.trim())
+              const phoneInvalid = zellePhone.trim() !== '' && !isValidUSPhone(zellePhone)
+              const canSave = !emailInvalid && !phoneInvalid
+              return (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={industrialStyles.label}>Zelle Email</label>
+                      <input
+                        type="email"
+                        value={zelleEmail}
+                        onChange={(e) => { setZelleEmail(e.target.value); setContactEditing(true) }}
+                        placeholder="zelle@yourshop.com"
+                        className={emailInvalid ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
+                      />
+                      {emailInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid email address</p>}
+                    </div>
+                    <div>
+                      <label className={industrialStyles.label}>Zelle Phone</label>
+                      <input
+                        type="tel"
+                        value={zellePhone}
+                        onChange={(e) => { setZellePhone(formatUSPhone(e.target.value)); setContactEditing(true) }}
+                        placeholder="(555) 000-0000"
+                        className={phoneInvalid ? `${industrialStyles.input} border-red-500 focus:border-red-400` : industrialStyles.input}
+                      />
+                      {phoneInvalid && <p className="text-xs text-red-400 mt-1">Enter a valid US phone number</p>}
+                    </div>
+                  </div>
+                  {contactEditing && (
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => saveContactMutation.mutate()}
+                        disabled={saveContactMutation.isPending || !canSave}
+                        className={industrialStyles.btnPrimary}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Save className="w-4 h-4" />
+                          {saveContactMutation.isPending ? 'Saving...' : 'Save'}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setZelleEmail(zelleSettings?.zelle_email || garageProfile?.email || '')
+                          setZellePhone(zelleSettings?.zelle_phone || garageProfile?.phone || '')
+                          setContactEditing(false)
+                        }}
+                        className={industrialStyles.btnSecondary}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {/* QR code */}
+            <div className="flex flex-col sm:flex-row items-start gap-6">
+              <div className="w-32 h-32 bg-zinc-800/60 border border-zinc-600/50 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0">
+                {zelleQrPreview || zelleSettings?.zelle_qr_image ? (
+                  <img src={zelleQrPreview || zelleSettings?.zelle_qr_image || ''} alt="Zelle QR" className="w-full h-full object-contain" />
+                ) : (
+                  <QrCode className="w-12 h-12 text-zinc-600" />
+                )}
+              </div>
+              <div className="flex-1 space-y-4">
+                <div>
+                  <label className={industrialStyles.label}>Upload QR Code</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQrFileChange}
+                    className="block w-full text-sm text-zinc-400
+                      file:mr-4 file:py-2.5 file:px-4 file:rounded-lg
+                      file:border file:border-zinc-600/50 file:bg-zinc-800/80
+                      file:text-xs file:font-medium file:text-zinc-300
+                      hover:file:bg-zinc-700 file:transition-colors file:cursor-pointer"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  {zelleQrPreview && (
+                    <button
+                      onClick={() => uploadQrMutation.mutate(zelleQrPreview)}
+                      disabled={uploadQrMutation.isPending}
+                      className={industrialStyles.btnPrimary}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Save className="w-4 h-4" />
+                        Save
+                      </span>
+                    </button>
+                  )}
+                  {(zelleSettings?.zelle_qr_image || zelleQrPreview) && (
+                    <button
+                      onClick={() => { uploadQrMutation.mutate(null); setZelleQrPreview(null) }}
+                      disabled={uploadQrMutation.isPending}
+                      className={industrialStyles.btnDanger}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Trash2 className="w-4 h-4" />
+                        Remove
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </IndustrialCard>
     </div>
   )
