@@ -11,7 +11,7 @@ import PaymentMethodsCard from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
-import { User, Lock, CreditCard, Truck, Palette, LogOut, Check, RotateCcw, Type } from 'lucide-react'
+import { User, Lock, CreditCard, Truck, Palette, LogOut, Check, RotateCcw, Type, Building2, ArrowRightLeft } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
 
 // ============ SCHEMAS ============
@@ -43,7 +43,7 @@ type ProfileFormData = z.infer<typeof profileSchema>
 type PasswordFormData = z.infer<typeof passwordSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'vehicles'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'vehicles' | 'shops'
 
 // ============ SECTION COMPONENTS ============
 
@@ -531,6 +531,111 @@ function VehiclesSection() {
   )
 }
 
+interface ShopOption {
+  id: string
+  name: string
+  slug: string
+  logo_url: string | null
+}
+
+function ShopsSection() {
+  const { user, login } = useAuthStore()
+  const navigate = useNavigate()
+  const [switching, setSwitching] = useState<string | null>(null)
+
+  const { data: shops = [], isLoading } = useQuery<ShopOption[]>({
+    queryKey: ['my-shops'],
+    queryFn: async () => {
+      const res = await api.get('/auth/my-shops')
+      return res.data
+    },
+  })
+
+  const handleSwitch = async (tenantId: string) => {
+    setSwitching(tenantId)
+    try {
+      const res = await api.post('/auth/switch-shop', { tenant_id: tenantId })
+      const { access_token, refresh_token } = res.data
+      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
+      const meRes = await api.get('/auth/me', { headers: { Authorization: `Bearer ${access_token}` } })
+      login(access_token, refresh_token, meRes.data)
+      navigate('/portal')
+    } catch {
+      toast.error('Failed to switch shop. Please try again.')
+    } finally {
+      setSwitching(null)
+    }
+  }
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" /></div>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-1">My Shops</h3>
+        <p className="text-sm text-gray-400">
+          {shops.length > 1
+            ? 'Your account is linked to multiple shops. Switch between them here.'
+            : 'Your account is linked to this shop.'}
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {shops.map((shop) => {
+          const isCurrent = shop.id === user?.tenant_id
+          const isSwitching = switching === shop.id
+
+          return (
+            <div
+              key={shop.id}
+              className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${
+                isCurrent
+                  ? 'border-amber-500/40 bg-amber-500/10'
+                  : 'border-white/10 bg-white/5'
+              }`}
+            >
+              {shop.logo_url ? (
+                <img src={shop.logo_url} alt={shop.name} className="h-10 w-10 rounded-lg object-contain bg-white p-1 flex-shrink-0" />
+              ) : (
+                <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+                  <Building2 className="w-5 h-5 text-gray-400" />
+                </div>
+              )}
+
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-white truncate">{shop.name}</p>
+                {isCurrent && (
+                  <span className="inline-flex items-center gap-1 text-xs text-amber-400 font-medium mt-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {!isCurrent && shops.length > 1 && (
+                <button
+                  onClick={() => handleSwitch(shop.id)}
+                  disabled={!!switching}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-white/20 text-gray-300 hover:text-white hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
+                >
+                  {isSwitching ? (
+                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b border-white" />
+                  ) : (
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                  )}
+                  {isSwitching ? 'Switching…' : 'Switch'}
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ============ LAYOUT ============
 
 const SECTIONS = [
@@ -539,6 +644,7 @@ const SECTIONS = [
   { id: 'appearance' as const, label: 'Appearance', icon: Palette },
   { id: 'payments' as const, label: 'Payments', icon: CreditCard },
   { id: 'vehicles' as const, label: 'Vehicles', icon: Truck },
+  { id: 'shops' as const, label: 'Shops', icon: Building2 },
 ]
 
 export default function ProfileSettingsPage() {
@@ -581,6 +687,7 @@ export default function ProfileSettingsPage() {
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'payments' && <PaymentsSection />}
           {activeSection === 'vehicles' && <VehiclesSection />}
+          {activeSection === 'shops' && <ShopsSection />}
         </div>
       </div>
     </div>

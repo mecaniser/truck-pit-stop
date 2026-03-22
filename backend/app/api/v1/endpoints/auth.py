@@ -594,6 +594,62 @@ async def get_current_user_info(
     return await _build_user_response(current_user, db)
 
 
+@router.get("/my-shops", response_model=List[ShopOption])
+async def get_my_shops(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all shops the current customer belongs to."""
+    if current_user.role != UserRole.CUSTOMER:
+        return []
+
+    links_result = await db.execute(
+        select(UserCustomerLink, Tenant)
+        .join(Tenant, Tenant.id == UserCustomerLink.tenant_id)
+        .where(
+            and_(
+                UserCustomerLink.user_id == current_user.id,
+                UserCustomerLink.deleted_at.is_(None),
+            )
+        )
+    )
+    return [
+        ShopOption(id=str(tenant.id), name=tenant.name, slug=tenant.slug, logo_url=tenant.logo_url)
+        for _, tenant in links_result.all()
+    ]
+
+
+@router.post("/switch-shop", response_model=Token)
+async def switch_shop(
+    response: Response,
+    body: SelectTenantRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Switch the active shop context for a multi-tenant customer."""
+    if current_user.role != UserRole.CUSTOMER:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can switch shops")
+
+    link_result = await db.execute(
+        select(UserCustomerLink).where(
+            and_(
+                UserCustomerLink.user_id == current_user.id,
+                UserCustomerLink.tenant_id == body.tenant_id,
+                UserCustomerLink.deleted_at.is_(None),
+            )
+        )
+    )
+    if not link_result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    tid = str(body.tenant_id)
+    token_version = await get_token_version(str(current_user.id))
+    access_token = create_access_token(data={"sub": str(current_user.id)}, tenant_id=tid, token_version=token_version)
+    new_refresh_token = create_refresh_token(data={"sub": str(current_user.id)}, tenant_id=tid, token_version=token_version)
+    set_auth_cookies(response, access_token, new_refresh_token)
+    return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
+
+
 @router.get("/tenant-branding", response_model=TenantBrandingResponse)
 async def get_current_tenant_branding(
     current_user: User = Depends(get_current_active_user),
