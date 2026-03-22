@@ -724,13 +724,18 @@ async def create_portal_from_invoice_link(
 
     _validate_invoice_link_subject(payload, invoice, order)
 
+    # Cache scalar values before any commit/rollback that would expire the customer object.
+    # rollback() always expires all session objects regardless of expire_on_commit=False,
+    # and accessing customer.tenant_id after expiry raises MissingGreenlet in async mode.
+    customer_tenant_id = customer.tenant_id
+
     result = await db.execute(select(User).where(User.customer_id == customer.id))
     user = result.scalar_one_or_none()
     user_exists = user is not None
 
     if user:
         # Ensure UserCustomerLink exists — may be missing for users created before migration 043
-        db.add(UserCustomerLink(user_id=user.id, customer_id=customer.id, tenant_id=customer.tenant_id))
+        db.add(UserCustomerLink(user_id=user.id, customer_id=customer.id, tenant_id=customer_tenant_id))
         try:
             await db.commit()
         except IntegrityError:
@@ -747,7 +752,7 @@ async def create_portal_from_invoice_link(
             db.add(UserCustomerLink(
                 user_id=user.id,
                 customer_id=customer.id,
-                tenant_id=customer.tenant_id,
+                tenant_id=customer_tenant_id,
             ))
             try:
                 await db.commit()
@@ -770,7 +775,7 @@ async def create_portal_from_invoice_link(
                 last_name=customer.last_name,
                 phone=customer.phone,
                 role=UserRole.CUSTOMER,
-                tenant_id=customer.tenant_id,
+                tenant_id=customer_tenant_id,
                 customer_id=customer.id,
                 is_active=True,
                 is_verified=False,
@@ -781,7 +786,7 @@ async def create_portal_from_invoice_link(
                 db.add(UserCustomerLink(
                     user_id=user.id,
                     customer_id=customer.id,
-                    tenant_id=customer.tenant_id,
+                    tenant_id=customer_tenant_id,
                 ))
                 await db.commit()
                 await db.refresh(user)
@@ -812,8 +817,8 @@ async def create_portal_from_invoice_link(
             )
 
     token_version = await get_token_version(str(user.id))
-    access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer.tenant_id))
-    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer.tenant_id))
+    access_token = create_access_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer_tenant_id))
+    refresh_token = create_refresh_token(data={"sub": str(user.id)}, token_version=token_version, tenant_id=str(customer_tenant_id))
     _set_auth_cookies(response, access_token, refresh_token)
 
     return CreatePortalResponse(
