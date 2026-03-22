@@ -1081,6 +1081,14 @@ function ZelleSection() {
   const [zellePhone, setZellePhone] = useState('')
   const [contactEditing, setContactEditing] = useState(false)
 
+  const { data: garageProfile } = useQuery<GarageProfile>({
+    queryKey: ['garage-profile'],
+    queryFn: async () => {
+      const response = await api.get('/admin/garage-profile')
+      return response.data
+    },
+  })
+
   const { data: zelleSettings } = useQuery<ZelleSettings>({
     queryKey: ['zelle-settings'],
     queryFn: async () => {
@@ -1090,14 +1098,15 @@ function ZelleSection() {
   })
 
   // Sync form fields when data loads (only when not actively editing)
+  // Fall back to garage profile email/phone when Zelle-specific values aren't set
   const prevZelleSettings = useRef<ZelleSettings | undefined>(undefined)
   useEffect(() => {
     if (zelleSettings && zelleSettings !== prevZelleSettings.current && !contactEditing) {
-      setZelleEmail(zelleSettings.zelle_email || '')
-      setZellePhone(zelleSettings.zelle_phone || '')
+      setZelleEmail(zelleSettings.zelle_email || garageProfile?.email || '')
+      setZellePhone(zelleSettings.zelle_phone || garageProfile?.phone || '')
       prevZelleSettings.current = zelleSettings
     }
-  }, [zelleSettings, contactEditing])
+  }, [zelleSettings, garageProfile, contactEditing])
 
   const saveContactMutation = useMutation({
     mutationFn: async () => {
