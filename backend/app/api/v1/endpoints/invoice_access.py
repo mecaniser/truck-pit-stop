@@ -735,6 +735,7 @@ async def create_portal_from_invoice_link(
             await db.commit()
         except IntegrityError:
             await db.rollback()
+            await db.refresh(user)  # rollback() always expires objects; re-hydrate so is_active is accessible
 
     if not user:
         # If email is already in use, link safely when possible; otherwise fail with clear action.
