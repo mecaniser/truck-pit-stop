@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -1077,12 +1077,43 @@ function ZelleSection() {
   const queryClient = useQueryClient()
   const [zelleQrPreview, setZelleQrPreview] = useState<string | null>(null)
   const [_isUploadingQr, setIsUploadingQr] = useState(false)
+  const [zelleEmail, setZelleEmail] = useState('')
+  const [zellePhone, setZellePhone] = useState('')
+  const [contactEditing, setContactEditing] = useState(false)
 
   const { data: zelleSettings } = useQuery<ZelleSettings>({
     queryKey: ['zelle-settings'],
     queryFn: async () => {
       const response = await api.get('/admin/zelle-settings')
       return response.data
+    },
+  })
+
+  // Sync form fields when data loads (only when not actively editing)
+  const prevZelleSettings = useRef<ZelleSettings | undefined>(undefined)
+  useEffect(() => {
+    if (zelleSettings && zelleSettings !== prevZelleSettings.current && !contactEditing) {
+      setZelleEmail(zelleSettings.zelle_email || '')
+      setZellePhone(zelleSettings.zelle_phone || '')
+      prevZelleSettings.current = zelleSettings
+    }
+  }, [zelleSettings, contactEditing])
+
+  const saveContactMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.put('/admin/zelle-settings', {
+        zelle_email: zelleEmail.trim() || null,
+        zelle_phone: zellePhone.trim() || null,
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success('Zelle contact details saved')
+      queryClient.invalidateQueries({ queryKey: ['zelle-settings'] })
+      setContactEditing(false)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to save Zelle settings')
     },
   })
 
@@ -1123,6 +1154,56 @@ function ZelleSection() {
         <div className={industrialStyles.sectionHeader}>
           <QrCode className="w-4 h-4 text-[var(--accent-400)]" />
           <span>Zelle Payments</span>
+        </div>
+
+        {/* Zelle contact details */}
+        <div className="mb-6 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={industrialStyles.label}>Zelle Email</label>
+              <input
+                type="email"
+                value={zelleEmail}
+                onChange={(e) => { setZelleEmail(e.target.value); setContactEditing(true) }}
+                placeholder="zelle@yourshop.com"
+                className={industrialStyles.input}
+              />
+            </div>
+            <div>
+              <label className={industrialStyles.label}>Zelle Phone</label>
+              <input
+                type="tel"
+                value={zellePhone}
+                onChange={(e) => { setZellePhone(e.target.value); setContactEditing(true) }}
+                placeholder="+1 (555) 000-0000"
+                className={industrialStyles.input}
+              />
+            </div>
+          </div>
+          {contactEditing && (
+            <div className="flex gap-3">
+              <button
+                onClick={() => saveContactMutation.mutate()}
+                disabled={saveContactMutation.isPending}
+                className={industrialStyles.btnPrimary}
+              >
+                <span className="flex items-center gap-2">
+                  <Save className="w-4 h-4" />
+                  {saveContactMutation.isPending ? 'Saving...' : 'Save'}
+                </span>
+              </button>
+              <button
+                onClick={() => {
+                  setZelleEmail(zelleSettings?.zelle_email || '')
+                  setZellePhone(zelleSettings?.zelle_phone || '')
+                  setContactEditing(false)
+                }}
+                className={industrialStyles.btnSecondary}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row items-start gap-6">
