@@ -30,6 +30,13 @@ type ApiErrorShape = {
   }
 }
 
+interface ShopOption {
+  id: string
+  name: string
+  slug: string
+  logo_url: string | null
+}
+
 export default function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -37,6 +44,8 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [shopSelectToken, setShopSelectToken] = useState<string | null>(null)
+  const [shops, setShops] = useState<ShopOption[]>([])
   const resetSuccess = searchParams.get('reset') === 'success'
   const defaultEmail = import.meta.env.DEV ? 'truxpitstop@gmail.com' : ''
   const defaultPassword = import.meta.env.DEV ? 'BUse@1534' : ''
@@ -73,28 +82,62 @@ export default function LoginPage() {
     },
   })
 
+  const completeLogin = async (access_token: string, refresh_token: string) => {
+    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
+    const userResponse = await api.get('/auth/me', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    })
+    login(access_token, refresh_token, userResponse.data)
+    if (userResponse.data.role === 'customer') {
+      navigate('/portal')
+    } else if (userResponse.data.role === 'mechanic') {
+      navigate('/mechanic')
+    } else {
+      navigate('/dashboard')
+    }
+  }
+
+  const onSelectShop = async (tenantId: string) => {
+    if (!shopSelectToken) return
+    setIsLoading(true)
+    setError(null)
+    try {
+      const response = await api.post(
+        '/auth/select-tenant',
+        { tenant_id: tenantId },
+        { headers: { Authorization: `Bearer ${shopSelectToken}` } }
+      )
+      await completeLogin(response.data.access_token, response.data.refresh_token)
+    } catch (err: unknown) {
+      const errorMessage =
+        typeof err === 'object' &&
+        err !== null &&
+        'response' in err &&
+        typeof (err as ApiErrorShape).response?.data?.detail === 'string'
+          ? (err as ApiErrorShape).response?.data?.detail
+          : undefined
+      setError(errorMessage || 'Shop selection failed. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true)
     setError(null)
 
     try {
       const response = await api.post('/auth/login', data)
-      const { access_token, refresh_token } = response.data
+      const { access_token, refresh_token, requires_shop_selection, shops: shopList } = response.data
 
-      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
-      const userResponse = await api.get('/auth/me', {
-        headers: { Authorization: `Bearer ${access_token}` },
-      })
-
-      login(access_token, refresh_token, userResponse.data)
-
-      if (userResponse.data.role === 'customer') {
-        navigate('/portal')
-      } else if (userResponse.data.role === 'mechanic') {
-        navigate('/mechanic')
-      } else {
-        navigate('/dashboard')
+      if (requires_shop_selection && shopList?.length) {
+        setShopSelectToken(access_token)
+        setShops(shopList)
+        setIsLoading(false)
+        return
       }
+
+      await completeLogin(access_token, refresh_token)
     } catch (err: unknown) {
       const errorMessage =
         typeof err === 'object' &&
@@ -184,7 +227,41 @@ export default function LoginPage() {
               </Link>
             </div>
 
-            <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+            {shopSelectToken && shops.length > 0 ? (
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-100 mb-1">Select a shop</h3>
+                <p className="text-sm text-zinc-400">Your account is linked to multiple shops. Choose one to continue.</p>
+              </div>
+              <div className="space-y-2">
+                {shops.map((shop) => (
+                  <button
+                    key={shop.id}
+                    type="button"
+                    onClick={() => onSelectShop(shop.id)}
+                    disabled={isLoading}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-zinc-700 bg-zinc-900/60 hover:border-zinc-500 hover:bg-zinc-800/80 text-left transition-colors disabled:opacity-50"
+                  >
+                    {shop.logo_url && (
+                      <img src={shop.logo_url} alt={shop.name} className="h-8 w-8 rounded object-contain bg-white p-0.5" />
+                    )}
+                    <span className="font-medium text-zinc-100">{shop.name}</span>
+                  </button>
+                ))}
+              </div>
+              {error && (
+                <p className="text-sm text-red-400 bg-red-900/20 border border-red-700/50 rounded-xl px-4 py-3">{error}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShopSelectToken(null); setShops([]); setError(null) }}
+                className="text-sm text-zinc-400 hover:text-zinc-200"
+              >
+                ← Back to login
+              </button>
+            </div>
+          ) : (
+          <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
           {resetSuccess && (
             <div className="flex items-center gap-3 rounded-xl border border-emerald-700/50 bg-emerald-900/20 px-4 py-3 text-emerald-300">
               <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -333,6 +410,7 @@ export default function LoginPage() {
             </Link>
           </div>
             </form>
+          )}
           </section>
         </div>
       </div>

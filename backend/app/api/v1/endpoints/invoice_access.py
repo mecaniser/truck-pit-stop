@@ -728,6 +728,14 @@ async def create_portal_from_invoice_link(
     user = result.scalar_one_or_none()
     user_exists = user is not None
 
+    if user:
+        # Ensure UserCustomerLink exists — may be missing for users created before migration 043
+        db.add(UserCustomerLink(user_id=user.id, customer_id=customer.id, tenant_id=customer.tenant_id))
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+
     if not user:
         # If email is already in use, link safely when possible; otherwise fail with clear action.
         result = await db.execute(select(User).where(User.email == customer.email))
