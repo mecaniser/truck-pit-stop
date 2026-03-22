@@ -724,10 +724,11 @@ async def create_portal_from_invoice_link(
 
     _validate_invoice_link_subject(payload, invoice, order)
 
-    # Cache scalar values before any commit/rollback that would expire the customer object.
-    # rollback() always expires all session objects regardless of expire_on_commit=False,
-    # and accessing customer.tenant_id after expiry raises MissingGreenlet in async mode.
+    # Cache all scalar values needed from ORM objects before any commit/rollback.
+    # rollback() always expires ALL session objects regardless of expire_on_commit=False,
+    # and accessing any attribute on an expired object raises MissingGreenlet in async mode.
     customer_tenant_id = customer.tenant_id
+    invoice_id = invoice.id
 
     result = await db.execute(select(User).where(User.customer_id == customer.id))
     user = result.scalar_one_or_none()
@@ -825,7 +826,7 @@ async def create_portal_from_invoice_link(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="bearer",
-        redirect_to=f"/portal/invoices/{invoice.id}",
+        redirect_to=f"/portal/invoices/{invoice_id}",
         user_exists=user_exists,
     )
 
