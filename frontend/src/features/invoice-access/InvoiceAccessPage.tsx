@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { CreditCard, Lock, FileText, UserPlus, Download, Printer, Copy, Check } from 'lucide-react'
+import { CreditCard, Lock, FileText, UserPlus, Download, Printer, Copy, Check, Share2, ChevronDown } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { AxiosError } from 'axios'
@@ -247,6 +247,7 @@ export default function InvoiceAccessPage() {
   const [showPayment, setShowPayment] = useState(false)
   const [zelleNotes, setZelleNotes] = useState('')
   const [showZelleNote, setShowZelleNote] = useState(false)
+  const [showQrCode, setShowQrCode] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [paymentResult, setPaymentResult] = useState<{
     paidAt: string | null
@@ -489,6 +490,20 @@ export default function InvoiceAccessPage() {
               <Printer className="w-4 h-4" />
               Print
             </button>
+            <button
+              onClick={() => {
+                const url = window.location.href
+                if (navigator.share) {
+                  navigator.share({ title: `Invoice ${invoice.invoice_number}`, url }).catch(() => {})
+                } else {
+                  navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'))
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100"
+            >
+              <Share2 className="w-4 h-4" />
+              Share
+            </button>
           </div>
         </div>
 
@@ -588,50 +603,60 @@ export default function InvoiceAccessPage() {
                     </button>
                   </div>
 
-                  {/* Recipient rows */}
-                  {invoice.zelle_email && (
-                    <div className="flex items-center gap-2 px-3 py-2.5">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-blue-600 font-medium mb-0.5">To (email)</p>
-                        <span className="text-sm text-gray-800 truncate block">{invoice.zelle_email}</span>
+                  {/* Recipient row — prefer phone, fall back to email */}
+                  {(invoice.zelle_phone || invoice.zelle_email) && (() => {
+                    const recipient = invoice.zelle_phone || invoice.zelle_email!
+                    const label = invoice.zelle_phone ? 'Send to (phone)' : 'Send to (email)'
+                    return (
+                      <div className="flex items-center gap-2 px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-blue-600 font-medium mb-0.5">{label}</p>
+                          <span className="text-sm text-gray-800 truncate block">{recipient}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(recipient, 'recipient')}
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                        >
+                          {copiedKey === 'recipient' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                          {copiedKey === 'recipient' ? 'Copied' : 'Copy'}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(invoice.zelle_email!, 'email')}
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                      >
-                        {copiedKey === 'email' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                        {copiedKey === 'email' ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                  )}
-                  {invoice.zelle_phone && (
-                    <div className="flex items-center gap-2 px-3 py-2.5">
-                      <div className="flex-1">
-                        <p className="text-xs text-blue-600 font-medium mb-0.5">To (phone)</p>
-                        <span className="text-sm text-gray-800">{invoice.zelle_phone}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(invoice.zelle_phone!, 'phone')}
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                      >
-                        {copiedKey === 'phone' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                        {copiedKey === 'phone' ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {/* Memo row */}
-                  <div className="px-3 py-2.5">
-                    <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
-                    <p className="text-sm text-gray-800">Include <strong>#{invoice.invoice_number}</strong> in the Zelle memo.</p>
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="flex-1">
+                      <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
+                      <p className="text-sm text-gray-800 font-medium">#{invoice.invoice_number}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(`#${invoice.invoice_number}`, 'memo')}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                    >
+                      {copiedKey === 'memo' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                      {copiedKey === 'memo' ? 'Copied' : 'Copy'}
+                    </button>
                   </div>
                 </div>
 
                 {invoice.zelle_qr_image && (
-                  <div className="bg-white border border-blue-100 rounded-lg p-3 mb-3 flex justify-center">
-                    <img src={invoice.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
+                  <div className="mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowQrCode(v => !v)}
+                      className="flex items-center gap-1 text-xs text-blue-600 underline underline-offset-2 mb-2"
+                    >
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showQrCode ? 'rotate-180' : ''}`} />
+                      {showQrCode ? 'Hide QR code' : 'Show QR code (scan from another phone)'}
+                    </button>
+                    {showQrCode && (
+                      <div className="bg-white border border-blue-100 rounded-lg p-3 flex justify-center">
+                        <img src={invoice.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
+                      </div>
+                    )}
                   </div>
                 )}
 
