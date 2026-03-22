@@ -4,19 +4,19 @@ from uuid import UUID
 from app.db.models.user import UserRole
 
 
-class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    requires_shop_selection: bool = False
-    shops: Optional[List["ShopOption"]] = None
-
-
 class ShopOption(BaseModel):
     id: str
     name: str
     slug: str
     logo_url: Optional[str] = None
+
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    requires_shop_selection: bool = False
+    shops: Optional[List[ShopOption]] = None
 
 
 class SelectTenantRequest(BaseModel):
