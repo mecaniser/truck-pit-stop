@@ -570,57 +570,64 @@ export default function InvoiceAccessPage() {
                   </p>
                 )}
 
-                {/* Copyable amount */}
-                <div className="mb-3">
-                  <p className="text-xs text-blue-700 mb-1 font-medium">Send exact amount</p>
-                  <div className="flex items-center gap-2 bg-white border border-blue-200 rounded-lg px-3 py-2">
-                    <span className="font-bold text-gray-900 flex-1 text-lg">{formatMoney(invoice.zelle_amount)}</span>
+                {/* Payment flow: amount → recipient → memo */}
+                <div className="mb-3 bg-white border border-blue-200 rounded-lg divide-y divide-blue-100">
+                  {/* Amount row */}
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="flex-1">
+                      <p className="text-xs text-blue-600 font-medium mb-0.5">Send exact amount</p>
+                      <span className="font-bold text-gray-900 text-lg">{formatMoney(invoice.zelle_amount)}</span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(parseFloat(invoice.zelle_amount).toFixed(2), 'amount')}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
                     >
                       {copiedKey === 'amount' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
                       {copiedKey === 'amount' ? 'Copied' : 'Copy'}
                     </button>
                   </div>
-                </div>
 
-                {/* Zelle contact details block */}
-                {(invoice.zelle_email || invoice.zelle_phone) && (
-                  <div className="mb-3 bg-white border border-blue-200 rounded-lg divide-y divide-blue-100">
-                    {invoice.zelle_email && (
-                      <div className="flex items-center gap-2 px-3 py-2">
-                        <span className="text-sm text-gray-700 flex-1 truncate">{invoice.zelle_email}</span>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(invoice.zelle_email!, 'email')}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                        >
-                          {copiedKey === 'email' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                          {copiedKey === 'email' ? 'Copied' : 'Copy'}
-                        </button>
+                  {/* Recipient rows */}
+                  {invoice.zelle_email && (
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-blue-600 font-medium mb-0.5">To (email)</p>
+                        <span className="text-sm text-gray-800 truncate block">{invoice.zelle_email}</span>
                       </div>
-                    )}
-                    {invoice.zelle_phone && (
-                      <div className="flex items-center gap-2 px-3 py-2">
-                        <span className="text-sm text-gray-700 flex-1">{invoice.zelle_phone}</span>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(invoice.zelle_phone!, 'phone')}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                        >
-                          {copiedKey === 'phone' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                          {copiedKey === 'phone' ? 'Copied' : 'Copy'}
-                        </button>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(invoice.zelle_email!, 'email')}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                      >
+                        {copiedKey === 'email' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                        {copiedKey === 'email' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  )}
+                  {invoice.zelle_phone && (
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <div className="flex-1">
+                        <p className="text-xs text-blue-600 font-medium mb-0.5">To (phone)</p>
+                        <span className="text-sm text-gray-800">{invoice.zelle_phone}</span>
                       </div>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(invoice.zelle_phone!, 'phone')}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                      >
+                        {copiedKey === 'phone' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                        {copiedKey === 'phone' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Memo row */}
+                  <div className="px-3 py-2.5">
+                    <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
+                    <p className="text-sm text-gray-800">Include <strong>#{invoice.invoice_number}</strong> in the Zelle memo.</p>
                   </div>
-                )}
-
-                <p className="text-xs text-blue-700 mb-3">
-                  Include <strong>#{invoice.invoice_number}</strong> in the Zelle memo.
-                </p>
+                </div>
 
                 {invoice.zelle_qr_image && (
                   <div className="bg-white border border-blue-100 rounded-lg p-3 mb-3 flex justify-center">
