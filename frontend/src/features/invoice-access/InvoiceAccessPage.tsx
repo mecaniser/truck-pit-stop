@@ -247,6 +247,7 @@ export default function InvoiceAccessPage() {
   const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
   const [showPayment, setShowPayment] = useState(false)
   const [showQrCode, setShowQrCode] = useState(false)
+  const [showZelle, setShowZelle] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [paymentResult, setPaymentResult] = useState<{
     paidAt: string | null
@@ -451,6 +452,102 @@ export default function InvoiceAccessPage() {
     )
   }
 
+  // Zelle panel — defined after early returns so `invoice` is guaranteed non-null
+  const zellePanel = (
+    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-3">
+      {parseFloat(invoice.service_fee_amount) > 0 && (
+        <p className="text-xs text-blue-700 font-medium mb-3">
+          Save ${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee
+        </p>
+      )}
+      <div className="mb-3 bg-white border border-blue-200 rounded-lg divide-y divide-blue-100">
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <div className="flex-1">
+            <p className="text-xs text-blue-600 font-medium mb-0.5">Send exact amount</p>
+            <span className="font-bold text-gray-900 text-lg">{formatMoney(invoice.zelle_amount)}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => copyToClipboard(parseFloat(invoice.zelle_amount).toFixed(2), 'amount')}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {copiedKey === 'amount' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            {copiedKey === 'amount' ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        {(invoice.zelle_phone || invoice.zelle_email) && (() => {
+          const recipient = invoice.zelle_phone || invoice.zelle_email!
+          const label = invoice.zelle_phone ? 'Send to (phone)' : 'Send to (email)'
+          return (
+            <div className="flex items-center gap-2 px-3 py-2.5">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-blue-600 font-medium mb-0.5">{label}</p>
+                <span className="text-sm text-gray-800 truncate block">{recipient}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(recipient, 'recipient')}
+                className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+              >
+                {copiedKey === 'recipient' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                {copiedKey === 'recipient' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          )
+        })()}
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <div className="flex-1">
+            <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
+            <p className="text-sm text-gray-800 font-medium">#{invoice.invoice_number}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => copyToClipboard(`#${invoice.invoice_number}`, 'memo')}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+          >
+            {copiedKey === 'memo' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+            {copiedKey === 'memo' ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      </div>
+      {invoice.zelle_qr_image && (
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => setShowQrCode(v => !v)}
+            className="flex items-center gap-1 text-xs text-blue-600 underline underline-offset-2 mb-2"
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showQrCode ? 'rotate-180' : ''}`} />
+            {showQrCode ? 'Hide QR code' : 'Show QR code (scan from another phone)'}
+          </button>
+          {showQrCode && (
+            <div className="bg-white border border-blue-100 rounded-lg p-3 flex justify-center">
+              <img src={invoice.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
+            </div>
+          )}
+        </div>
+      )}
+      {invoice.pending_zelle_confirmation ? (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-900 text-sm">
+          Payment is marked as submitted via Zelle and is pending staff confirmation.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <button
+            onClick={() => submitZelleMutation.mutate()}
+            disabled={submitZelleMutation.isPending}
+            className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+          >
+            {submitZelleMutation.isPending ? 'Submitting...' : 'I Sent Payment via Zelle'}
+          </button>
+          <p className="text-xs text-blue-700">
+            Staff will confirm receipt. If unconfirmed, they receive reminders at 24h and 48h.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50 to-yellow-100 py-8 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
@@ -570,133 +667,43 @@ export default function InvoiceAccessPage() {
               />
             </section>
           ) : (
-            <div className="space-y-6">
-              <section className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <h3 className="font-semibold text-blue-900 mb-1">Pay with Zelle</h3>
-                {parseFloat(invoice.service_fee_amount) > 0 && (
-                  <p className="text-xs text-blue-700 font-medium mb-3">
-                    Save ${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee
-                  </p>
-                )}
-
-                {/* Payment flow: amount → recipient → memo */}
-                <div className="mb-3 bg-white border border-blue-200 rounded-lg divide-y divide-blue-100">
-                  {/* Amount row */}
-                  <div className="flex items-center gap-2 px-3 py-2.5">
-                    <div className="flex-1">
-                      <p className="text-xs text-blue-600 font-medium mb-0.5">Send exact amount</p>
-                      <span className="font-bold text-gray-900 text-lg">{formatMoney(invoice.zelle_amount)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(parseFloat(invoice.zelle_amount).toFixed(2), 'amount')}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                    >
-                      {copiedKey === 'amount' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                      {copiedKey === 'amount' ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-
-                  {/* Recipient row — prefer phone, fall back to email */}
-                  {(invoice.zelle_phone || invoice.zelle_email) && (() => {
-                    const recipient = invoice.zelle_phone || invoice.zelle_email!
-                    const label = invoice.zelle_phone ? 'Send to (phone)' : 'Send to (email)'
-                    return (
-                      <div className="flex items-center gap-2 px-3 py-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-blue-600 font-medium mb-0.5">{label}</p>
-                          <span className="text-sm text-gray-800 truncate block">{recipient}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(recipient, 'recipient')}
-                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                        >
-                          {copiedKey === 'recipient' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                          {copiedKey === 'recipient' ? 'Copied' : 'Copy'}
-                        </button>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Memo row */}
-                  <div className="flex items-center gap-2 px-3 py-2.5">
-                    <div className="flex-1">
-                      <p className="text-xs text-blue-600 font-medium mb-0.5">Memo</p>
-                      <p className="text-sm text-gray-800 font-medium">#{invoice.invoice_number}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => copyToClipboard(`#${invoice.invoice_number}`, 'memo')}
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
-                    >
-                      {copiedKey === 'memo' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                      {copiedKey === 'memo' ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                </div>
-
-                {invoice.zelle_qr_image && (
-                  <div className="mb-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowQrCode(v => !v)}
-                      className="flex items-center gap-1 text-xs text-blue-600 underline underline-offset-2 mb-2"
-                    >
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showQrCode ? 'rotate-180' : ''}`} />
-                      {showQrCode ? 'Hide QR code' : 'Show QR code (scan from another phone)'}
-                    </button>
-                    {showQrCode && (
-                      <div className="bg-white border border-blue-100 rounded-lg p-3 flex justify-center">
-                        <img src={invoice.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {invoice.pending_zelle_confirmation ? (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-900 text-sm">
-                    Payment is marked as submitted via Zelle and is pending staff confirmation.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => submitZelleMutation.mutate()}
-                      disabled={submitZelleMutation.isPending}
-                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
-                    >
-                      {submitZelleMutation.isPending ? 'Submitting...' : 'I Sent Payment via Zelle'}
-                    </button>
-                    <p className="text-xs text-blue-700">
-                      Staff will confirm receipt. If unconfirmed, they receive reminders at 24h and 48h.
-                    </p>
-                  </div>
-                )}
-              </section>
-
+            <div className="space-y-5">
               {invoice.has_portal_account ? (
+                /* Portal users: portal as hero, Zelle collapsed */
                 <>
-                  <section className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                    <h3 className="font-semibold text-amber-900 mb-1">Portal Payment Required</h3>
-                    <p className="text-sm text-amber-800">
-                      This invoice is linked to your customer portal account. Open your portal to review and pay securely.
+                  <section className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                    <h3 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                      <UserPlus className="w-5 h-5 text-amber-600" />
+                      Pay via Your Portal
+                    </h3>
+                    <p className="text-sm text-amber-800 mb-4">
+                      Your account is ready. Open your portal to review and pay this invoice securely.
                     </p>
+                    <button
+                      onClick={() => openPortalFromCurrentFlow()}
+                      disabled={createPortalMutation.isPending || !portalTokenForCreate}
+                      className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+                    >
+                      {createPortalMutation.isPending ? 'Opening portal...' : 'Open My Portal'}
+                    </button>
                   </section>
-                  <PortalEnrollmentSection
-                    hasPortalAccount={invoice.has_portal_account}
-                    isPending={createPortalMutation.isPending}
-                    canUsePortalToken={!!portalTokenForCreate}
-                    password={password}
-                    passwordValidationError={passwordValidationError}
-                    onPasswordChange={setPassword}
-                    onOpenPortal={() => openPortalFromCurrentFlow()}
-                    onCreatePortal={() => openPortalFromCurrentFlow(password)}
-                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowZelle(v => !v)}
+                      className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showZelle ? 'rotate-180' : ''}`} />
+                      Pay with Zelle instead
+                    </button>
+                    {showZelle && zellePanel}
+                  </div>
                 </>
               ) : (
+                /* Non-portal users: card as hero, Zelle collapsed, portal enrollment below */
                 <>
-                  <section>
-                    <h3 className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <section className="bg-white border border-gray-200 rounded-xl p-4">
+                    <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                       <CreditCard className="w-5 h-5 text-green-600" />
                       Pay Online Now
                     </h3>
@@ -728,7 +735,20 @@ export default function InvoiceAccessPage() {
                       </div>
                     )}
                   </section>
-
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowZelle(v => !v)}
+                      className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform ${showZelle ? 'rotate-180' : ''}`} />
+                      Pay with Zelle instead
+                      {parseFloat(invoice.service_fee_amount) > 0 && (
+                        <span className="text-blue-500 text-xs"> (save ${parseFloat(invoice.service_fee_amount).toFixed(2)} in fees)</span>
+                      )}
+                    </button>
+                    {showZelle && zellePanel}
+                  </div>
                   <PortalEnrollmentSection
                     hasPortalAccount={invoice.has_portal_account}
                     isPending={createPortalMutation.isPending}
