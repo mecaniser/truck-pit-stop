@@ -252,9 +252,9 @@ export default function ServicesManagementPage() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center lg:mb-0 lg:flex-shrink-0">
         <div className="flex-1">
           <SearchAddBar
             value={searchQuery}
@@ -320,18 +320,18 @@ export default function ServicesManagementPage() {
       </div>
 
       {successMessage && (
-        <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">
+        <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/20 px-4 py-3 text-green-400 lg:flex-shrink-0">
           <CheckCircle className="w-5 h-5 flex-shrink-0" />
           {successMessage}
         </div>
       )}
 
       {/* Services Table / Cards */}
-      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        <div className="hidden sm:flex items-center justify-start px-4 py-3 border-b border-white/10">
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-white/5 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <div className="hidden items-center justify-start border-b border-white/10 px-4 py-3 sm:flex lg:flex-shrink-0">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
-        <div className="overflow-y-auto max-h-[calc(100vh-240px)]">
+        <div className="max-h-[calc(100vh-240px)] overflow-y-auto lg:min-h-0 lg:flex-1 lg:max-h-none">
         {activeViewMode === 'list' ? (
           <div className="overflow-x-auto">
             <table className="w-full">

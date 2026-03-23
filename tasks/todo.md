@@ -1,3 +1,48 @@
+# Garage Services Nested Scroll Follow-up - Task Plan (2026-03-23)
+
+## Plan
+- [x] Confirm the remaining desktop nested scrollbar pair shown in the Services screenshot.
+- [x] Remove the garage content-pane scrollbar for Services and Inventory routes while preserving their intended internal scrolling.
+- [x] Make Services fill the garage pane cleanly so only its list area scrolls on desktop.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] User screenshot confirmed the remaining nested pair is `MyGaragePage` desktop content scrolling plus the Services list scrollbar.
+- [x] Patched `MyGaragePage` overflow ownership by garage sub-route so desktop `services` and `inventory` stop using the garage content-pane scrollbar.
+- [x] Refit `ServicesManagementPage` to a height-aware desktop flex layout so the services list remains the sole vertical scrollbar.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Desktop Services now removes the extra garage-pane scrollbar and keeps scrolling inside the services content area instead.
+- Desktop Inventory uses the same route-level overflow rule, so it no longer inherits a second garage-pane scrollbar either.
+- Residual risk: this was verified by build and screenshot-driven analysis only; a live browser pass is still the final check for confirming the rightmost page scrollbar is gone on `/dashboard/garage/services`.
+
+---
+
+# Garage Inventory Scroll Ownership - Task Plan (2026-03-23)
+
+## Plan
+- [x] Audit the dashboard route wrapper and garage page nesting to confirm which container owns vertical overflow on inventory/services.
+- [x] Remove the unintended parent desktop scrollbar introduced by the dashboard route wrapper for `garage/*` pages.
+- [x] Preserve a single intentional page-level scrollbar inside the garage workspace content pane.
+- [x] Run targeted frontend verification and capture residual risks.
+
+## Progress Notes
+- [x] Confirmed `DashboardLayout` wraps all dashboard routes in `overflow-y-auto`, including `garage/*`.
+- [x] Confirmed `MyGaragePage` already provides its own desktop content scroll region, so garage routes currently have nested scroll ownership.
+- [x] Patched `DashboardLayout` so `garage/*` keeps the shared route scroller on mobile but switches to `lg:overflow-hidden`, removing the desktop parent scrollbar.
+- [x] Added `scrollbar-dark` to the garage content pane so the remaining desktop scrollbar stays on the garage workspace itself.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Desktop garage routes now use a single outer scroll owner at the garage content pane instead of also inheriting the dashboard route wrapper scrollbar.
+- Mobile garage routes keep the dashboard wrapper scroll, avoiding regressions from the desktop-only overflow change.
+- Residual risk: this was verified by build only; a quick live pass on `/dashboard/garage/inventory` and `/dashboard/garage/services` is still worth doing to confirm the gear menus no longer trigger a parent scrollbar.
+
+---
+
 # Driver Recruiting Agent SOP - Task Plan
 
 ## Plan

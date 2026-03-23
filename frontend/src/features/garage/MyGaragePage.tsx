@@ -1,4 +1,4 @@
-import { NavLink, Routes, Route, Navigate } from 'react-router-dom'
+import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { BarChart3, Boxes, ChevronRight, ClipboardList, Settings2, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
@@ -121,12 +121,21 @@ function DesktopGarageNav() {
 }
 
 export default function MyGaragePage() {
+  const location = useLocation()
+  const usesInternalDesktopScroll =
+    location.pathname.startsWith('/dashboard/garage/services') ||
+    location.pathname.startsWith('/dashboard/garage/inventory')
+
   return (
     <div className="flex w-full flex-1 flex-col gap-6 lg:h-[calc(100vh-9.25rem)] lg:min-h-0 lg:flex-none lg:flex-row lg:items-stretch lg:overflow-hidden">
       <MobileGarageNav />
       <DesktopGarageNav />
 
-      <div className="min-h-[400px] flex-1 lg:min-h-0 lg:overflow-y-auto">
+      <div
+        className={`min-h-[400px] flex-1 scrollbar-dark lg:min-h-0 ${
+          usesInternalDesktopScroll ? 'lg:overflow-hidden' : 'lg:overflow-y-auto'
+        }`}
+      >
         <Routes>
           <Route index element={<Navigate to="mechanics" replace />} />
           <Route path="services" element={<ServicesManagementPage />} />

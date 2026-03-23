@@ -6,6 +6,9 @@
 - Prevention: Confirm skill activation in the first status update and reflect the skill-driven plan in `tasks/todo.md` before coding.
 
 ## 2026-03-16
+- Correction: Removing the dashboard-level garage scrollbar was not enough because the garage content pane still created a second desktop scrollbar alongside the Services list.
+- Rule: When fixing nested scrollbars in dashboard subpages, trace the full active-route overflow chain and remove every unintended parent scroll owner, not just the top layout wrapper.
+- Prevention: After a scrollbar fix, compare the active route against a screenshot or live page and list the exact remaining overflow owners in `tasks/todo.md` before declaring it done.
 - Correction: User wanted the dashboard section order adjusted again so Team Capacity sits below Work Queue, not above it.
 - Rule: When the user gives explicit positional UI instructions like "above", "below", or "last", implement that literal render order rather than inferring a priority order from earlier context.
 - Prevention: Before patching layout sections, map the intended final DOM order in `tasks/todo.md` and compare it against the current order.

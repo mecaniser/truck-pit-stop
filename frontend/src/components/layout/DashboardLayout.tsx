@@ -75,6 +75,9 @@ export default function DashboardLayout() {
   }
 
   const isSuperAdmin = user?.role === 'super_admin'
+  const isGarageWorkspaceRoute =
+    !isSuperAdmin &&
+    (location.pathname === '/dashboard/garage' || location.pathname.startsWith('/dashboard/garage/'))
   const dashboardLogoAlt = isSuperAdmin
     ? 'Diesel Bridge Network'
     : tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
@@ -220,7 +223,11 @@ export default function DashboardLayout() {
             </span>
           </div>
         )}
-        <div className="flex-1 min-h-0 flex flex-col overflow-y-auto scrollbar-dark">
+        <div
+          className={`flex-1 min-h-0 flex flex-col scrollbar-dark ${
+            isGarageWorkspaceRoute ? 'overflow-y-auto lg:overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
           <Routes>
             {/* Platform Admin Routes (SUPER_ADMIN only) */}
             {user?.role === 'super_admin' ? (
