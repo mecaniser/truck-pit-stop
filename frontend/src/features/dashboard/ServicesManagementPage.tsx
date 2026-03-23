@@ -257,13 +257,12 @@ export default function ServicesManagementPage() {
         <div className="flex items-center gap-2 shrink-0">
           {showClearConfirm ? (
             <>
-              <span className="text-sm text-red-400 whitespace-nowrap">Clear all services?</span>
               <button
                 onClick={() => clearMutation.mutate()}
                 disabled={clearMutation.isPending}
-                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
               >
-                {clearMutation.isPending ? 'Clearing…' : 'Yes, clear'}
+                {clearMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
               </button>
               <button
                 onClick={() => setShowClearConfirm(false)}
