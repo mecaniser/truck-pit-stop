@@ -603,6 +603,16 @@ export default function InventoryPage() {
           </div>
         </div>
 
+        <button
+          type="button"
+          onClick={openAddPart}
+          className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
+          style={{ backgroundColor: accentColors[600] }}
+        >
+          <Plus className="w-4 h-4" />
+          Add part
+        </button>
+
         {/* Catalog gear menu */}
         <div className="relative shrink-0" ref={desktopMenuRef}>
           <button
@@ -653,16 +663,6 @@ export default function InventoryPage() {
             </div>
           )}
         </div>
-
-        <button
-          type="button"
-          onClick={openAddPart}
-          className="inline-flex h-[42px] shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-semibold text-white transition-colors"
-          style={{ backgroundColor: accentColors[600] }}
-        >
-          <Plus className="w-4 h-4" />
-          Add part
-        </button>
       </div>
 
       {/* Mobile: Sort + Low stock filter */}
