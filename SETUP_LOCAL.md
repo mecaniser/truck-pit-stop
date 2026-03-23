@@ -45,6 +45,16 @@ DATABASE_URL=sqlite+aiosqlite:///./dieselbridge.db
 # Run migrations
 cd backend
 alembic upgrade head
+
+# Seed test users, tenant, customers, vehicles, repair orders
+python seed_data.py
+
+# (Optional) Preload default services & inventory for any tenant
+python preload_catalog.py                           # list tenants
+python preload_catalog.py <slug> load               # load services + inventory
+python preload_catalog.py <slug> load --services    # services only
+python preload_catalog.py <slug> load --inventory   # inventory only
+python preload_catalog.py <slug> clear              # remove all services + inventory
 ```
 
 ### 3. Start Backend

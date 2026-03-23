@@ -1,5 +1,5 @@
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.default_catalog import DEFAULT_CATEGORIES, DEFAULT_SERVICES
 from app.db.models.user import User, UserRole
 from app.db.models.service import Service, ServiceCategory
 
@@ -250,6 +251,111 @@ async def list_services(
         for s in services
     ]
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+class PreloadServicesResult(BaseModel):
+    categories_added: int
+    services_added: int
+
+
+class ClearServicesResult(BaseModel):
+    categories_deleted: int
+    services_deleted: int
+
+
+@router.post("/preload", response_model=PreloadServicesResult)
+async def preload_default_services(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Load default service categories and services for this tenant. Skips names that already exist."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    tenant_id = current_user.tenant_id
+
+    # Existing category names
+    cat_names_result = await db.execute(
+        select(ServiceCategory.name).where(ServiceCategory.tenant_id == tenant_id)
+    )
+    existing_cat_names = {row[0] for row in cat_names_result.all()}
+
+    # Existing service names
+    svc_names_result = await db.execute(
+        select(Service.name).where(Service.tenant_id == tenant_id)
+    )
+    existing_svc_names = {row[0] for row in svc_names_result.all()}
+
+    # Add missing categories
+    cat_map: dict[str, ServiceCategory] = {}
+    cats_added = 0
+    for cat_data in DEFAULT_CATEGORIES:
+        if cat_data["name"] not in existing_cat_names:
+            cat = ServiceCategory(id=uuid4(), tenant_id=tenant_id, **cat_data)
+            db.add(cat)
+            cat_map[cat_data["name"]] = cat
+            cats_added += 1
+    await db.flush()
+
+    # Load existing categories into map for services that reference them
+    existing_cats_result = await db.execute(
+        select(ServiceCategory).where(ServiceCategory.tenant_id == tenant_id)
+    )
+    for cat in existing_cats_result.scalars().all():
+        if cat.name not in cat_map:
+            cat_map[cat.name] = cat
+
+    # Add missing services
+    svcs_added = 0
+    for svc_data in DEFAULT_SERVICES:
+        if svc_data["name"] not in existing_svc_names:
+            cat = cat_map.get(svc_data["category"])
+            svc = Service(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                category_id=cat.id if cat else None,
+                name=svc_data["name"],
+                description=svc_data["description"],
+                duration_minutes=svc_data["duration_minutes"],
+                base_price=svc_data["base_price"],
+                icon=svc_data["icon"],
+                sort_order=svc_data["sort_order"],
+            )
+            db.add(svc)
+            svcs_added += 1
+
+    await db.commit()
+    return PreloadServicesResult(categories_added=cats_added, services_added=svcs_added)
+
+
+@router.post("/clear", response_model=ClearServicesResult)
+async def clear_all_services(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Delete all services and service categories for this tenant."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    tenant_id = current_user.tenant_id
+
+    svc_result = await db.execute(
+        select(Service).where(Service.tenant_id == tenant_id)
+    )
+    services = svc_result.scalars().all()
+    for svc in services:
+        await db.delete(svc)
+    await db.flush()
+
+    cat_result = await db.execute(
+        select(ServiceCategory).where(ServiceCategory.tenant_id == tenant_id)
+    )
+    categories = cat_result.scalars().all()
+    for cat in categories:
+        await db.delete(cat)
+
+    await db.commit()
+    return ClearServicesResult(categories_deleted=len(categories), services_deleted=len(services))
 
 
 @router.get("/{service_id}", response_model=ServiceResponse)

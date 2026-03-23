@@ -1,5 +1,6 @@
+from datetime import datetime, timezone
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -8,6 +9,7 @@ from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.default_catalog import DEFAULT_INVENTORY
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
 
@@ -163,6 +165,70 @@ async def create_inventory_item(
         created_at=item.created_at.isoformat(),
         updated_at=item.updated_at.isoformat(),
     )
+
+
+class PreloadInventoryResult(BaseModel):
+    items_added: int
+
+
+class ClearInventoryResult(BaseModel):
+    items_deleted: int
+
+
+@router.post("/preload", response_model=PreloadInventoryResult)
+async def preload_default_inventory(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Load default inventory items for this tenant. Skips SKUs that already exist."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    tenant_id = current_user.tenant_id
+
+    existing_skus_result = await db.execute(
+        select(Inventory.sku).where(
+            Inventory.tenant_id == tenant_id,
+            Inventory.deleted_at.is_(None),
+        )
+    )
+    existing_skus = {row[0] for row in existing_skus_result.all()}
+
+    added = 0
+    for item_data in DEFAULT_INVENTORY:
+        if item_data["sku"] not in existing_skus:
+            item = Inventory(id=uuid4(), tenant_id=tenant_id, **item_data)
+            db.add(item)
+            added += 1
+
+    await db.commit()
+    return PreloadInventoryResult(items_added=added)
+
+
+@router.post("/clear", response_model=ClearInventoryResult)
+async def clear_all_inventory(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Soft-delete all inventory items for this tenant."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    tenant_id = current_user.tenant_id
+
+    result = await db.execute(
+        select(Inventory).where(
+            Inventory.tenant_id == tenant_id,
+            Inventory.deleted_at.is_(None),
+        )
+    )
+    items = result.scalars().all()
+    now = datetime.now(timezone.utc)
+    for item in items:
+        item.deleted_at = now
+
+    await db.commit()
+    return ClearInventoryResult(items_deleted=len(items))
 
 
 @router.get("/{item_id}", response_model=InventoryResponse)

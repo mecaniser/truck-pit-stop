@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
-import { CheckCircle, Wrench } from 'lucide-react'
+import { CheckCircle, Download, Trash2, Wrench } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
@@ -49,6 +49,7 @@ export default function ServicesManagementPage() {
   const [editingService, setEditingService] = useState<Service | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [viewMode, setViewMode] = useViewPreference('services')
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
@@ -125,6 +126,36 @@ export default function ServicesManagementPage() {
       reset()
       setSuccessMessage('Service updated successfully')
       setTimeout(() => setSuccessMessage(null), 3000)
+    },
+  })
+
+  const preloadMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/services/preload')
+      return response.data as { categories_added: number; services_added: number }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-services'] })
+      queryClient.invalidateQueries({ queryKey: ['service-categories'] })
+      const msg = data.services_added === 0
+        ? 'Already up to date — no new services added'
+        : `Loaded ${data.services_added} service${data.services_added !== 1 ? 's' : ''} across ${data.categories_added} categor${data.categories_added !== 1 ? 'ies' : 'y'}`
+      setSuccessMessage(msg)
+      setTimeout(() => setSuccessMessage(null), 4000)
+    },
+  })
+
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/services/clear')
+      return response.data as { categories_deleted: number; services_deleted: number }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-services'] })
+      queryClient.invalidateQueries({ queryKey: ['service-categories'] })
+      setShowClearConfirm(false)
+      setSuccessMessage(`Cleared ${data.services_deleted} service${data.services_deleted !== 1 ? 's' : ''}`)
+      setTimeout(() => setSuccessMessage(null), 4000)
     },
   })
 
@@ -209,17 +240,59 @@ export default function ServicesManagementPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <SearchAddBar
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder="Search services..."
-        onAdd={startAdd}
-        addLabel="Add Service"
-        addLabelMobile="Add"
-        className="mb-4"
-        inputWidthClass="sm:min-w-[260px] md:max-w-lg"
-        showAddButton={!isAddingNew && !editingService}
-      />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+        <div className="flex-1">
+          <SearchAddBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search services..."
+            onAdd={startAdd}
+            addLabel="Add Service"
+            addLabelMobile="Add"
+            className=""
+            inputWidthClass="sm:min-w-[260px] md:max-w-lg"
+            showAddButton={!isAddingNew && !editingService}
+          />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {showClearConfirm ? (
+            <>
+              <span className="text-sm text-red-400 whitespace-nowrap">Clear all services?</span>
+              <button
+                onClick={() => clearMutation.mutate()}
+                disabled={clearMutation.isPending}
+                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {clearMutation.isPending ? 'Clearing…' : 'Yes, clear'}
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => preloadMutation.mutate()}
+                disabled={preloadMutation.isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {preloadMutation.isPending ? 'Loading…' : 'Load defaults'}
+              </button>
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/15 hover:border-red-500/40 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Clear all
+              </button>
+            </>
+          )}
+        </div>
+      </div>
 
       {successMessage && (
         <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg">

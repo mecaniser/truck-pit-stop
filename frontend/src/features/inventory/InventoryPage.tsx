@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier } from '../../types'
-import { ArrowRight, Plus } from 'lucide-react'
+import { ArrowRight, Download, Plus, Trash2 } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
@@ -55,6 +55,8 @@ export default function InventoryPage() {
     supplier_contact: '',
   })
   const [error, setError] = useState<string | null>(null)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [catalogMessage, setCatalogMessage] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -305,6 +307,34 @@ export default function InventoryPage() {
     },
   })
 
+  const preloadInventoryMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/inventory/preload')
+      return response.data as { items_added: number }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      const msg = data.items_added === 0
+        ? 'Already up to date — no new parts added'
+        : `Added ${data.items_added} part${data.items_added !== 1 ? 's' : ''} to inventory`
+      setCatalogMessage(msg)
+      setTimeout(() => setCatalogMessage(null), 4000)
+    },
+  })
+
+  const clearInventoryMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/inventory/clear')
+      return response.data as { items_deleted: number }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setShowClearConfirm(false)
+      setCatalogMessage(`Cleared ${data.items_deleted} part${data.items_deleted !== 1 ? 's' : ''}`)
+      setTimeout(() => setCatalogMessage(null), 4000)
+    },
+  })
+
   const handleNewSupplierChange = (field: keyof typeof newSupplierForm, value: string) => {
     setNewSupplierForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -463,6 +493,54 @@ export default function InventoryPage() {
         inputWidthClass="sm:min-w-[320px] md:max-w-xl"
       />
 
+      {/* Catalog message (success/info) */}
+      {catalogMessage && (
+        <div className="flex items-center gap-2 bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2.5 rounded-lg text-sm">
+          <Download className="w-4 h-4 shrink-0" />
+          {catalogMessage}
+        </div>
+      )}
+
+      {/* Mobile: Catalog buttons */}
+      <div className="flex items-center gap-2 lg:hidden">
+        {showClearConfirm ? (
+          <>
+            <span className="text-sm text-red-400">Clear all parts?</span>
+            <button
+              onClick={() => clearInventoryMutation.mutate()}
+              disabled={clearInventoryMutation.isPending}
+              className="px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear'}
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(false)}
+              className="px-3 py-1.5 bg-white/10 text-gray-300 border border-white/15 rounded-lg text-sm font-medium"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => preloadInventoryMutation.mutate()}
+              disabled={preloadInventoryMutation.isPending}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 text-gray-300 border border-white/15 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 text-gray-400 border border-white/15 rounded-lg text-sm font-medium"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear
+            </button>
+          </>
+        )}
+      </div>
+
       {/* Desktop Search Toolbar */}
       <div className="hidden lg:flex items-center gap-4">
         <div className="min-w-0 flex flex-1 flex-wrap items-center gap-3 xl:flex-nowrap">
@@ -495,6 +573,43 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
+
+        {/* Catalog preload / clear */}
+        {showClearConfirm ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => clearInventoryMutation.mutate()}
+              disabled={clearInventoryMutation.isPending}
+              className="h-[42px] px-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+            >
+              {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(false)}
+              className="h-[42px] px-3 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={() => preloadInventoryMutation.mutate()}
+              disabled={preloadInventoryMutation.isPending}
+              className="inline-flex h-[42px] items-center gap-1.5 px-3 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+            </button>
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="inline-flex h-[42px] items-center gap-1.5 px-3 bg-white/10 hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/15 hover:border-red-500/40 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear
+            </button>
+          </div>
+        )}
 
         <button
           type="button"
