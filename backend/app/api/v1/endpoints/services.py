@@ -9,6 +9,7 @@ from decimal import Decimal
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.default_catalog import DEFAULT_CATEGORIES, DEFAULT_SERVICES
+from app.db.models.appointment import Appointment
 from app.db.models.user import User, UserRole
 from app.db.models.service import Service, ServiceCategory
 
@@ -261,6 +262,7 @@ class PreloadServicesResult(BaseModel):
 class ClearServicesResult(BaseModel):
     categories_deleted: int
     services_deleted: int
+    services_deactivated: int
 
 
 @router.post("/preload", response_model=PreloadServicesResult)
@@ -333,7 +335,7 @@ async def clear_all_services(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
-    """Delete all services and service categories for this tenant."""
+    """Delete services with no appointments; deactivate those linked to appointments."""
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
 
@@ -343,19 +345,47 @@ async def clear_all_services(
         select(Service).where(Service.tenant_id == tenant_id)
     )
     services = svc_result.scalars().all()
+
+    # Find which service IDs have at least one appointment
+    svc_ids = [s.id for s in services]
+    linked_ids: set = set()
+    if svc_ids:
+        appt_result = await db.execute(
+            select(Appointment.service_id).where(Appointment.service_id.in_(svc_ids)).distinct()
+        )
+        linked_ids = {row[0] for row in appt_result.all()}
+
+    deleted = 0
+    deactivated = 0
     for svc in services:
-        await db.delete(svc)
+        if svc.id in linked_ids:
+            svc.is_active = False
+            deactivated += 1
+        else:
+            await db.delete(svc)
+            deleted += 1
     await db.flush()
 
+    # Delete categories that have no remaining services
     cat_result = await db.execute(
         select(ServiceCategory).where(ServiceCategory.tenant_id == tenant_id)
     )
     categories = cat_result.scalars().all()
+    cats_deleted = 0
     for cat in categories:
-        await db.delete(cat)
+        remaining = await db.execute(
+            select(func.count(Service.id)).where(Service.category_id == cat.id)
+        )
+        if (remaining.scalar() or 0) == 0:
+            await db.delete(cat)
+            cats_deleted += 1
 
     await db.commit()
-    return ClearServicesResult(categories_deleted=len(categories), services_deleted=len(services))
+    return ClearServicesResult(
+        categories_deleted=cats_deleted,
+        services_deleted=deleted,
+        services_deactivated=deactivated,
+    )
 
 
 @router.get("/{service_id}", response_model=ServiceResponse)
