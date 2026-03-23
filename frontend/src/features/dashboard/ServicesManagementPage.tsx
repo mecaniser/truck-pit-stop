@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import api from '../../lib/api'
-import { CheckCircle, Download, Trash2, Wrench } from 'lucide-react'
+import { CheckCircle, Download, Settings, Trash2, Wrench } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
@@ -50,6 +50,20 @@ export default function ServicesManagementPage() {
   const [isAddingNew, setIsAddingNew] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false)
+        setShowClearConfirm(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
   const [viewMode, setViewMode] = useViewPreference('services')
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
@@ -254,41 +268,53 @@ export default function ServicesManagementPage() {
             showAddButton={!isAddingNew && !editingService}
           />
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {showClearConfirm ? (
-            <>
-              <button
-                onClick={() => clearMutation.mutate()}
-                disabled={clearMutation.isPending}
-                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-              >
-                {clearMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
-              </button>
-              <button
-                onClick={() => setShowClearConfirm(false)}
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => preloadMutation.mutate()}
-                disabled={preloadMutation.isPending}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-              >
-                <Download className="w-3.5 h-3.5" />
-                {preloadMutation.isPending ? 'Loading…' : 'Load defaults'}
-              </button>
-              <button
-                onClick={() => setShowClearConfirm(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/15 hover:border-red-500/40 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Clear all
-              </button>
-            </>
+        <div className="relative shrink-0" ref={menuRef}>
+          <button
+            onClick={() => setShowMenu(v => !v)}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
+            title="Catalog options"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+              {showClearConfirm ? (
+                <div className="p-2 space-y-1">
+                  <p className="text-xs text-gray-400 px-2 py-1">Clear all services?</p>
+                  <button
+                    onClick={() => clearMutation.mutate()}
+                    disabled={clearMutation.isPending}
+                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
+                  >
+                    {clearMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { preloadMutation.mutate(); setShowMenu(false) }}
+                    disabled={preloadMutation.isPending}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    {preloadMutation.isPending ? 'Loading…' : 'Load defaults'}
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    Clear all
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

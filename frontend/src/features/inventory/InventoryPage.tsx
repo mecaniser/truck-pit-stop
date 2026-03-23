@@ -1,9 +1,9 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier } from '../../types'
-import { ArrowRight, Download, Plus, Trash2 } from 'lucide-react'
+import { ArrowRight, Download, Plus, Settings, Trash2 } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
@@ -56,7 +56,25 @@ export default function InventoryPage() {
   })
   const [error, setError] = useState<string | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [catalogMessage, setCatalogMessage] = useState<string | null>(null)
+  const mobileMenuRef = useRef<HTMLDivElement>(null)
+  const desktopMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (
+        (mobileMenuRef.current?.contains(target)) ||
+        (desktopMenuRef.current?.contains(target))
+      ) return
+      setShowMenu(false)
+      setShowClearConfirm(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
 
   const queryClient = useQueryClient()
 
@@ -501,43 +519,54 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {/* Mobile: Catalog buttons */}
-      <div className="flex items-center gap-2 lg:hidden">
-        {showClearConfirm ? (
-          <>
-            <span className="text-sm text-red-400">Clear all parts?</span>
-            <button
-              onClick={() => clearInventoryMutation.mutate()}
-              disabled={clearInventoryMutation.isPending}
-              className="px-3 py-1.5 bg-red-500/20 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium disabled:opacity-50"
-            >
-              {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear'}
-            </button>
-            <button
-              onClick={() => setShowClearConfirm(false)}
-              className="px-3 py-1.5 bg-white/10 text-gray-300 border border-white/15 rounded-lg text-sm font-medium"
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => preloadInventoryMutation.mutate()}
-              disabled={preloadInventoryMutation.isPending}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 text-gray-300 border border-white/15 rounded-lg text-sm font-medium disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
-            </button>
-            <button
-              onClick={() => setShowClearConfirm(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 text-gray-400 border border-white/15 rounded-lg text-sm font-medium"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear
-            </button>
-          </>
+      {/* Mobile: Catalog gear menu */}
+      <div className="relative lg:hidden" ref={mobileMenuRef}>
+        <button
+          onClick={() => setShowMenu(v => !v)}
+          className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
+          title="Catalog options"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
+        {showMenu && (
+          <div className="absolute left-0 top-full mt-1 w-44 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+            {showClearConfirm ? (
+              <div className="p-2 space-y-1">
+                <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
+                <button
+                  onClick={() => clearInventoryMutation.mutate()}
+                  disabled={clearInventoryMutation.isPending}
+                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
+                >
+                  {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
+                </button>
+                <button
+                  onClick={() => setShowClearConfirm(false)}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
+                  disabled={preloadInventoryMutation.isPending}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                >
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+                </button>
+                <button
+                  onClick={() => setShowClearConfirm(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                >
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -574,42 +603,56 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Catalog preload / clear */}
-        {showClearConfirm ? (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => clearInventoryMutation.mutate()}
-              disabled={clearInventoryMutation.isPending}
-              className="h-[42px] px-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-            >
-              {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
-            </button>
-            <button
-              onClick={() => setShowClearConfirm(false)}
-              className="h-[42px] px-3 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={() => preloadInventoryMutation.mutate()}
-              disabled={preloadInventoryMutation.isPending}
-              className="inline-flex h-[42px] items-center gap-1.5 px-3 bg-white/10 hover:bg-white/20 text-gray-300 border border-white/15 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-            >
-              <Download className="w-3.5 h-3.5" />
-              {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
-            </button>
-            <button
-              onClick={() => setShowClearConfirm(true)}
-              className="inline-flex h-[42px] items-center gap-1.5 px-3 bg-white/10 hover:bg-red-500/20 text-gray-400 hover:text-red-400 border border-white/15 hover:border-red-500/40 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear
-            </button>
-          </div>
-        )}
+        {/* Catalog gear menu */}
+        <div className="relative shrink-0" ref={desktopMenuRef}>
+          <button
+            onClick={() => setShowMenu(v => !v)}
+            className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
+            title="Catalog options"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          {showMenu && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+              {showClearConfirm ? (
+                <div className="p-2 space-y-1">
+                  <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
+                  <button
+                    onClick={() => clearInventoryMutation.mutate()}
+                    disabled={clearInventoryMutation.isPending}
+                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
+                  >
+                    {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
+                    disabled={preloadInventoryMutation.isPending}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    Clear all
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
         <button
           type="button"
