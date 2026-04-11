@@ -56,6 +56,8 @@ class Tenant(BaseModel):
     ein = Column(String(20), nullable=True)  # Employer Identification Number
     website = Column(String(255), nullable=True)
     logo_url = Column(String(500), nullable=True)
+    partner_summary = Column(String(280), nullable=True)
+    partner_services = Column(String(180), nullable=True)
     applied_at = Column(DateTime(timezone=True), nullable=True)
     approved_at = Column(DateTime(timezone=True), nullable=True)
     approved_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

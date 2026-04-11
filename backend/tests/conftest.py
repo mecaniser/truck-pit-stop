@@ -16,6 +16,8 @@ if str(BACKEND_ROOT) not in sys.path:
 # Minimal config required to import app settings in test environment.
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-with-at-least-32-characters")
+os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
+os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-twilio-auth-token")
 
 
 class FakePipeline:

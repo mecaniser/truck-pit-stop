@@ -144,6 +144,12 @@ const garageProfileSchema = z.object({
     .refine((value) => isValidOptionalUrl(value), {
       message: 'Valid logo URL required',
     }),
+  partner_summary: z.string().optional().refine((value) => !value || value.length <= 280, {
+    message: 'Maximum 280 characters',
+  }),
+  partner_services: z.string().optional().refine((value) => !value || value.length <= 180, {
+    message: 'Maximum 180 characters',
+  }),
 })
 
 type ProfileFormData = z.infer<typeof profileSchema>
@@ -195,6 +201,8 @@ interface GarageProfile {
   email: string | null
   website: string | null
   logo_url: string | null
+  partner_summary: string | null
+  partner_services: string | null
 }
 
 // ============ INDUSTRIAL COMPONENTS ============
@@ -461,6 +469,8 @@ function GarageProfileSection() {
       email: garageProfile.email || '',
       website: garageProfile.website || '',
       logo_url: garageProfile.logo_url || '',
+      partner_summary: garageProfile.partner_summary || '',
+      partner_services: garageProfile.partner_services || '',
     })
   }, [garageProfile, isEditing, reset])
 
@@ -493,6 +503,8 @@ function GarageProfileSection() {
         email: data.email?.trim() || null,
         website: data.website?.trim() || null,
         logo_url: data.logo_url?.trim() || null,
+        partner_summary: data.partner_summary?.trim() || null,
+        partner_services: data.partner_services?.trim() || null,
       }
       const response = await api.put('/admin/garage-profile', payload)
       return response.data as GarageProfile
@@ -558,6 +570,8 @@ function GarageProfileSection() {
         email: garageProfile.email || '',
         website: garageProfile.website || '',
         logo_url: garageProfile.logo_url || '',
+        partner_summary: garageProfile.partner_summary || '',
+        partner_services: garageProfile.partner_services || '',
       })
     }
     setIsEditing(true)
@@ -636,6 +650,35 @@ function GarageProfileSection() {
                   </p>
                 </div>
               ))}
+            </div>
+
+            <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <label className={industrialStyles.label}>Landing Page Partner Profile</label>
+                  <p className="text-sm text-zinc-500">
+                    Approved businesses appear automatically. These fields control the public summary shown on the landing page.
+                  </p>
+                </div>
+                <IndustrialBadge variant="success">
+                  Public profile
+                </IndustrialBadge>
+              </div>
+
+              <div className="mt-5 grid gap-5 sm:grid-cols-2">
+                <div>
+                  <label className={industrialStyles.label}>Summary</label>
+                  <p className="text-base leading-7 text-zinc-100">
+                    {garageProfile?.partner_summary || 'Add a short summary to describe this garage on the landing page.'}
+                  </p>
+                </div>
+                <div>
+                  <label className={industrialStyles.label}>Service Focus</label>
+                  <p className="text-base leading-7 text-zinc-100">
+                    {garageProfile?.partner_services || 'Add specialties, service lanes, or coverage areas.'}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <button
@@ -760,6 +803,34 @@ function GarageProfileSection() {
               {errors.address && <p className="mt-2 text-xs text-red-400">{errors.address.message}</p>}
             </div>
 
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <label className={industrialStyles.label}>Landing Page Summary</label>
+                <textarea
+                  {...register('partner_summary')}
+                  className={`${inputClasses(!!errors.partner_summary)} min-h-[112px]`}
+                  placeholder="Short description for the public partner section"
+                />
+                {errors.partner_summary && <p className="mt-2 text-xs text-red-400">{errors.partner_summary.message}</p>}
+                <p className="mt-2 text-xs text-zinc-500">
+                  Keep this short. It appears in the public partner section for approved businesses.
+                </p>
+              </div>
+
+              <div>
+                <label className={industrialStyles.label}>Service Focus</label>
+                <textarea
+                  {...register('partner_services')}
+                  className={`${inputClasses(!!errors.partner_services)} min-h-[112px]`}
+                  placeholder="Roadside repair, diagnostics, fleet PM, mobile service"
+                />
+                {errors.partner_services && <p className="mt-2 text-xs text-red-400">{errors.partner_services.message}</p>}
+                <p className="mt-2 text-xs text-zinc-500">
+                  Use this for specialties, lane types, service area, or the work this garage wants highlighted.
+                </p>
+              </div>
+            </div>
+
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
               <button
                 type="button"
@@ -773,6 +844,8 @@ function GarageProfileSection() {
                       email: garageProfile.email || '',
                       website: garageProfile.website || '',
                       logo_url: garageProfile.logo_url || '',
+                      partner_summary: garageProfile.partner_summary || '',
+                      partner_services: garageProfile.partner_services || '',
                     })
                   }
                 }}

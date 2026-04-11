@@ -1,11 +1,13 @@
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CheckCircle, ClipboardList, MapPinned, Wrench } from 'lucide-react'
+import { ArrowRight, CheckCircle, ClipboardList, Globe, Loader2, MapPin, MapPinned, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import BrandLogo from '../../components/brand/BrandLogo'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { applySeo, removeStructuredData } from '../../lib/seo'
+import api from '../../lib/api'
 
 const BRAND = {
   platformName: 'Diesel Bridge Network',
@@ -25,6 +27,17 @@ interface FlowStep {
   title: string
   detail: string
   icon: LucideIcon
+}
+
+interface LandingPartner {
+  id: string
+  name: string
+  slug: string
+  address: string | null
+  website: string | null
+  logo_url: string | null
+  partner_summary: string | null
+  partner_services: string | null
 }
 
 const TOP_USER_GOALS: UserGoal[] = [
@@ -63,11 +76,40 @@ const FLOW_STEPS: FlowStep[] = [
   },
 ]
 
+const PARTNER_SUMMARY_FALLBACK = 'Approved Diesel Bridge repair partner.'
+
+const getPartnerMonogram = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'DB'
+
+const getPartnerWebsiteLabel = (website: string | null) => {
+  if (!website) return null
+  try {
+    return new URL(website).hostname.replace(/^www\./, '')
+  } catch {
+    return website
+  }
+}
+
 export default function LandingPage() {
   const { accentColors } = useTheme()
   const { mailtoHref } = usePlatformContact()
   const accent400 = accentColors[400]
   const accent500 = accentColors[500]
+  const { data: partners = [], isLoading: partnersLoading } = useQuery<LandingPartner[]>({
+    queryKey: ['landing-partners'],
+    queryFn: async () => {
+      const response = await api.get('/auth/landing-partners')
+      return response.data as LandingPartner[]
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  })
+  const partnerRail = partners.length > 0 ? [...partners, ...partners] : []
 
   useEffect(() => {
     const pageTitle = 'Diesel Bridge Network | 3-Step Breakdown-to-Repair Flow'
@@ -190,6 +232,150 @@ export default function LandingPage() {
                 <ArrowRight className="h-5 w-5" aria-hidden="true" />
               </Link>
             </div>
+          </div>
+        </section>
+
+        <section id="partners" className="border-t border-gray-800 bg-gray-950/35 px-4 py-16 sm:px-6">
+          <div className="mx-auto max-w-6xl">
+            <div className="mb-10 max-w-3xl">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-400">Approved Network Partners</p>
+              <h2 className="mt-3 text-3xl font-bold text-white md:text-4xl">Garages already active in Diesel Bridge</h2>
+              <p className="mt-3 text-gray-300">
+                Approved shops and service partners go live here as they join the network.
+              </p>
+            </div>
+
+            <div className="partner-marquee-shell overflow-hidden rounded-lg border border-gray-800 bg-gray-950/50">
+              {partnersLoading ? (
+                <div className="flex items-center gap-3 px-4 py-4 text-sm text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Loading approved partners...
+                </div>
+              ) : partnerRail.length > 0 ? (
+                <div className="partner-marquee-track px-3 py-3">
+                  {partnerRail.map((partner, index) => {
+                    const websiteLabel = getPartnerWebsiteLabel(partner.website)
+                    const tileContent = (
+                      <>
+                        {partner.logo_url ? (
+                          <img
+                            src={partner.logo_url}
+                            alt={`${partner.name} logo`}
+                            className="h-10 w-10 rounded-lg bg-white p-1 object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div
+                            className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-white"
+                            style={{ backgroundColor: `${accent500}22` }}
+                            aria-hidden="true"
+                          >
+                            {getPartnerMonogram(partner.name)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-white">{partner.name}</p>
+                          <p className="truncate text-xs text-gray-400">{websiteLabel || partner.slug}</p>
+                        </div>
+                      </>
+                    )
+
+                    const tileClassName =
+                      'flex min-w-[220px] shrink-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3 transition-colors hover:border-white/20 hover:bg-white/[0.05]'
+
+                    if (partner.website) {
+                      return (
+                        <a
+                          key={`${partner.id}-${index}`}
+                          href={partner.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={tileClassName}
+                        >
+                          {tileContent}
+                        </a>
+                      )
+                    }
+
+                    return (
+                      <div key={`${partner.id}-${index}`} className={tileClassName}>
+                        {tileContent}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="px-4 py-4 text-sm text-gray-400">
+                  Approved businesses appear here as they go live.
+                </div>
+              )}
+            </div>
+
+            {partners.length > 0 && (
+              <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {partners.map((partner) => {
+                  const websiteLabel = getPartnerWebsiteLabel(partner.website)
+                  return (
+                    <article key={partner.id} className="rounded-lg border border-gray-800 bg-gray-900/55 p-5">
+                      <div className="flex items-start gap-3">
+                        {partner.logo_url ? (
+                          <img
+                            src={partner.logo_url}
+                            alt={`${partner.name} logo`}
+                            className="h-12 w-12 rounded-lg bg-white p-1 object-contain"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div
+                            className="flex h-12 w-12 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-white"
+                            style={{ backgroundColor: `${accent500}22` }}
+                            aria-hidden="true"
+                          >
+                            {getPartnerMonogram(partner.name)}
+                          </div>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-lg font-semibold text-white">{partner.name}</h3>
+                          {partner.partner_services ? (
+                            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                              {partner.partner_services}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <p className="mt-4 text-sm leading-6 text-gray-300">
+                        {partner.partner_summary || PARTNER_SUMMARY_FALLBACK}
+                      </p>
+
+                      <div className="mt-5 space-y-3 text-sm text-gray-400">
+                        {partner.address ? (
+                          <div className="flex items-start gap-2">
+                            <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                            <span>{partner.address}</span>
+                          </div>
+                        ) : null}
+
+                        {partner.website ? (
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                            <a
+                              href={partner.website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="truncate text-gray-200 underline decoration-white/20 underline-offset-4 hover:text-white"
+                            >
+                              {websiteLabel || partner.website}
+                            </a>
+                          </div>
+                        ) : null}
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </section>
 

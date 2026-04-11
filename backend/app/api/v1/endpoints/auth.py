@@ -691,6 +691,17 @@ class PlatformContactResponse(BaseModel):
     support_phone: Optional[str] = None
 
 
+class LandingPartnerResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    address: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+    partner_summary: Optional[str] = None
+    partner_services: Optional[str] = None
+
+
 @router.get("/platform-contact", response_model=PlatformContactResponse)
 async def get_platform_contact(
     db: AsyncSession = Depends(get_db),
@@ -730,6 +741,36 @@ async def get_platform_contact(
         support_email=support_user.email,
         support_phone=support_user.phone,
     )
+
+
+@router.get("/landing-partners", response_model=List[LandingPartnerResponse])
+async def get_landing_partners(
+    db: AsyncSession = Depends(get_db),
+):
+    """Public list of approved active businesses to showcase on the landing page."""
+    result = await db.execute(
+        select(Tenant)
+        .where(
+            Tenant.enrollment_status == "approved",
+            Tenant.is_active == True,
+        )
+        .order_by(Tenant.name.asc())
+    )
+    tenants = result.scalars().all()
+
+    return [
+        LandingPartnerResponse(
+            id=str(tenant.id),
+            name=tenant.name,
+            slug=tenant.slug,
+            address=tenant.address,
+            website=tenant.website,
+            logo_url=tenant.logo_url,
+            partner_summary=tenant.partner_summary,
+            partner_services=tenant.partner_services,
+        )
+        for tenant in tenants
+    ]
 
 
 @router.put("/me", response_model=ProfileUpdateResponse)

@@ -1228,3 +1228,32 @@
 - The outdated animated circle is gone from the shared dashboard header; the settings trigger now reads like a native part of the app instead of a standalone ornament.
 - The new profile control preserves the existing nav footprint while aligning with the card-based industrial styling used in Settings and the rest of the dashboard.
 - Verification completed with `npm run build` in `frontend/` plus a Playwright desktop inspection against the live dashboard.
+
+---
+
+# Landing Page Approved Partners (2026-04-11)
+
+## Plan
+- [x] Confirm the minimal public partner metadata the app already stores and identify the extra landing-page fields each approved business needs to control from the garage dashboard.
+- [x] Add backend storage and response models for partner-display metadata plus a public endpoint that returns approved active businesses for the landing page.
+- [x] Extend the garage profile settings so each garage owner/admin can edit the public partner details that appear on the landing page.
+- [x] Implement a landing-page partner section that shows all approved businesses in a moving rail plus a static detail grid without hardcoded placeholders.
+- [x] Run targeted backend/frontend verification and capture residual risks in this file.
+
+## Progress Notes
+- [x] Confirmed the current garage profile already persists `website` and `logo_url`, so the partner section can reuse existing backlink/logo fields instead of inventing a second branding source.
+- [x] Added tenant-level partner metadata fields: `partner_summary` and `partner_services`, plus Alembic migration `044_add_landing_partner_fields.py`.
+- [x] Added public endpoint `GET /api/v1/auth/landing-partners` that returns approved active businesses only.
+- [x] Extended `Garage Profile` settings so garage owners/admins can edit the landing-page summary and service-focus copy for their own business.
+- [x] Added a landing-page partner band with an auto-scrolling rail plus a static partner grid driven entirely by approved businesses from the backend.
+- [x] Passed targeted verification:
+  `./.venv/bin/python -m pytest backend/tests/test_landing_partners_endpoint.py backend/tests/test_tenant_logo_import.py -q`
+  `npm run test -- --run src/__tests__/LandingPage.test.tsx src/__tests__/UnifiedSettingsPage.test.tsx` (from `frontend/`)
+  `npm run build` (from `frontend/`)
+  `curl -I http://127.0.0.1:4173/`
+- [x] Added stable backend test defaults for Twilio env vars in `backend/tests/conftest.py` so admin endpoint tests do not require real credentials during collection.
+
+## Review
+- Approved active businesses now feed a concrete landing-page partner section without hardcoded placeholders.
+- Garage owners/admins can control the public partner copy from `Garage Profile`, while approval status remains the gate for inclusion on the landing page.
+- Residual risk: approved businesses without curated `partner_summary` or `partner_services` fall back to generic copy until those new profile fields are filled in.

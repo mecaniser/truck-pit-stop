@@ -895,6 +895,8 @@ class GarageProfileResponse(BaseModel):
     email: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
+    partner_summary: Optional[str] = None
+    partner_services: Optional[str] = None
 
 
 class GarageProfileUpdateRequest(BaseModel):
@@ -904,6 +906,8 @@ class GarageProfileUpdateRequest(BaseModel):
     email: Optional[EmailStr] = None
     website: Optional[str] = Field(None, max_length=255)
     logo_url: Optional[str] = Field(None, max_length=500)
+    partner_summary: Optional[str] = Field(None, max_length=280)
+    partner_services: Optional[str] = Field(None, max_length=180)
 
 
 class GarageLogoImportRequest(BaseModel):
@@ -945,6 +949,8 @@ async def get_garage_profile(
         email=tenant.email,
         website=tenant.website,
         logo_url=tenant.logo_url,
+        partner_summary=tenant.partner_summary,
+        partner_services=tenant.partner_services,
     )
 
 
@@ -980,6 +986,8 @@ async def update_garage_profile(
     tenant.email = clean_optional_text(str(body.email)) if body.email else None
     tenant.website = clean_optional_text(body.website)
     tenant.logo_url = clean_optional_text(body.logo_url)
+    tenant.partner_summary = clean_optional_text(body.partner_summary)
+    tenant.partner_services = clean_optional_text(body.partner_services)
 
     await db.commit()
     await db.refresh(tenant)
@@ -992,6 +1000,8 @@ async def update_garage_profile(
         email=tenant.email,
         website=tenant.website,
         logo_url=tenant.logo_url,
+        partner_summary=tenant.partner_summary,
+        partner_services=tenant.partner_services,
     )
 
 
@@ -1046,6 +1056,8 @@ async def import_garage_profile_logo(
         email=tenant.email,
         website=tenant.website,
         logo_url=tenant.logo_url,
+        partner_summary=tenant.partner_summary,
+        partner_services=tenant.partner_services,
     )
 
 

@@ -13,6 +13,7 @@ from app.api.v1.endpoints import auth as auth_endpoints
 
 ENROLL_URL = "/api/v1/auth/enroll-garage"
 IMPORT_LOGO_URL = "/api/v1/admin/garage-profile/import-logo"
+GARAGE_PROFILE_URL = "/api/v1/admin/garage-profile"
 
 
 @pytest_asyncio.fixture
@@ -186,3 +187,33 @@ async def test_import_logo_endpoint_requires_website(client, garage_owner_withou
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Website is required before importing a logo"
+
+
+@pytest.mark.asyncio
+async def test_garage_profile_update_persists_landing_partner_fields(client, db_session, garage_owner_token):
+    token, tenant_id = garage_owner_token
+
+    response = await client.put(
+        GARAGE_PROFILE_URL,
+        json={
+            "name": "Import Garage",
+            "address": "123 Service Road",
+            "phone": "5551234567",
+            "email": "owner@garage.example.com",
+            "website": "https://garage.example.com",
+            "logo_url": "https://cdn.example.com/logo.png",
+            "partner_summary": "24/7 mobile truck repair across the Carolinas.",
+            "partner_services": "Roadside repair, diagnostics, fleet PM",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["partner_summary"] == "24/7 mobile truck repair across the Carolinas."
+    assert body["partner_services"] == "Roadside repair, diagnostics, fleet PM"
+
+    result = await db_session.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one()
+    assert tenant.partner_summary == "24/7 mobile truck repair across the Carolinas."
+    assert tenant.partner_services == "Roadside repair, diagnostics, fleet PM"

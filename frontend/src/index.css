@@ -184,3 +184,30 @@ html::-webkit-scrollbar-thumb:hover {
 .order-alert-red {
   animation: order-alert-red 1.5s ease-in-out infinite;
 }
+
+@keyframes partner-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.partner-marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 0.75rem;
+  animation: partner-marquee 28s linear infinite;
+  will-change: transform;
+}
+
+.partner-marquee-shell:hover .partner-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .partner-marquee-track {
+    animation: none;
+  }
+}
