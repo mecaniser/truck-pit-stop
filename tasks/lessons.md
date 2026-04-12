@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-04-12
+- Correction: After fixing the owner account email overflow on the founding garage review step, I left the same long-email overflow pattern in the garage information card's business email field.
+- Rule: When fixing an overflow or wrapping bug in one review-summary field, audit every analogous field in the same surface before shipping instead of treating the visible instance as isolated.
+- Prevention: For review cards with repeated two-column metadata layouts, scan all long-string fields (emails, URLs, addresses) and note in `tasks/todo.md` which ones stay side-by-side versus which ones must stack or wrap.
+
 ## 2026-03-02
 - Correction: User requested explicit use of the `seo` skill after initial SEO assessment.
 - Rule: When the user names a skill directly, open that skill first and execute the implementation through that workflow before additional changes.

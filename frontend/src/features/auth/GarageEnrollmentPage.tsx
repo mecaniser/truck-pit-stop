@@ -910,13 +910,13 @@ export default function GarageEnrollmentPage() {
                       <span className="text-zinc-500">Address</span>
                       <p className="font-medium text-zinc-100">{formData.address}</p>
                     </div>
-                    <div>
+                    <div className="sm:col-span-2">
                       <span className="text-zinc-500">Phone</span>
                       <p className="font-medium text-zinc-100">{formData.phone}</p>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500">Business Email</span>
-                      <p className="font-medium text-zinc-100">{formData.email}</p>
+                      <div className="mt-2">
+                        <span className="text-zinc-500">Business Email</span>
+                        <p className="break-all font-medium text-zinc-100">{formData.email}</p>
+                      </div>
                     </div>
                     {formData.website && (
                       <div className="sm:col-span-2">

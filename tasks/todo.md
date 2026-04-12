@@ -1,3 +1,23 @@
+# Founding Garage Business Email Overflow - Task Plan (2026-04-12)
+
+## Plan
+- [x] Audit the garage information review card and confirm why long business emails still escape the container.
+- [x] Update the garage information summary layout so the business email stays inside the card at review-step widths.
+- [x] Run targeted verification and capture review notes plus residual risk.
+
+## Progress Notes
+- [x] Overflow owner confirmed: the garage information review card still placed `Business Email` in the right column of a `sm:grid-cols-2` summary row with no wrapping utility on the value text.
+- [x] Patched `frontend/src/features/auth/GarageEnrollmentPage.tsx` so the contact row now stacks `Business Email` beneath `Phone` and wraps the email with `break-all`.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The garage information review card no longer forces long business emails into a narrow right-side column.
+- `Business Email` now renders beneath `Phone` and wraps inside the card boundary instead of overflowing past it.
+- Residual risk: this was validated by production build only; a quick live pass on the enrollment review step is still the final visual check.
+
+---
+
 # Founding Garage Owner Email Overflow - Task Plan (2026-04-12)
 
 ## Plan
