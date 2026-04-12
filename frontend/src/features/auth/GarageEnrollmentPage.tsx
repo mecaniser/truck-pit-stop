@@ -974,15 +974,15 @@ export default function GarageEnrollmentPage() {
                     </button>
                   </div>
                   <div className="grid grid-cols-1 gap-3 text-sm text-zinc-300 sm:grid-cols-2">
-                    <div>
+                    <div className="sm:col-span-2">
                       <span className="text-zinc-500">Name</span>
                       <p className="font-medium text-zinc-100">
                         {formData.owner_first_name} {formData.owner_last_name}
                       </p>
-                    </div>
-                    <div>
-                      <span className="text-zinc-500">Owner Login Email</span>
-                      <p className="font-medium text-zinc-100">{formData.owner_email}</p>
+                      <div className="mt-2">
+                        <span className="text-zinc-500">Owner Login Email</span>
+                        <p className="break-all font-medium text-zinc-100">{formData.owner_email}</p>
+                      </div>
                     </div>
                     <div>
                       <span className="text-zinc-500">Phone</span>

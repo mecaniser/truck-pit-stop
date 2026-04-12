@@ -1,3 +1,23 @@
+# Founding Garage Owner Email Overflow - Task Plan (2026-04-12)
+
+## Plan
+- [x] Audit the review-step owner account layout and confirm why long owner login emails escape the card.
+- [x] Move the owner login email under the owner name in the review summary and add wrapping protection so long addresses stay inside the container.
+- [x] Run targeted verification and capture review notes plus any residual risk.
+
+## Progress Notes
+- [x] Overflow owner confirmed: the review card's `sm:grid-cols-2` owner account summary put the long email in a constrained right column with no wrapping utility on the value text.
+- [x] Patched `frontend/src/features/auth/GarageEnrollmentPage.tsx` so the owner name spans the full review row and the owner login email now renders directly beneath it with `break-all`.
+- [x] Passed targeted verification:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The owner account review card now stacks the login email under the owner name instead of forcing it into a separate right-side summary column.
+- Long owner login emails now wrap within the card instead of overflowing past the container edge.
+- Residual risk: this was validated by production build only; a quick live pass on the enrollment review step is still the final confirmation for the exact visual spacing.
+
+---
+
 # Garage Services Nested Scroll Follow-up - Task Plan (2026-03-23)
 
 ## Plan
