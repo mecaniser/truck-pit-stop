@@ -180,7 +180,7 @@ export default function ServicesPage() {
                       </td>
                       <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
                         <div className="text-sm font-medium text-amber-400">
-                          ${parseFloat(service.base_price).toFixed(2)}
+                          ${parseFloat(service.computed_total_price).toFixed(2)}
                         </div>
                         <div className="text-xs text-gray-400">
                           ~{service.duration_minutes} min
@@ -218,7 +218,7 @@ export default function ServicesPage() {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-amber-400">
-                    ${parseFloat(service.base_price).toFixed(0)}
+                    ${parseFloat(service.computed_total_price).toFixed(0)}
                   </div>
                   <div className="text-xs text-gray-500">starting at</div>
                 </div>

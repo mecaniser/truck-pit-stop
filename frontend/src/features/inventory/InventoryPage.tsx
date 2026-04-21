@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier } from '../../types'
-import { ArrowRight, Download, Plus, Settings, Trash2 } from 'lucide-react'
+import { ArrowRight, Download, PackageCheck, Pencil, Plus, Settings, Trash2 } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
@@ -46,6 +46,10 @@ export default function InventoryPage() {
     contact_name: '',
   })
   const [manageForm, setManageForm] = useState({
+    sku: '',
+    name: '',
+    category: '',
+    description: '',
     stock_quantity: '',
     on_order_quantity: '',
     reorder_level: '',
@@ -54,6 +58,9 @@ export default function InventoryPage() {
     supplier_name: '',
     supplier_contact: '',
   })
+  const [editingIdentity, setEditingIdentity] = useState(false)
+  const [receiveQty, setReceiveQty] = useState('')
+  const [receiveMessage, setReceiveMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
@@ -175,6 +182,10 @@ export default function InventoryPage() {
   useEffect(() => {
     if (selectedItem) {
       setManageForm({
+        sku: selectedItem.sku || '',
+        name: selectedItem.name || '',
+        category: selectedItem.category || '',
+        description: selectedItem.description || '',
         stock_quantity: String(selectedItem.stock_quantity ?? ''),
         on_order_quantity: String(selectedItem.on_order_quantity ?? ''),
         reorder_level: String(selectedItem.reorder_level ?? ''),
@@ -183,6 +194,9 @@ export default function InventoryPage() {
         supplier_name: selectedItem.supplier_name || '',
         supplier_contact: selectedItem.supplier_contact || '',
       })
+      setEditingIdentity(false)
+      setReceiveQty('')
+      setReceiveMessage(null)
       setError(null)
     }
   }, [selectedItem])
@@ -231,6 +245,23 @@ export default function InventoryPage() {
         }
       })
 
+      if (editingIdentity) {
+        const trimmedSku = manageForm.sku.trim()
+        const trimmedName = manageForm.name.trim()
+        if (!trimmedSku) throw new Error('SKU cannot be empty')
+        if (!trimmedName) throw new Error('Name cannot be empty')
+        if (trimmedSku !== selectedItem.sku) payload.sku = trimmedSku
+        if (trimmedName !== selectedItem.name) payload.name = trimmedName
+        const trimmedCategory = manageForm.category.trim()
+        if (trimmedCategory !== (selectedItem.category || '')) {
+          payload.category = trimmedCategory || null
+        }
+        const trimmedDescription = manageForm.description.trim()
+        if (trimmedDescription !== (selectedItem.description || '')) {
+          payload.description = trimmedDescription || null
+        }
+      }
+
       if (manageForm.supplier_name !== '') payload.supplier_name = manageForm.supplier_name
       if (manageForm.supplier_contact !== '') payload.supplier_contact = manageForm.supplier_contact
 
@@ -242,7 +273,36 @@ export default function InventoryPage() {
       setSelectedItem(null)
     },
     onError: (err: any) => {
-      const message = err?.response?.data?.detail || 'Failed to update inventory'
+      const message = err?.message || err?.response?.data?.detail || 'Failed to update inventory'
+      setError(Array.isArray(message) ? message.join(', ') : message)
+    },
+  })
+
+  const receiveShipmentMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedItem) return
+      const qty = Number(receiveQty)
+      if (!Number.isFinite(qty) || qty <= 0) {
+        throw new Error('Enter a quantity greater than zero')
+      }
+      const response = await api.post(`/inventory/${selectedItem.id}/receive`, { quantity: qty })
+      return response.data as InventoryItem
+    },
+    onSuccess: (updated) => {
+      if (!updated) return
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setSelectedItem(updated)
+      setManageForm((prev) => ({
+        ...prev,
+        stock_quantity: String(updated.stock_quantity ?? ''),
+        on_order_quantity: String(updated.on_order_quantity ?? ''),
+      }))
+      setReceiveMessage(`Received ${receiveQty} into stock`)
+      setReceiveQty('')
+      setTimeout(() => setReceiveMessage(null), 3000)
+    },
+    onError: (err: any) => {
+      const message = err?.message || err?.response?.data?.detail || 'Failed to receive shipment'
       setError(Array.isArray(message) ? message.join(', ') : message)
     },
   })
@@ -1006,7 +1066,69 @@ export default function InventoryPage() {
         isSubmitting={updateMutation.isPending}
         submitDisabled={!selectedItem}
         ariaLabel="Manage inventory"
+        headerAction={
+          <button
+            type="button"
+            onClick={() => setEditingIdentity((v) => !v)}
+            className={`p-2 rounded-full transition-colors ${
+              editingIdentity
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+            aria-label="Edit part details"
+            title={editingIdentity ? 'Close part details editor' : 'Edit name, SKU, category, description'}
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        }
       >
+        {/* Part details editor — only visible when pencil toggled */}
+        {editingIdentity && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
+            <p className="text-[11px] uppercase tracking-wide text-amber-800 font-semibold">Edit part details</p>
+            <label className="text-sm text-gray-700 space-y-1 block">
+              <span>Name</span>
+              <input
+                type="text"
+                value={manageForm.name}
+                onChange={(e) => handleManageChange('name', e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+              />
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label className="text-sm text-gray-700 space-y-1 block">
+                <span>SKU</span>
+                <input
+                  type="text"
+                  value={manageForm.sku}
+                  onChange={(e) => handleManageChange('sku', e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                />
+              </label>
+              <label className="text-sm text-gray-700 space-y-1 block">
+                <span>Category</span>
+                <input
+                  type="text"
+                  value={manageForm.category}
+                  onChange={(e) => handleManageChange('category', e.target.value)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                  placeholder="e.g. Electrical"
+                />
+              </label>
+            </div>
+            <label className="text-sm text-gray-700 space-y-1 block">
+              <span>Description</span>
+              <textarea
+                value={manageForm.description}
+                onChange={(e) => handleManageChange('description', e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-none"
+                placeholder="Optional description"
+              />
+            </label>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="text-sm text-gray-700 space-y-1">
             <span>Stock Quantity</span>
@@ -1036,20 +1158,64 @@ export default function InventoryPage() {
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
-            <span>Cost</span>
+            <span>Cost <span className="text-gray-400 font-normal">(per unit)</span></span>
             <CurrencyInput
               value={manageForm.cost}
               onChange={(val) => handleManageChange('cost', val)}
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
-            <span>Selling Price</span>
+            <span>Selling Price <span className="text-gray-400 font-normal">(per unit)</span></span>
             <CurrencyInput
               value={manageForm.selling_price}
               onChange={(val) => handleManageChange('selling_price', val)}
             />
           </label>
         </div>
+
+        {/* Receive Shipment */}
+        {selectedItem && (selectedItem.on_order_quantity > 0 || receiveQty) && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <PackageCheck className="w-4 h-4 text-blue-700" />
+              <p className="text-sm font-semibold text-blue-900">Receive Shipment</p>
+              {selectedItem.on_order_quantity > 0 && (
+                <span className="ml-auto text-[11px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                  {selectedItem.on_order_quantity} on order
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-600">Moves units from On Order into Stock.</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                value={receiveQty}
+                onChange={(e) => setReceiveQty(e.target.value)}
+                placeholder="Qty"
+                className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+              <button
+                type="button"
+                onClick={() => receiveShipmentMutation.mutate()}
+                disabled={!receiveQty || receiveShipmentMutation.isPending}
+                className="px-3 py-2 rounded-lg text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+              >
+                {receiveShipmentMutation.isPending ? 'Receiving…' : 'Receive into stock'}
+              </button>
+              {selectedItem.on_order_quantity > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setReceiveQty(String(selectedItem.on_order_quantity))}
+                  className="px-2 py-2 rounded-lg text-xs font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  Receive all
+                </button>
+              )}
+            </div>
+            {receiveMessage && <p className="text-xs text-green-700 font-medium">{receiveMessage}</p>}
+          </div>
+        )}
 
         <div className="space-y-2">
           <label className="text-sm text-gray-700 space-y-1 block">
@@ -1258,14 +1424,14 @@ export default function InventoryPage() {
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
-            <span>Cost *</span>
+            <span>Cost <span className="text-gray-400 font-normal">(per unit)</span> *</span>
             <CurrencyInput
               value={addForm.cost}
               onChange={(val) => handleAddFormChange('cost', val)}
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
-            <span>Selling Price *</span>
+            <span>Selling Price <span className="text-gray-400 font-normal">(per unit)</span> *</span>
             <CurrencyInput
               value={addForm.selling_price}
               onChange={(val) => handleAddFormChange('selling_price', val)}

@@ -45,3 +45,8 @@ class PartsUsage(BaseModel):
     unit_price = Column(Numeric(10, 2), nullable=False)
     total_price = Column(Numeric(10, 2), nullable=False)
 
+    # When set, this PartsUsage row was auto-added because a Service (which bundles
+    # parts) was attached to the RO. Mechanics should not edit/delete these directly;
+    # removing the parent Labor line is the way to remove them.
+    source_service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=True, index=True)
+

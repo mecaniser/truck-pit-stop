@@ -13,10 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
-from app.db.models.service import Service
+from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.core.logging import get_logger
 from app.services.repair_operation_library import (
@@ -185,11 +186,15 @@ class PriceBuildService:
             raise PriceBuildValidationError("quantity must be >= 1")
 
         svc_result = await db.execute(
-            select(Service).where(
+            select(Service)
+            .where(
                 and_(
                     Service.id == service_id,
                     Service.tenant_id == order.tenant_id,
                 )
+            )
+            .options(
+                selectinload(Service.service_parts).selectinload(ServicePart.inventory_item),
             )
         )
         service = svc_result.scalar_one_or_none()
@@ -197,8 +202,11 @@ class PriceBuildService:
             raise PriceBuildNotFoundError("Service not found")
 
         tenant = await self._get_tenant(db, order.tenant_id)
-        qty = Decimal(quantity)
         hourly_rate = Decimal(str(tenant.labor_rate))
+        # Labor hours come from the service's duration, scaled by quantity (how many
+        # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
+        hours_per_unit = (Decimal(service.duration_minutes) / Decimal(60))
+        total_hours = hours_per_unit * Decimal(quantity)
 
         existing_line = next(
             (
@@ -210,11 +218,13 @@ class PriceBuildService:
         )
         if existing_line:
             existing_line.description = service.name
-            existing_line.hours = qty
+            existing_line.hours = total_hours
             existing_line.hourly_rate = hourly_rate
-            existing_line.total_cost = _money(qty * hourly_rate)
+            existing_line.total_cost = _money(total_hours * hourly_rate)
             existing_line.line_type = LaborLineType.MANUAL
             existing_line.auto_recalc_enabled = True
+            # Reset previously-attached parts so we can re-snapshot at current prices/stock.
+            await self._restore_service_parts(db, order, service.id)
         else:
             db.add(
                 Labor(
@@ -222,9 +232,9 @@ class PriceBuildService:
                     repair_order_id=order.id,
                     service_code=None,
                     description=service.name,
-                    hours=qty,
+                    hours=total_hours,
                     hourly_rate=hourly_rate,
-                    total_cost=_money(qty * hourly_rate),
+                    total_cost=_money(total_hours * hourly_rate),
                     line_type=LaborLineType.MANUAL,
                     provider=None,
                     provider_operation_id=None,
@@ -232,6 +242,34 @@ class PriceBuildService:
                     source_service_id=service.id,
                 )
             )
+
+        # Auto-attach parts bundled with this service. Skip inventory items whose
+        # stock would go negative — admin should fix stock before repeating.
+        for sp in service.service_parts:
+            inv = sp.inventory_item
+            if not inv or inv.deleted_at is not None:
+                continue
+            required_qty = sp.quantity * quantity
+            if (inv.stock_quantity or 0) < required_qty:
+                raise PriceBuildValidationError(
+                    f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {required_qty}"
+                )
+            unit_price = Decimal(str(inv.selling_price))
+            line_total = _money(unit_price * Decimal(required_qty))
+            db.add(
+                PartsUsage(
+                    tenant_id=order.tenant_id,
+                    repair_order_id=order.id,
+                    inventory_id=inv.id,
+                    quantity=required_qty,
+                    unit_cost=inv.cost,
+                    unit_price=unit_price,
+                    total_price=line_total,
+                    source_service_id=service.id,
+                )
+            )
+            inv.stock_quantity = (inv.stock_quantity or 0) - required_qty
+
         await db.commit()
         order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
@@ -407,10 +445,37 @@ class PriceBuildService:
         line = line_result.scalar_one_or_none()
         if not line:
             raise PriceBuildNotFoundError("Price build line not found")
+        # If this labor line came from a Service, also release its bundled parts.
+        if line.source_service_id:
+            await self._restore_service_parts(db, order, line.source_service_id)
         await db.delete(line)
         await db.commit()
         order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
+
+    async def _restore_service_parts(
+        self,
+        db: AsyncSession,
+        order: RepairOrder,
+        service_id: UUID,
+    ) -> None:
+        """Delete PartsUsage rows auto-added for this service and restore stock."""
+        pu_result = await db.execute(
+            select(PartsUsage).where(
+                and_(
+                    PartsUsage.repair_order_id == order.id,
+                    PartsUsage.source_service_id == service_id,
+                )
+            )
+        )
+        for pu in pu_result.scalars().all():
+            inv_result = await db.execute(
+                select(Inventory).where(Inventory.id == pu.inventory_id)
+            )
+            inv = inv_result.scalar_one_or_none()
+            if inv:
+                inv.stock_quantity = (inv.stock_quantity or 0) + pu.quantity
+            await db.delete(pu)
 
     async def recalculate_order(self, db: AsyncSession, order: RepairOrder) -> PriceBuildResult:
         started = perf_counter()

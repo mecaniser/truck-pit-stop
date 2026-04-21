@@ -122,7 +122,7 @@ export default function BookingPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">Book {service.name}</h1>
           <p className="text-gray-400 text-sm">
-            ${parseFloat(service.base_price).toFixed(2)} • ~{service.duration_minutes} min
+            ${parseFloat(service.computed_total_price).toFixed(2)} • ~{service.duration_minutes} min
           </p>
         </div>
       </div>
@@ -317,7 +317,7 @@ export default function BookingPage() {
               <div className="border-t border-white/10 pt-3 flex justify-between">
                 <span className="text-gray-400">Total</span>
                 <span className="text-xl font-bold text-amber-400">
-                  ${parseFloat(service.base_price).toFixed(2)}
+                  ${parseFloat(service.computed_total_price).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -369,7 +369,7 @@ export default function BookingPage() {
               <div className="flex justify-between text-lg">
                 <span className="text-gray-400">Amount Due</span>
                 <span className="font-bold text-amber-400">
-                  ${parseFloat(service.base_price).toFixed(2)}
+                  ${parseFloat(service.computed_total_price).toFixed(2)}
                 </span>
               </div>
             </div>

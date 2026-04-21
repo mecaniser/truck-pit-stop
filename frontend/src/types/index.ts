@@ -365,18 +365,34 @@ export interface ServiceCategory {
   is_active: boolean
 }
 
+export interface ServicePart {
+  id: string
+  inventory_id: string
+  sku: string
+  name: string
+  quantity: number
+  unit_price: string
+  line_total: string
+}
+
 export interface Service {
   id: string
   category_id: string | null
   name: string
   description: string | null
   duration_minutes: number
-  base_price: string
+  /** Flat-rate override. Null means "compute as labor + parts". */
+  base_price: string | null
   icon: string | null
   sort_order: number
   is_active: boolean
   requires_vehicle: boolean
   category?: ServiceCategory
+  parts: ServicePart[]
+  labor_cost: string
+  parts_cost: string
+  /** Always-populated display price (matches base_price if set, else labor+parts). */
+  computed_total_price: string
 }
 
 export type AppointmentStatus = 

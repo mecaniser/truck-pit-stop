@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
 
@@ -10,10 +11,16 @@ from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.default_catalog import DEFAULT_CATEGORIES, DEFAULT_SERVICES
 from app.db.models.appointment import Appointment
+from app.db.models.inventory import Inventory
+from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
-from app.db.models.service import Service, ServiceCategory
+from app.db.models.service import Service, ServiceCategory, ServicePart
 
 router = APIRouter()
+
+
+def _money(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal("0.01"))
 
 
 # Schemas
@@ -41,7 +48,7 @@ class ServiceCreate(BaseModel):
     name: str
     description: Optional[str] = None
     duration_minutes: int = 60
-    base_price: Decimal
+    base_price: Optional[Decimal] = None
     icon: Optional[str] = None
     sort_order: int = 0
     requires_vehicle: bool = True
@@ -53,10 +60,33 @@ class ServiceUpdate(BaseModel):
     description: Optional[str] = None
     duration_minutes: Optional[int] = None
     base_price: Optional[Decimal] = None
+    clear_base_price: bool = False
     icon: Optional[str] = None
     sort_order: Optional[int] = None
     is_active: Optional[bool] = None
     requires_vehicle: Optional[bool] = None
+
+
+class ServicePartCreate(BaseModel):
+    inventory_id: UUID
+    quantity: int = 1
+
+
+class ServicePartUpdate(BaseModel):
+    quantity: int
+
+
+class ServicePartResponse(BaseModel):
+    id: str
+    inventory_id: str
+    sku: str
+    name: str
+    quantity: int
+    unit_price: str
+    line_total: str
+
+    class Config:
+        from_attributes = True
 
 
 class ServiceResponse(BaseModel):
@@ -65,12 +95,16 @@ class ServiceResponse(BaseModel):
     name: str
     description: Optional[str]
     duration_minutes: int
-    base_price: str
+    base_price: Optional[str]
     icon: Optional[str]
     sort_order: int
     is_active: bool
     requires_vehicle: bool
     category: Optional[ServiceCategoryResponse] = None
+    parts: List[ServicePartResponse] = []
+    labor_cost: str
+    parts_cost: str
+    computed_total_price: str
 
     class Config:
         from_attributes = True
@@ -87,6 +121,105 @@ def require_admin():
     return role_checker
 
 
+async def _resolve_tenant_id(current_user: User, db: AsyncSession) -> Optional[UUID]:
+    if current_user.tenant_id:
+        return current_user.tenant_id
+    if current_user.customer_id:
+        from app.db.models.customer import Customer
+        result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
+        customer = result.scalar_one_or_none()
+        if customer:
+            return customer.tenant_id
+    return None
+
+
+async def _get_labor_rate(db: AsyncSession, tenant_id: UUID) -> Decimal:
+    result = await db.execute(select(Tenant.labor_rate).where(Tenant.id == tenant_id))
+    rate = result.scalar_one_or_none()
+    return Decimal(str(rate)) if rate is not None else Decimal("100.00")
+
+
+def _build_parts_response(service: Service) -> List[ServicePartResponse]:
+    items: List[ServicePartResponse] = []
+    for sp in service.service_parts:
+        inv = sp.inventory_item
+        if not inv or inv.deleted_at is not None:
+            continue
+        unit_price = Decimal(str(inv.selling_price))
+        line_total = _money(unit_price * Decimal(sp.quantity))
+        items.append(
+            ServicePartResponse(
+                id=str(sp.id),
+                inventory_id=str(inv.id),
+                sku=inv.sku,
+                name=inv.name,
+                quantity=sp.quantity,
+                unit_price=str(_money(unit_price)),
+                line_total=str(line_total),
+            )
+        )
+    return items
+
+
+def _serialize_service(
+    service: Service,
+    labor_rate: Decimal,
+    *,
+    include_category: bool = False,
+) -> ServiceResponse:
+    parts = _build_parts_response(service)
+    parts_cost = _money(sum((Decimal(p.line_total) for p in parts), Decimal("0.00")))
+    # base_price acts as a labor-only override. When set, the service charges that flat
+    # labor figure plus any bundled parts on top; when null, labor = rate × duration.
+    if service.base_price is not None:
+        effective_labor = _money(Decimal(str(service.base_price)))
+    else:
+        effective_labor = _money(labor_rate * (Decimal(service.duration_minutes) / Decimal(60)))
+    computed_total = _money(effective_labor + parts_cost)
+
+    category_resp: Optional[ServiceCategoryResponse] = None
+    if include_category and service.category:
+        c = service.category
+        category_resp = ServiceCategoryResponse(
+            id=str(c.id),
+            name=c.name,
+            description=c.description,
+            icon=c.icon,
+            sort_order=c.sort_order,
+            is_active=c.is_active,
+        )
+
+    return ServiceResponse(
+        id=str(service.id),
+        category_id=str(service.category_id) if service.category_id else None,
+        name=service.name,
+        description=service.description,
+        duration_minutes=service.duration_minutes,
+        base_price=str(_money(Decimal(str(service.base_price)))) if service.base_price is not None else None,
+        icon=service.icon,
+        sort_order=service.sort_order,
+        is_active=service.is_active,
+        requires_vehicle=service.requires_vehicle,
+        category=category_resp,
+        parts=parts,
+        labor_cost=str(effective_labor),
+        parts_cost=str(parts_cost),
+        computed_total_price=str(computed_total),
+    )
+
+
+async def _load_service_with_parts(db: AsyncSession, service_id: UUID) -> Optional[Service]:
+    result = await db.execute(
+        select(Service)
+        .where(Service.id == service_id)
+        .options(
+            selectinload(Service.service_parts).selectinload(ServicePart.inventory_item),
+            selectinload(Service.category),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 # --- Service Categories ---
 
 @router.post("/categories", response_model=ServiceCategoryResponse, status_code=status.HTTP_201_CREATED)
@@ -97,7 +230,7 @@ async def create_category(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    
+
     category = ServiceCategory(
         tenant_id=current_user.tenant_id,
         **data.model_dump(),
@@ -105,7 +238,7 @@ async def create_category(
     db.add(category)
     await db.commit()
     await db.refresh(category)
-    
+
     return ServiceCategoryResponse(
         id=str(category.id),
         name=category.name,
@@ -124,18 +257,10 @@ async def list_categories(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    tenant_id = current_user.tenant_id
-    if not tenant_id and current_user.customer_id:
-        # Customer - get tenant from their customer record
-        from app.db.models.customer import Customer
-        result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-        customer = result.scalar_one_or_none()
-        if customer:
-            tenant_id = customer.tenant_id
-    
+    tenant_id = await _resolve_tenant_id(current_user, db)
     if not tenant_id:
         return paginated_or_list([], 0, skip, limit, paginated)
-    
+
     base_query = select(ServiceCategory).where(
         and_(ServiceCategory.tenant_id == tenant_id, ServiceCategory.is_active == True)
     )
@@ -148,7 +273,7 @@ async def list_categories(
     query = base_query.order_by(ServiceCategory.sort_order, ServiceCategory.name).offset(skip).limit(limit)
     result = await db.execute(query)
     categories = result.scalars().all()
-    
+
     items = [
         ServiceCategoryResponse(
             id=str(c.id),
@@ -173,27 +298,17 @@ async def create_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    
+
     service = Service(
         tenant_id=current_user.tenant_id,
         **data.model_dump(),
     )
     db.add(service)
     await db.commit()
-    await db.refresh(service)
-    
-    return ServiceResponse(
-        id=str(service.id),
-        category_id=str(service.category_id) if service.category_id else None,
-        name=service.name,
-        description=service.description,
-        duration_minutes=service.duration_minutes,
-        base_price=str(service.base_price),
-        icon=service.icon,
-        sort_order=service.sort_order,
-        is_active=service.is_active,
-        requires_vehicle=service.requires_vehicle,
-    )
+
+    service_loaded = await _load_service_with_parts(db, service.id)
+    labor_rate = await _get_labor_rate(db, current_user.tenant_id)
+    return _serialize_service(service_loaded, labor_rate, include_category=True)
 
 
 @router.get("", response_model=List[ServiceResponse])
@@ -206,51 +321,38 @@ async def list_services(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    tenant_id = current_user.tenant_id
-    if not tenant_id and current_user.customer_id:
-        from app.db.models.customer import Customer
-        result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
-        customer = result.scalar_one_or_none()
-        if customer:
-            tenant_id = customer.tenant_id
-    
+    tenant_id = await _resolve_tenant_id(current_user, db)
     if not tenant_id:
         return paginated_or_list([], 0, skip, limit, paginated)
-    
-    query = select(Service).where(Service.tenant_id == tenant_id)
+
+    query = (
+        select(Service)
+        .where(Service.tenant_id == tenant_id)
+        .options(
+            selectinload(Service.service_parts).selectinload(ServicePart.inventory_item),
+            selectinload(Service.category),
+        )
+    )
     count_query = select(func.count(Service.id)).where(Service.tenant_id == tenant_id)
-    
+
     if active_only:
         query = query.where(Service.is_active == True)
         count_query = count_query.where(Service.is_active == True)
-    
+
     if category_id:
         query = query.where(Service.category_id == category_id)
         count_query = count_query.where(Service.category_id == category_id)
-    
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
     query = query.order_by(Service.sort_order, Service.name).offset(skip).limit(limit)
-    
+
     result = await db.execute(query)
     services = result.scalars().all()
-    
-    items = [
-        ServiceResponse(
-            id=str(s.id),
-            category_id=str(s.category_id) if s.category_id else None,
-            name=s.name,
-            description=s.description,
-            duration_minutes=s.duration_minutes,
-            base_price=str(s.base_price),
-            icon=s.icon,
-            sort_order=s.sort_order,
-            is_active=s.is_active,
-            requires_vehicle=s.requires_vehicle,
-        )
-        for s in services
-    ]
+
+    labor_rate = await _get_labor_rate(db, tenant_id)
+    items = [_serialize_service(s, labor_rate, include_category=True) for s in services]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -394,24 +496,12 @@ async def get_service(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    result = await db.execute(select(Service).where(Service.id == service_id))
-    service = result.scalar_one_or_none()
-    
+    service = await _load_service_with_parts(db, service_id)
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-    
-    return ServiceResponse(
-        id=str(service.id),
-        category_id=str(service.category_id) if service.category_id else None,
-        name=service.name,
-        description=service.description,
-        duration_minutes=service.duration_minutes,
-        base_price=str(service.base_price),
-        icon=service.icon,
-        sort_order=service.sort_order,
-        is_active=service.is_active,
-        requires_vehicle=service.requires_vehicle,
-    )
+
+    labor_rate = await _get_labor_rate(db, service.tenant_id)
+    return _serialize_service(service, labor_rate, include_category=True)
 
 
 @router.put("/{service_id}", response_model=ServiceResponse)
@@ -423,29 +513,155 @@ async def update_service(
 ):
     result = await db.execute(select(Service).where(Service.id == service_id))
     service = result.scalar_one_or_none()
-    
+
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
-    
+
     if service.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     update_data = data.model_dump(exclude_unset=True)
+    clear_base = update_data.pop("clear_base_price", False)
     for field, value in update_data.items():
         setattr(service, field, value)
-    
+    if clear_base:
+        service.base_price = None
+
     await db.commit()
-    await db.refresh(service)
-    
-    return ServiceResponse(
-        id=str(service.id),
-        category_id=str(service.category_id) if service.category_id else None,
-        name=service.name,
-        description=service.description,
-        duration_minutes=service.duration_minutes,
-        base_price=str(service.base_price),
-        icon=service.icon,
-        sort_order=service.sort_order,
-        is_active=service.is_active,
-        requires_vehicle=service.requires_vehicle,
+
+    service_loaded = await _load_service_with_parts(db, service.id)
+    labor_rate = await _get_labor_rate(db, service.tenant_id)
+    return _serialize_service(service_loaded, labor_rate, include_category=True)
+
+
+# --- Service Parts ---
+
+@router.post(
+    "/{service_id}/parts",
+    response_model=ServiceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_service_part(
+    service_id: UUID,
+    data: ServicePartCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    if data.quantity < 1:
+        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
+
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    svc_result = await db.execute(
+        select(Service).where(
+            and_(Service.id == service_id, Service.tenant_id == current_user.tenant_id)
+        )
     )
+    service = svc_result.scalar_one_or_none()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    inv_result = await db.execute(
+        select(Inventory).where(
+            and_(
+                Inventory.id == data.inventory_id,
+                Inventory.tenant_id == current_user.tenant_id,
+                Inventory.deleted_at.is_(None),
+            )
+        )
+    )
+    inv = inv_result.scalar_one_or_none()
+    if not inv:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    existing_result = await db.execute(
+        select(ServicePart).where(
+            and_(
+                ServicePart.service_id == service_id,
+                ServicePart.inventory_id == data.inventory_id,
+            )
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    if existing:
+        existing.quantity = data.quantity
+    else:
+        db.add(
+            ServicePart(
+                tenant_id=current_user.tenant_id,
+                service_id=service_id,
+                inventory_id=data.inventory_id,
+                quantity=data.quantity,
+            )
+        )
+
+    await db.commit()
+    service_loaded = await _load_service_with_parts(db, service_id)
+    labor_rate = await _get_labor_rate(db, current_user.tenant_id)
+    return _serialize_service(service_loaded, labor_rate, include_category=True)
+
+
+@router.put("/{service_id}/parts/{part_id}", response_model=ServiceResponse)
+async def update_service_part(
+    service_id: UUID,
+    part_id: UUID,
+    data: ServicePartUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    if data.quantity < 1:
+        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    result = await db.execute(
+        select(ServicePart).where(
+            and_(
+                ServicePart.id == part_id,
+                ServicePart.service_id == service_id,
+                ServicePart.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    part = result.scalar_one_or_none()
+    if not part:
+        raise HTTPException(status_code=404, detail="Service part not found")
+
+    part.quantity = data.quantity
+    await db.commit()
+
+    service_loaded = await _load_service_with_parts(db, service_id)
+    labor_rate = await _get_labor_rate(db, current_user.tenant_id)
+    return _serialize_service(service_loaded, labor_rate, include_category=True)
+
+
+@router.delete("/{service_id}/parts/{part_id}", response_model=ServiceResponse)
+async def delete_service_part(
+    service_id: UUID,
+    part_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+    result = await db.execute(
+        select(ServicePart).where(
+            and_(
+                ServicePart.id == part_id,
+                ServicePart.service_id == service_id,
+                ServicePart.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    part = result.scalar_one_or_none()
+    if not part:
+        raise HTTPException(status_code=404, detail="Service part not found")
+
+    await db.delete(part)
+    await db.commit()
+
+    service_loaded = await _load_service_with_parts(db, service_id)
+    labor_rate = await _get_labor_rate(db, current_user.tenant_id)
+    return _serialize_service(service_loaded, labor_rate, include_category=True)

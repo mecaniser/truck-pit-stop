@@ -14,9 +14,12 @@ from app.core.pagination import paginated_or_list
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
-from app.db.models.service import Service
+from app.db.models.service import Service, ServicePart
+from app.db.models.inventory import Inventory
+from app.db.models.tenant import Tenant
 from app.db.models.appointment import Appointment, AppointmentStatus
 from app.services.stripe_service import create_payment_intent
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -96,14 +99,31 @@ async def create_appointment(
         # Staff creating appointment - would need customer_id in request
         raise HTTPException(status_code=400, detail="Staff appointment creation not yet implemented")
     
-    # Get service
-    result = await db.execute(select(Service).where(Service.id == data.service_id))
+    # Get service (with parts for computing price when base_price is null)
+    result = await db.execute(
+        select(Service)
+        .where(Service.id == data.service_id)
+        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
+    )
     service = result.scalar_one_or_none()
     if not service or not service.is_active:
         raise HTTPException(status_code=404, detail="Service not found or inactive")
-    
+
     if service.tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="Service not available")
+
+    if service.base_price is not None:
+        appointment_price = Decimal(str(service.base_price))
+    else:
+        tenant_result = await db.execute(select(Tenant.labor_rate).where(Tenant.id == tenant_id))
+        labor_rate = Decimal(str(tenant_result.scalar_one_or_none() or "100.00"))
+        labor_cost = (labor_rate * Decimal(service.duration_minutes) / Decimal(60)).quantize(Decimal("0.01"))
+        parts_cost = Decimal("0.00")
+        for sp in service.service_parts:
+            inv = sp.inventory_item
+            if inv and inv.deleted_at is None:
+                parts_cost += Decimal(str(inv.selling_price)) * Decimal(sp.quantity)
+        appointment_price = (labor_cost + parts_cost).quantize(Decimal("0.01"))
     
     # Validate vehicle if required
     if service.requires_vehicle:
@@ -131,7 +151,7 @@ async def create_appointment(
         scheduled_at=data.scheduled_at,
         duration_minutes=service.duration_minutes,
         status=AppointmentStatus.PENDING,
-        price=service.base_price,
+        price=appointment_price,
         customer_notes=data.customer_notes,
         confirmation_number=confirmation_number,
     )

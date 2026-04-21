@@ -2407,7 +2407,7 @@ export default function RepairOrdersPage() {
                     if (!svc || !selectedOrder.id) return
                     const newServices = [
                       ...detailServices,
-                      { id: svc.id, name: svc.name, base_price: svc.base_price },
+                      { id: svc.id, name: svc.name, base_price: svc.computed_total_price },
                     ]
                     updateServicesMutation.mutate({ orderId: selectedOrder.id, selectedServices: newServices })
                   }
@@ -2457,7 +2457,7 @@ export default function RepairOrdersPage() {
                               options={availableServices.map((s) => ({
                                 value: s.id,
                                 label: s.name,
-                                subLabel: `$${parseFloat(s.base_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                                subLabel: `$${parseFloat(s.computed_total_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
                               }))}
                               value=""
                               onChange={handleAddService}

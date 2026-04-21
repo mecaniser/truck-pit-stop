@@ -65,6 +65,10 @@ class InventoryUpdate(BaseModel):
     supplier_contact: Optional[str] = None
 
 
+class ReceiveShipmentRequest(BaseModel):
+    quantity: int
+
+
 def require_admin():
     async def role_checker(current_user: User = Depends(get_current_active_user)):
         if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
@@ -157,6 +161,7 @@ async def create_inventory_item(
         description=item.description,
         category=item.category,
         stock_quantity=item.stock_quantity,
+        on_order_quantity=item.on_order_quantity,
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
@@ -250,7 +255,7 @@ async def get_inventory_item(
     
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
-    
+
     return InventoryResponse(
         id=item.id,
         tenant_id=item.tenant_id,
@@ -259,6 +264,7 @@ async def get_inventory_item(
         description=item.description,
         category=item.category,
         stock_quantity=item.stock_quantity,
+        on_order_quantity=item.on_order_quantity,
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
@@ -305,6 +311,54 @@ async def update_inventory_item(
         description=item.description,
         category=item.category,
         stock_quantity=item.stock_quantity,
+        on_order_quantity=item.on_order_quantity,
+        reorder_level=item.reorder_level,
+        cost=item.cost,
+        selling_price=item.selling_price,
+        supplier_name=item.supplier_name,
+        supplier_contact=item.supplier_contact,
+        created_at=item.created_at.isoformat(),
+        updated_at=item.updated_at.isoformat(),
+    )
+
+
+@router.post("/{item_id}/receive", response_model=InventoryResponse)
+async def receive_shipment(
+    item_id: UUID,
+    body: ReceiveShipmentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    if body.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+
+    query = select(Inventory).where(
+        Inventory.id == item_id,
+        Inventory.deleted_at.is_(None),
+    )
+    if current_user.tenant_id:
+        query = query.where(Inventory.tenant_id == current_user.tenant_id)
+
+    result = await db.execute(query)
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    item.stock_quantity = (item.stock_quantity or 0) + body.quantity
+    item.on_order_quantity = max(0, (item.on_order_quantity or 0) - body.quantity)
+
+    await db.commit()
+    await db.refresh(item)
+
+    return InventoryResponse(
+        id=item.id,
+        tenant_id=item.tenant_id,
+        sku=item.sku,
+        name=item.name,
+        description=item.description,
+        category=item.category,
+        stock_quantity=item.stock_quantity,
+        on_order_quantity=item.on_order_quantity,
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,

@@ -9,7 +9,8 @@ DEFAULT_CATEGORIES = [
     {"name": "Brakes",         "description": "Brake services and repairs",                        "icon": "🛑", "sort_order": 2},
     {"name": "Inspections",    "description": "Safety and compliance inspections",                 "icon": "📋", "sort_order": 3},
     {"name": "Tires",          "description": "Tire services and replacements",                   "icon": "🛞", "sort_order": 4},
-    {"name": "Other Services", "description": "Additional truck services",                        "icon": "🛠️", "sort_order": 5},
+    {"name": "Electrical",     "description": "Batteries, starters, alternators, and electrical systems", "icon": "🔋", "sort_order": 5},
+    {"name": "Other Services", "description": "Additional truck services",                        "icon": "🛠️", "sort_order": 6},
 ]
 
 DEFAULT_SERVICES = [
@@ -35,11 +36,16 @@ DEFAULT_SERVICES = [
     {"category": "Tires",          "name": "Tire Repair - Patch/Plug",       "description": "Professional tire repair. Assessment to determine if repair is safe.",                                               "duration_minutes": 30,  "base_price": Decimal("35.00"),   "icon": "🔧", "sort_order": 4},
     {"category": "Tires",          "name": "Wheel Alignment",                "description": "Full wheel alignment check and adjustment for all axles.",                                                            "duration_minutes": 90,  "base_price": Decimal("249.00"),  "icon": "📐", "sort_order": 5},
     # Other Services
+    # Electrical
+    {"category": "Electrical",     "name": "Battery Test & Replacement",     "description": "Load test batteries and replace if needed. Includes terminal cleaning.",                                             "duration_minutes": 60,  "base_price": Decimal("100.00"),  "icon": "🔋", "sort_order": 1},
+    {"category": "Electrical",     "name": "Alternator Replacement",         "description": "Diagnose charging system, remove and replace alternator, verify output.",                                            "duration_minutes": 120, "base_price": Decimal("200.00"),  "icon": "⚡", "sort_order": 2},
+    {"category": "Electrical",     "name": "Starter Replacement",            "description": "Remove and replace starter motor. Includes cable inspection and testing.",                                           "duration_minutes": 120, "base_price": Decimal("200.00"),  "icon": "🔌", "sort_order": 3},
+    {"category": "Electrical",     "name": "Headlight Bulb Replacement",     "description": "Replace headlight bulb(s). Includes aim check.",                                                                      "duration_minutes": 30,  "base_price": Decimal("50.00"),   "icon": "💡", "sort_order": 4},
+    # Other Services
     {"category": "Other Services", "name": "Diagnostic Scan",                "description": "Computer diagnostic for check engine lights, fault codes, and system analysis.",                                     "duration_minutes": 30,  "base_price": Decimal("99.00"),   "icon": "💻", "sort_order": 1},
     {"category": "Other Services", "name": "A/C Service",                    "description": "A/C system inspection, leak check, and refrigerant recharge.",                                                       "duration_minutes": 60,  "base_price": Decimal("179.00"),  "icon": "❄️", "sort_order": 2},
-    {"category": "Other Services", "name": "Battery Test & Replacement",     "description": "Load test batteries and replace if needed. Includes terminal cleaning.",                                             "duration_minutes": 30,  "base_price": Decimal("49.00"),   "icon": "🔋", "sort_order": 3},
-    {"category": "Other Services", "name": "DEF System Service",             "description": "DEF system inspection, fluid top-off, and filter replacement.",                                                      "duration_minutes": 45,  "base_price": Decimal("129.00"),  "icon": "💧", "sort_order": 4},
-    {"category": "Other Services", "name": "DPF Cleaning",                   "description": "Diesel Particulate Filter cleaning and regeneration service.",                                                       "duration_minutes": 120, "base_price": Decimal("399.00"),  "icon": "🌫️", "sort_order": 5},
+    {"category": "Other Services", "name": "DEF System Service",             "description": "DEF system inspection, fluid top-off, and filter replacement.",                                                      "duration_minutes": 45,  "base_price": Decimal("129.00"),  "icon": "💧", "sort_order": 3},
+    {"category": "Other Services", "name": "DPF Cleaning",                   "description": "Diesel Particulate Filter cleaning and regeneration service.",                                                       "duration_minutes": 120, "base_price": Decimal("399.00"),  "icon": "🌫️", "sort_order": 4},
 ]
 
 DEFAULT_INVENTORY = [

@@ -28,6 +28,8 @@ interface SlidePanelFormProps {
   width?: string
   /** Optional aria-label for accessibility */
   ariaLabel?: string
+  /** Optional action rendered in the header, left of the close button (e.g. edit toggle) */
+  headerAction?: ReactNode
 }
 
 export default function SlidePanelForm({
@@ -45,14 +47,15 @@ export default function SlidePanelForm({
   hideFooter = false,
   width = 'sm:w-[520px]',
   ariaLabel,
+  headerAction,
 }: SlidePanelFormProps) {
   const { accentColors } = useTheme()
   
   if (!isOpen) return null
 
   const header = (
-    <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-      <div>
+    <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-2">
+      <div className="min-w-0">
         {category && (
           <p className="text-xs uppercase text-gray-500 font-semibold">{category}</p>
         )}
@@ -61,13 +64,16 @@ export default function SlidePanelForm({
           <p className="text-sm text-gray-500">{subtitle}</p>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
-      >
-        <X className="w-5 h-5" />
-      </button>
+      <div className="flex items-center gap-1 shrink-0">
+        {headerAction}
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
     </div>
   )
 
