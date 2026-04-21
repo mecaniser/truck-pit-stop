@@ -11,6 +11,7 @@ import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
 import { formatUSPhone } from '@/utils/phone'
+import { getServiceStockStatus } from '@/utils/serviceStock'
 import BaseSelect from '../../components/BaseSelect'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
@@ -153,6 +154,10 @@ export default function RepairOrdersPage() {
   const [description, setDescription] = useState('')
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
+  // Inline stock-replenish state (keyed by inventory_id) for the new-RO modal's warning panel.
+  const [replenishingId, setReplenishingId] = useState<string | null>(null)
+  const [replenishValue, setReplenishValue] = useState<string>('')
+  const [replenishSaving, setReplenishSaving] = useState(false)
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -274,12 +279,15 @@ export default function RepairOrdersPage() {
     },
   })
 
-  const { data: services } = useQuery<Service[]>({
+  const { data: services, refetch: refetchServices } = useQuery<Service[]>({
     queryKey: ['services'],
     queryFn: async () => {
       const response = await api.get('/services')
       return response.data
     },
+    // Stock can change in another tab (e.g. user replenished from the warning panel),
+    // so refresh when the user comes back to this tab.
+    refetchOnWindowFocus: true,
   })
 
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
@@ -1160,18 +1168,23 @@ export default function RepairOrdersPage() {
       })
 
       if (selectedServicePayload.length > 0) {
-        try {
-          await Promise.all(
-            selectedServicePayload.map((svc) =>
-              api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
-                service_id: svc.id,
-                quantity: 1,
-              })
-            )
-          )
-        } catch (err) {
-          console.error('Failed to apply selected services to price builder', err)
-          toast.error('Repair order created, but some service lines could not be applied')
+        // Apply sequentially so a stock-failure on one service doesn't abort the rest,
+        // and so we can surface a per-service reason to the user.
+        const failures: { name: string; reason: string }[] = []
+        for (const svc of selectedServicePayload) {
+          try {
+            await api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
+              service_id: svc.id,
+              quantity: 1,
+            })
+          } catch (err) {
+            console.error(`Failed to apply service "${svc.name}" to price builder`, err)
+            failures.push({ name: svc.name, reason: getErrorDetail(err, 'could not be applied') })
+          }
+        }
+        if (failures.length > 0) {
+          const detail = failures.map((f) => `${f.name}: ${f.reason}`).join('; ')
+          toast.error(`Repair order created, but ${failures.length} service line${failures.length > 1 ? 's' : ''} failed — ${detail}`)
         }
       }
 
@@ -1208,23 +1221,35 @@ export default function RepairOrdersPage() {
 
       {/* Search + Filters */}
       <div className="mb-4 flex-shrink-0 bg-white/10 backdrop-blur rounded-xl p-4">
-        {/* Search — always full width */}
-        <div className="relative">
-          <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {/* Search + Add — inline */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="relative flex-1 min-w-0">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by order # or description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={openModal}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-white transition-colors shrink-0"
+            style={{ backgroundColor: accentColors[600] }}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by order # or description..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-          />
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Add Repair Order</span>
+            <span className="sm:hidden">Add</span>
+          </button>
         </div>
 
         {/* Filters — below search on all sizes */}
@@ -1806,24 +1831,45 @@ export default function RepairOrdersPage() {
                         .slice(0, 8)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
-                              return (
+                          const stockStatus = getServiceStockStatus(svc)
+                          return (
+                            <span
+                              key={svc.id}
+                              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium border transition-colors ${
+                                active
+                                  ? 'border-amber-500 bg-amber-50 text-amber-700'
+                                  : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
+                              }`}
+                              title={stockStatus.tooltip}
+                            >
+                              {stockStatus.dotClass && (
+                                <span className={`w-2 h-2 rounded-full ${stockStatus.dotClass}`} aria-hidden="true" />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedServiceIds((prev) =>
+                                    prev.includes(svc.id) ? prev.filter((id) => id !== svc.id) : [...prev, svc.id]
+                                  )
+                                }
+                                className="focus:outline-none"
+                              >
+                                {svc.name}
+                              </button>
+                              {active && (
                                 <button
-                                  key={svc.id}
                                   type="button"
                                   onClick={() =>
-                                    setSelectedServiceIds((prev) =>
-                                      prev.includes(svc.id) ? prev.filter((id) => id !== svc.id) : [...prev, svc.id]
-                                    )
+                                    setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
                                   }
-                                  className={`px-3 py-2 rounded-full text-sm font-medium border transition-colors ${
-                                    active
-                                      ? 'border-amber-500 bg-amber-50 text-amber-700'
-                                      : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
-                                  }`}
+                                  className="text-amber-700 hover:text-amber-900 -mr-1"
+                                  aria-label={`Remove ${svc.name}`}
                                 >
-                                  {svc.name}
+                                  ×
                                 </button>
-                              )
+                              )}
+                            </span>
+                          )
                         })}
 
                       {services && services.length === 0 && (
@@ -1831,30 +1877,115 @@ export default function RepairOrdersPage() {
                       )}
                     </div>
 
-                    {selectedServiceIds.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {services
-                          ?.filter((svc) => selectedServiceIds.includes(svc.id))
-                          .map((svc) => (
-                            <span
-                              key={svc.id}
-                              className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full"
-                            >
-                              {svc.name}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
-                                }
-                                className="text-amber-700 hover:text-amber-900"
-                                aria-label={`Remove ${svc.name}`}
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                      </div>
-                    )}
+                    {(() => {
+                      const shortages = (services || [])
+                        .filter((svc) => selectedServiceIds.includes(svc.id))
+                        .flatMap((svc) =>
+                          (svc.parts || [])
+                            .filter((p) => (p.stock_quantity ?? 0) < p.quantity)
+                            .map((p) => ({
+                              serviceName: svc.name,
+                              partName: p.name,
+                              inventoryId: p.inventory_id,
+                              have: p.stock_quantity ?? 0,
+                              need: p.quantity,
+                            }))
+                        )
+                      if (shortages.length === 0) return null
+                      return (
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                          <div className="flex items-start gap-2">
+                            <TriangleAlert className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-amber-900">
+                                Parts stock warning
+                              </p>
+                              <p className="text-xs text-amber-800 mt-0.5">
+                                The order can still be created, but these parts won't be auto-attached until stock is replenished:
+                              </p>
+                              <ul className="mt-2 space-y-2 text-xs text-amber-900">
+                                {shortages.map((s) => {
+                                  const open = replenishingId === s.inventoryId
+                                  return (
+                                    <li key={s.inventoryId} className="rounded border border-amber-200 bg-white/60 p-2">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span>
+                                          <span className="font-medium">{s.serviceName}:</span>{' '}
+                                          {s.partName} — have {s.have}, need {s.need}
+                                        </span>
+                                        {!open && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setReplenishingId(s.inventoryId)
+                                              setReplenishValue(String(s.need))
+                                            }}
+                                            className="text-amber-800 underline hover:text-amber-900 whitespace-nowrap font-medium"
+                                          >
+                                            Replenish stock
+                                          </button>
+                                        )}
+                                      </div>
+                                      {open && (
+                                        <div className="mt-2 flex items-center gap-2">
+                                          <label className="text-[11px] text-amber-900 font-medium">
+                                            New stock qty:
+                                          </label>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={replenishValue}
+                                            onChange={(e) => setReplenishValue(e.target.value)}
+                                            className="w-24 h-8 px-2 rounded border border-amber-300 bg-white text-gray-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                            autoFocus
+                                          />
+                                          <button
+                                            type="button"
+                                            disabled={replenishSaving}
+                                            onClick={async () => {
+                                              const num = Number(replenishValue)
+                                              if (!Number.isFinite(num) || num < 0) {
+                                                toast.error('Enter a valid quantity')
+                                                return
+                                              }
+                                              setReplenishSaving(true)
+                                              try {
+                                                await api.put(`/inventory/${s.inventoryId}`, { stock_quantity: num })
+                                                await refetchServices()
+                                                toast.success(`${s.partName} stock updated to ${num}`)
+                                                setReplenishingId(null)
+                                                setReplenishValue('')
+                                              } catch (err) {
+                                                toast.error(getErrorDetail(err, 'Failed to update stock'))
+                                              } finally {
+                                                setReplenishSaving(false)
+                                              }
+                                            }}
+                                            className="h-8 px-3 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-60"
+                                          >
+                                            {replenishSaving ? 'Saving…' : 'Save'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setReplenishingId(null)
+                                              setReplenishValue('')
+                                            }}
+                                            className="h-8 px-2 text-amber-800 hover:text-amber-900 text-xs"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      )}
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -2337,34 +2468,6 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
-                {(() => {
-                  const detailServices = parseServiceNotes(selectedOrder?.internal_notes) || []
-                  const normalizedDescription = (selectedOrder.description || '').trim().toLowerCase().replace(/\s+/g, ' ')
-                  const normalizedServiceNames = detailServices
-                    .map((svc) => svc.name.trim().toLowerCase().replace(/\s+/g, ' '))
-                    .filter(Boolean)
-                  const servicesAsCsv = normalizedServiceNames.join(', ')
-                  const shouldHideWorkRequested = Boolean(
-                    normalizedDescription &&
-                    normalizedServiceNames.length > 0 &&
-                    (normalizedServiceNames.includes(normalizedDescription) || servicesAsCsv === normalizedDescription)
-                  )
-                  if (shouldHideWorkRequested) {
-                    return null
-                  }
-
-                  return (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Work Requested</h3>
-                      <div className="bg-gray-50 rounded-xl p-4">
-                        <p className="text-gray-800 whitespace-pre-wrap">
-                          {selectedOrder.description || 'No description provided'}
-                        </p>
-                      </div>
-                    </div>
-                  )
-                })()}
-
                 {showPriceBuilder && (
                   <PriceBuilderPanel
                     orderId={selectedOrder.id}
@@ -2372,6 +2475,7 @@ export default function RepairOrdersPage() {
                     services={services}
                     canEdit={canEditPriceBuilderByRole}
                     defaultLaborRate={taxFeeSettings?.labor_rate}
+                    description={selectedOrder.description}
                     onUpdated={() => {
                       refetchOrderDetail()
                       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })

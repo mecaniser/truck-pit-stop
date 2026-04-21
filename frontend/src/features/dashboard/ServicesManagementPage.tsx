@@ -10,6 +10,7 @@ import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import BaseSelect from '@/components/BaseSelect'
 import { useViewPreference } from '@/hooks/useViewPreference'
+import { getServiceStockStatus } from '@/utils/serviceStock'
 
 interface ServicePart {
   id: string
@@ -19,6 +20,7 @@ interface ServicePart {
   quantity: number
   unit_price: string
   line_total: string
+  stock_quantity: number
 }
 
 interface Service {
@@ -499,6 +501,7 @@ export default function ServicesManagementPage() {
                 <tbody className="divide-y divide-white/5">
                   {filteredServices?.map((service) => {
                     const category = categories?.find((c) => c.id === service.category_id)
+                    const stockStatus = getServiceStockStatus(service)
                     return (
                       <tr key={service.id} className="hover:bg-white/5">
                         <td className="px-4 py-3">
@@ -507,7 +510,16 @@ export default function ServicesManagementPage() {
                               {service.icon ? <span>{service.icon}</span> : <Wrench className="w-5 h-5" />}
                             </span>
                             <div>
-                              <div className="text-sm font-medium text-white">{service.name}</div>
+                              <div className="text-sm font-medium text-white flex items-center gap-2">
+                                {stockStatus.dotClass && (
+                                  <span
+                                    className={`w-2 h-2 rounded-full ${stockStatus.dotClass} flex-shrink-0`}
+                                    title={stockStatus.tooltip}
+                                    aria-label={stockStatus.tooltip}
+                                  />
+                                )}
+                                {service.name}
+                              </div>
                               {service.description && (
                                 <div className="text-xs text-gray-500 line-clamp-1">{service.description}</div>
                               )}
@@ -569,6 +581,7 @@ export default function ServicesManagementPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
               {filteredServices?.map((service) => {
                 const category = categories?.find((c) => c.id === service.category_id)
+                const stockStatus = getServiceStockStatus(service)
                 return (
                   <div key={service.id} className="bg-white/10 border border-white/15 rounded-xl p-4 space-y-3">
                     <div className="flex items-start justify-between">
@@ -576,6 +589,13 @@ export default function ServicesManagementPage() {
                         <div className="text-xs uppercase text-gray-400">{category?.name || 'Uncategorized'}</div>
                         <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                           <span className="text-xl">{service.icon || '🛠️'}</span>
+                          {stockStatus.dotClass && (
+                            <span
+                              className={`w-2 h-2 rounded-full ${stockStatus.dotClass} flex-shrink-0`}
+                              title={stockStatus.tooltip}
+                              aria-label={stockStatus.tooltip}
+                            />
+                          )}
                           {service.name}
                         </h3>
                         <p className="text-xs text-gray-400 mt-1">{service.description || 'No description'}</p>

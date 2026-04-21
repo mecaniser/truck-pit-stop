@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { RefreshCcw, Search, Trash2 } from 'lucide-react'
+import { Pencil, RefreshCcw, Search, Trash2 } from 'lucide-react'
 
 import api from '@/lib/api'
 import BaseSelect from '@/components/BaseSelect'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
-import { PriceBuildSummary, RepairOperationCandidate, RepairOrderStatus, Service } from '@/types'
+import { PartsUsage, PriceBuildSummary, RepairOperationCandidate, RepairOrderStatus, Service } from '@/types'
 
 type Props = {
   orderId: string
@@ -14,6 +14,7 @@ type Props = {
   services?: Service[]
   canEdit: boolean
   defaultLaborRate?: number
+  description?: string | null
   onUpdated?: () => void
 }
 
@@ -28,6 +29,7 @@ export default function PriceBuilderPanel({
   services,
   canEdit,
   defaultLaborRate,
+  description,
   onUpdated,
 }: Props) {
   const queryClient = useQueryClient()
@@ -38,9 +40,6 @@ export default function PriceBuilderPanel({
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
   // Local edits per line: tracks hours/rate as user types for live total preview
   const [lineEdits, setLineEdits] = useState<Record<string, { hours: string; rate: string }>>({})
-  const [showSubletForm, setShowSubletForm] = useState(false)
-  const [subletForm, setSubletForm] = useState({ description: '', vendor_name: '', vendor_cost: '', charge_to_customer: '' })
-
   const getLineHours = (id: string, fallback: string) => lineEdits[id]?.hours ?? fallback
   const getLineRate  = (id: string, fallback: string) => lineEdits[id]?.rate  ?? fallback
   const getLineTotal = (id: string, _fallback: string, serverTotal: string) => {
@@ -61,6 +60,19 @@ export default function PriceBuilderPanel({
     enabled: !!orderId,
   })
 
+  const { data: partsUsed, refetch: refetchParts } = useQuery<PartsUsage[]>({
+    queryKey: ['price-build-parts', orderId],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${orderId}/parts`)
+      return response.data
+    },
+    enabled: !!orderId,
+  })
+
+  const [editingPartsId, setEditingPartsId] = useState<string | null>(null)
+  const [editingPartsQty, setEditingPartsQty] = useState<string>('')
+  const [editingPartsSaving, setEditingPartsSaving] = useState(false)
+
   const isLocked = !!summary?.pricing_locked
   const canMutate = canEdit && !isLocked && ['draft', 'quoted'].includes(orderStatus)
 
@@ -76,9 +88,11 @@ export default function PriceBuilderPanel({
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
+    await queryClient.invalidateQueries({ queryKey: ['price-build-parts', orderId] })
     await queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
     await queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
     await refetch()
+    await refetchParts()
     onUpdated?.()
   }
 
@@ -168,24 +182,6 @@ export default function PriceBuilderPanel({
     onError: () => toast.error('Recalculation failed'),
   })
 
-  const addSublet = useMutation({
-    mutationFn: async () => {
-      await api.post(`/repair-orders/${orderId}/price-build/sublet`, {
-        description: subletForm.description,
-        vendor_name: subletForm.vendor_name,
-        vendor_cost: parseFloat(subletForm.vendor_cost),
-        charge_to_customer: parseFloat(subletForm.charge_to_customer),
-      })
-    },
-    onSuccess: async () => {
-      setSubletForm({ description: '', vendor_name: '', vendor_cost: '', charge_to_customer: '' })
-      setShowSubletForm(false)
-      await invalidate()
-      toast.success('Sublet work added')
-    },
-    onError: () => toast.error('Unable to add sublet work'),
-  })
-
   const lineTypeLabel = (line: { line_type: string; source_service_id?: string | null }) => {
     if (line.source_service_id) return 'service labor'
     return line.line_type.replace('_', ' ')
@@ -216,6 +212,15 @@ export default function PriceBuilderPanel({
           Recalculate
         </button>
       </div>
+
+      {description && description.trim() && (
+        <div>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Work Requested</p>
+          <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-800 whitespace-pre-wrap">
+            {description}
+          </div>
+        </div>
+      )}
 
       {isLocked && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -324,177 +329,237 @@ export default function PriceBuilderPanel({
         )}
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-1">
-            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Sublet Work</p>
-            <SectionInfoTooltip text="Work outsourced to an external vendor or subcontractor — e.g. frame alignment, glass replacement, or specialty welding. Record the vendor's invoice cost and the amount you'll charge the customer. The markup is your shop's revenue on the job." tooltipClassName="w-72" />
-          </span>
-          {canMutate && (
-            <button
-              type="button"
-              onClick={() => setShowSubletForm((v) => !v)}
-              className="text-xs text-amber-600 hover:text-amber-700 font-medium"
-            >
-              {showSubletForm ? 'Cancel' : '+ Add sublet'}
-            </button>
-          )}
-        </div>
-        {showSubletForm && (
-          <div className="space-y-2 rounded-lg border border-gray-200 p-3 bg-gray-50">
-            <input
-              type="text"
-              value={subletForm.description}
-              onChange={(e) => setSubletForm((p) => ({ ...p, description: e.target.value }))}
-              placeholder="Description (e.g. Frame alignment)"
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-            />
-            <input
-              type="text"
-              value={subletForm.vendor_name}
-              onChange={(e) => setSubletForm((p) => ({ ...p, vendor_name: e.target.value }))}
-              placeholder="Vendor / subcontractor name"
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-[10px] text-gray-400">Vendor cost</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={subletForm.vendor_cost}
-                  onChange={(e) => setSubletForm((p) => ({ ...p, vendor_cost: e.target.value }))}
-                  placeholder="0.00"
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                />
-              </div>
-              <div>
-                <span className="text-[10px] text-gray-400">Charge to customer</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={subletForm.charge_to_customer}
-                  onChange={(e) => setSubletForm((p) => ({ ...p, charge_to_customer: e.target.value }))}
-                  placeholder="0.00"
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => addSublet.mutate()}
-              disabled={
-                !subletForm.description.trim() ||
-                !subletForm.vendor_name.trim() ||
-                !subletForm.vendor_cost ||
-                !subletForm.charge_to_customer ||
-                addSublet.isPending
-              }
-              className="w-full rounded-lg bg-amber-500 py-1.5 text-sm font-medium text-white disabled:bg-gray-300"
-            >
-              Add Sublet
-            </button>
-          </div>
-        )}
-      </div>
+      {(() => {
+        const allParts = partsUsed || []
+        const lines = summary?.lines || []
+        const partsByService = new Map<string, typeof allParts>()
+        const orphanParts: typeof allParts = []
+        for (const pu of allParts) {
+          if (pu.source_service_id) {
+            const bucket = partsByService.get(pu.source_service_id) || []
+            bucket.push(pu)
+            partsByService.set(pu.source_service_id, bucket)
+          } else {
+            orphanParts.push(pu)
+          }
+        }
 
-      <div className="space-y-2">
-        <span className="inline-flex items-center gap-1">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Labor/Service Lines</p>
-          <SectionInfoTooltip text="All billable labor entries on this order. Each line is Hours × Rate = Total. Edit hours or rate directly — the total updates live as you type. Changes save when you click away. Delete a line with the trash icon." tooltipClassName="w-72" />
-        </span>
-        {isLoading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
-        ) : summary?.lines?.length ? (
-          <div className="space-y-2">
-            {summary.lines.map((line) => (
-              <div key={line.id} className="rounded-lg border border-gray-200 p-2">
-                <div className="mb-1.5 text-[11px] uppercase tracking-wide text-gray-400">{lineTypeLabel(line)}</div>
-                {/* Description — full width */}
+        const renderPartsRows = (parts: typeof allParts) => (
+          <div className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50/50">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] text-gray-500 border-b border-gray-200">
+                  <th className="py-1.5 px-2.5 font-medium">Part</th>
+                  <th className="py-1.5 px-2.5 font-medium text-right">Qty</th>
+                  <th className="py-1.5 px-2.5 font-medium text-right">Unit</th>
+                  <th className="py-1.5 px-2.5 font-medium text-right">Line total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parts.map((pu) => {
+                  const isEditing = editingPartsId === pu.id
+                  return (
+                    <tr key={pu.id} className="border-b border-gray-100 last:border-0">
+                      <td className="py-1.5 px-2.5 text-gray-800">
+                        <div className="font-medium">{pu.inventory_name}</div>
+                        <div className="text-xs text-gray-500">{pu.inventory_sku}</div>
+                      </td>
+                      <td className="py-1.5 px-2.5 text-right text-gray-800">
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={1}
+                              value={editingPartsQty}
+                              onChange={(e) => setEditingPartsQty(e.target.value)}
+                              className="w-16 h-7 px-2 text-right rounded border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              disabled={editingPartsSaving}
+                              onClick={async () => {
+                                const num = Number(editingPartsQty)
+                                if (!Number.isFinite(num) || num < 1) {
+                                  toast.error('Quantity must be at least 1')
+                                  return
+                                }
+                                if (num === pu.quantity) {
+                                  setEditingPartsId(null)
+                                  return
+                                }
+                                setEditingPartsSaving(true)
+                                try {
+                                  await api.patch(`/repair-orders/${orderId}/parts/${pu.id}`, { quantity: num })
+                                  await invalidate()
+                                  toast.success(`${pu.inventory_name} qty updated to ${num}`)
+                                  setEditingPartsId(null)
+                                } catch (err: any) {
+                                  const detail = err?.response?.data?.detail
+                                  toast.error(typeof detail === 'string' && detail ? detail : 'Failed to update quantity')
+                                } finally {
+                                  setEditingPartsSaving(false)
+                                }
+                              }}
+                              className="h-7 px-2 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-60"
+                            >
+                              {editingPartsSaving ? '…' : 'Save'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingPartsId(null)}
+                              className="h-7 px-1.5 text-xs text-gray-600 hover:text-gray-900"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5">
+                            {pu.quantity}
+                            {canMutate && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPartsId(pu.id)
+                                  setEditingPartsQty(String(pu.quantity))
+                                }}
+                                className="text-amber-700 hover:text-amber-800"
+                                aria-label={`Edit quantity for ${pu.inventory_name}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            )}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2.5 text-right text-gray-600">${parseFloat(pu.unit_price).toFixed(2)}</td>
+                      <td className="py-1.5 px-2.5 text-right text-gray-900 font-medium">${parseFloat(pu.total_price).toFixed(2)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+
+        const renderLaborEditor = (line: typeof lines[number]) => (
+          <>
+            <input
+              defaultValue={line.description}
+              onBlur={(e) => {
+                const value = e.target.value.trim()
+                if (value !== line.description) {
+                  updateLine.mutate({ lineId: line.id, body: { description: value } })
+                }
+              }}
+              disabled={!canMutate}
+              className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+            />
+            <div className="flex items-end gap-1.5">
+              <div className="flex flex-col gap-0.5 flex-1">
+                <span className="text-[10px] text-gray-400">Hours</span>
                 <input
-                  defaultValue={line.description}
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  value={getLineHours(line.id, line.hours)}
+                  onChange={(e) =>
+                    setLineEdits((prev) => ({
+                      ...prev,
+                      [line.id]: { hours: e.target.value, rate: getLineRate(line.id, line.hourly_rate) },
+                    }))
+                  }
                   onBlur={(e) => {
-                    const value = e.target.value.trim()
-                    if (value !== line.description) {
-                      updateLine.mutate({ lineId: line.id, body: { description: value } })
+                    const value = parseFloat(e.target.value || '0')
+                    if (!Number.isNaN(value) && value.toString() !== line.hours) {
+                      updateLine.mutate({ lineId: line.id, body: { hours: value } })
                     }
+                    clearLineEdit(line.id)
                   }}
                   disabled={!canMutate}
-                  className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
                 />
-                {/* Compact numbers row */}
-                <div className="flex items-end gap-1.5">
-                  <div className="flex flex-col gap-0.5 flex-1">
-                    <span className="text-[10px] text-gray-400">Hours</span>
-                    <input
-                      type="number"
-                      step="0.25"
-                      min="0"
-                      value={getLineHours(line.id, line.hours)}
-                      onChange={(e) =>
-                        setLineEdits((prev) => ({
-                          ...prev,
-                          [line.id]: { hours: e.target.value, rate: getLineRate(line.id, line.hourly_rate) },
-                        }))
-                      }
-                      onBlur={(e) => {
-                        const value = parseFloat(e.target.value || '0')
-                        if (!Number.isNaN(value) && value.toString() !== line.hours) {
-                          updateLine.mutate({ lineId: line.id, body: { hours: value } })
-                        }
-                        clearLineEdit(line.id)
-                      }}
-                      disabled={!canMutate}
-                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-0.5 flex-1">
-                    <span className="text-[10px] text-gray-400">Rate/hr</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={lineEdits[line.id]?.rate ?? parseFloat(line.hourly_rate).toFixed(2)}
-                      onChange={(e) =>
-                        setLineEdits((prev) => ({
-                          ...prev,
-                          [line.id]: { hours: getLineHours(line.id, line.hours), rate: e.target.value },
-                        }))
-                      }
-                      onBlur={(e) => {
-                        const value = parseFloat(e.target.value || '0')
-                        if (!Number.isNaN(value) && value.toString() !== line.hourly_rate) {
-                          updateLine.mutate({ lineId: line.id, body: { hourly_rate: value } })
-                        }
-                        clearLineEdit(line.id)
-                      }}
-                      disabled={!canMutate}
-                      className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-0.5 flex-1">
-                    <span className="text-[10px] text-gray-400">Total</span>
-                    <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-semibold text-gray-800">
-                      ${getLineTotal(line.id, line.hours, line.total_cost || '0')}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeLine.mutate(line.id)}
-                    disabled={!canMutate || removeLine.isPending}
-                    className="inline-flex items-center justify-center rounded-md border border-red-200 p-1.5 text-red-600 disabled:opacity-50 shrink-0"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+              </div>
+              <div className="flex flex-col gap-0.5 flex-1">
+                <span className="text-[10px] text-gray-400">Rate/hr</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={lineEdits[line.id]?.rate ?? parseFloat(line.hourly_rate).toFixed(2)}
+                  onChange={(e) =>
+                    setLineEdits((prev) => ({
+                      ...prev,
+                      [line.id]: { hours: getLineHours(line.id, line.hours), rate: e.target.value },
+                    }))
+                  }
+                  onBlur={(e) => {
+                    const value = parseFloat(e.target.value || '0')
+                    if (!Number.isNaN(value) && value.toString() !== line.hourly_rate) {
+                      updateLine.mutate({ lineId: line.id, body: { hourly_rate: value } })
+                    }
+                    clearLineEdit(line.id)
+                  }}
+                  disabled={!canMutate}
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                />
+              </div>
+              <div className="flex flex-col gap-0.5 flex-1">
+                <span className="text-[10px] text-gray-400">Total</span>
+                <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-semibold text-gray-800">
+                  ${getLineTotal(line.id, line.hours, line.total_cost || '0')}
                 </div>
               </div>
-            ))}
+              <button
+                type="button"
+                onClick={() => removeLine.mutate(line.id)}
+                disabled={!canMutate || removeLine.isPending}
+                className="inline-flex items-center justify-center rounded-md border border-red-200 p-1.5 text-red-600 disabled:opacity-50 shrink-0"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </>
+        )
+
+        if (isLoading) {
+          return <p className="text-sm text-gray-500">Loading…</p>
+        }
+        if (!lines.length && !orphanParts.length) {
+          return <p className="text-sm text-gray-500">No price-build lines yet.</p>
+        }
+
+        return (
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1">
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Services & Labor</p>
+              <SectionInfoTooltip text="Each card is one billable item. Service packages bundle labor with their required parts — edit hours, rate, or part quantity inline. Stock adjusts automatically." tooltipClassName="w-72" />
+            </span>
+            <div className="space-y-3">
+              {lines.map((line) => {
+                const groupedParts = line.source_service_id ? partsByService.get(line.source_service_id) || [] : []
+                return (
+                  <div key={line.id} className="rounded-lg border border-gray-200 p-3 space-y-2">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400">{lineTypeLabel(line)}</div>
+                    {renderLaborEditor(line)}
+                    {groupedParts.length > 0 && (
+                      <div className="pt-1">
+                        <p className="text-[11px] font-medium text-gray-500 mb-1">Parts included</p>
+                        {renderPartsRows(groupedParts)}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {orphanParts.length > 0 && (
+                <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+                  <div className="text-[11px] uppercase tracking-wide text-gray-400">parts only</div>
+                  {renderPartsRows(orphanParts)}
+                </div>
+              )}
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-gray-500">No price-build lines yet.</p>
-        )}
-      </div>
+        )
+      })()}
 
       <div className="rounded-lg border-t border-gray-200 pt-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">

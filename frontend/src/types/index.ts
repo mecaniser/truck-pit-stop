@@ -202,6 +202,7 @@ export interface PartsUsage {
   quantity: number
   unit_price: string
   total_price: string
+  source_service_id: string | null
   created_at: string
 }
 
@@ -373,6 +374,7 @@ export interface ServicePart {
   quantity: number
   unit_price: string
   line_total: string
+  stock_quantity: number
 }
 
 export interface Service {

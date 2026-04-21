@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import { Toaster, ToastBar, toast } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
 import { ThemeProvider } from './contexts/ThemeContext'
 import LandingPage from './features/landing/LandingPage'
@@ -122,9 +122,9 @@ function App() {
     <BrowserRouter>
       <RouteFaviconManager />
       <Toaster
-        position="top-right"
+        position="bottom-right"
         containerStyle={{
-          top: 16,
+          bottom: 16,
           right: 16,
         }}
         toastOptions={{
@@ -144,7 +144,30 @@ function App() {
             iconTheme: { primary: '#ef4444', secondary: '#fff' },
           },
         }}
-      />
+      >
+        {(t) => (
+          <ToastBar toast={t}>
+            {({ icon, message }) => (
+              <>
+                {icon}
+                {message}
+                {t.type !== 'loading' && (
+                  <button
+                    type="button"
+                    onClick={() => toast.dismiss(t.id)}
+                    aria-label="Dismiss notification"
+                    className="ml-2 -mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </>
+            )}
+          </ToastBar>
+        )}
+      </Toaster>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<Navigate to="/login" replace />} />

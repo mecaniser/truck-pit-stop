@@ -44,6 +44,7 @@ from app.schemas.repair_order import (
     RepairOrderResponse,
     RepairOrderDetailResponse,
     PartsUsageCreate,
+    PartsUsageUpdate,
     PartsUsageResponse,
     LaborCreate,
     LaborUpdate,
@@ -466,6 +467,7 @@ async def get_repair_order_detail(
             quantity=pu.quantity,
             unit_price=pu.unit_price,
             total_price=pu.total_price,
+            source_service_id=pu.source_service_id,
             created_at=pu.created_at,
         )
         for pu in order.parts_usage
@@ -563,9 +565,23 @@ async def update_repair_order(
             detail="Access denied",
         )
 
-    if order_data.status == RepairOrderStatus.CANCELLED and order.status != RepairOrderStatus.CANCELLED:
+    cancelling_now = (
+        order_data.status == RepairOrderStatus.CANCELLED
+        and order.status != RepairOrderStatus.CANCELLED
+    )
+    if cancelling_now:
         _require_cancelable_ro(order)
-    
+        # Restore stock — cancelled work means parts were never consumed.
+        parts_result = await db.execute(
+            select(PartsUsage)
+            .where(PartsUsage.repair_order_id == order_id)
+            .options(selectinload(PartsUsage.inventory_item))
+        )
+        for pu in parts_result.scalars().all():
+            if pu.inventory_item is not None:
+                pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + pu.quantity
+            await db.delete(pu)
+
     # Update fields
     update_data = order_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -1614,9 +1630,15 @@ async def delete_repair_order(
     if quote:
         await db.delete(quote)
 
-    # Delete parts usage
-    parts_result = await db.execute(select(PartsUsage).where(PartsUsage.repair_order_id == order_id))
+    # Delete parts usage and restore stock — these parts were never actually consumed.
+    parts_result = await db.execute(
+        select(PartsUsage)
+        .where(PartsUsage.repair_order_id == order_id)
+        .options(selectinload(PartsUsage.inventory_item))
+    )
     for part in parts_result.scalars().all():
+        if part.inventory_item is not None:
+            part.inventory_item.stock_quantity = (part.inventory_item.stock_quantity or 0) + part.quantity
         await db.delete(part)
 
     # Delete labor items
@@ -1982,6 +2004,7 @@ async def add_parts_to_repair_order(
         quantity=pu.quantity,
         unit_price=pu.unit_price,
         total_price=pu.total_price,
+        source_service_id=pu.source_service_id,
         created_at=pu.created_at,
     )
 
@@ -2031,10 +2054,77 @@ async def list_repair_order_parts(
                 quantity=pu.quantity,
                 unit_price=pu.unit_price,
                 total_price=pu.total_price,
+                source_service_id=pu.source_service_id,
                 created_at=pu.created_at,
             )
         )
     return paginated_or_list(out, total, skip, limit, paginated)
+
+
+@router.patch("/{order_id}/parts/{parts_usage_id}", response_model=PartsUsageResponse)
+async def update_parts_quantity(
+    order_id: UUID,
+    parts_usage_id: UUID,
+    body: PartsUsageUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.MECHANIC,
+    )),
+):
+    if body.quantity < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be at least 1")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    _require_editable_ro(order)
+    result = await db.execute(
+        select(PartsUsage).where(
+            and_(
+                PartsUsage.id == parts_usage_id,
+                PartsUsage.repair_order_id == order_id,
+                PartsUsage.tenant_id == current_user.tenant_id,
+            )
+        ).options(selectinload(PartsUsage.inventory_item))
+    )
+    pu = result.scalar_one_or_none()
+    if not pu:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parts usage not found")
+
+    inv = pu.inventory_item
+    # Delta > 0 means we need MORE parts (check stock); delta < 0 means we're returning parts to stock.
+    delta = body.quantity - pu.quantity
+    if inv is not None and delta > 0 and (inv.stock_quantity or 0) < delta:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {delta} more",
+        )
+    if inv is not None:
+        inv.stock_quantity = (inv.stock_quantity or 0) - delta
+
+    pu.quantity = body.quantity
+    pu.total_price = pu.unit_price * body.quantity
+    await db.commit()
+    await _recompute_repair_order_totals(db, order_id)
+    await db.refresh(pu)
+    return PartsUsageResponse(
+        id=pu.id,
+        repair_order_id=pu.repair_order_id,
+        inventory_id=pu.inventory_id,
+        inventory_sku=inv.sku if inv else "",
+        inventory_name=inv.name if inv else "",
+        quantity=pu.quantity,
+        unit_price=pu.unit_price,
+        total_price=pu.total_price,
+        source_service_id=pu.source_service_id,
+        created_at=pu.created_at,
+    )
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -84,6 +84,7 @@ class ServicePartResponse(BaseModel):
     quantity: int
     unit_price: str
     line_total: str
+    stock_quantity: int
 
     class Config:
         from_attributes = True
@@ -156,6 +157,7 @@ def _build_parts_response(service: Service) -> List[ServicePartResponse]:
                 quantity=sp.quantity,
                 unit_price=str(_money(unit_price)),
                 line_total=str(line_total),
+                stock_quantity=int(inv.stock_quantity or 0),
             )
         )
     return items

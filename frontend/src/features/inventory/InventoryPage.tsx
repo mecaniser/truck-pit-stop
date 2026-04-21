@@ -234,11 +234,21 @@ export default function InventoryPage() {
       if (!selectedItem) return
       const payload: Record<string, any> = {}
 
-      const numericFields: Array<keyof typeof manageForm> = ['stock_quantity', 'on_order_quantity', 'reorder_level', 'cost', 'selling_price']
-      numericFields.forEach((field) => {
-        const value = manageForm[field]
-        if (value !== '') {
-          const num = Number(value)
+      // Quantity fields: an empty input means "set to 0" so users can clear stock back to none.
+      // Money fields: an empty input means "leave as-is" to avoid accidentally zeroing prices.
+      const quantityFields: Array<keyof typeof manageForm> = ['stock_quantity', 'on_order_quantity', 'reorder_level']
+      const moneyFields: Array<keyof typeof manageForm> = ['cost', 'selling_price']
+      quantityFields.forEach((field) => {
+        const raw = manageForm[field]
+        const num = raw === '' ? 0 : Number(raw)
+        if (Number.isFinite(num)) {
+          payload[field] = num
+        }
+      })
+      moneyFields.forEach((field) => {
+        const raw = manageForm[field]
+        if (raw !== '') {
+          const num = Number(raw)
           if (Number.isFinite(num)) {
             payload[field] = num
           }

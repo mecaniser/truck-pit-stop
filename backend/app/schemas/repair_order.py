@@ -17,6 +17,10 @@ class PartsUsageCreate(BaseModel):
     unit_price: Optional[Decimal] = None  # override; else use inventory selling_price
 
 
+class PartsUsageUpdate(BaseModel):
+    quantity: int
+
+
 class PartsUsageResponse(BaseModel):
     id: UUID
     repair_order_id: UUID
@@ -26,6 +30,7 @@ class PartsUsageResponse(BaseModel):
     quantity: int
     unit_price: Decimal
     total_price: Decimal
+    source_service_id: Optional[UUID] = None
     created_at: datetime
 
     class Config:
