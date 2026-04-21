@@ -1862,10 +1862,10 @@ export default function RepairOrdersPage() {
                                   onClick={() =>
                                     setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
                                   }
-                                  className="text-amber-700 hover:text-amber-900 -mr-1"
+                                  className="inline-flex items-center justify-center w-4 h-4 -mr-0.5 leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
-                                  ×
+                                  <span className="block -mt-px text-base">×</span>
                                 </button>
                               )}
                             </span>
