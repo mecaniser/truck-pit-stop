@@ -110,6 +110,27 @@ def _to_price_build_summary(
     )
 
 
+def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageResponse":
+    inv = inv if inv is not None else pu.inventory_item
+    list_price = pu.list_price if pu.list_price is not None else pu.unit_price
+    savings = (list_price - pu.unit_price) * pu.quantity if list_price > pu.unit_price else Decimal("0")
+    return PartsUsageResponse(
+        id=pu.id,
+        repair_order_id=pu.repair_order_id,
+        inventory_id=pu.inventory_id,
+        inventory_sku=inv.sku if inv else "",
+        inventory_name=inv.name if inv else "",
+        quantity=pu.quantity,
+        unit_price=pu.unit_price,
+        unit_cost=pu.unit_cost,
+        list_price=list_price,
+        savings=savings,
+        total_price=pu.total_price,
+        source_service_id=pu.source_service_id,
+        created_at=pu.created_at,
+    )
+
+
 def _map_price_build_error(exc: Exception) -> HTTPException:
     if isinstance(exc, HTTPException):
         return exc
@@ -457,21 +478,7 @@ async def get_repair_order_detail(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
-    parts_resp = [
-        PartsUsageResponse(
-            id=pu.id,
-            repair_order_id=pu.repair_order_id,
-            inventory_id=pu.inventory_id,
-            inventory_sku=pu.inventory_item.sku if pu.inventory_item else "",
-            inventory_name=pu.inventory_item.name if pu.inventory_item else "",
-            quantity=pu.quantity,
-            unit_price=pu.unit_price,
-            total_price=pu.total_price,
-            source_service_id=pu.source_service_id,
-            created_at=pu.created_at,
-        )
-        for pu in order.parts_usage
-    ]
+    parts_resp = [_build_parts_usage_response(pu) for pu in order.parts_usage]
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
 
     invoice_result = await db.execute(
@@ -1982,6 +1989,7 @@ async def add_parts_to_repair_order(
         quantity=body.quantity,
         unit_cost=inv.cost,
         unit_price=unit_price,
+        list_price=inv.selling_price,
         total_price=total_price,
     )
     db.add(pu)
@@ -1995,18 +2003,7 @@ async def add_parts_to_repair_order(
     )
     pu_loaded = result.scalar_one_or_none()
     inv_loaded = pu_loaded.inventory_item if pu_loaded else inv
-    return PartsUsageResponse(
-        id=pu.id,
-        repair_order_id=pu.repair_order_id,
-        inventory_id=pu.inventory_id,
-        inventory_sku=inv_loaded.sku,
-        inventory_name=inv_loaded.name,
-        quantity=pu.quantity,
-        unit_price=pu.unit_price,
-        total_price=pu.total_price,
-        source_service_id=pu.source_service_id,
-        created_at=pu.created_at,
-    )
+    return _build_parts_usage_response(pu, inv_loaded)
 
 
 @router.get("/{order_id}/parts", response_model=List[PartsUsageResponse])
@@ -2041,23 +2038,7 @@ async def list_repair_order_parts(
     )
     parts_usage = result.scalars().all()
 
-    out = []
-    for pu in parts_usage:
-        inv = pu.inventory_item
-        out.append(
-            PartsUsageResponse(
-                id=pu.id,
-                repair_order_id=pu.repair_order_id,
-                inventory_id=pu.inventory_id,
-                inventory_sku=inv.sku if inv else "",
-                inventory_name=inv.name if inv else "",
-                quantity=pu.quantity,
-                unit_price=pu.unit_price,
-                total_price=pu.total_price,
-                source_service_id=pu.source_service_id,
-                created_at=pu.created_at,
-            )
-        )
+    out = [_build_parts_usage_response(pu) for pu in parts_usage]
     return paginated_or_list(out, total, skip, limit, paginated)
 
 
@@ -2074,7 +2055,9 @@ async def update_parts_quantity(
         UserRole.MECHANIC,
     )),
 ):
-    if body.quantity < 1:
+    if body.quantity is None and body.unit_price is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update")
+    if body.quantity is not None and body.quantity < 1:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be at least 1")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
@@ -2098,33 +2081,36 @@ async def update_parts_quantity(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parts usage not found")
 
     inv = pu.inventory_item
-    # Delta > 0 means we need MORE parts (check stock); delta < 0 means we're returning parts to stock.
-    delta = body.quantity - pu.quantity
-    if inv is not None and delta > 0 and (inv.stock_quantity or 0) < delta:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {delta} more",
-        )
-    if inv is not None:
-        inv.stock_quantity = (inv.stock_quantity or 0) - delta
 
-    pu.quantity = body.quantity
-    pu.total_price = pu.unit_price * body.quantity
+    if body.quantity is not None:
+        # Delta > 0 means we need MORE parts (check stock); delta < 0 means we're returning parts to stock.
+        delta = body.quantity - pu.quantity
+        if inv is not None and delta > 0 and (inv.stock_quantity or 0) < delta:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {delta} more",
+            )
+        if inv is not None:
+            inv.stock_quantity = (inv.stock_quantity or 0) - delta
+        pu.quantity = body.quantity
+
+    if body.unit_price is not None:
+        # Floor at the cost snapshot (or current inventory cost as fallback) — never sell below cost.
+        floor = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else None)
+        if floor is not None and body.unit_price < floor:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unit price cannot be lower than cost ({floor})",
+            )
+        if body.unit_price < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unit price cannot be negative")
+        pu.unit_price = body.unit_price
+
+    pu.total_price = pu.unit_price * pu.quantity
     await db.commit()
     await _recompute_repair_order_totals(db, order_id)
     await db.refresh(pu)
-    return PartsUsageResponse(
-        id=pu.id,
-        repair_order_id=pu.repair_order_id,
-        inventory_id=pu.inventory_id,
-        inventory_sku=inv.sku if inv else "",
-        inventory_name=inv.name if inv else "",
-        quantity=pu.quantity,
-        unit_price=pu.unit_price,
-        total_price=pu.total_price,
-        source_service_id=pu.source_service_id,
-        created_at=pu.created_at,
-    )
+    return _build_parts_usage_response(pu, inv)
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)

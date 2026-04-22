@@ -401,8 +401,17 @@ def generate_invoice_pdf(
                 qty_str = str(qty)
                 rate_str = _fmt(Decimal(str(rate)))
 
+            name_text = item.get("description") or item.get("name", "")
+            savings_val = Decimal(str(item.get("savings", 0))) if not is_labor else Decimal("0")
+            if savings_val > 0:
+                list_p = item.get("list_price")
+                list_str = _fmt(Decimal(str(list_p))) if list_p is not None else ""
+                name_text = (
+                    f'{name_text}<br/><font size="7" color="#059669">Saved '
+                    f'{_fmt(savings_val)}{" (list " + list_str + ")" if list_str else ""}</font>'
+                )
             rows.append([
-                _p(item.get("description") or item.get("name", ""), S_BODY),
+                _p(name_text, S_BODY),
                 _p(qty_str, S_RIGHT),
                 _p(rate_str, S_RIGHT),
                 _p(_fmt(Decimal(str(total))), S_RIGHT_BOLD),
@@ -463,6 +472,14 @@ def generate_invoice_pdf(
     if service_fee_amount:
         total_rows.append(total_row("Processing Fee", service_fee_amount))
     total_rows.append(total_row("Subtotal", subtotal))
+    # Itemized parts savings (discount off list price). Shown as informational
+    # line only — the savings are already baked into the parts unit prices above.
+    parts_savings_total = sum(
+        (Decimal(str(p.get("savings", 0))) for p in (parts_items or [])),
+        Decimal("0"),
+    )
+    if parts_savings_total > 0:
+        total_rows.append(total_row("You saved", -parts_savings_total, color=C_GREEN))
     if discount_amount > 0:
         total_rows.append(total_row(f"Discount", -discount_amount, color=C_GREEN))
     tax_label = f"Tax ({tax_rate:.2f}%)" if tax_rate else "Tax"

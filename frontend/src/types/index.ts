@@ -201,6 +201,9 @@ export interface PartsUsage {
   inventory_name: string
   quantity: number
   unit_price: string
+  unit_cost: string | null
+  list_price: string | null
+  savings: string
   total_price: string
   source_service_id: string | null
   created_at: string

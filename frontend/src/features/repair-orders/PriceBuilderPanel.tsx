@@ -72,6 +72,29 @@ export default function PriceBuilderPanel({
   const [editingPartsId, setEditingPartsId] = useState<string | null>(null)
   const [editingPartsQty, setEditingPartsQty] = useState<string>('')
   const [editingPartsSaving, setEditingPartsSaving] = useState(false)
+  const [priceSavingId, setPriceSavingId] = useState<string | null>(null)
+
+  // Build $5-increment discount options from unit_cost (floor) up to list_price
+  // (ceiling). Stable regardless of current unit_price so the user can bump a
+  // discounted price back up toward list.
+  const buildPriceOptions = (unitPrice: string, unitCost: string | null, listPrice: string | null) => {
+    const current = parseFloat(unitPrice)
+    const cost = unitCost != null ? parseFloat(unitCost) : null
+    const list = listPrice != null ? parseFloat(listPrice) : current
+    if (!Number.isFinite(list)) return [] as number[]
+    const floor = Number.isFinite(cost as number) ? Math.ceil((cost as number) / 5) * 5 : 0
+    const ceiling = Math.floor(list / 5) * 5
+    const opts: number[] = []
+    for (let v = ceiling; v >= floor; v -= 5) opts.push(v)
+    // Ensure the list price itself appears (if it wasn't a multiple of 5).
+    if (Number.isFinite(list) && !opts.some((v) => Math.abs(v - list) < 0.005)) opts.unshift(list)
+    // And ensure the current unit_price appears as selected even if non-round.
+    if (Number.isFinite(current) && !opts.some((v) => Math.abs(v - current) < 0.005)) {
+      opts.push(current)
+      opts.sort((a, b) => b - a)
+    }
+    return opts
+  }
 
   const isLocked = !!summary?.pricing_locked
   const canMutate = canEdit && !isLocked && ['draft', 'quoted'].includes(orderStatus)
@@ -352,6 +375,7 @@ export default function PriceBuilderPanel({
                   <th className="py-1.5 px-2.5 font-medium">Part</th>
                   <th className="py-1.5 px-2.5 font-medium text-right">Qty</th>
                   <th className="py-1.5 px-2.5 font-medium text-right">Unit</th>
+                  <th className="py-1.5 px-2.5 font-medium text-right">Savings</th>
                   <th className="py-1.5 px-2.5 font-medium text-right">Line total</th>
                 </tr>
               </thead>
@@ -432,7 +456,54 @@ export default function PriceBuilderPanel({
                           </span>
                         )}
                       </td>
-                      <td className="py-1.5 px-2.5 text-right text-gray-600">${parseFloat(pu.unit_price).toFixed(2)}</td>
+                      <td className="py-1.5 px-2.5 text-right text-gray-600">
+                        {canMutate ? (
+                          (() => {
+                            const options = buildPriceOptions(pu.unit_price, pu.unit_cost, pu.list_price)
+                            const sell = parseFloat(pu.unit_price)
+                            const saving = priceSavingId === pu.id
+                            return (
+                              <select
+                                disabled={saving}
+                                value={sell.toFixed(2)}
+                                onChange={async (e) => {
+                                  const next = parseFloat(e.target.value)
+                                  if (!Number.isFinite(next) || Math.abs(next - sell) < 0.005) return
+                                  setPriceSavingId(pu.id)
+                                  try {
+                                    await api.patch(`/repair-orders/${orderId}/parts/${pu.id}`, { unit_price: next })
+                                    await invalidate()
+                                    toast.success(`${pu.inventory_name} price set to $${next.toFixed(2)}`)
+                                  } catch (err: any) {
+                                    const detail = err?.response?.data?.detail
+                                    toast.error(typeof detail === 'string' && detail ? detail : 'Failed to update price')
+                                  } finally {
+                                    setPriceSavingId(null)
+                                  }
+                                }}
+                                className="h-7 rounded border border-gray-300 bg-white px-1.5 text-right text-sm disabled:opacity-60"
+                              >
+                                {options.map((v) => (
+                                  <option key={v.toFixed(2)} value={v.toFixed(2)}>
+                                    ${v.toFixed(2)}
+                                  </option>
+                                ))}
+                              </select>
+                            )
+                          })()
+                        ) : (
+                          <>${parseFloat(pu.unit_price).toFixed(2)}</>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2.5 text-right">
+                        {parseFloat(pu.savings || '0') > 0 ? (
+                          <span className="text-emerald-600 font-medium">
+                            −${parseFloat(pu.savings).toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
                       <td className="py-1.5 px-2.5 text-right text-gray-900 font-medium">${parseFloat(pu.total_price).toFixed(2)}</td>
                     </tr>
                   )
@@ -568,6 +639,20 @@ export default function PriceBuilderPanel({
           <span className="text-gray-400">·</span>
           <span className="text-gray-500">Labor/Services</span>
           <span className="font-semibold text-amber-700">${parseFloat(summary?.labor_total || '0').toFixed(2)}</span>
+          {(() => {
+            const totalSavings = (partsUsed || []).reduce(
+              (sum, pu) => sum + (parseFloat(pu.savings || '0') || 0),
+              0,
+            )
+            if (totalSavings <= 0) return null
+            return (
+              <>
+                <span className="text-gray-400">·</span>
+                <span className="text-gray-500">You saved</span>
+                <span className="font-semibold text-emerald-600">−${totalSavings.toFixed(2)}</span>
+              </>
+            )
+          })()}
           <span className="text-gray-400">·</span>
           <span className="text-gray-500">Total</span>
           <span className="text-base font-bold text-gray-900">${parseFloat(summary?.total_cost || '0').toFixed(2)}</span>

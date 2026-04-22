@@ -264,6 +264,7 @@ class PriceBuildService:
                     quantity=required_qty,
                     unit_cost=inv.cost,
                     unit_price=unit_price,
+                    list_price=unit_price,
                     total_price=line_total,
                     source_service_id=service.id,
                 )

@@ -36,15 +36,18 @@ async def _load_line_items(db: AsyncSession, repair_order_id) -> tuple[list, lis
         }
         for l in labor_result.scalars().all()
     ]
-    parts_items = [
-        {
+    parts_items = []
+    for p in parts_result.scalars().all():
+        list_price = p.list_price if p.list_price is not None else p.unit_price
+        savings = (list_price - p.unit_price) * p.quantity if list_price > p.unit_price else Decimal("0")
+        parts_items.append({
             "name": p.inventory_item.name if p.inventory_item else "Part",
             "quantity": p.quantity,
             "unit_price": p.unit_price,
+            "list_price": list_price,
+            "savings": savings,
             "total_price": p.total_price,
-        }
-        for p in parts_result.scalars().all()
-    ]
+        })
     return labor_items, parts_items
 
 

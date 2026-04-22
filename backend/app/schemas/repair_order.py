@@ -18,7 +18,8 @@ class PartsUsageCreate(BaseModel):
 
 
 class PartsUsageUpdate(BaseModel):
-    quantity: int
+    quantity: Optional[int] = None
+    unit_price: Optional[Decimal] = None
 
 
 class PartsUsageResponse(BaseModel):
@@ -29,6 +30,9 @@ class PartsUsageResponse(BaseModel):
     inventory_name: str
     quantity: int
     unit_price: Decimal
+    unit_cost: Optional[Decimal] = None
+    list_price: Optional[Decimal] = None
+    savings: Decimal = Decimal("0")
     total_price: Decimal
     source_service_id: Optional[UUID] = None
     created_at: datetime

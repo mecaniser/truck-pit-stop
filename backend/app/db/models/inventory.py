@@ -43,6 +43,9 @@ class PartsUsage(BaseModel):
     quantity = Column(Integer, nullable=False)
     unit_cost = Column(Numeric(10, 2), nullable=True)  # inventory cost snapshot at time of use
     unit_price = Column(Numeric(10, 2), nullable=False)
+    # Original selling_price at attach time — preserved for savings audit trail when
+    # unit_price is discounted below list. Equal to unit_price when no discount given.
+    list_price = Column(Numeric(10, 2), nullable=True)
     total_price = Column(Numeric(10, 2), nullable=False)
 
     # When set, this PartsUsage row was auto-added because a Service (which bundles
