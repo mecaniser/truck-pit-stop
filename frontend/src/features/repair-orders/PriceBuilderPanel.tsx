@@ -38,20 +38,7 @@ export default function PriceBuilderPanel({
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
-  // Local edits per line: tracks hours/rate as user types for live total preview
-  const [lineEdits, setLineEdits] = useState<Record<string, { hours: string; rate: string }>>({})
-  const getLineHours = (id: string, fallback: string) => lineEdits[id]?.hours ?? fallback
-  const getLineRate  = (id: string, fallback: string) => lineEdits[id]?.rate  ?? fallback
-  const getLineTotal = (id: string, _fallback: string, serverTotal: string) => {
-    if (!lineEdits[id]) return serverTotal
-    const h = parseFloat(lineEdits[id].hours) || 0
-    const r = parseFloat(lineEdits[id].rate)  || 0
-    return (h * r).toFixed(2)
-  }
-  const clearLineEdit = (id: string) =>
-    setLineEdits((prev) => { const next = { ...prev }; delete next[id]; return next })
-
-  const { data: summary, refetch, isLoading } = useQuery<PriceBuildSummary>({
+const { data: summary, refetch, isLoading } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${orderId}/price-build`)
@@ -73,6 +60,47 @@ export default function PriceBuilderPanel({
   const [editingPartsQty, setEditingPartsQty] = useState<string>('')
   const [editingPartsSaving, setEditingPartsSaving] = useState(false)
   const [priceSavingId, setPriceSavingId] = useState<string | null>(null)
+
+  type LaborField = 'hours' | 'rate'
+  const [editingLabor, setEditingLabor] = useState<{ lineId: string; field: LaborField } | null>(null)
+  const [editingLaborValue, setEditingLaborValue] = useState<string>('')
+  const [editingLaborSaving, setEditingLaborSaving] = useState(false)
+
+  const startEditLabor = (lineId: string, field: LaborField, current: string) => {
+    setEditingLabor({ lineId, field })
+    setEditingLaborValue(field === 'rate' ? parseFloat(current).toFixed(2) : current)
+  }
+  const cancelEditLabor = () => {
+    setEditingLabor(null)
+    setEditingLaborValue('')
+  }
+  const saveEditLabor = async (line: { id: string; hours: string; hourly_rate: string }) => {
+    if (!editingLabor) return
+    const { field } = editingLabor
+    const value = parseFloat(editingLaborValue || '0')
+    if (!Number.isFinite(value) || value < 0) {
+      toast.error(field === 'hours' ? 'Hours must be 0 or more' : 'Rate must be 0 or more')
+      return
+    }
+    const current = parseFloat(field === 'hours' ? line.hours : line.hourly_rate)
+    if (Math.abs(value - current) < 0.0001) {
+      cancelEditLabor()
+      return
+    }
+    setEditingLaborSaving(true)
+    try {
+      await updateLine.mutateAsync({
+        lineId: line.id,
+        body: field === 'hours' ? { hours: value } : { hourly_rate: value },
+      })
+      toast.success(field === 'hours' ? `Hours updated to ${value}` : `Rate updated to $${value.toFixed(2)}`)
+      cancelEditLabor()
+    } catch {
+      // error toast handled by mutation
+    } finally {
+      setEditingLaborSaving(false)
+    }
+  }
 
   // Build $5-increment discount options from unit_cost (floor) up to list_price
   // (ceiling). Stable regardless of current unit_price so the user can bump a
@@ -513,84 +541,130 @@ export default function PriceBuilderPanel({
           </div>
         )
 
-        const renderLaborEditor = (line: typeof lines[number]) => (
-          <>
-            <input
-              defaultValue={line.description}
-              onBlur={(e) => {
-                const value = e.target.value.trim()
-                if (value !== line.description) {
-                  updateLine.mutate({ lineId: line.id, body: { description: value } })
-                }
-              }}
-              disabled={!canMutate}
-              className="mb-2 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-            />
-            <div className="flex items-end gap-1.5">
-              <div className="flex flex-col gap-0.5 flex-1">
-                <span className="text-[10px] text-gray-400">Hours</span>
+        const renderLaborEditor = (line: typeof lines[number]) => {
+          const editingHours = editingLabor?.lineId === line.id && editingLabor.field === 'hours'
+          const editingRate = editingLabor?.lineId === line.id && editingLabor.field === 'rate'
+          return (
+            <>
+              <div className="mb-2 flex items-center gap-1.5">
                 <input
-                  type="number"
-                  step="0.25"
-                  min="0"
-                  value={getLineHours(line.id, line.hours)}
-                  onChange={(e) =>
-                    setLineEdits((prev) => ({
-                      ...prev,
-                      [line.id]: { hours: e.target.value, rate: getLineRate(line.id, line.hourly_rate) },
-                    }))
-                  }
+                  defaultValue={line.description}
                   onBlur={(e) => {
-                    const value = parseFloat(e.target.value || '0')
-                    if (!Number.isNaN(value) && value.toString() !== line.hours) {
-                      updateLine.mutate({ lineId: line.id, body: { hours: value } })
+                    const value = e.target.value.trim()
+                    if (value !== line.description) {
+                      updateLine.mutate({ lineId: line.id, body: { description: value } })
                     }
-                    clearLineEdit(line.id)
                   }}
                   disabled={!canMutate}
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+                  className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
                 />
+                <button
+                  type="button"
+                  onClick={() => removeLine.mutate(line.id)}
+                  disabled={!canMutate || removeLine.isPending}
+                  className="inline-flex items-center justify-center rounded-md border border-red-200 p-1.5 text-red-600 disabled:opacity-50 shrink-0"
+                  aria-label="Remove line"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
-              <div className="flex flex-col gap-0.5 flex-1">
-                <span className="text-[10px] text-gray-400">Rate/hr</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={lineEdits[line.id]?.rate ?? parseFloat(line.hourly_rate).toFixed(2)}
-                  onChange={(e) =>
-                    setLineEdits((prev) => ({
-                      ...prev,
-                      [line.id]: { hours: getLineHours(line.id, line.hours), rate: e.target.value },
-                    }))
-                  }
-                  onBlur={(e) => {
-                    const value = parseFloat(e.target.value || '0')
-                    if (!Number.isNaN(value) && value.toString() !== line.hourly_rate) {
-                      updateLine.mutate({ lineId: line.id, body: { hourly_rate: value } })
-                    }
-                    clearLineEdit(line.id)
-                  }}
-                  disabled={!canMutate}
-                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                />
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-700">
+                {editingHours ? (
+                  <span className="inline-flex items-center gap-1">
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      value={editingLaborValue}
+                      onChange={(e) => setEditingLaborValue(e.target.value)}
+                      className="w-20 h-8 px-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      autoFocus
+                    />
+                    <span className="text-gray-500">hr</span>
+                    <button
+                      type="button"
+                      disabled={editingLaborSaving}
+                      onClick={() => saveEditLabor(line)}
+                      className="h-8 px-2 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-60"
+                    >
+                      {editingLaborSaving ? '…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditLabor}
+                      className="h-8 px-1.5 text-xs text-gray-600 hover:text-gray-900"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-medium">{parseFloat(line.hours).toFixed(2)} hr</span>
+                    {canMutate && (
+                      <button
+                        type="button"
+                        onClick={() => startEditLabor(line.id, 'hours', line.hours)}
+                        className="text-amber-700 hover:text-amber-800"
+                        aria-label="Edit hours"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                )}
+
+                <span className="text-gray-400">×</span>
+
+                {editingRate ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-gray-500">$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={editingLaborValue}
+                      onChange={(e) => setEditingLaborValue(e.target.value)}
+                      className="w-20 h-8 px-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      autoFocus
+                    />
+                    <span className="text-gray-500">/hr</span>
+                    <button
+                      type="button"
+                      disabled={editingLaborSaving}
+                      onClick={() => saveEditLabor(line)}
+                      className="h-8 px-2 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-60"
+                    >
+                      {editingLaborSaving ? '…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditLabor}
+                      className="h-8 px-1.5 text-xs text-gray-600 hover:text-gray-900"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-medium">${parseFloat(line.hourly_rate).toFixed(2)}/hr</span>
+                    {canMutate && (
+                      <button
+                        type="button"
+                        onClick={() => startEditLabor(line.id, 'rate', line.hourly_rate)}
+                        className="text-amber-700 hover:text-amber-800"
+                        aria-label="Edit hourly rate"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </span>
+                )}
+
+                <span className="text-gray-400">=</span>
+                <span className="text-gray-500">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
               </div>
-              <div className="flex flex-col gap-0.5 flex-1">
-                <span className="text-[10px] text-gray-400">Total</span>
-                <div className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm font-semibold text-gray-800">
-                  ${getLineTotal(line.id, line.hours, line.total_cost || '0')}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => removeLine.mutate(line.id)}
-                disabled={!canMutate || removeLine.isPending}
-                className="inline-flex items-center justify-center rounded-md border border-red-200 p-1.5 text-red-600 disabled:opacity-50 shrink-0"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          </>
-        )
+            </>
+          )
+        }
 
         if (isLoading) {
           return <p className="text-sm text-gray-500">Loading…</p>
@@ -648,7 +722,7 @@ export default function PriceBuilderPanel({
             return (
               <>
                 <span className="text-gray-400">·</span>
-                <span className="text-gray-500">You saved</span>
+                <span className="text-gray-500">Customer saves</span>
                 <span className="font-semibold text-emerald-600">−${totalSavings.toFixed(2)}</span>
               </>
             )
