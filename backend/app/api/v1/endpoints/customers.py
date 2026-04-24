@@ -12,7 +12,10 @@ from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder
+from app.db.models.inventory import PartsUsage
+from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
+from app.db.models.invoice import Invoice
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerWithVehiclesResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
@@ -569,6 +572,177 @@ async def get_customer_with_vehicles(
         )
     
     return CustomerWithVehiclesResponse.model_validate(customer)
+
+
+# ============================================================================
+# CUSTOMER HISTORY
+# ============================================================================
+
+@router.get("/{customer_id}/history")
+async def get_customer_history(
+    customer_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return lifetime activity for a customer: per-RO summary + aggregate stats
+    (total spend, lifetime savings, RO count)."""
+
+    # Access check
+    customer_row = await db.execute(select(Customer).where(Customer.id == customer_id))
+    customer = customer_row.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    if current_user.role == UserRole.CUSTOMER:
+        if current_user.customer_id != customer_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.tenant_id != customer.tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Fetch all ROs for this customer (with vehicle joined for display fields)
+    orders_result = await db.execute(
+        select(RepairOrder)
+        .options(selectinload(RepairOrder.vehicle))
+        .where(RepairOrder.customer_id == customer_id)
+        .order_by(RepairOrder.created_at.desc())
+    )
+    orders = orders_result.scalars().all()
+    order_ids = [o.id for o in orders]
+
+    # Aggregate savings per RO via parts_usage (list_price - unit_price) * quantity
+    savings_by_order: dict = {}
+    if order_ids:
+        parts_result = await db.execute(
+            select(
+                PartsUsage.repair_order_id,
+                func.coalesce(
+                    func.sum(
+                        (func.coalesce(PartsUsage.list_price, PartsUsage.unit_price) - PartsUsage.unit_price)
+                        * PartsUsage.quantity
+                    ),
+                    0,
+                ),
+            )
+            .where(PartsUsage.repair_order_id.in_(order_ids))
+            .group_by(PartsUsage.repair_order_id)
+        )
+        for ro_id, saving in parts_result.all():
+            savings_by_order[ro_id] = float(saving or 0)
+
+    completed_statuses = {"completed", "invoiced", "paid"}
+
+    items = []
+    lifetime_savings = 0.0
+    lifetime_spend = 0.0
+    completed_count = 0
+    for o in orders:
+        saving = savings_by_order.get(o.id, 0.0)
+        total = float(o.total_cost or 0)
+        is_completed = o.status.value if hasattr(o.status, "value") else str(o.status)
+        if is_completed in completed_statuses:
+            completed_count += 1
+            lifetime_spend += total
+            lifetime_savings += saving
+        v = o.vehicle
+        items.append({
+            "id": str(o.id),
+            "order_number": o.order_number,
+            "status": is_completed,
+            "vehicle_make": v.make if v else "",
+            "vehicle_model": v.model if v else "",
+            "vehicle_year": v.year if v else None,
+            "vehicle_unit_number": v.unit_number if v else None,
+            "total_cost": f"{total:.2f}",
+            "savings": f"{saving:.2f}",
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+            "work_completed_at": o.work_completed_at.isoformat() if o.work_completed_at else None,
+        })
+
+    return {
+        "items": items,
+        "stats": {
+            "total_orders": len(orders),
+            "completed_orders": completed_count,
+            "lifetime_spend": f"{lifetime_spend:.2f}",
+            "lifetime_savings": f"{lifetime_savings:.2f}",
+        },
+    }
+
+
+@router.get("/{customer_id}/history/{order_id}")
+async def get_customer_history_detail(
+    customer_id: UUID,
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Compact detail for a single RO in customer history: labor, parts, mechanic,
+    amount paid, notes."""
+
+    result = await db.execute(
+        select(RepairOrder)
+        .where(and_(RepairOrder.id == order_id, RepairOrder.customer_id == customer_id))
+        .options(
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.labor_items),
+        )
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Repair order not found")
+    if current_user.role == UserRole.CUSTOMER:
+        if current_user.customer_id != customer_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    mechanic_name = None
+    if order.assigned_mechanic_id:
+        mech_row = await db.execute(select(User).where(User.id == order.assigned_mechanic_id))
+        mech = mech_row.scalar_one_or_none()
+        if mech:
+            mechanic_name = f"{mech.first_name} {mech.last_name}".strip()
+
+    invoice_row = await db.execute(
+        select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
+    )
+    invoice = invoice_row.scalar_one_or_none()
+    amount_paid = None
+    if invoice and invoice.paid_at is not None:
+        amount_paid = f"{float(invoice.total_amount or 0):.2f}"
+
+    labor = [
+        {
+            "id": str(li.id),
+            "description": li.description,
+            "hours": f"{float(li.hours or 0):.2f}",
+            "hourly_rate": f"{float(li.hourly_rate or 0):.2f}",
+            "total_cost": f"{float(li.total_cost or 0):.2f}",
+        }
+        for li in order.labor_items
+    ]
+    parts = [
+        {
+            "id": str(pu.id),
+            "name": pu.inventory_item.name if pu.inventory_item else None,
+            "sku": pu.inventory_item.sku if pu.inventory_item else None,
+            "quantity": pu.quantity,
+            "unit_price": f"{float(pu.unit_price or 0):.2f}",
+            "total_price": f"{float(pu.total_price or 0):.2f}",
+        }
+        for pu in order.parts_usage
+    ]
+
+    return {
+        "id": str(order.id),
+        "order_number": order.order_number,
+        "mechanic_name": mechanic_name,
+        "amount_paid": amount_paid,
+        "total_cost": f"{float(order.total_cost or 0):.2f}",
+        "customer_notes": order.customer_notes,
+        "internal_notes": order.internal_notes,
+        "labor": labor,
+        "parts": parts,
+    }
 
 
 # ============================================================================

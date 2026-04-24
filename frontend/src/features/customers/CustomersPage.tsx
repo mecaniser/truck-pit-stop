@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
@@ -208,6 +208,8 @@ export default function CustomersPage() {
   const [isEditingInPanel, setIsEditingInPanel] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
   const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
+  const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
 
   // Mechanic lookup for vehicle history
   interface Mechanic {
@@ -264,6 +266,143 @@ export default function CustomersPage() {
     enabled: !!selectedCustomer?.id && isDetailOpen,
     staleTime: 0,
   })
+
+  interface CustomerHistoryItem {
+    id: string
+    order_number: string
+    status: string
+    vehicle_make: string
+    vehicle_model: string
+    vehicle_year: number | null
+    vehicle_unit_number: string | null
+    total_cost: string
+    savings: string
+    created_at: string | null
+    work_completed_at: string | null
+  }
+  interface CustomerHistoryResponse {
+    items: CustomerHistoryItem[]
+    stats: {
+      total_orders: number
+      completed_orders: number
+      lifetime_spend: string
+      lifetime_savings: string
+    }
+  }
+  const { data: customerHistory, isLoading: isLoadingHistory } = useQuery<CustomerHistoryResponse>({
+    queryKey: ['customerHistory', selectedCustomer?.id],
+    queryFn: async () => {
+      const response = await api.get(`/customers/${selectedCustomer!.id}/history`)
+      return response.data
+    },
+    enabled: !!selectedCustomer?.id && isDetailOpen && detailTab === 'history',
+  })
+
+  interface HistoryRoDetailData {
+    id: string
+    order_number: string
+    mechanic_name: string | null
+    amount_paid: string | null
+    total_cost: string
+    customer_notes: string | null
+    internal_notes: string | null
+    labor: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }[]
+    parts: { id: string; name: string | null; sku: string | null; quantity: number; unit_price: string; total_price: string }[]
+  }
+
+  const HistoryRoDetail = ({ customerId, orderId }: { customerId: string; orderId: string }) => {
+    const { data, isLoading } = useQuery<HistoryRoDetailData>({
+      queryKey: ['customerHistoryDetail', customerId, orderId],
+      queryFn: async () => {
+        const response = await api.get(`/customers/${customerId}/history/${orderId}`)
+        return response.data
+      },
+    })
+    if (isLoading) return <p className="text-xs text-gray-400">Loading…</p>
+    if (!data) return <p className="text-xs text-gray-400">No details available</p>
+    // Try to pull a human-readable internal-notes body if it's not JSON.
+    let internalNotesDisplay: string | null = null
+    if (data.internal_notes) {
+      try {
+        JSON.parse(data.internal_notes)
+      } catch {
+        internalNotesDisplay = data.internal_notes
+      }
+    }
+    return (
+      <div className="space-y-3 text-sm">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+          <div>
+            <span className="text-gray-500">Mechanic: </span>
+            <span className="font-medium text-gray-800">{data.mechanic_name || '—'}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Amount paid: </span>
+            <span className="font-medium text-emerald-700">
+              {data.amount_paid ? `$${parseFloat(data.amount_paid).toFixed(2)}` : 'Not paid'}
+            </span>
+          </div>
+          <div>
+            <span className="text-gray-500">RO total: </span>
+            <span className="font-medium text-gray-800">${parseFloat(data.total_cost).toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Work performed</p>
+          {data.labor.length === 0 ? (
+            <p className="text-xs text-gray-400">No labor recorded</p>
+          ) : (
+            <ul className="space-y-1">
+              {data.labor.map((li) => (
+                <li key={li.id} className="flex items-baseline justify-between gap-3">
+                  <span className="text-gray-800">{li.description || 'Labor'}</span>
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                    {parseFloat(li.hours).toFixed(2)} hr × ${parseFloat(li.hourly_rate).toFixed(2)} ={' '}
+                    <span className="font-medium text-gray-800">${parseFloat(li.total_cost).toFixed(2)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Parts used</p>
+          {data.parts.length === 0 ? (
+            <p className="text-xs text-gray-400">No parts used</p>
+          ) : (
+            <ul className="space-y-1">
+              {data.parts.map((p) => (
+                <li key={p.id} className="flex items-baseline justify-between gap-3">
+                  <span className="text-gray-800">
+                    {p.name || 'Part'}
+                    {p.sku && <span className="text-xs text-gray-500 ml-1">· {p.sku}</span>}
+                  </span>
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                    {p.quantity} × ${parseFloat(p.unit_price).toFixed(2)} ={' '}
+                    <span className="font-medium text-gray-800">${parseFloat(p.total_price).toFixed(2)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {(data.customer_notes || internalNotesDisplay) && (
+          <div>
+            <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Notes</p>
+            {data.customer_notes && (
+              <p className="text-xs text-gray-700 whitespace-pre-wrap"><span className="text-gray-500">Customer: </span>{data.customer_notes}</p>
+            )}
+            {internalNotesDisplay && (
+              <p className="text-xs text-gray-700 whitespace-pre-wrap mt-1"><span className="text-gray-500">Internal: </span>{internalNotesDisplay}</p>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // Fetch mechanics for displaying who worked on the vehicle
   const { data: mechanics } = useQuery<Mechanic[]>({
@@ -528,6 +667,7 @@ export default function CustomersPage() {
     setSelectedCustomer(customer)
     setIsDetailOpen(true)
     setIsEditingInPanel(false)
+    setDetailTab('overview')
   }
 
   const closeDetailPanel = () => {
@@ -535,6 +675,8 @@ export default function CustomersPage() {
     setSelectedCustomer(null)
     setIsEditingInPanel(false)
     setSelectedVehicleInPanel(null)
+    setDetailTab('overview')
+    setExpandedHistoryId(null)
     resetForm()
   }
 
@@ -1730,6 +1872,7 @@ export default function CustomersPage() {
       <SlidePanel
         isOpen={isDetailOpen && !!selectedCustomer}
         onClose={closeDetailPanel}
+        width="max-w-[max(50vw,_400px)]"
         title={
           selectedVehicleInPanel
             ? `${selectedVehicleInPanel.year ? `${selectedVehicleInPanel.year} ` : ''}${selectedVehicleInPanel.make} ${selectedVehicleInPanel.model}`
@@ -1945,6 +2088,137 @@ export default function CustomersPage() {
                 </div>
               ) : (
                 <div className="p-6 space-y-6">
+                  {/* Tabs */}
+                  <div className="flex border-b border-gray-200 -mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setDetailTab('overview')}
+                      className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+                        detailTab === 'overview'
+                          ? 'border-amber-500 text-amber-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Overview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDetailTab('history')}
+                      className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+                        detailTab === 'history'
+                          ? 'border-amber-500 text-amber-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      History
+                    </button>
+                  </div>
+
+                  {detailTab === 'history' ? (
+                    <div className="space-y-6">
+                      {/* Lifetime stats */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-gray-50 rounded-xl p-4 text-center">
+                          <p className="text-2xl font-bold text-gray-900">
+                            {isLoadingHistory ? '—' : customerHistory?.stats.completed_orders ?? 0}
+                          </p>
+                          <p className="text-xs text-gray-500">Completed ROs</p>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-4 text-center">
+                          <p className="text-2xl font-bold text-gray-900">
+                            {isLoadingHistory ? '—' : `$${parseFloat(customerHistory?.stats.lifetime_spend || '0').toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                          </p>
+                          <p className="text-xs text-gray-500">Lifetime spend</p>
+                        </div>
+                        <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                          <p className="text-2xl font-bold text-emerald-700">
+                            {isLoadingHistory ? '—' : `$${parseFloat(customerHistory?.stats.lifetime_savings || '0').toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                          </p>
+                          <p className="text-xs text-emerald-700/80">Total saved</p>
+                        </div>
+                      </div>
+
+                      {/* RO list */}
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Repair Orders</h3>
+                        {isLoadingHistory ? (
+                          <p className="text-sm text-gray-400">Loading…</p>
+                        ) : !customerHistory?.items.length ? (
+                          <div className="bg-gray-50 rounded-xl p-6 text-center border border-gray-100">
+                            <Wrench className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                            <p className="text-sm text-gray-500">No repair orders yet</p>
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium">RO</th>
+                                  <th className="px-3 py-2 text-left font-medium">Vehicle</th>
+                                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                                  <th className="px-3 py-2 text-right font-medium">Saved</th>
+                                  <th className="px-3 py-2 text-right font-medium">Total</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {customerHistory.items.map((ro) => {
+                                  const dateStr = ro.work_completed_at || ro.created_at
+                                  const dateFmt = dateStr ? new Date(dateStr).toLocaleDateString() : '—'
+                                  const saving = parseFloat(ro.savings || '0')
+                                  const isExpanded = expandedHistoryId === ro.id
+                                  return (
+                                    <React.Fragment key={ro.id}>
+                                      <tr
+                                        onClick={() => setExpandedHistoryId(isExpanded ? null : ro.id)}
+                                        className={`hover:bg-gray-100/50 cursor-pointer ${isExpanded ? 'bg-amber-50/40' : ''}`}
+                                      >
+                                        <td className="px-3 py-2.5 text-gray-900 font-medium">
+                                          <span className="inline-flex items-center gap-1">
+                                            <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>›</span>
+                                            {ro.order_number}
+                                          </span>
+                                          <div className="text-[11px] text-gray-500 font-normal ml-3">{dateFmt}</div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-gray-700">
+                                          {ro.vehicle_year ? `${ro.vehicle_year} ` : ''}{ro.vehicle_make} {ro.vehicle_model}
+                                          {ro.vehicle_unit_number && (
+                                            <div className="text-[11px] text-gray-500">#{ro.vehicle_unit_number}</div>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2.5">
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-gray-200 text-gray-700 capitalize">
+                                            {ro.status.replace('_', ' ')}
+                                          </span>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right">
+                                          {saving > 0 ? (
+                                            <span className="text-emerald-600 font-medium">−${saving.toFixed(2)}</span>
+                                          ) : (
+                                            <span className="text-gray-300">—</span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right text-gray-900 font-semibold">
+                                          ${parseFloat(ro.total_cost).toFixed(2)}
+                                        </td>
+                                      </tr>
+                                      {isExpanded && selectedCustomer && (
+                                        <tr className="bg-white">
+                                          <td colSpan={5} className="px-4 py-3 border-t border-amber-100">
+                                            <HistoryRoDetail customerId={selectedCustomer.id} orderId={ro.id} />
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </React.Fragment>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                  <>
                   {/* Contact Information */}
                   <div>
                     <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact Information</h3>
@@ -2220,6 +2494,8 @@ export default function CustomersPage() {
                       </div>
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
               )}
       </SlidePanel>
