@@ -1,4 +1,4 @@
-export type UserRole = 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'customer'
+export type UserRole = 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'customer'
 
 export type RepairOrderStatus = 
   | 'draft'
@@ -268,6 +268,7 @@ export interface RepairOrder {
   po_number?: string | null
   parent_repair_order_id?: string | null
   is_warranty_repair?: boolean
+  is_internal?: boolean
 }
 
 export interface RepairOrderDetail extends RepairOrder {

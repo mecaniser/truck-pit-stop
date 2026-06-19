@@ -184,6 +184,7 @@ interface TaxFeeSettings {
   shop_supplies_rate: number
   service_fee_rate: number
   labor_rate: number
+  internal_labor_rate: number
 }
 
 interface WorkforceSettings {
@@ -311,6 +312,7 @@ function ProfileSection() {
       case 'super_admin': return { label: 'SUPER ADMIN', variant: 'warning' as const }
       case 'garage_owner': return { label: 'GARAGE OWNER', variant: 'success' as const }
       case 'garage_admin': return { label: 'GARAGE ADMIN', variant: 'default' as const }
+      case 'fleet_manager': return { label: 'FLEET MANAGER', variant: 'default' as const }
       default: return { label: 'STAFF', variant: 'default' as const }
     }
   }
@@ -1574,6 +1576,7 @@ function FeesSection() {
   const [shopSuppliesRate, setShopSuppliesRate] = useState('')
   const [serviceFeeRate, setServiceFeeRate] = useState('')
   const [laborRate, setLaborRate] = useState('')
+  const [internalLaborRate, setInternalLaborRate] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -1593,6 +1596,7 @@ function FeesSection() {
       setShopSuppliesRate(taxFeeSettings.shop_supplies_rate?.toString() || '')
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
       setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
+      setInternalLaborRate(taxFeeSettings.internal_labor_rate?.toString() || '0')
     }
   }, [taxFeeSettings])
 
@@ -1600,7 +1604,8 @@ function FeesSection() {
     salesTaxRate !== (taxFeeSettings.sales_tax_rate?.toString() || '') ||
     shopSuppliesRate !== (taxFeeSettings.shop_supplies_rate?.toString() || '') ||
     serviceFeeRate !== (taxFeeSettings.service_fee_rate?.toString() || '') ||
-    laborRate !== (taxFeeSettings.labor_rate?.toString() || '100')
+    laborRate !== (taxFeeSettings.labor_rate?.toString() || '100') ||
+    internalLaborRate !== (taxFeeSettings.internal_labor_rate?.toString() || '0')
   )
 
   const handleUnlock = async () => {
@@ -1632,6 +1637,7 @@ function FeesSection() {
         shop_supplies_rate: parseFloat(shopSuppliesRate) || 0,
         service_fee_rate: parseFloat(serviceFeeRate) || 0,
         labor_rate: laborRate === '' ? 100 : parseFloat(laborRate),
+        internal_labor_rate: internalLaborRate === '' ? 0 : parseFloat(internalLaborRate),
       })
       return response.data
     },
@@ -1651,6 +1657,7 @@ function FeesSection() {
       setShopSuppliesRate(taxFeeSettings.shop_supplies_rate?.toString() || '')
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
       setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
+      setInternalLaborRate(taxFeeSettings.internal_labor_rate?.toString() || '0')
     }
     setIsUnlocked(false)
   }
@@ -1776,6 +1783,17 @@ function FeesSection() {
                   placeholder="100"
                   className={industrialStyles.input}
                 />
+              </div>
+              <div>
+                <label className={industrialStyles.label}>Internal Fleet Labor Rate ($/hr)</label>
+                <input
+                  type="text"
+                  value={internalLaborRate}
+                  onChange={handleRateChange(setInternalLaborRate)}
+                  placeholder="0"
+                  className={industrialStyles.input}
+                />
+                <p className="mt-1 text-xs text-zinc-500">Labor cost rate for repairs on the garage's own fleet (no customer markup).</p>
               </div>
             </div>
 
