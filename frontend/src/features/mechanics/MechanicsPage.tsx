@@ -32,7 +32,15 @@ const parseServiceNotes = (notes?: string | null) => {
   return null
 }
 
+const STAFF_ROLE_OPTIONS = [
+  { value: 'mechanic', label: 'Technician' },
+  { value: 'receptionist', label: 'Receptionist' },
+  { value: 'fleet_manager', label: 'Fleet Manager' },
+  { value: 'garage_admin', label: 'Garage Admin' },
+] as const
+
 const mechanicSchema = z.object({
+  role: z.enum(['mechanic', 'receptionist', 'fleet_manager', 'garage_admin']),
   first_name: z.string().min(1, 'First name is required'),
   last_name: z.string().min(1, 'Last name is required'),
   email: z.string().email('Valid email required'),
@@ -168,6 +176,7 @@ export default function MechanicsPage() {
   } = useForm<MechanicFormData>({
     resolver: zodResolver(mechanicSchema),
     defaultValues: {
+      role: 'mechanic',
       first_name: '',
       last_name: '',
       email: '',
@@ -197,6 +206,51 @@ export default function MechanicsPage() {
       setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
     },
   })
+
+  // Non-technician staff (receptionist, fleet manager, garage admin) go through
+  // the role-aware staff endpoint; technicians keep their dedicated flow above.
+  const createStaffMutation = useMutation({
+    mutationFn: async (data: { role: string; first_name: string; last_name: string; email: string; password: string; phone?: string; address?: string }) => {
+      const response = await api.post('/admin/staff', data)
+      return response.data
+    },
+    onSuccess: () => {
+      setFormError(null)
+      reset()
+      setIsAdding(false)
+      queryClient.invalidateQueries({ queryKey: ['staff-roster'] })
+    },
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || 'Failed to add team member'
+      setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
+    },
+  })
+
+  interface StaffMember {
+    id: string
+    email: string
+    first_name: string
+    last_name: string
+    role: string
+    is_active: boolean
+  }
+  const isGarageAdmin = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const { data: staffRoster } = useQuery<StaffMember[]>({
+    queryKey: ['staff-roster'],
+    queryFn: async () => (await api.get('/admin/staff')).data,
+    enabled: isGarageAdmin,
+  })
+  const toggleStaffActive = useMutation({
+    mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) =>
+      (await api.patch(`/admin/staff/${id}`, { is_active })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff-roster'] }),
+  })
+  const STAFF_ROLE_LABELS: Record<string, string> = {
+    garage_owner: 'Garage Owner', garage_admin: 'Garage Admin',
+    fleet_manager: 'Fleet Manager', receptionist: 'Receptionist', mechanic: 'Technician',
+  }
+  // Technicians have their own detailed board below; show the rest here.
+  const nonTechStaff = (staffRoster || []).filter((s) => s.role !== 'mechanic')
 
   const updateMechanicMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<MechanicApiPayload> }) => {
@@ -356,14 +410,26 @@ export default function MechanicsPage() {
         setError('password', { type: 'manual', message: 'Password is required' })
         return
       }
-      createMechanicMutation.mutate({
-        ...data,
-        address: normalizedAddress,
-        password: data.password,
-        core_hours_target_minutes_override: coreHoursOverride,
-        shift_start_local_override: shiftStartOverride,
-        shift_end_local_override: shiftEndOverride,
-      })
+      if (data.role === 'mechanic') {
+        createMechanicMutation.mutate({
+          ...data,
+          address: normalizedAddress,
+          password: data.password,
+          core_hours_target_minutes_override: coreHoursOverride,
+          shift_start_local_override: shiftStartOverride,
+          shift_end_local_override: shiftEndOverride,
+        })
+      } else {
+        createStaffMutation.mutate({
+          role: data.role,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          email: data.email,
+          password: data.password,
+          phone: data.phone || undefined,
+          address: normalizedAddress,
+        })
+      }
     }
   }
 
@@ -442,7 +508,7 @@ export default function MechanicsPage() {
           onChange={setSearch}
           placeholder="Search technicians by name, email, phone, or address..."
           onAdd={handleStartAdd}
-          addLabel="Add technician"
+          addLabel="Add team member"
           addLabelMobile="Add"
           className="flex-1"
           inputWidthClass="sm:min-w-[320px] md:max-w-xl"
@@ -455,6 +521,40 @@ export default function MechanicsPage() {
           <span className="hidden sm:inline">Time Board</span>
         </button>
       </div>
+
+      {nonTechStaff.length > 0 && (
+        <div className="mb-4 bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/10 text-xs uppercase tracking-wide text-gray-400">
+            Management & front desk
+          </div>
+          <div className="divide-y divide-white/5">
+            {nonTechStaff.map((s) => (
+              <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                <div className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-sm font-semibold text-gray-200 shrink-0">
+                  {`${s.first_name[0] || ''}${s.last_name[0] || ''}`.toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm text-white font-medium truncate">{s.first_name} {s.last_name}{!s.is_active && <span className="ml-2 text-xs text-gray-500">(inactive)</span>}</div>
+                  <div className="text-xs text-gray-400 truncate">{s.email}</div>
+                </div>
+                <span className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 whitespace-nowrap">
+                  {STAFF_ROLE_LABELS[s.role] || s.role}
+                </span>
+                {s.role !== 'garage_owner' && (
+                  <button
+                    onClick={() => toggleStaffActive.mutate({ id: s.id, is_active: !s.is_active })}
+                    disabled={toggleStaffActive.isPending}
+                    className="text-xs px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
+                  >
+                    {s.is_active ? 'Deactivate' : 'Reactivate'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         {isLoading ? (
           <div className="text-gray-400 text-sm p-6">Loading technicians...</div>
@@ -724,16 +824,16 @@ export default function MechanicsPage() {
               isAdding ? 'translate-x-0' : 'translate-x-full'
             }`}
             role="dialog"
-            aria-label={editingMechanic ? 'Edit technician' : 'Add technician'}
+            aria-label={editingMechanic ? 'Edit technician' : 'Add team member'}
           >
             <form onSubmit={handleSubmit(onSubmit)} className="h-full flex flex-col">
               <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase text-gray-500 font-semibold">
-                    {editingMechanic ? 'Edit technician' : 'Add technician'}
+                    {editingMechanic ? 'Edit technician' : 'Add team member'}
                   </p>
                   <p className="text-lg font-semibold text-slate-800">
-                    {editingMechanic ? `${editingMechanic.first_name} ${editingMechanic.last_name}` : 'Onboard a technician'}
+                    {editingMechanic ? `${editingMechanic.first_name} ${editingMechanic.last_name}` : 'Onboard a team member'}
                   </p>
                 </div>
                 <button
@@ -749,6 +849,20 @@ export default function MechanicsPage() {
 
               <div className="p-5 space-y-4 overflow-y-auto flex-1">
                 {formError && <p className="text-sm text-red-600">{formError}</p>}
+                {!editingMechanic && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
+                    <select
+                      {...register('role')}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
+                    >
+                      {STAFF_ROLE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-400">Technician adds shift &amp; attendance tracking. Other roles get portal access for their job.</p>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name</label>
@@ -826,7 +940,7 @@ export default function MechanicsPage() {
                   {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address.message}</p>}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${watch('role') === 'mechanic' ? '' : 'hidden'}`}>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Core Minutes</label>
                     <input
