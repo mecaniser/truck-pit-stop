@@ -438,8 +438,8 @@ export default function MechanicsPage() {
     <div className="space-y-6">
       {user?.role !== 'garage_owner' && user?.role !== 'garage_admin' ? (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-          <h1 className="text-lg font-semibold text-white mb-2">Technicians</h1>
-          <p className="text-sm text-gray-400">Only garage admins can manage technicians.</p>
+          <h1 className="text-lg font-semibold text-white mb-2">Team</h1>
+          <p className="text-sm text-gray-400">Only garage admins can manage the team.</p>
         </div>
       ) : (
         <>
