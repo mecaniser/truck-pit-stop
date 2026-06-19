@@ -506,7 +506,7 @@ export default function MechanicsPage() {
         <SearchAddBar
           value={search}
           onChange={setSearch}
-          placeholder="Search technicians by name, email, phone, or address..."
+          placeholder="Search team by name, email, phone, or address..."
           onAdd={handleStartAdd}
           addLabel="Add team member"
           addLabelMobile="Add"
