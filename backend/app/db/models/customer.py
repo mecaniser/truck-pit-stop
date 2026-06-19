@@ -25,6 +25,12 @@ class Customer(BaseModel):
     
     notes = Column(Text, nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. zelle, walk_in, portal
+
+    # House account: the garage's own fleet. Vehicles attached here are owned trucks
+    # whose repair orders are priced at internal cost (no markup, no customer invoice).
+    # Exactly one internal-fleet customer exists per tenant.
+    is_internal_fleet = Column(Boolean, nullable=False, default=False, index=True)
+
     sms_opt_out = Column(Boolean, nullable=False, default=False, index=True)
     sms_opted_out_at = Column(DateTime(timezone=True), nullable=True)
     sms_opt_out_source = Column(String(50), nullable=True)

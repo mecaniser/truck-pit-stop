@@ -1,0 +1,266 @@
+from datetime import datetime, date
+from typing import Optional, List
+from uuid import UUID
+
+from pydantic import BaseModel
+
+from app.db.models.fleet import (
+    InspectionStatus,
+    InspectionResult,
+    InspectionItemResult,
+    IncidentSeverity,
+    IncidentStatus,
+)
+
+
+# ---- Inspections ----
+
+class InspectionItemResponse(BaseModel):
+    id: UUID
+    category: str
+    label: str
+    result: InspectionItemResult
+    note: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class InspectionItemUpdate(BaseModel):
+    result: Optional[InspectionItemResult] = None
+    note: Optional[str] = None
+
+
+class InspectionCreate(BaseModel):
+    vehicle_id: UUID
+    scheduled_for: Optional[date] = None  # defaults to today
+
+
+class InspectionComplete(BaseModel):
+    odometer: Optional[int] = None
+    notes: Optional[str] = None
+    result: Optional[InspectionResult] = None  # override; otherwise computed from items
+
+
+class InspectionResponse(BaseModel):
+    id: UUID
+    vehicle_id: UUID
+    inspector_id: Optional[UUID] = None
+    status: InspectionStatus
+    result: Optional[InspectionResult] = None
+    scheduled_for: date
+    performed_at: Optional[datetime] = None
+    odometer: Optional[int] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    # Denormalized vehicle summary
+    vehicle_make: str = ""
+    vehicle_model: str = ""
+    vehicle_year: Optional[int] = None
+    vehicle_unit_number: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class InspectionDetailResponse(InspectionResponse):
+    items: List[InspectionItemResponse] = []
+
+
+# ---- Incidents ----
+
+class IncidentCreate(BaseModel):
+    vehicle_id: UUID
+    occurred_at: datetime
+    location: Optional[str] = None
+    severity: IncidentSeverity = IncidentSeverity.MEDIUM
+    description: str
+
+
+class IncidentUpdate(BaseModel):
+    status: Optional[IncidentStatus] = None
+    severity: Optional[IncidentSeverity] = None
+    location: Optional[str] = None
+    description: Optional[str] = None
+    resolution_notes: Optional[str] = None
+
+
+class IncidentResponse(BaseModel):
+    id: UUID
+    vehicle_id: UUID
+    reported_by_id: Optional[UUID] = None
+    occurred_at: datetime
+    location: Optional[str] = None
+    severity: IncidentSeverity
+    status: IncidentStatus
+    description: str
+    resolution_notes: Optional[str] = None
+    resolved_at: Optional[datetime] = None
+    repair_order_id: Optional[UUID] = None
+    created_at: datetime
+    # Denormalized vehicle summary
+    vehicle_make: str = ""
+    vehicle_model: str = ""
+    vehicle_year: Optional[int] = None
+    vehicle_unit_number: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---- Roster & summary ----
+
+class FleetVehicleResponse(BaseModel):
+    id: UUID
+    make: str
+    model: str
+    year: Optional[int] = None
+    unit_number: Optional[str] = None
+    vin: Optional[str] = None
+    license_plate: Optional[str] = None
+    mileage: Optional[int] = None
+    last_inspection_at: Optional[datetime] = None
+    last_inspection_result: Optional[InspectionResult] = None
+    next_inspection_due: Optional[date] = None
+    inspection_overdue: bool = False
+    open_incident_count: int = 0
+
+
+class FleetSummaryResponse(BaseModel):
+    total_vehicles: int
+    inspections_due: int       # scheduled inspections not yet overdue
+    inspections_overdue: int
+    open_incidents: int
+
+
+# ---- Fleet board (design: truck card grid + KPI strip) ----
+
+FleetTruckStatus = str  # 'active' | 'shop' | 'pm' | 'parts'
+
+
+class BoardWorkOrder(BaseModel):
+    id: str                 # order_number
+    status: str             # shop-floor label (In progress, Awaiting parts, …)
+    summary: Optional[str] = None
+    mechanic: Optional[str] = None
+
+
+class BoardTruck(BaseModel):
+    id: UUID
+    unit_number: Optional[str] = None
+    year: Optional[int] = None
+    make: str
+    model: str
+    brand_short: Optional[str] = None
+    body_type: Optional[str] = None
+    vin: Optional[str] = None
+    plate: Optional[str] = None
+    status: FleetTruckStatus
+    driver_name: Optional[str] = None
+    odometer: Optional[int] = None
+    pm_interval_miles: int = 25000
+    next_pm_miles: Optional[int] = None
+    pm_remaining: Optional[int] = None
+    location_label: Optional[str] = None
+    location_city: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    moving: bool = False
+    speed_mph: Optional[int] = None
+    heading: Optional[str] = None
+    assigned_mechanic: Optional[str] = None
+    work_order: Optional[BoardWorkOrder] = None
+    open_incident_count: int = 0
+
+
+class FleetStats(BaseModel):
+    total: int
+    active: int
+    shop: int
+    pm: int
+    parts: int
+    open_wo: int
+    incidents_total: int
+
+
+class FleetBoardResponse(BaseModel):
+    trucks: List[BoardTruck]
+    stats: FleetStats
+
+
+# ---- Truck detail ----
+
+class HistoryEntry(BaseModel):
+    id: UUID
+    date: Optional[datetime] = None
+    kind: str               # 'PM' | 'Repair' | 'Inspection'
+    odometer: Optional[int] = None
+    summary: Optional[str] = None
+    mechanic: Optional[str] = None
+    cost: Optional[float] = None
+
+
+class PartEntry(BaseModel):
+    id: UUID
+    name: str
+    date: Optional[datetime] = None
+    odometer: Optional[int] = None
+    mechanic: Optional[str] = None
+    warranty_until: Optional[date] = None
+    warranty_miles: Optional[int] = None
+    active: bool = False
+
+
+class IncidentEntry(BaseModel):
+    id: UUID
+    date: datetime
+    type: str
+    severity: IncidentSeverity
+    status: IncidentStatus
+    location: Optional[str] = None
+    note: Optional[str] = None
+    repair_order_id: Optional[UUID] = None
+
+
+class NearestUnit(BaseModel):
+    id: UUID
+    unit_number: Optional[str] = None
+    city: Optional[str] = None
+    status: FleetTruckStatus
+    miles: int
+
+
+class TruckDetailResponse(BaseModel):
+    truck: BoardTruck
+    driver_phone: Optional[str] = None
+    lifetime_spend: float = 0.0
+    incidents_count: int = 0
+    crew: List[str] = []
+    history: List[HistoryEntry] = []
+    parts: List[PartEntry] = []
+    incidents: List[IncidentEntry] = []
+    nearest: List[NearestUnit] = []
+
+
+class TruckUpdate(BaseModel):
+    # Identity (correctable after creation — VIN decode is sometimes wrong/generic).
+    unit_number: Optional[str] = None
+    vin: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    year: Optional[int] = None
+    license_plate: Optional[str] = None
+    # Operational
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
+    odometer: Optional[int] = None
+    pm_interval_miles: Optional[int] = None
+    next_pm_miles: Optional[int] = None
+    telematics_device_id: Optional[str] = None
+    # Manual location entry (used until a telematics provider is connected).
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    location_label: Optional[str] = None
+    location_city: Optional[str] = None
+    speed_mph: Optional[int] = None
+    heading: Optional[str] = None

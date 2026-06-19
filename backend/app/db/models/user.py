@@ -11,6 +11,7 @@ class UserRole(str, enum.Enum):
     GARAGE_ADMIN = "garage_admin"    # Admin employee at a garage
     MECHANIC = "mechanic"            # Technician working on repairs
     RECEPTIONIST = "receptionist"    # Front desk staff
+    FLEET_MANAGER = "fleet_manager"  # Manages the garage's own fleet (internal-cost repairs)
     CUSTOMER = "customer"            # Truck owner/operator
 
 

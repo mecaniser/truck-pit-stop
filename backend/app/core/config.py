@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
 
+    # Telematics / ELD (fleet GPS feed). "manual" = no external provider; truck
+    # positions come from manual entry / last-known. Swap to "samsara"/"motive"/etc.
+    # and supply TELEMATICS_API_KEY to enable live sync.
+    TELEMATICS_PROVIDER: str = "manual"
+    TELEMATICS_API_KEY: str = ""
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     PUBLIC_API_BASE_URL: str = "http://localhost:8000"

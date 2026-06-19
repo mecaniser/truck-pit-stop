@@ -374,6 +374,10 @@ async def auto_create_invoice_for_order(
     Returns the created Invoice, or None if one already exists.
     The order must have .customer and .vehicle relationships already loaded.
     """
+    # Internal fleet repairs are settled at cost internally — never invoiced to a customer.
+    if order.is_internal:
+        return None
+
     existing_result = await db.execute(select(Invoice).where(Invoice.repair_order_id == order.id))
     if existing_result.scalar_one_or_none():
         return None
@@ -517,6 +521,11 @@ async def create_invoice(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
+        )
+    if order.is_internal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Internal fleet repair orders are settled at cost and are not invoiced",
         )
     if order.status != RepairOrderStatus.COMPLETED:
         raise HTTPException(

@@ -78,6 +78,14 @@ class RepairOrder(BaseModel):
     parent_repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=True)
     is_warranty_repair = Column(Boolean, nullable=False, default=False)
 
+    # Internal fleet repair: parts priced at cost, labor at the tenant internal rate,
+    # no customer quote/invoice/payment. Set when the customer is the internal fleet.
+    is_internal = Column(Boolean, nullable=False, default=False, index=True)
+
+    # Preventive-maintenance service (internal fleet). Completing a PM advances the
+    # vehicle's next_pm_miles. Drives the "PM" kind in the fleet service history.
+    is_pm = Column(Boolean, nullable=False, default=False, index=True)
+
     # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
     quote = relationship("Quote", back_populates="repair_order", uselist=False)
     invoice = relationship("Invoice", back_populates="repair_order", uselist=False)

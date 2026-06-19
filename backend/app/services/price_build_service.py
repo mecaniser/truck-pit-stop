@@ -62,6 +62,21 @@ def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"))
 
 
+def _labor_rate_for(order: RepairOrder, tenant: Tenant) -> Decimal:
+    """Internal fleet repairs cost labor at the tenant's internal rate (no markup);
+    customer repairs use the billable labor rate."""
+    if getattr(order, "is_internal", False):
+        return Decimal(str(tenant.internal_labor_rate))
+    return Decimal(str(tenant.labor_rate))
+
+
+def _part_unit_price_for(order: RepairOrder, inventory_item: Inventory) -> Decimal:
+    """Internal fleet repairs price parts at cost; customer repairs at selling price."""
+    if getattr(order, "is_internal", False):
+        return Decimal(str(inventory_item.cost))
+    return Decimal(str(inventory_item.selling_price))
+
+
 def _has_reusable_hours(value: Decimal) -> bool:
     return Decimal(str(value)) > Decimal("0.00")
 
@@ -202,7 +217,7 @@ class PriceBuildService:
             raise PriceBuildNotFoundError("Service not found")
 
         tenant = await self._get_tenant(db, order.tenant_id)
-        hourly_rate = Decimal(str(tenant.labor_rate))
+        hourly_rate = _labor_rate_for(order, tenant)
         # Labor hours come from the service's duration, scaled by quantity (how many
         # times this service is being performed). A 60-minute service × quantity 2 = 2 hours.
         hours_per_unit = (Decimal(service.duration_minutes) / Decimal(60))
@@ -254,7 +269,7 @@ class PriceBuildService:
                 raise PriceBuildValidationError(
                     f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {required_qty}"
                 )
-            unit_price = Decimal(str(inv.selling_price))
+            unit_price = _part_unit_price_for(order, inv)
             line_total = _money(unit_price * Decimal(required_qty))
             db.add(
                 PartsUsage(
@@ -343,7 +358,7 @@ class PriceBuildService:
             warnings.extend(estimate.warnings)
             resolved_provider = provider or estimate.provider
 
-        hourly_rate = Decimal(str(tenant.labor_rate))
+        hourly_rate = _labor_rate_for(order, tenant)
         line = Labor(
             tenant_id=order.tenant_id,
             repair_order_id=order.id,
@@ -518,7 +533,7 @@ class PriceBuildService:
                 # Service-sourced lines are billed as labor-hour units.
                 if line.line_type == LaborLineType.FLAT_SERVICE:
                     line.line_type = LaborLineType.MANUAL
-                line.hourly_rate = Decimal(str(tenant.labor_rate))
+                line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
             elif line.line_type == LaborLineType.REPAIR_OPERATION and line.provider_operation_id:
                 estimate = await self._get_operation_estimate(
@@ -528,7 +543,7 @@ class PriceBuildService:
                     name=line.description,
                 )
                 line.hours = estimate.estimated_hours
-                line.hourly_rate = Decimal(str(tenant.labor_rate))
+                line.hourly_rate = _labor_rate_for(order, tenant)
                 line.total_cost = _money(Decimal(str(line.hours)) * Decimal(str(line.hourly_rate)))
                 warnings.extend(estimate.warnings)
 

@@ -42,6 +42,8 @@ class Tenant(BaseModel):
     shop_supplies_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of labor
     service_fee_rate = Column(Numeric(5, 3), default=Decimal("0.000"), nullable=False)  # % of total
     labor_rate = Column(Numeric(10, 2), default=Decimal("100.00"), nullable=False)  # Default hourly rate
+    # Internal labor cost rate for the garage's own fleet repairs (no customer markup).
+    internal_labor_rate = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
 
     # Workforce settings (mechanic utilization tracking)
     timezone = Column(String(64), default="America/New_York", nullable=False)
