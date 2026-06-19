@@ -1929,6 +1929,11 @@ class StaffCreate(BaseModel):
 class StaffUpdate(BaseModel):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None  # owner/admin sets a new password (reset)
 
 
 class StaffMember(BaseModel):
@@ -2014,7 +2019,7 @@ async def update_staff(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_garage_owner()),
 ):
-    """Change a staff member's role or active status (garage owner/admin only)."""
+    """Edit a staff member's details, role, active status, or password (owner/admin only)."""
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     result = await db.execute(
@@ -2026,13 +2031,27 @@ async def update_staff(
     if user.role == UserRole.GARAGE_OWNER:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The garage owner cannot be modified here")
     if user.id == current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot modify your own role here")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot modify your own account here")
     if body.role is not None:
         if body.role not in ASSIGNABLE_STAFF_ROLES:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
         user.role = body.role
     if body.is_active is not None:
         user.is_active = body.is_active
+    if body.first_name is not None and body.first_name.strip():
+        user.first_name = body.first_name.strip()
+    if body.last_name is not None and body.last_name.strip():
+        user.last_name = body.last_name.strip()
+    if body.phone is not None:
+        user.phone = body.phone or None
+    if body.email is not None and body.email != user.email:
+        clash = await db.execute(select(User).where(User.email == body.email, User.id != user.id))
+        if clash.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        user.email = body.email
+    if body.password:
+        validate_password(body.password)
+        user.hashed_password = get_password_hash(body.password)
     await db.commit()
     await db.refresh(user)
     return StaffMember.model_validate(user)

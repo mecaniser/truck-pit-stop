@@ -120,6 +120,7 @@ export default function MechanicsPage() {
   const [search, setSearch] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [editingMechanic, setEditingMechanic] = useState<MechanicWithCounts | null>(null)
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   const { data: mechanics, isLoading } = useQuery<MechanicWithCounts[]>({
@@ -244,6 +245,11 @@ export default function MechanicsPage() {
     mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) =>
       (await api.patch(`/admin/staff/${id}`, { is_active })).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff-roster'] }),
+  })
+  const editStaffMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string }) =>
+      (await api.patch(`/admin/staff/${id}`, data)).data,
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['staff-roster'] }); setEditingStaff(null) },
   })
   const STAFF_ROLE_LABELS: Record<string, string> = {
     garage_owner: 'Garage Owner', garage_admin: 'Garage Admin',
@@ -541,13 +547,21 @@ export default function MechanicsPage() {
                   {STAFF_ROLE_LABELS[s.role] || s.role}
                 </span>
                 {s.role !== 'garage_owner' && (
-                  <button
-                    onClick={() => toggleStaffActive.mutate({ id: s.id, is_active: !s.is_active })}
-                    disabled={toggleStaffActive.isPending}
-                    className="text-xs px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
-                  >
-                    {s.is_active ? 'Deactivate' : 'Reactivate'}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => { setFormError(null); setEditingStaff(s) }}
+                      className="text-xs px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => toggleStaffActive.mutate({ id: s.id, is_active: !s.is_active })}
+                      disabled={toggleStaffActive.isPending}
+                      className="text-xs px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 text-gray-300 transition-colors shrink-0"
+                    >
+                      {s.is_active ? 'Deactivate' : 'Reactivate'}
+                    </button>
+                  </>
                 )}
               </div>
             ))}
@@ -1202,6 +1216,82 @@ export default function MechanicsPage() {
           )}
         </div>
       </SlidePanel>
+
+      {editingStaff && (
+        <StaffEditModal
+          member={editingStaff}
+          isPending={editStaffMutation.isPending}
+          error={formError}
+          onClose={() => setEditingStaff(null)}
+          onSave={(data) => {
+            setFormError(null)
+            editStaffMutation.mutate({ id: editingStaff.id, ...data }, {
+              onError: (err: any) => {
+                const d = err?.response?.data?.detail || 'Failed to save'
+                setFormError(Array.isArray(d) ? d.join(', ') : d)
+              },
+            })
+          }}
+        />
+      )}
     </>
+  )
+}
+
+function StaffEditModal({
+  member, isPending, error, onClose, onSave,
+}: {
+  member: { id: string; first_name: string; last_name: string; email: string; phone?: string | null; role: string }
+  isPending: boolean
+  error: string | null
+  onClose: () => void
+  onSave: (data: { first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string }) => void
+}) {
+  const [f, setF] = useState({
+    first_name: member.first_name, last_name: member.last_name,
+    email: member.email, phone: member.phone || '', role: member.role, password: '',
+  })
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((p) => ({ ...p, [k]: e.target.value }))
+  const input = 'w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors'
+  const label = 'block text-sm font-medium text-gray-700 mb-1.5'
+  const submit = () => onSave({
+    first_name: f.first_name, last_name: f.last_name, email: f.email,
+    phone: f.phone || undefined, role: f.role, password: f.password || undefined,
+  })
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-xl shadow-xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="text-base font-semibold text-gray-900">Edit team member</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <div>
+            <label className={label}>Role</label>
+            <select value={f.role} onChange={set('role')} className={input}>
+              {STAFF_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className={label}>First name</label><input value={f.first_name} onChange={set('first_name')} className={input} /></div>
+            <div><label className={label}>Last name</label><input value={f.last_name} onChange={set('last_name')} className={input} /></div>
+          </div>
+          <div><label className={label}>Email</label><input value={f.email} onChange={set('email')} className={input} /></div>
+          <div><label className={label}>Phone</label><input value={f.phone} onChange={set('phone')} className={input} placeholder="Optional" /></div>
+          <div>
+            <label className={label}>New password</label>
+            <input type="text" value={f.password} onChange={set('password')} className={input} placeholder="Leave blank to keep current" />
+          </div>
+        </div>
+        <div className="flex gap-3 px-5 py-4 border-t border-gray-100">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50">Cancel</button>
+          <button onClick={submit} disabled={isPending || !f.first_name.trim() || !f.last_name.trim() || !f.email.trim()}
+            className="flex-1 px-4 py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold disabled:opacity-50">
+            {isPending ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

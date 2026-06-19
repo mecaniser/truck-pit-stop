@@ -110,6 +110,44 @@ async def test_update_staff_role_and_deactivate(db_session):
 
 
 @pytest.mark.asyncio
+async def test_update_staff_edits_details_and_password(db_session):
+    _, owner = await _owner(db_session)
+    created = await admin.create_staff(
+        body=StaffCreate(email=f"fm-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                         first_name="Old", last_name="Name", role=UserRole.FLEET_MANAGER),
+        db=db_session, current_user=owner,
+    )
+    new_email = f"new-{uuid4().hex[:6]}@example.com"
+    updated = await admin.update_staff(
+        user_id=created.id,
+        body=StaffUpdate(first_name="New", last_name="Manager", phone="+17045559999",
+                         email=new_email, password="FreshPass#2026"),
+        db=db_session, current_user=owner,
+    )
+    assert (updated.first_name, updated.last_name, updated.phone, updated.email) == ("New", "Manager", "+17045559999", new_email)
+    row = (await db_session.execute(
+        __import__("sqlalchemy").select(User).where(User.id == created.id)
+    )).scalar_one()
+    assert row.hashed_password != "x"  # password was hashed/changed
+
+
+@pytest.mark.asyncio
+async def test_update_staff_rejects_duplicate_email(db_session):
+    _, owner = await _owner(db_session)
+    a = await admin.create_staff(
+        body=StaffCreate(email=f"a-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                         first_name="A", last_name="One", role=UserRole.RECEPTIONIST),
+        db=db_session, current_user=owner)
+    b = await admin.create_staff(
+        body=StaffCreate(email=f"b-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                         first_name="B", last_name="Two", role=UserRole.RECEPTIONIST),
+        db=db_session, current_user=owner)
+    with pytest.raises(HTTPException) as exc:
+        await admin.update_staff(user_id=b.id, body=StaffUpdate(email=a.email), db=db_session, current_user=owner)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_update_staff_cannot_modify_owner_or_self(db_session):
     _, owner = await _owner(db_session)
     with pytest.raises(HTTPException) as exc:
