@@ -997,7 +997,8 @@ export default function RepairOrdersPage() {
     }
   }
 
-  const shortOrderNumber = (n: string) => {
+  const shortOrderNumber = (n?: string | null) => {
+    if (!n) return '#—'
     const parts = n.split('-')
     return '#' + (parts[parts.length - 1] ?? n)
   }
@@ -1384,6 +1385,11 @@ export default function RepairOrdersPage() {
                       >
                         <td className="px-4 py-3">
                           <span className="text-white font-mono text-xs">{order.order_number}</span>
+                          {order.is_internal && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-500/15 text-amber-300">
+                              Internal
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap ${statusStyle.bg} ${statusStyle.text}`}>

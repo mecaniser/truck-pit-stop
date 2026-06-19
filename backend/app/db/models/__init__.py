@@ -38,6 +38,16 @@ from app.db.models.mechanic_time import (
     MechanicSessionType,
     MiscWorkCategory,
 )
+from app.db.models.fleet import (
+    FleetInspection,
+    FleetInspectionItem,
+    FleetIncident,
+    InspectionStatus,
+    InspectionResult,
+    InspectionItemResult,
+    IncidentSeverity,
+    IncidentStatus,
+)
 
 __all__ = [
     "Tenant",
@@ -86,4 +96,12 @@ __all__ = [
     "MiscWorkCategory",
     "RecommendedService",
     "RecommendedServicePriority",
+    "FleetInspection",
+    "FleetInspectionItem",
+    "FleetIncident",
+    "InspectionStatus",
+    "InspectionResult",
+    "InspectionItemResult",
+    "IncidentSeverity",
+    "IncidentStatus",
 ]

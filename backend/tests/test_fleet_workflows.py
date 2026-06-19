@@ -1,0 +1,229 @@
+"""Fleet workflows: weekly inspections, incidents, and incident-to-repair spawning."""
+from __future__ import annotations
+
+from datetime import datetime, timezone, timedelta
+from uuid import uuid4
+import os
+
+import pytest
+from fastapi import HTTPException
+
+os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
+os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
+os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
+
+from app.api.v1.endpoints import fleet
+from app.db.models.customer import Customer
+from app.db.models.fleet import (
+    InspectionResult,
+    InspectionStatus,
+    InspectionItemResult,
+    IncidentStatus,
+    IncidentSeverity,
+    DEFAULT_INSPECTION_CHECKLIST,
+)
+from app.db.models.repair_order import RepairOrder
+from app.db.models.tenant import Tenant
+from app.db.models.user import User, UserRole
+from app.db.models.vehicle import Vehicle
+from app.schemas.fleet import (
+    InspectionCreate,
+    InspectionComplete,
+    InspectionItemUpdate,
+    IncidentCreate,
+    IncidentUpdate,
+)
+from app.services.internal_fleet import ensure_internal_fleet_customer
+
+
+async def _seed_fleet(db_session, *, role=UserRole.FLEET_MANAGER):
+    tenant = Tenant(id=uuid4(), name="Fleet Garage", slug=f"fg-{uuid4().hex[:8]}")
+    db_session.add(tenant)
+    await db_session.commit()
+
+    fleet_customer = await ensure_internal_fleet_customer(db_session, tenant.id)
+    await db_session.commit()
+
+    vehicle = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=fleet_customer.id,
+        make="Freightliner", model="Cascadia", year=2020, unit_number="T-12",
+    )
+    user = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"u-{uuid4().hex[:8]}@example.com",
+        hashed_password="x", first_name="Fleet", last_name="Mgr",
+        role=role, is_active=True, is_verified=True,
+    )
+    db_session.add_all([vehicle, user])
+    await db_session.commit()
+    return tenant, vehicle, user
+
+
+@pytest.mark.asyncio
+async def test_create_inspection_instantiates_checklist(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    assert detail.status == InspectionStatus.SCHEDULED
+    assert len(detail.items) == len(DEFAULT_INSPECTION_CHECKLIST)
+    assert all(i.result == InspectionItemResult.PENDING for i in detail.items)
+
+
+@pytest.mark.asyncio
+async def test_complete_inspection_all_pass(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    for item in detail.items:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS),
+            db=db_session, current_user=user,
+        )
+    completed = await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(odometer=120000),
+        db=db_session, current_user=user,
+    )
+    assert completed.status == InspectionStatus.COMPLETED
+    assert completed.result == InspectionResult.PASS
+    assert completed.performed_at is not None
+    assert completed.inspector_id == user.id
+
+
+@pytest.mark.asyncio
+async def test_complete_inspection_with_failure(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    for idx, item in enumerate(detail.items):
+        res = InspectionItemResult.FAIL if idx == 0 else InspectionItemResult.PASS
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=res), db=db_session, current_user=user,
+        )
+    completed = await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+    )
+    assert completed.result == InspectionResult.FAIL
+
+
+@pytest.mark.asyncio
+async def test_complete_inspection_rejects_pending_items(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    with pytest.raises(HTTPException) as exc:
+        await fleet.complete_inspection(
+            inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+        )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_roster_overdue_then_current(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    # Never inspected -> overdue.
+    roster = await fleet.list_fleet_vehicles(db=db_session, current_user=user)
+    assert len(roster) == 1
+    assert roster[0].inspection_overdue is True
+    assert roster[0].next_inspection_due is None
+
+    # Complete an inspection -> not overdue, next due ~7 days out.
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    for item in detail.items:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS),
+            db=db_session, current_user=user,
+        )
+    await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+    )
+    roster = await fleet.list_fleet_vehicles(db=db_session, current_user=user)
+    assert roster[0].inspection_overdue is False
+    today = datetime.now(timezone.utc).date()
+    assert roster[0].next_inspection_due == today + timedelta(days=7)
+
+
+@pytest.mark.asyncio
+async def test_incident_create_and_spawn_internal_repair(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            location="I-85 mile 42",
+            severity=IncidentSeverity.HIGH,
+            description="Blowout on front left tire",
+        ),
+        db=db_session, current_user=user,
+    )
+    assert incident.status == IncidentStatus.OPEN
+    assert incident.repair_order_id is None
+
+    updated = await fleet.create_repair_for_incident(
+        incident_id=incident.id, db=db_session, current_user=user
+    )
+    assert updated.repair_order_id is not None
+    assert updated.status == IncidentStatus.IN_PROGRESS
+
+    ro = (await db_session.execute(
+        __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.id == updated.repair_order_id)
+    )).scalar_one()
+    assert ro.is_internal is True
+    assert ro.vehicle_id == vehicle.id
+
+
+@pytest.mark.asyncio
+async def test_incident_resolve_sets_resolved_at(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id, occurred_at=datetime.now(timezone.utc),
+            description="Minor fender scrape",
+        ),
+        db=db_session, current_user=user,
+    )
+    resolved = await fleet.update_incident(
+        incident_id=incident.id,
+        body=IncidentUpdate(status=IncidentStatus.RESOLVED, resolution_notes="Buffed out"),
+        db=db_session, current_user=user,
+    )
+    assert resolved.status == IncidentStatus.RESOLVED
+    assert resolved.resolved_at is not None
+
+
+@pytest.mark.asyncio
+async def test_fleet_access_denied_for_mechanic(db_session):
+    _, _, mechanic = await _seed_fleet(db_session, role=UserRole.MECHANIC)
+    with pytest.raises(HTTPException) as exc:
+        fleet.require_fleet_access(current_user=mechanic)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_inspection_rejects_non_fleet_vehicle(db_session):
+    tenant, _, user = await _seed_fleet(db_session)
+    # External (non-fleet) customer + vehicle in the same tenant.
+    ext_customer = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Acme", last_name="Co",
+        email=f"acme-{uuid4().hex[:6]}@example.com",
+    )
+    ext_vehicle = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=ext_customer.id,
+        make="Volvo", model="VNL", year=2019,
+    )
+    db_session.add_all([ext_customer, ext_vehicle])
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.create_inspection(
+            body=InspectionCreate(vehicle_id=ext_vehicle.id), db=db_session, current_user=user
+        )
+    assert exc.value.status_code == 404

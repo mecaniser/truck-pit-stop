@@ -1295,7 +1295,11 @@ async def enroll_garage(
     
     db.add(owner)
     await db.flush()
-    
+
+    # Every garage gets an internal-fleet house account for its own trucks.
+    from app.services.internal_fleet import ensure_internal_fleet_customer
+    await ensure_internal_fleet_customer(db, tenant.id)
+
     # Link owner to tenant
     tenant.owner_id = owner.id
     

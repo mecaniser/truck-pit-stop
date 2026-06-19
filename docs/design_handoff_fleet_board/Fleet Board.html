@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Truck Pit Stop — Fleet Manager Board</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="fleet.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="fleet-data.jsx"></script>
+<script type="text/babel" src="fleet-icons.jsx"></script>
+<script type="text/babel" src="fleet-map.jsx"></script>
+<script type="text/babel" src="fleet-board.jsx"></script>
+<script type="text/babel" src="truck-detail.jsx"></script>
+
+<script type="text/babel">
+const { useState, useEffect } = React;
+const { trucks, STATUS_META, fleetStats, fmt } = window.FleetData;
+const I = window.Icons;
+const LS = "tps-fleet-state";
+
+function loadState(){
+  try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch(e){ return {}; }
+}
+
+function Rail({ view, setView }){
+  const items = [
+    { k:"board", icon:"grid", tip:"Fleet board" },
+    { k:"map", icon:"map", tip:"Live map" },
+    { k:"schedule", icon:"calendar", tip:"PM schedule" },
+    { k:"orders", icon:"clipboard", tip:"Work orders" },
+    { k:"drivers", icon:"user", tip:"Drivers" },
+  ];
+  return (
+    <div className="rail">
+      <div className="rail-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z"></path></svg>
+      </div>
+      {items.map(it=>{
+        const Ico = I[it.icon];
+        return (
+          <button key={it.k} className={"rail-btn"+(view===it.k?" is-on":"")} onClick={()=>setView(it.k)}>
+            <Ico size={21} />
+            <span className="rail-tip">{it.tip}</span>
+          </button>
+        );
+      })}
+      <div className="rail-sp"></div>
+      <button className="rail-btn"><I.cog size={21} /><span className="rail-tip">Settings</span></button>
+      <div className="rail-av">FM</div>
+    </div>
+  );
+}
+
+function Clock(){
+  const [now,setNow] = useState(new Date());
+  useEffect(()=>{ const id=setInterval(()=>setNow(new Date()),1000*30); return ()=>clearInterval(id); },[]);
+  const d = now.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  const t = now.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"});
+  return <span className="topbar-clock">{d} · {t}</span>;
+}
+
+const TITLES = {
+  board:["Fleet Board","Live status of all "+fleetStats.total+" trucks"],
+  map:["Live Map","Real-time positions across the region"],
+  schedule:["PM Schedule","Upcoming preventive maintenance"],
+  orders:["Work Orders","Open jobs in the shop"],
+  drivers:["Drivers","Assigned operators"],
+};
+
+function Topbar({ view }){
+  const [title,sub] = TITLES[view] || TITLES.board;
+  return (
+    <div className="topbar">
+      <div className="topbar-l">
+        <span className="topbar-title">{title}</span>
+        <span className="topbar-sub">{sub}</span>
+      </div>
+      <div className="topbar-r">
+        <Clock />
+        <button className="topbar-icbtn"><I.search size={17} /></button>
+        <button className="topbar-icbtn"><I.bell size={17} /><span className="dot"></span></button>
+        <div className="topbar-user">
+          <div className="rail-av" style={{width:34,height:34,fontSize:13}}>VK</div>
+          <div>
+            <div className="nm">Viktor K.</div>
+            <div className="rl">Fleet manager</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- secondary placeholder views built from real data ----
+function MapPage({ onOpen }){
+  const FleetMap = window.FleetMap;
+  return (
+    <div className="mappage">
+      <FleetMap trucks={trucks} onSelect={onOpen} />
+    </div>
+  );
+}
+
+function SchedulePage({ onOpen }){
+  const due = [...trucks].sort((a,b)=>a.pmRemaining-b.pmRemaining);
+  return (
+    <div>
+      <div className="dsec">
+        <div className="dsec-head"><div className="dsec-title"><I.calendar size={17}/><h3>Preventive maintenance — by urgency</h3></div></div>
+        <div className="tgrid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))"}}>
+          {due.slice(0,12).map(t=>{
+            const over = t.pmRemaining<=0, soon=t.pmRemaining<2500;
+            const cls = over?"pm-over":soon?"pm-soon":"pm-ok";
+            return (
+              <button key={t.id} className="tcard" style={{"--st":over?"var(--red)":soon?"var(--yellow)":"var(--st-active)"}} onClick={()=>onOpen(t)}>
+                <div className="tcard-top">
+                  <div className="tcard-id"><span className="tcard-unit">{t.unit}</span><span className="tcard-mm">{t.make} {t.model}</span></div>
+                </div>
+                <div className={"tcard-pm-lbl "+cls} style={{fontSize:15,fontWeight:700}}>{over?"OVERDUE "+fmt(Math.abs(t.pmRemaining))+" mi":fmt(t.pmRemaining)+" mi to PM"}</div>
+                <div className="tcard-odo"><span>ODO</span><b>{fmt(t.odometer)}</b><span>mi · next at {fmt(t.nextPm)}</span></div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrdersPage({ onOpen }){
+  const wos = trucks.filter(t=>t.workOrder);
+  return (
+    <div className="dsec">
+      <div className="dsec-head"><div className="dsec-title"><I.clipboard size={17}/><h3>Open work orders</h3><span className="dsec-count">{wos.length}</span></div></div>
+      <div className="parts">
+        {wos.map(t=>(
+          <button key={t.id} className="near-row" style={{padding:"14px 15px"}} onClick={()=>onOpen(t)}>
+            <i className="near-dot" style={{background:STATUS_META[t.status].dot}}></i>
+            <span className="near-unit" style={{minWidth:72}}>{t.unit}</span>
+            <span style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--muted)",minWidth:72}}>{t.workOrder.id}</span>
+            <span className="near-loc" style={{flex:1}}>{t.workOrder.summary}</span>
+            <span style={{fontSize:12.5,fontWeight:600,color:"var(--yellow)"}}>{t.workOrder.status}</span>
+            <span style={{fontSize:12,color:"var(--muted-2)",marginLeft:14}}>{t.assignedMechanic}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DriversPage({ onOpen }){
+  return (
+    <div className="dsec">
+      <div className="dsec-head"><div className="dsec-title"><I.user size={17}/><h3>Drivers & assignments</h3><span className="dsec-count">{trucks.length}</span></div></div>
+      <div className="tgrid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))"}}>
+        {trucks.map(t=>(
+          <button key={t.id} className="near-row" style={{padding:"14px 15px"}} onClick={()=>onOpen(t)}>
+            <div className="avatar avatar-sm">{t.driver.split(" ").map(p=>p[0]).slice(0,2).join("")}</div>
+            <div style={{flex:1,textAlign:"left",minWidth:0}}>
+              <div className="person-name">{t.driver}</div>
+              <div className="person-role">{t.unit} · {t.make} {t.model}</div>
+            </div>
+            <i className="near-dot" style={{background:STATUS_META[t.status].dot}}></i>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const saved = loadState();
+  const [view,setView] = useState(saved.view || "board");
+  const [selId,setSelId] = useState(saved.selId || null);
+  const [filter,setFilter] = useState(saved.filter || "all");
+  const [query,setQuery] = useState("");
+  const [sort,setSort] = useState(saved.sort || "attention");
+
+  useEffect(()=>{
+    localStorage.setItem(LS, JSON.stringify({view,selId,filter,sort}));
+  },[view,selId,filter,sort]);
+
+  const open = (t)=>{ setSelId(t.id); setView("detail"); document.querySelector(".scroll").scrollTop=0; };
+  const back = ()=>{ setView("board"); };
+  const nav = (v)=>{ setSelId(null); setView(v); };
+
+  const sel = trucks.find(t=>t.id===selId);
+  let content;
+  if(view==="detail" && sel){
+    content = <window.TruckDetail truck={sel} trucks={trucks} onBack={back} onOpen={open} />;
+  } else if(view==="map"){
+    content = <MapPage onOpen={open} />;
+  } else if(view==="schedule"){
+    content = <SchedulePage onOpen={open} />;
+  } else if(view==="orders"){
+    content = <OrdersPage onOpen={open} />;
+  } else if(view==="drivers"){
+    content = <DriversPage onOpen={open} />;
+  } else {
+    content = <window.FleetBoard trucks={trucks} onOpen={open} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />;
+  }
+
+  const topView = view==="detail" ? "board" : view;
+  return (
+    <div className="app">
+      <Rail view={topView} setView={nav} />
+      <div className="main">
+        <Topbar view={view==="detail"?"board":view} />
+        <div className="scroll">
+          <div className="page-pad">{content}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

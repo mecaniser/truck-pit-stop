@@ -19,7 +19,7 @@ class CustomerBase(BaseModel):
     billing_city: Optional[str] = None
     billing_state: Optional[str] = None
     billing_zip: Optional[str] = None
-    billing_country: str = "USA"
+    billing_country: Optional[str] = "USA"  # column is nullable (e.g. internal-fleet house account)
     notes: Optional[str] = None
     auto_approval_threshold: Optional[Decimal] = None
 
@@ -62,6 +62,7 @@ class CustomerResponse(CustomerBase):
     id: UUID
     tenant_id: UUID
     source: Optional[str] = None
+    is_internal_fleet: bool = False
     sms_opt_out: bool = False
     sms_opted_out_at: Optional[datetime] = None
     sms_opt_out_source: Optional[str] = None

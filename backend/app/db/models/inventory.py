@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Numeric, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Numeric, ForeignKey, Text, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -47,6 +47,10 @@ class PartsUsage(BaseModel):
     # unit_price is discounted below list. Equal to unit_price when no discount given.
     list_price = Column(Numeric(10, 2), nullable=True)
     total_price = Column(Numeric(10, 2), nullable=False)
+
+    # Warranty tracking (surfaced on the fleet Truck Detail "Parts & warranty" list).
+    warranty_until = Column(Date, nullable=True)
+    warranty_miles = Column(Integer, nullable=True)
 
     # When set, this PartsUsage row was auto-added because a Service (which bundles
     # parts) was attached to the RO. Mechanics should not edit/delete these directly;

@@ -249,10 +249,14 @@ async def create_tenant(
     
     # Update tenant with owner_id
     tenant.owner_id = owner.id
-    
+
+    # Every garage gets an internal-fleet house account for its own trucks.
+    from app.services.internal_fleet import ensure_internal_fleet_customer
+    await ensure_internal_fleet_customer(db, tenant.id)
+
     await db.commit()
     await db.refresh(tenant)
-    
+
     return TenantResponse.model_validate(tenant)
 
 
@@ -864,6 +868,7 @@ class TaxFeeSettingsRequest(BaseModel):
     shop_supplies_rate: float  # Percentage of labor
     service_fee_rate: float  # Percentage of subtotal
     labor_rate: float  # Default hourly rate
+    internal_labor_rate: float = 0.0  # Hourly labor cost for internal fleet repairs
 
 
 class TaxFeeSettingsResponse(BaseModel):
@@ -871,6 +876,7 @@ class TaxFeeSettingsResponse(BaseModel):
     shop_supplies_rate: float
     service_fee_rate: float
     labor_rate: float
+    internal_labor_rate: float = 0.0
 
 
 class WorkforceSettingsRequest(BaseModel):
@@ -1257,6 +1263,7 @@ async def get_tax_fee_settings(
         shop_supplies_rate=float(tenant.shop_supplies_rate or 0),
         service_fee_rate=float(tenant.service_fee_rate or 0),
         labor_rate=float(tenant.labor_rate if tenant.labor_rate is not None else 100),
+        internal_labor_rate=float(tenant.internal_labor_rate or 0),
     )
 
 
@@ -1282,20 +1289,24 @@ async def update_tax_fee_settings(
         raise HTTPException(status_code=400, detail="service_fee_rate must be between 0 and 99.999")
     if not 0 <= body.labor_rate <= 9999.99:
         raise HTTPException(status_code=400, detail="labor_rate must be between 0 and 9999.99")
-    
+    if not 0 <= body.internal_labor_rate <= 9999.99:
+        raise HTTPException(status_code=400, detail="internal_labor_rate must be between 0 and 9999.99")
+
     tenant.sales_tax_rate = body.sales_tax_rate
     tenant.shop_supplies_rate = body.shop_supplies_rate
     tenant.service_fee_rate = body.service_fee_rate
     tenant.labor_rate = body.labor_rate
-    
+    tenant.internal_labor_rate = body.internal_labor_rate
+
     await db.commit()
     await db.refresh(tenant)
-    
+
     return TaxFeeSettingsResponse(
         sales_tax_rate=float(tenant.sales_tax_rate),
         shop_supplies_rate=float(tenant.shop_supplies_rate),
         service_fee_rate=float(tenant.service_fee_rate),
         labor_rate=float(tenant.labor_rate),
+        internal_labor_rate=float(tenant.internal_labor_rate),
     )
 
 
@@ -1884,3 +1895,163 @@ async def unresolve_error(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Error not found")
     
     return {"status": "success", "message": "Error reopened"}
+
+
+# ============================================================================
+# Staff management (garage owner/admin: add team members with a role)
+# ============================================================================
+
+# Roles a garage owner/admin can assign when adding a staff member.
+ASSIGNABLE_STAFF_ROLES = {
+    UserRole.GARAGE_ADMIN,
+    UserRole.RECEPTIONIST,
+    UserRole.MECHANIC,
+    UserRole.FLEET_MANAGER,
+}
+# Roles shown in the team roster (assignable set + the owner).
+STAFF_ROSTER_ROLES = ASSIGNABLE_STAFF_ROLES | {UserRole.GARAGE_OWNER}
+
+
+class StaffCreate(BaseModel):
+    email: EmailStr
+    password: str
+    first_name: str
+    last_name: str
+    role: UserRole
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    # Technician-only (applied when role == mechanic)
+    core_hours_target_minutes_override: Optional[int] = None
+    shift_start_local_override: Optional[str] = None
+    shift_end_local_override: Optional[str] = None
+
+
+class StaffUpdate(BaseModel):
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None  # owner/admin sets a new password (reset)
+
+
+class StaffMember(BaseModel):
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    role: UserRole
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/staff", response_model=List[StaffMember])
+async def list_staff(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """List all staff members for the current garage (owner + assignable roles)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(
+        select(User).where(
+            User.tenant_id == current_user.tenant_id,
+            User.role.in_(list(STAFF_ROSTER_ROLES)),
+        ).order_by(User.first_name, User.last_name)
+    )
+    return [StaffMember.model_validate(u) for u in result.scalars().all()]
+
+
+@router.post("/staff", response_model=StaffMember, status_code=status.HTTP_201_CREATED)
+async def create_staff(
+    body: StaffCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Create a staff member with a chosen role (technician, receptionist, fleet manager, admin)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    if body.role not in ASSIGNABLE_STAFF_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be one of: technician, receptionist, fleet manager, garage admin",
+        )
+    validate_password(body.password)
+
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    user = User(
+        email=body.email,
+        hashed_password=get_password_hash(body.password),
+        first_name=body.first_name,
+        last_name=body.last_name,
+        phone=body.phone or None,
+        address=body.address or None,
+        role=body.role,
+        tenant_id=current_user.tenant_id,
+        is_active=True,
+        is_verified=True,
+    )
+    # Technician-only workforce overrides
+    if body.role == UserRole.MECHANIC:
+        if body.core_hours_target_minutes_override is not None and not 1 <= body.core_hours_target_minutes_override <= 1440:
+            raise HTTPException(status_code=400, detail="core_hours_target_minutes_override must be between 1 and 1440")
+        user.core_hours_target_minutes_override = body.core_hours_target_minutes_override
+        user.shift_start_local_override = body.shift_start_local_override or None
+        user.shift_end_local_override = body.shift_end_local_override or None
+
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return StaffMember.model_validate(user)
+
+
+@router.patch("/staff/{user_id}", response_model=StaffMember)
+async def update_staff(
+    user_id: UUID,
+    body: StaffUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Edit a staff member's details, role, active status, or password (owner/admin only)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.tenant_id == current_user.tenant_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
+    if user.role == UserRole.GARAGE_OWNER:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The garage owner cannot be modified here")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot modify your own account here")
+    if body.role is not None:
+        if body.role not in ASSIGNABLE_STAFF_ROLES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+        user.role = body.role
+    if body.is_active is not None:
+        user.is_active = body.is_active
+    if body.first_name is not None and body.first_name.strip():
+        user.first_name = body.first_name.strip()
+    if body.last_name is not None and body.last_name.strip():
+        user.last_name = body.last_name.strip()
+    if body.phone is not None:
+        user.phone = body.phone or None
+    if body.email is not None and body.email != user.email:
+        clash = await db.execute(select(User).where(User.email == body.email, User.id != user.id))
+        if clash.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        user.email = body.email
+    if body.password:
+        validate_password(body.password)
+        user.hashed_password = get_password_hash(body.password)
+    await db.commit()
+    await db.refresh(user)
+    return StaffMember.model_validate(user)

@@ -1,7 +1,7 @@
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, Truck } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -45,18 +45,28 @@ export default function DashboardLayout() {
   // Get the hex color for the current accent
   const accentHex = accentColors[500]
 
+  // Garage owner/admin also own the fleet; fleet managers get a fleet-focused nav.
+  const canAccessFleet = user?.role === 'fleet_manager' || user?.role === 'garage_owner' || user?.role === 'garage_admin'
+
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
-  const navLinks = user?.role === 'super_admin' 
+  const navLinks = user?.role === 'super_admin'
     ? [
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
         { to: '/dashboard/garages', label: 'Garages', mobileLabel: 'Garages', icon: LayoutGrid },
         { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', icon: UserCheck },
         { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', icon: BarChart3 },
       ]
+    : user?.role === 'fleet_manager'
+    ? [
+        { to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck },
+        { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
+        { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare },
+      ]
     : [
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
         { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
+        ...(canAccessFleet ? [{ to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck }] : []),
         { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare },
         { to: '/dashboard/garage', label: 'My Garage', mobileLabel: 'Garage', icon: Building2 },
       ]
@@ -249,7 +259,10 @@ export default function DashboardLayout() {
                 <Route path="mechanics/:mechanicId" element={<MechanicBoardDetailPage />} />
                 <Route path="garage/*" element={<MyGaragePage />} />
                 <Route path="settings" element={<UnifiedSettingsPage />} />
-                <Route path="" element={<DashboardHome />} />
+                <Route
+                  path=""
+                  element={user?.role === 'fleet_manager' ? <Navigate to="/fleet" replace /> : <DashboardHome />}
+                />
               </>
             )}
           </Routes>

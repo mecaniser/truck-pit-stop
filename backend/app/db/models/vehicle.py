@@ -20,8 +20,28 @@ class Vehicle(BaseModel):
     year = Column(Integer, nullable=True)
     license_plate = Column(String(20), nullable=True, index=True)
     color = Column(String(50), nullable=True)
-    mileage = Column(Integer, nullable=True)
+    mileage = Column(Integer, nullable=True)  # current odometer (miles)
     notes = Column(Text, nullable=True)
+
+    # --- Fleet management (used by the internal Fleet board) ---
+    # Assigned driver (simple fields; not a managed entity in v1).
+    driver_name = Column(String(160), nullable=True)
+    driver_phone = Column(String(20), nullable=True)
+
+    # Mileage-based preventive maintenance. pm_remaining = next_pm_miles - mileage.
+    pm_interval_miles = Column(Integer, nullable=False, default=25000)
+    next_pm_miles = Column(Integer, nullable=True)  # odometer at which next PM is due
+
+    # Last-known location from telematics (or manual entry). Provider-agnostic:
+    # telematics_device_id maps this truck to the external provider's vehicle id.
+    telematics_device_id = Column(String(120), nullable=True, index=True)
+    last_lat = Column(Float, nullable=True)
+    last_lng = Column(Float, nullable=True)
+    last_location_label = Column(String(200), nullable=True)
+    last_location_city = Column(String(120), nullable=True)
+    last_speed_mph = Column(Integer, nullable=True)
+    last_heading = Column(String(8), nullable=True)
+    last_location_at = Column(DateTime(timezone=True), nullable=True)
 
     # Persisted NHTSA/vPIC decode snapshot used for normalized labor-memory matching.
     nhtsa_make = Column(String(100), nullable=True)

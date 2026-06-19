@@ -15,6 +15,7 @@ import DashboardLayout from './components/layout/DashboardLayout'
 import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
 import QuoteApprovalPage from './features/quote-approval/QuoteApprovalPage'
 import MechanicPortalPage from './features/mechanic-portal/MechanicPortalPage'
+import FleetApp from './features/fleet/FleetApp'
 import InvoiceAccessPage from './features/invoice-access/InvoiceAccessPage'
 
 type FaviconAssetSet = {
@@ -85,6 +86,19 @@ function StaffRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/mechanic" replace />
   }
   
+  return <>{children}</>
+}
+
+function FleetRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+  // Fleet board is for the fleet manager + the garage owner/admin who own the fleet.
+  if (!['fleet_manager', 'garage_owner', 'garage_admin'].includes(user?.role || '')) {
+    return <Navigate to="/dashboard" replace />
+  }
   return <>{children}</>
 }
 
@@ -202,6 +216,15 @@ function App() {
             <MechanicRoute>
               <MechanicPortalPage />
             </MechanicRoute>
+          }
+        />
+
+        <Route
+          path="/fleet/*"
+          element={
+            <FleetRoute>
+              <FleetApp />
+            </FleetRoute>
           }
         />
         

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, admin, websocket, invoice_access, messages, twilio_webhooks
+from app.api.v1.endpoints import auth, customers, vehicles, repair_orders, inventory, dashboard, services, appointments, payments, mechanics, suppliers, quotes, invoices, stripe_connect, stripe_webhooks, admin, websocket, invoice_access, messages, twilio_webhooks, fleet
 
 api_router = APIRouter()
 
@@ -20,6 +20,7 @@ api_router.include_router(payments.router, prefix="/payments", tags=["payments"]
 api_router.include_router(mechanics.router, prefix="/mechanics", tags=["mechanics"])
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["suppliers"])
 api_router.include_router(messages.router, prefix="/messages", tags=["messages"])
+api_router.include_router(fleet.router, prefix="/fleet", tags=["fleet"])
 api_router.include_router(stripe_connect.router, prefix="/stripe/connect", tags=["stripe-connect"])
 api_router.include_router(stripe_webhooks.router, prefix="/webhooks/stripe", tags=["webhooks"])
 api_router.include_router(twilio_webhooks.router, prefix="/webhooks/twilio", tags=["webhooks"])

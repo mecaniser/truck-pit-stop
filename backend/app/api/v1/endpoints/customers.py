@@ -136,14 +136,42 @@ async def list_customers(
     if not current_user.tenant_id:
         return paginated_or_list([], 0, skip, limit, paginated)
     
+    # The internal-fleet house account is managed via the dedicated fleet view,
+    # not listed among real customers.
+    base_filter = and_(
+        Customer.tenant_id == current_user.tenant_id,
+        Customer.is_internal_fleet.is_(False),
+    )
     total_result = await db.execute(
-        select(func.count(Customer.id)).where(Customer.tenant_id == current_user.tenant_id)
+        select(func.count(Customer.id)).where(base_filter)
     )
     total = total_result.scalar() or 0
-    result = await db.execute(select(Customer).where(Customer.tenant_id == current_user.tenant_id).offset(skip).limit(limit))
+    result = await db.execute(select(Customer).where(base_filter).offset(skip).limit(limit))
     customers = result.scalars().all()
     items = [CustomerResponse.model_validate(c) for c in customers]
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/internal-fleet", response_model=CustomerResponse)
+async def get_internal_fleet_account(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.FLEET_MANAGER,
+    )),
+):
+    """Return the tenant's internal-fleet house account (the garage's own trucks)."""
+    if not current_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must be associated with a tenant",
+        )
+    from app.services.internal_fleet import ensure_internal_fleet_customer
+    customer = await ensure_internal_fleet_customer(db, current_user.tenant_id)
+    await db.commit()
+    return CustomerResponse.model_validate(customer)
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)

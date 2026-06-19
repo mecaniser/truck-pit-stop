@@ -77,6 +77,16 @@ PRICE_BUILD_EDIT_ROLES = (
     UserRole.GARAGE_OWNER,
     UserRole.GARAGE_ADMIN,
     UserRole.RECEPTIONIST,
+    UserRole.FLEET_MANAGER,
+)
+# Staff who can manage repair orders and their parts/labor. Fleet managers are
+# further scoped to internal-fleet ROs by _check_ro_access / create guards.
+RO_MANAGE_ROLES = (
+    UserRole.GARAGE_OWNER,
+    UserRole.GARAGE_ADMIN,
+    UserRole.RECEPTIONIST,
+    UserRole.MECHANIC,
+    UserRole.FLEET_MANAGER,
 )
 
 
@@ -159,19 +169,14 @@ async def generate_order_number(db: AsyncSession, tenant_id: UUID) -> str:
 async def create_repair_order(
     order_data: RepairOrderCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must be associated with a tenant",
         )
-    
+
     # Verify customer exists and belongs to tenant
     result = await db.execute(
         select(Customer).where(
@@ -187,7 +192,14 @@ async def create_repair_order(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found",
         )
-    
+
+    # Fleet managers may only open repair orders against the internal fleet.
+    if current_user.role == UserRole.FLEET_MANAGER and not customer.is_internal_fleet:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Fleet managers can only create internal fleet repair orders",
+        )
+
     # Verify vehicle exists and belongs to customer
     result = await db.execute(
         select(Vehicle).where(
@@ -213,6 +225,8 @@ async def create_repair_order(
             tenant_id=current_user.tenant_id,
             order_number=order_number,
             status=RepairOrderStatus.DRAFT,
+            # Repairs on the garage's own fleet are internal-cost (no markup/invoice).
+            is_internal=customer.is_internal_fleet,
             **order_data.model_dump(),
         )
         db.add(repair_order)
@@ -235,18 +249,21 @@ async def create_repair_order(
 async def quick_create_repair_order(
     data: QuickRepairOrderCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     """Quick-create a repair order with minimal info. Auto-creates walk-in customer and vehicle."""
     try:
         tenant_id = current_user.tenant_id
         if not tenant_id:
             raise HTTPException(status_code=400, detail="User must be associated with a tenant")
+
+        # Quick-create always spins up an external walk-in customer, which is outside
+        # a fleet manager's internal-fleet scope.
+        if current_user.role == UserRole.FLEET_MANAGER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Fleet managers can only create internal fleet repair orders",
+            )
 
         raw_phone = (data.phone or "").strip()
         # Normalize phone for consistent storage and lookup
@@ -400,6 +417,10 @@ async def list_repair_orders(
             return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(RepairOrder.tenant_id == current_user.tenant_id)
         count_query = count_query.where(RepairOrder.tenant_id == current_user.tenant_id)
+        # Fleet managers only see the garage's own internal-fleet repairs.
+        if current_user.role == UserRole.FLEET_MANAGER:
+            query = query.where(RepairOrder.is_internal.is_(True))
+            count_query = count_query.where(RepairOrder.is_internal.is_(True))
         if customer_id:
             query = query.where(RepairOrder.customer_id == customer_id)
             count_query = count_query.where(RepairOrder.customer_id == customer_id)
@@ -550,12 +571,7 @@ async def update_repair_order(
     order_id: UUID,
     order_data: RepairOrderUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
     order = result.scalar_one_or_none()
@@ -635,6 +651,7 @@ async def assign_mechanic(
         UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
         UserRole.RECEPTIONIST,
+        UserRole.FLEET_MANAGER,
     )),
 ):
     """Assign/reassign mechanic, set status to assigned when needed, and notify mechanic."""
@@ -1461,6 +1478,7 @@ async def approve_completion(
     current_user: User = Depends(require_role(
         UserRole.GARAGE_OWNER,
         UserRole.GARAGE_ADMIN,
+        UserRole.FLEET_MANAGER,
     )),
 ):
     """Manager approves completed work - notifies customer"""
@@ -1484,7 +1502,15 @@ async def approve_completion(
         )
     
     order.status = RepairOrderStatus.COMPLETED
-    
+
+    # Completing an internal preventive-maintenance order advances the truck's next PM.
+    if order.is_internal and order.is_pm:
+        veh_result = await db.execute(select(Vehicle).where(Vehicle.id == order.vehicle_id))
+        veh = veh_result.scalar_one_or_none()
+        if veh:
+            base_odo = order.mileage_out or veh.mileage or 0
+            veh.next_pm_miles = base_odo + (veh.pm_interval_miles or 25000)
+
     # Append review notes to internal_notes if provided
     if body and body.review_notes:
         import json
@@ -1508,16 +1534,19 @@ async def approve_completion(
     await db.commit()
     await db.refresh(order)
     
-    # Broadcast WebSocket update
-    await broadcast_repair_order_update(
-        tenant_id=str(order.tenant_id),
-        customer_id=str(order.customer_id),
-        order_id=str(order.id),
-        order_number=order.order_number,
-        status=order.status.value,
-        updated_at=order.updated_at.isoformat() if order.updated_at else None,
-    )
-    
+    # Broadcast WebSocket update (best-effort: never fail a committed approval)
+    try:
+        await broadcast_repair_order_update(
+            tenant_id=str(order.tenant_id),
+            customer_id=str(order.customer_id),
+            order_id=str(order.id),
+            order_number=order.order_number,
+            status=order.status.value,
+            updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        )
+    except Exception:
+        logger.exception("approve_completion: broadcast failed for order %s", order_id)
+
     # Notify customer that work is complete
     customer = order.customer
     if customer and customer.email:
@@ -1557,15 +1586,18 @@ async def approve_completion(
         </html>
         """
         
-        await send_email(
-            db=db,
-            tenant_id=str(order.tenant_id),
-            to=customer.email,
-            subject=f"Work Complete: {order.order_number} - DieselBridge Network",
-            body=html_body,
-            template_name="work_complete",
-        )
-    
+        try:
+            await send_email(
+                db=db,
+                tenant_id=str(order.tenant_id),
+                to=customer.email,
+                subject=f"Work Complete: {order.order_number} - DieselBridge Network",
+                body=html_body,
+                template_name="work_complete",
+            )
+        except Exception:
+            logger.exception("approve_completion: work-complete email failed for order %s", order_id)
+
     # SMS: ready for pickup
     if customer and customer.phone:
         vehicle = order.vehicle
@@ -1600,12 +1632,7 @@ async def approve_completion(
 async def delete_repair_order(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
     order = result.scalar_one_or_none()
@@ -1678,6 +1705,9 @@ def _check_ro_access(current_user: User, order: RepairOrder) -> None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     elif current_user.tenant_id != order.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    # Fleet managers are scoped to the garage's own internal-fleet repairs only.
+    if current_user.role == UserRole.FLEET_MANAGER and not order.is_internal:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 def _require_cancelable_ro(order: RepairOrder) -> None:
@@ -1736,12 +1766,7 @@ async def _recompute_repair_order_totals(db: AsyncSession, order_id: UUID) -> No
 async def get_price_build_summary(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     try:
         order = await price_build_service.load_order(db, order_id)
@@ -1780,12 +1805,7 @@ async def search_price_build_repair_operations(
     order_id: UUID,
     body: PriceBuildRepairOpsSearchRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     try:
         order = await price_build_service.load_order(db, order_id)
@@ -1947,12 +1967,7 @@ async def add_parts_to_repair_order(
     order_id: UUID,
     body: PartsUsageCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
@@ -1980,7 +1995,11 @@ async def add_parts_to_repair_order(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Insufficient stock: have {inv.stock_quantity}, requested {body.quantity}",
         )
-    unit_price = body.unit_price if body.unit_price is not None else inv.selling_price
+    # Internal fleet repairs price parts at cost (no markup, no customer-facing list price);
+    # customer repairs default to the selling price.
+    default_price = inv.cost if order.is_internal else inv.selling_price
+    unit_price = body.unit_price if body.unit_price is not None else default_price
+    list_price = inv.cost if order.is_internal else inv.selling_price
     total_price = unit_price * body.quantity
     pu = PartsUsage(
         tenant_id=current_user.tenant_id,
@@ -1989,7 +2008,7 @@ async def add_parts_to_repair_order(
         quantity=body.quantity,
         unit_cost=inv.cost,
         unit_price=unit_price,
-        list_price=inv.selling_price,
+        list_price=list_price,
         total_price=total_price,
     )
     db.add(pu)
@@ -2048,12 +2067,7 @@ async def update_parts_quantity(
     parts_usage_id: UUID,
     body: PartsUsageUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     if body.quantity is None and body.unit_price is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update")
@@ -2118,12 +2132,7 @@ async def remove_parts_from_repair_order(
     order_id: UUID,
     parts_usage_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(
-        UserRole.GARAGE_OWNER,
-        UserRole.GARAGE_ADMIN,
-        UserRole.RECEPTIONIST,
-        UserRole.MECHANIC,
-    )),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
@@ -2318,6 +2327,7 @@ RECOMMENDED_SERVICES_ROLES = (
     UserRole.GARAGE_ADMIN,
     UserRole.RECEPTIONIST,
     UserRole.MECHANIC,
+    UserRole.FLEET_MANAGER,
 )
 
 
