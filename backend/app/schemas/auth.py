@@ -52,6 +52,7 @@ class UserResponse(BaseModel):
     address: Optional[str] = None
     role: UserRole
     is_active: bool
+    can_access_messaging: bool = False
     tenant_id: Optional[UUID] = None
     tenant_name: Optional[str] = None
     tenant_slug: Optional[str] = None

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, X, Mail, Phone, Shield, Plus, Pencil, Eye, EyeOff, Crown } from 'lucide-react'
+import { Loader2, X, Mail, Phone, Shield, Plus, Pencil, Eye, EyeOff, Crown, MessageSquare } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../../lib/api'
 import { GlassNoirButton, GlassNoirBadge } from '../../../components/ui/GlassNoirCard'
@@ -16,7 +16,14 @@ export interface TenantUser {
   is_active: boolean
   is_verified: boolean
   is_owner: boolean
+  can_access_messaging: boolean
 }
+
+// Roles that have the Messages/Communications surface by role; for these the
+// grant is implicit (checkbox shown checked + disabled). Fleet managers don't,
+// so the checkbox is the way to grant them access.
+const MESSAGING_BY_DEFAULT_ROLES = ['garage_owner', 'garage_admin', 'receptionist', 'mechanic']
+const roleHasMessagingByDefault = (role: string) => MESSAGING_BY_DEFAULT_ROLES.includes(role)
 
 interface GarageTeamModalProps {
   garageId: string
@@ -46,6 +53,7 @@ interface FormState {
   phone: string
   role: string
   password: string
+  can_access_messaging: boolean
 }
 
 const emptyForm: FormState = {
@@ -55,6 +63,7 @@ const emptyForm: FormState = {
   phone: '',
   role: 'mechanic',
   password: '',
+  can_access_messaging: false,
 }
 
 export default function GarageTeamModal({ garageId, garageName, onClose }: GarageTeamModalProps) {
@@ -102,6 +111,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
       phone: user.phone || '',
       role: user.role,
       password: '',
+      can_access_messaging: user.can_access_messaging,
     })
     setFormError(null)
     setShowPassword(false)
@@ -152,6 +162,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
         last_name: form.last_name.trim(),
         role: form.role,
         phone: form.phone.trim() || undefined,
+        can_access_messaging: roleHasMessagingByDefault(form.role) ? true : form.can_access_messaging,
       })
       toast.success('Team member added')
       await fetchUsers()
@@ -176,6 +187,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
       email: form.email.trim(),
       phone: form.phone.trim() || null,
       role: form.role,
+      can_access_messaging: roleHasMessagingByDefault(form.role) ? true : form.can_access_messaging,
     }
     if (form.password) payload.password = form.password
     try {
@@ -399,6 +411,28 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 w-4 h-4 rounded border-gold-500/50 bg-black/40 text-gold-500 focus:ring-gold-500 focus:ring-offset-0 disabled:opacity-60 cursor-pointer"
+                    checked={roleHasMessagingByDefault(form.role) ? true : form.can_access_messaging}
+                    disabled={roleHasMessagingByDefault(form.role)}
+                    onChange={(e) => setForm((f) => ({ ...f, can_access_messaging: e.target.checked }))}
+                  />
+                  <span className="text-sm">
+                    <span className="inline-flex items-center gap-1.5 text-gray-200 font-medium">
+                      <MessageSquare className="w-3.5 h-3.5" /> Communications access
+                    </span>
+                    <span className="block text-xs text-gray-400 mt-0.5">
+                      {roleHasMessagingByDefault(form.role)
+                        ? 'This role has the Messages inbox by default.'
+                        : 'Grant the Messages inbox (SMS/customer threads). Off by default for fleet managers.'}
+                    </span>
+                  </span>
+                </label>
               </div>
 
               <div>

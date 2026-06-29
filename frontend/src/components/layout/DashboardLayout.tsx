@@ -26,7 +26,13 @@ export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
   const { accentColors } = useTheme()
-  const shouldFetchMessagesUnread = Boolean(user && user.role !== 'super_admin')
+  // Owner/admin/receptionist/mechanic have messaging by role; other roles
+  // (notably fleet managers) need the can_access_messaging grant.
+  const canAccessMessaging =
+    ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(user?.role || '') ||
+    Boolean(user?.can_access_messaging)
+  const messagesNavLink = { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare }
+  const shouldFetchMessagesUnread = Boolean(user && user.role !== 'super_admin' && canAccessMessaging)
   const { data: unreadSummary } = useQuery({
     queryKey: ['messages-unread-summary'],
     queryFn: async () => {
@@ -60,14 +66,14 @@ export default function DashboardLayout() {
     ? [
         { to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck },
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
-        { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare },
+        ...(canAccessMessaging ? [messagesNavLink] : []),
       ]
     : [
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
         { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
         ...(canAccessFleet ? [{ to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck }] : []),
-        { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare },
+        ...(canAccessMessaging ? [messagesNavLink] : []),
         { to: '/dashboard/garage', label: 'My Garage', mobileLabel: 'Garage', icon: Building2 },
       ]
 
@@ -254,7 +260,10 @@ export default function DashboardLayout() {
               <>
                 <Route path="customers" element={<CustomersPage />} />
                 <Route path="repair-orders" element={<RepairOrdersPage />} />
-                <Route path="messages" element={<MessagesInboxPage />} />
+                <Route
+                  path="messages"
+                  element={canAccessMessaging ? <MessagesInboxPage /> : <Navigate to="/dashboard" replace />}
+                />
                 <Route path="mechanics" element={<MechanicsBoardPage />} />
                 <Route path="mechanics/:mechanicId" element={<MechanicBoardDetailPage />} />
                 <Route path="garage/*" element={<MyGaragePage />} />
