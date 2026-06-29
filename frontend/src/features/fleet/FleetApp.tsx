@@ -4,10 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, CalendarRange, ClipboardList, Users,
-  Bell, LogOut, Plus, Loader2, X, Wrench, ArrowLeft,
+  Bell, LogOut, Plus, Loader2, X, Wrench, ArrowLeft, Settings, UserRound, KeyRound, Eye, EyeOff,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
+import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
 import { STATUS_META, fmt, pmState, initials } from './helpers'
 import FleetBoard from './FleetBoard'
@@ -34,6 +35,7 @@ export default function FleetApp() {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState(init.sort)
   const [adding, setAdding] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [clock, setClock] = useState(() => new Date())
 
   useEffect(() => {
@@ -90,10 +92,21 @@ export default function FleetApp() {
             </button>
           ))}
           <div className="rail-sp" />
+          <button className="rail-btn" onClick={() => setSettingsOpen(true)}>
+            <Settings size={20} /><span className="rail-tip">Settings</span>
+          </button>
           <button className="rail-btn" onClick={async () => { try { await logout() } finally { navigate('/login', { replace: true }) } }}>
             <LogOut size={20} /><span className="rail-tip">Log out</span>
           </button>
-          <div className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</div>
+          <button
+            type="button"
+            className="rail-av"
+            onClick={() => setSettingsOpen(true)}
+            title="Account settings"
+            style={{ cursor: 'pointer', border: 'none' }}
+          >
+            {initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}
+          </button>
         </nav>
 
         <div className="main">
@@ -138,6 +151,7 @@ export default function FleetApp() {
       </div>
 
       {adding && <AddTruckModal onClose={() => setAdding(false)} />}
+      {settingsOpen && <FleetSettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }
@@ -314,5 +328,158 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>{label}</span>
       {children}
     </label>
+  )
+}
+
+/* ---- account settings (fleet manager self-service) ---- */
+
+function FleetSettingsModal({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
+  const { user, setUser, logout } = useAuthStore()
+
+  const [profile, setProfile] = useState({
+    first_name: user?.first_name || '',
+    last_name: user?.last_name || '',
+    phone: user?.phone || '',
+    email: user?.email || '',
+  })
+  const setP = (k: keyof typeof profile) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setProfile((p) => ({ ...p, [k]: e.target.value }))
+  const emailChanged = profile.email.trim() !== (user?.email || '')
+  const [emailPassword, setEmailPassword] = useState('')
+  const [savingProfile, setSavingProfile] = useState(false)
+
+  const [pwd, setPwd] = useState({ current_password: '', new_password: '' })
+  const [showPwd, setShowPwd] = useState(false)
+  const [savingPwd, setSavingPwd] = useState(false)
+
+  const saveProfile = async () => {
+    if (!profile.first_name.trim() || !profile.last_name.trim()) {
+      toast.error('First and last name are required')
+      return
+    }
+    if (emailChanged && !emailPassword) {
+      toast.error('Enter your current password to change your email')
+      return
+    }
+    try {
+      setSavingProfile(true)
+      const payload: Record<string, unknown> = {
+        first_name: profile.first_name.trim(),
+        last_name: profile.last_name.trim(),
+        phone: profile.phone.trim() || null,
+        email: profile.email.trim(),
+      }
+      if (emailChanged) payload.password = emailPassword
+      const res = await api.put('/auth/me', payload)
+      if (res.data?.user) setUser(res.data.user)
+      // Email changes return a verification message; name/phone return the user.
+      toast.success(res.data?.message || 'Profile updated')
+      setEmailPassword('')
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Failed to update profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  const savePassword = async () => {
+    if (!pwd.current_password) {
+      toast.error('Enter your current password')
+      return
+    }
+    const err = getPasswordValidationError(pwd.new_password)
+    if (err) {
+      toast.error(err)
+      return
+    }
+    try {
+      setSavingPwd(true)
+      await api.post('/auth/change-password', {
+        current_password: pwd.current_password,
+        new_password: pwd.new_password,
+      })
+      // Changing the password invalidates all sessions — force a fresh login.
+      toast.success('Password changed. Please log in again.')
+      try { await logout() } finally { navigate('/login', { replace: true }) }
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || 'Failed to change password')
+    } finally {
+      setSavingPwd(false)
+    }
+  }
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center', padding: 16 }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ width: 520, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', display: 'grid', gap: 14 }}
+      >
+        {/* Profile */}
+        <div className="dsec">
+          <div className="dsec-head">
+            <div className="dsec-title"><UserRound size={17} /><h3>My account</h3></div>
+            <button className="person-call" onClick={onClose}><X size={15} /></button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="First name"><input value={profile.first_name} onChange={setP('first_name')} /></Field>
+            <Field label="Last name"><input value={profile.last_name} onChange={setP('last_name')} /></Field>
+            <Field label="Phone"><input value={profile.phone} onChange={setP('phone')} placeholder="(704) 555-0123" /></Field>
+            <Field label="Email"><input value={profile.email} onChange={setP('email')} type="email" /></Field>
+            {emailChanged && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="Current password (required to change email)">
+                  <input value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} type="password" />
+                </Field>
+                <p className="id-k" style={{ marginTop: 6, textTransform: 'none', letterSpacing: 0 }}>
+                  We'll send a verification link to the new address; your email changes once you confirm it.
+                </p>
+              </div>
+            )}
+          </div>
+          <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
+            disabled={savingProfile} onClick={saveProfile}>
+            {savingProfile ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />} Save profile
+          </button>
+        </div>
+
+        {/* Password */}
+        <div className="dsec">
+          <div className="dsec-head">
+            <div className="dsec-title"><KeyRound size={17} /><h3>Password</h3></div>
+          </div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <Field label="Current password">
+              <input value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" />
+            </Field>
+            <Field label="New password">
+              <div style={{ position: 'relative' }}>
+                <input
+                  value={pwd.new_password}
+                  onChange={(e) => setPwd((p) => ({ ...p, new_password: e.target.value }))}
+                  type={showPwd ? 'text' : 'password'}
+                  style={{ paddingRight: 40 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd((s) => !s)}
+                  aria-label={showPwd ? 'Hide password' : 'Show password'}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+                >
+                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </Field>
+          </div>
+          <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
+            disabled={savingPwd} onClick={savePassword}>
+            {savingPwd ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />} Change password
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
