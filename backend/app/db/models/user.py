@@ -31,6 +31,11 @@ class User(BaseModel):
     )
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
+
+    # Grants access to the Messages/Communications surface for roles that don't
+    # have it by default (notably fleet managers). Owner/admin/receptionist/
+    # mechanic always have messaging regardless of this flag.
+    can_access_messaging = Column(Boolean, default=False, nullable=False)
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     tenant = relationship("Tenant", foreign_keys=[tenant_id], backref="users")

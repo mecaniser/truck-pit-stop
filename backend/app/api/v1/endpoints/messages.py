@@ -31,12 +31,15 @@ router = APIRouter()
 
 def require_staff_user():
     async def role_checker(current_user: User = Depends(get_current_active_user)):
-        if current_user.role not in (
+        # Owner/admin/receptionist/mechanic have messaging by role; other roles
+        # (notably fleet managers) need the can_access_messaging grant.
+        has_role_access = current_user.role in (
             UserRole.GARAGE_OWNER,
             UserRole.GARAGE_ADMIN,
             UserRole.RECEPTIONIST,
             UserRole.MECHANIC,
-        ):
+        )
+        if not (has_role_access or current_user.can_access_messaging):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return current_user
 

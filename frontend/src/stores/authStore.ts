@@ -11,6 +11,7 @@ interface User {
   phone: string | null
   role: 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'customer'
   is_active: boolean
+  can_access_messaging?: boolean
   tenant_id: string | null
   tenant_name?: string | null
   tenant_slug?: string | null

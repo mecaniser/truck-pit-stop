@@ -2086,6 +2086,7 @@ class TenantUserResponse(BaseModel):
     is_active: bool
     is_verified: bool
     is_owner: bool = False
+    can_access_messaging: bool = False
 
     class Config:
         from_attributes = True
@@ -2099,6 +2100,7 @@ class TenantUserCreate(BaseModel):
     role: UserRole
     phone: Optional[str] = None
     address: Optional[str] = None
+    can_access_messaging: bool = False
     # Technician-only (applied when role == mechanic)
     core_hours_target_minutes_override: Optional[int] = None
     shift_start_local_override: Optional[str] = None
@@ -2113,6 +2115,7 @@ class TenantUserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     password: Optional[str] = None  # super admin resets the password
+    can_access_messaging: Optional[bool] = None
 
 
 async def _get_tenant_or_404(db: AsyncSession, tenant_id: UUID) -> Tenant:
@@ -2188,6 +2191,7 @@ async def create_tenant_user(
         tenant_id=tenant_id,
         is_active=True,
         is_verified=True,
+        can_access_messaging=body.can_access_messaging,
     )
     if body.role == UserRole.MECHANIC:
         if body.core_hours_target_minutes_override is not None and not 1 <= body.core_hours_target_minutes_override <= 1440:
@@ -2255,6 +2259,8 @@ async def update_tenant_user(
     if body.password:
         validate_password(body.password)
         user.hashed_password = get_password_hash(body.password)
+    if body.can_access_messaging is not None:
+        user.can_access_messaging = body.can_access_messaging
 
     await db.commit()
     await db.refresh(user)

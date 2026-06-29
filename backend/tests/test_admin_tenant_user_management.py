@@ -189,3 +189,93 @@ async def test_update_tenant_user_wrong_tenant_404(db_session):
                                        body=TenantUserUpdate(is_active=False),
                                        db=db_session, current_user=sa)
     assert exc.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Communications access (can_access_messaging) grant
+# ---------------------------------------------------------------------------
+
+from app.api.v1.endpoints.messages import require_staff_user
+
+
+async def _messaging_allowed(user: User) -> bool:
+    checker = require_staff_user()
+    try:
+        await checker(current_user=user)
+        return True
+    except HTTPException:
+        return False
+
+
+@pytest.mark.asyncio
+async def test_fleet_manager_messaging_off_by_default(db_session):
+    sa = await _super_admin(db_session)
+    tenant, _ = await _tenant_with_owner(db_session)
+    created = await admin.create_tenant_user(
+        tenant_id=tenant.id,
+        body=TenantUserCreate(email=f"fm-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                              first_name="Fred", last_name="Fleet", role=UserRole.FLEET_MANAGER),
+        db=db_session, current_user=sa,
+    )
+    assert created.can_access_messaging is False
+    row = (await db_session.execute(
+        sqlalchemy.select(User).where(User.id == created.id)
+    )).scalar_one()
+    assert await _messaging_allowed(row) is False
+
+
+@pytest.mark.asyncio
+async def test_fleet_manager_messaging_granted_on_create(db_session):
+    sa = await _super_admin(db_session)
+    tenant, _ = await _tenant_with_owner(db_session)
+    created = await admin.create_tenant_user(
+        tenant_id=tenant.id,
+        body=TenantUserCreate(email=f"fm-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                              first_name="Gail", last_name="Fleet", role=UserRole.FLEET_MANAGER,
+                              can_access_messaging=True),
+        db=db_session, current_user=sa,
+    )
+    assert created.can_access_messaging is True
+    row = (await db_session.execute(
+        sqlalchemy.select(User).where(User.id == created.id)
+    )).scalar_one()
+    assert await _messaging_allowed(row) is True
+
+
+@pytest.mark.asyncio
+async def test_messaging_grant_can_be_toggled_via_update(db_session):
+    sa = await _super_admin(db_session)
+    tenant, _ = await _tenant_with_owner(db_session)
+    created = await admin.create_tenant_user(
+        tenant_id=tenant.id,
+        body=TenantUserCreate(email=f"fm-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                              first_name="Hank", last_name="Fleet", role=UserRole.FLEET_MANAGER),
+        db=db_session, current_user=sa,
+    )
+    granted = await admin.update_tenant_user(
+        tenant_id=tenant.id, user_id=created.id,
+        body=TenantUserUpdate(can_access_messaging=True), db=db_session, current_user=sa,
+    )
+    assert granted.can_access_messaging is True
+    revoked = await admin.update_tenant_user(
+        tenant_id=tenant.id, user_id=created.id,
+        body=TenantUserUpdate(can_access_messaging=False), db=db_session, current_user=sa,
+    )
+    assert revoked.can_access_messaging is False
+
+
+@pytest.mark.asyncio
+async def test_receptionist_messaging_allowed_by_role(db_session):
+    sa = await _super_admin(db_session)
+    tenant, _ = await _tenant_with_owner(db_session)
+    created = await admin.create_tenant_user(
+        tenant_id=tenant.id,
+        body=TenantUserCreate(email=f"r-{uuid4().hex[:6]}@example.com", password="StaffPass#2026",
+                              first_name="Rita", last_name="Desk", role=UserRole.RECEPTIONIST),
+        db=db_session, current_user=sa,
+    )
+    row = (await db_session.execute(
+        sqlalchemy.select(User).where(User.id == created.id)
+    )).scalar_one()
+    # Receptionists have messaging by role even though the flag defaults False.
+    assert await _messaging_allowed(row) is True
