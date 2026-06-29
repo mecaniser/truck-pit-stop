@@ -51,8 +51,9 @@ export default function DashboardLayout() {
   // Get the hex color for the current accent
   const accentHex = accentColors[500]
 
-  // Garage owner/admin also own the fleet; fleet managers get a fleet-focused nav.
-  const canAccessFleet = user?.role === 'fleet_manager' || user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  // Garage owner/admin own the fleet, so they get a Fleet link into the board.
+  // Fleet managers never reach this dashboard (StaffRoute sends them to /fleet).
+  const canAccessFleet = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
   const navLinks = user?.role === 'super_admin'
@@ -61,12 +62,6 @@ export default function DashboardLayout() {
         { to: '/dashboard/garages', label: 'Garages', mobileLabel: 'Garages', icon: LayoutGrid },
         { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', icon: UserCheck },
         { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', icon: BarChart3 },
-      ]
-    : user?.role === 'fleet_manager'
-    ? [
-        { to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck },
-        { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
-        ...(canAccessMessaging ? [messagesNavLink] : []),
       ]
     : [
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
@@ -270,7 +265,7 @@ export default function DashboardLayout() {
                 <Route path="settings" element={<UnifiedSettingsPage />} />
                 <Route
                   path=""
-                  element={user?.role === 'fleet_manager' ? <Navigate to="/fleet" replace /> : <DashboardHome />}
+                  element={<DashboardHome />}
                 />
               </>
             )}
