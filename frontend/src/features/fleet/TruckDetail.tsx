@@ -9,7 +9,7 @@ import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, InspectionsSection } from './FleetModals'
+import { TruckEditModal, LogIncidentModal, InspectionsSection, NewWorkOrderModal } from './FleetModals'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -57,11 +57,6 @@ export default function TruckDetail({
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
     qc.invalidateQueries({ queryKey: ['fleet-board'] })
   }
-  const newWO = useMutation({
-    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`)).data,
-    onSuccess: () => { toast.success('Work order created'); refresh() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
-  })
   const schedulePM = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/schedule-pm`)).data,
     onSuccess: () => { toast.success('PM work order scheduled'); refresh() },
@@ -79,6 +74,7 @@ export default function TruckDetail({
   })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
+  const [newWOOpen, setNewWOOpen] = useState(false)
 
   if (isLoading || !data) return <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
 
@@ -106,7 +102,7 @@ export default function TruckDetail({
             <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)}>
               <Pencil size={15} /> Edit
             </button>
-            <button className="dbtn dbtn-ghost" onClick={() => newWO.mutate()} disabled={newWO.isPending}>
+            <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)}>
               <ClipboardList size={15} /> New work order
             </button>
             <button className="dbtn dbtn-yellow" onClick={() => schedulePM.mutate()} disabled={schedulePM.isPending}>
@@ -300,6 +296,7 @@ export default function TruckDetail({
 
       {editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
+      {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={t.unit_number} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
     </div>
   )
 }

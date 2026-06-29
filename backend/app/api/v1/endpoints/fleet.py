@@ -51,6 +51,7 @@ from app.schemas.fleet import (
     NearestUnit,
     TruckDetailResponse,
     TruckUpdate,
+    WorkOrderCreate,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -936,11 +937,31 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
 @router.post("/trucks/{vehicle_id}/work-order", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
 async def new_work_order(
     vehicle_id: UUID,
+    body: Optional[WorkOrderCreate] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
-    ro = await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description="Fleet work order")
+
+    # Guard against stacking multiple open corrective work orders on one truck.
+    existing = await db.execute(
+        select(RepairOrder).where(
+            and_(
+                RepairOrder.vehicle_id == vehicle.id,
+                RepairOrder.is_internal.is_(True),
+                RepairOrder.is_pm.is_(False),
+                RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+            )
+        )
+    )
+    if existing.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This truck already has an open work order.",
+        )
+
+    description = (body.description.strip() if body and body.description else "") or "Fleet work order"
+    ro = await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description=description)
     open_ro = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id) or ro
     counts = await _open_incident_counts(db, [vehicle.id])
     return _build_board_truck(vehicle, open_ro, counts.get(vehicle.id, 0))

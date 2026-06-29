@@ -32,6 +32,7 @@ from app.schemas.fleet import (
     InspectionItemUpdate,
     IncidentCreate,
     IncidentUpdate,
+    WorkOrderCreate,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -227,3 +228,39 @@ async def test_inspection_rejects_non_fleet_vehicle(db_session):
             body=InspectionCreate(vehicle_id=ext_vehicle.id), db=db_session, current_user=user
         )
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_new_work_order_uses_description(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Air leak on front brake chamber"),
+        db=db_session, current_user=user,
+    )
+    ro = (await db_session.execute(
+        __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    assert ro.description == "Air leak on front brake chamber"
+    assert ro.is_internal is True and ro.is_pm is False
+
+
+@pytest.mark.asyncio
+async def test_new_work_order_defaults_blank_description(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="   "),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    assert ro.description == "Fleet work order"
+
+
+@pytest.mark.asyncio
+async def test_new_work_order_blocks_duplicate_open(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="First"),
+                               db=db_session, current_user=user)
+    with pytest.raises(HTTPException) as exc:
+        await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Second"),
+                                   db=db_session, current_user=user)
+    assert exc.value.status_code == 409

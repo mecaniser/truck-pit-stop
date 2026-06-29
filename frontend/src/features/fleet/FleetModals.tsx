@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
@@ -125,6 +125,46 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />} Save changes
+      </button>
+    </Modal>
+  )
+}
+
+/* ---------- New work order (corrective) ---------- */
+
+export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
+  truckId: string; unitNumber?: string | null; onClose: () => void; onCreated: () => void
+}) {
+  const [description, setDescription] = useState('')
+
+  const create = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {
+      description: description.trim() || undefined,
+    })).data,
+    onSuccess: () => { toast.success('Work order created'); onCreated(); onClose() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create work order'),
+  })
+
+  return (
+    <Modal title={`New work order${unitNumber ? ` · ${unitNumber}` : ''}`} icon={<ClipboardList size={17} />} onClose={onClose} width={460}>
+      <Field label="What's the work / complaint?">
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
+          placeholder="e.g. Air leak on front brake chamber; DOT inspection due; check engine light"
+          style={{
+            width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9,
+            color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical',
+          }}
+        />
+      </Field>
+      <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 8 }}>
+        Creates an internal (in-house cost) work order in Draft. Leave blank for a generic work order.
+      </p>
+      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
+        disabled={create.isPending} onClick={() => create.mutate()}>
+        {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} Create work order
       </button>
     </Modal>
   )

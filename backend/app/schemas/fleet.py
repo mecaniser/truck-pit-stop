@@ -264,3 +264,8 @@ class TruckUpdate(BaseModel):
     location_city: Optional[str] = None
     speed_mph: Optional[int] = None
     heading: Optional[str] = None
+
+
+class WorkOrderCreate(BaseModel):
+    # Optional description of the work needed; defaults server-side when blank.
+    description: Optional[str] = None
