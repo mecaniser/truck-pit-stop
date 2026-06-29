@@ -4,6 +4,7 @@ import api from '../../lib/api'
 import toast from 'react-hot-toast'
 import { GlassNoirCard, GlassNoirButton, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
 import { formatUSPhone } from '../../utils/phone'
+import GarageTeamModal from './components/GarageTeamModal'
 
 interface Tenant {
   id: string
@@ -45,6 +46,7 @@ export default function GaragesPage() {
   const [smsProvisioning, setSmsProvisioning] = useState(false)
   const [smsProvisionError, setSmsProvisionError] = useState<string | null>(null)
   const [smsStateUpdatingGarageId, setSmsStateUpdatingGarageId] = useState<string | null>(null)
+  const [teamModalGarage, setTeamModalGarage] = useState<Tenant | null>(null)
   const isFirstLoadRef = useRef(true)
   const smsModalRef = useRef<HTMLDivElement | null>(null)
   const areaCodeInputRef = useRef<HTMLInputElement | null>(null)
@@ -440,9 +442,9 @@ export default function GaragesPage() {
                 <GlassNoirButton
                   variant="ghost"
                   size="sm"
-                  onClick={() => alert(`View details for ${garage.name} - Coming soon!`)}
+                  onClick={() => setTeamModalGarage(garage)}
                 >
-                  View Details
+                  Manage Team
                 </GlassNoirButton>
                 <a
                   href={`/dashboard/garages/${garage.id}/analytics`}
@@ -500,6 +502,14 @@ export default function GaragesPage() {
           ))
         )}
       </div>
+
+      {teamModalGarage && (
+        <GarageTeamModal
+          garageId={teamModalGarage.id}
+          garageName={teamModalGarage.name}
+          onClose={() => setTeamModalGarage(null)}
+        />
+      )}
 
       {smsModalGarage && (
         <div

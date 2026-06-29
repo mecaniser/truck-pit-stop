@@ -2055,3 +2055,208 @@ async def update_staff(
     await db.commit()
     await db.refresh(user)
     return StaffMember.model_validate(user)
+
+
+# ============================================================================
+# Tenant user management (SUPER_ADMIN: full mirror of any garage's team board)
+#
+# These mirror the garage owner /staff endpoints above, but are super-admin
+# scoped and target an explicit tenant_id, so the platform owner can manage
+# any garage's user accounts -- including the garage owner.
+# ============================================================================
+
+# Roles the super admin can assign/manage on a tenant user (everything except
+# platform super admins and customer/truck-owner accounts).
+ADMIN_MANAGEABLE_ROLES = {
+    UserRole.GARAGE_OWNER,
+    UserRole.GARAGE_ADMIN,
+    UserRole.RECEPTIONIST,
+    UserRole.MECHANIC,
+    UserRole.FLEET_MANAGER,
+}
+
+
+class TenantUserResponse(BaseModel):
+    id: UUID
+    email: str
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    role: UserRole
+    is_active: bool
+    is_verified: bool
+    is_owner: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class TenantUserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    first_name: str
+    last_name: str
+    role: UserRole
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    # Technician-only (applied when role == mechanic)
+    core_hours_target_minutes_override: Optional[int] = None
+    shift_start_local_override: Optional[str] = None
+    shift_end_local_override: Optional[str] = None
+
+
+class TenantUserUpdate(BaseModel):
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None  # super admin resets the password
+
+
+async def _get_tenant_or_404(db: AsyncSession, tenant_id: UUID) -> Tenant:
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return tenant
+
+
+def _to_tenant_user_response(user: User, tenant: Tenant) -> TenantUserResponse:
+    data = TenantUserResponse.model_validate(user)
+    data.is_owner = tenant.owner_id == user.id
+    return data
+
+
+@router.get("/tenants/{tenant_id}/users", response_model=List[TenantUserResponse])
+async def list_tenant_users(
+    tenant_id: UUID,
+    include_customers: bool = Query(False, description="Include customer/truck-owner accounts"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """List a tenant's user accounts (full team roster). SUPER_ADMIN only."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    roles = set(ADMIN_MANAGEABLE_ROLES)
+    if include_customers:
+        roles.add(UserRole.CUSTOMER)
+
+    result = await db.execute(
+        select(User)
+        .where(User.tenant_id == tenant_id, User.role.in_(list(roles)))
+        .order_by(User.first_name, User.last_name)
+    )
+    return [_to_tenant_user_response(u, tenant) for u in result.scalars().all()]
+
+
+@router.post(
+    "/tenants/{tenant_id}/users",
+    response_model=TenantUserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_tenant_user(
+    tenant_id: UUID,
+    body: TenantUserCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """Create a user account in a tenant with any garage role. SUPER_ADMIN only."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    if body.role not in ADMIN_MANAGEABLE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be one of: garage owner, garage admin, receptionist, technician, fleet manager",
+        )
+    validate_password(body.password)
+
+    existing = await db.execute(select(User).where(User.email == body.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    user = User(
+        id=uuid4(),
+        email=body.email,
+        hashed_password=get_password_hash(body.password),
+        first_name=body.first_name,
+        last_name=body.last_name,
+        phone=normalize_phone(body.phone) if body.phone else None,
+        address=body.address or None,
+        role=body.role,
+        tenant_id=tenant_id,
+        is_active=True,
+        is_verified=True,
+    )
+    if body.role == UserRole.MECHANIC:
+        if body.core_hours_target_minutes_override is not None and not 1 <= body.core_hours_target_minutes_override <= 1440:
+            raise HTTPException(status_code=400, detail="core_hours_target_minutes_override must be between 1 and 1440")
+        user.core_hours_target_minutes_override = body.core_hours_target_minutes_override
+        user.shift_start_local_override = body.shift_start_local_override or None
+        user.shift_end_local_override = body.shift_end_local_override or None
+
+    db.add(user)
+    await db.flush()
+
+    # If this garage has no owner yet, a new owner becomes the tenant owner.
+    if body.role == UserRole.GARAGE_OWNER and tenant.owner_id is None:
+        tenant.owner_id = user.id
+
+    await db.commit()
+    await db.refresh(user)
+    await db.refresh(tenant)
+    return _to_tenant_user_response(user, tenant)
+
+
+@router.patch("/tenants/{tenant_id}/users/{user_id}", response_model=TenantUserResponse)
+async def update_tenant_user(
+    tenant_id: UUID,
+    user_id: UUID,
+    body: TenantUserUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_super_admin()),
+):
+    """Edit any tenant user -- details, email, role, active status, or password
+    (reset) -- including the garage owner. SUPER_ADMIN only."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.tenant_id == tenant_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found in this tenant")
+    if user.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Super admin accounts cannot be managed here")
+
+    if body.role is not None:
+        if body.role not in ADMIN_MANAGEABLE_ROLES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+        # Don't allow demoting the only owner away from owner and orphaning the tenant pointer.
+        if tenant.owner_id == user.id and body.role != UserRole.GARAGE_OWNER:
+            tenant.owner_id = None
+        if body.role == UserRole.GARAGE_OWNER and tenant.owner_id is None:
+            tenant.owner_id = user.id
+        user.role = body.role
+    if body.is_active is not None:
+        user.is_active = body.is_active
+    if body.first_name is not None and body.first_name.strip():
+        user.first_name = body.first_name.strip()
+    if body.last_name is not None and body.last_name.strip():
+        user.last_name = body.last_name.strip()
+    if body.phone is not None:
+        user.phone = normalize_phone(body.phone) if body.phone else None
+    if body.email is not None and body.email != user.email:
+        clash = await db.execute(select(User).where(User.email == body.email, User.id != user.id))
+        if clash.scalar_one_or_none():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        user.email = body.email
+    if body.password:
+        validate_password(body.password)
+        user.hashed_password = get_password_hash(body.password)
+
+    await db.commit()
+    await db.refresh(user)
+    await db.refresh(tenant)
+    return _to_tenant_user_response(user, tenant)
