@@ -78,14 +78,18 @@ function StaffRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />
   }
   
-  // Redirect customers and mechanics to their portals
+  // Redirect roles with their own standalone app away from the garage dashboard.
   if (user?.role === 'customer') {
     return <Navigate to="/portal" replace />
   }
   if (user?.role === 'mechanic') {
     return <Navigate to="/mechanic" replace />
   }
-  
+  // The fleet manager's whole app is the fleet board; they have no garage dashboard.
+  if (user?.role === 'fleet_manager') {
+    return <Navigate to="/fleet" replace />
+  }
+
   return <>{children}</>
 }
 
