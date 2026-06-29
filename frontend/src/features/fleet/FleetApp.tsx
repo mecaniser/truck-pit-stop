@@ -230,7 +230,7 @@ function DriversPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: st
 
 function AddTruckModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ make: '', model: '', year: '', unit_number: '', vin: '', license_plate: '', mileage: '' })
+  const [form, setForm] = useState({ make: '', model: '', year: '', unit_number: '', vin: '', license_plate: '', mileage: '', driver_name: '', driver_phone: '' })
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const [decoding, setDecoding] = useState(false)
 
@@ -274,6 +274,8 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
         vin: form.vin.trim() || undefined,
         license_plate: form.license_plate.trim() || undefined,
         mileage: form.mileage ? parseInt(form.mileage, 10) : undefined,
+        driver_name: form.driver_name.trim() || undefined,
+        driver_phone: form.driver_phone.trim() || undefined,
       })).data
     },
     onSuccess: () => { toast.success('Truck added to fleet'); qc.invalidateQueries({ queryKey: ['fleet-board'] }); onClose() },
@@ -312,6 +314,8 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <Field label="Unit #"><input className={inp} value={form.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
           <Field label="Mileage"><input className={inp} value={form.mileage} onChange={set('mileage')} inputMode="numeric" placeholder="120000" /></Field>
           <Field label="Plate"><input className={inp} value={form.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
+          <Field label="Driver"><input className={inp} value={form.driver_name} onChange={set('driver_name')} placeholder="Driver name (optional)" /></Field>
+          <Field label="Driver phone"><input className={inp} value={form.driver_phone} onChange={set('driver_phone')} placeholder="(704) 555-0123" /></Field>
         </div>
         <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
           disabled={!form.make.trim() || !form.model.trim() || create.isPending} onClick={() => create.mutate()}>

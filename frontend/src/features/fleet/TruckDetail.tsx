@@ -9,7 +9,7 @@ import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, InspectionsSection } from './FleetModals'
+import { TruckEditModal, LogIncidentModal, InspectionsSection, AssignDriverModal } from './FleetModals'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -79,6 +79,7 @@ export default function TruckDetail({
   })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
+  const [assigningDriver, setAssigningDriver] = useState(false)
 
   if (isLoading || !data) return <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
 
@@ -226,6 +227,13 @@ export default function TruckDetail({
                 {data.driver_phone && (
                   <a className="person-call" href={`tel:${data.driver_phone}`}><Phone size={15} /></a>
                 )}
+                <button
+                  className="dbtn dbtn-ghost"
+                  style={{ height: 34, padding: '0 12px', fontSize: 12.5, marginLeft: data.driver_phone ? 8 : 'auto' }}
+                  onClick={() => setAssigningDriver(true)}
+                >
+                  {t.driver_name ? 'Change driver' : 'Assign driver'}
+                </button>
               </div>
               {t.assigned_mechanic && (
                 <div className="person">
@@ -299,6 +307,7 @@ export default function TruckDetail({
       </Section>
 
       {editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
+      {assigningDriver && <AssignDriverModal truck={t} driverPhone={data.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
     </div>
   )
