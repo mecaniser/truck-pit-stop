@@ -36,6 +36,9 @@
 .fleet-root .rail-btn .rail-tip{position:absolute;left:56px;top:50%;transform:translateY(-50%);background:var(--ink);border:1px solid var(--line-2);
   padding:5px 10px;border-radius:7px;font-size:12.5px;font-weight:600;white-space:nowrap;opacity:0;pointer-events:none;transition:.12s;z-index:50;color:var(--text);}
 .fleet-root .rail-btn:hover .rail-tip{opacity:1;}
+.fleet-root .rail-btn-back{color:var(--yellow);}
+.fleet-root .rail-btn-back:hover{background:rgba(245,179,1,.12);color:var(--yellow);}
+.fleet-root .rail-div{width:24px;height:1px;background:var(--line);margin:6px 0;flex-shrink:0;}
 .fleet-root .rail-sp{flex:1;}
 .fleet-root .rail-av{width:38px;height:38px;border-radius:999px;background:var(--surface-3);display:grid;place-items:center;
   font-family:var(--display);font-weight:800;font-size:15px;color:var(--yellow);}

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, CalendarRange, ClipboardList, Users,
-  Bell, LogOut, Plus, Loader2, X, Wrench,
+  Bell, LogOut, Plus, Loader2, X, Wrench, ArrowLeft,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -66,11 +66,21 @@ export default function FleetApp() {
     orders: 'Work Orders', drivers: 'Drivers', detail: 'Truck Detail',
   }
 
+  // Exit the immersive fleet workspace back to the main dashboard shell.
+  // Fleet managers land on /dashboard/repair-orders because /dashboard
+  // redirects them straight back to /fleet.
+  const backToDashboard = () =>
+    navigate(user?.role === 'fleet_manager' ? '/dashboard/repair-orders' : '/dashboard')
+
   return (
     <div className="fleet-root">
       <div className="app">
         <nav className="rail">
           <div className="rail-mark"><Truck /></div>
+          <button className="rail-btn rail-btn-back" onClick={backToDashboard}>
+            <ArrowLeft size={20} /><span className="rail-tip">Back to dashboard</span>
+          </button>
+          <div className="rail-div" />
           {railItems.map(([v, icon, tip]) => (
             <button key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
               {icon}<span className="rail-tip">{tip}</span>
