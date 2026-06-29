@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, UserRound,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
@@ -126,6 +126,53 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />} Save changes
       </button>
+    </Modal>
+  )
+}
+
+/* ---------- Assign / change driver (focused, driver-only) ---------- */
+
+export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: BoardTruck; driverPhone?: string | null; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [name, setName] = useState(truck.driver_name || '')
+  const [phone, setPhone] = useState(driverPhone || '')
+  const hadDriver = Boolean(truck.driver_name)
+
+  const save = useMutation({
+    mutationFn: async () => (await api.patch(`/fleet/trucks/${truck.id}`, {
+      driver_name: name.trim(),
+      driver_phone: phone.trim(),
+    })).data,
+    onSuccess: () => {
+      toast.success(name.trim() ? 'Driver assigned' : 'Driver removed')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
+      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      onClose()
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to save driver'),
+  })
+
+  return (
+    <Modal title={hadDriver ? 'Change driver' : 'Assign driver'} icon={<UserRound size={17} />} onClose={onClose} width={420}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <Field label="Driver name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
+        <Field label="Driver phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(704) 555-0123" /></Field>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        {hadDriver && (
+          <button
+            className={ghostBtn}
+            disabled={save.isPending}
+            onClick={() => { setName(''); setPhone(''); save.mutate() }}
+            style={{ color: 'var(--red)' }}
+          >
+            Remove
+          </button>
+        )}
+        <button className={yellowBtn} style={{ flex: 1, justifyContent: 'center' }} disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}>
+          {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
+        </button>
+      </div>
     </Modal>
   )
 }
