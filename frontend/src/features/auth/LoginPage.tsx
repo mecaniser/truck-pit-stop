@@ -92,6 +92,9 @@ export default function LoginPage() {
       navigate('/portal')
     } else if (userResponse.data.role === 'mechanic') {
       navigate('/mechanic')
+    } else if (userResponse.data.role === 'fleet_manager') {
+      // Fleet managers are a standalone role: their board is their whole app.
+      navigate('/fleet')
     } else {
       navigate('/dashboard')
     }

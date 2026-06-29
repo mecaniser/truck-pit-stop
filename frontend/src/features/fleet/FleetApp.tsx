@@ -66,21 +66,24 @@ export default function FleetApp() {
     orders: 'Work Orders', drivers: 'Drivers', detail: 'Truck Detail',
   }
 
-  // Exit the immersive fleet workspace back to the main dashboard shell.
-  // Fleet managers land on /dashboard/repair-orders because /dashboard
-  // redirects them straight back to /fleet.
-  const backToDashboard = () =>
-    navigate(user?.role === 'fleet_manager' ? '/dashboard/repair-orders' : '/dashboard')
+  // Only owner/admin reach the fleet board from their garage dashboard, so only
+  // they get an exit back to it. The fleet manager is a standalone role whose
+  // entire app IS this board -- there is no dashboard to return to.
+  const canReturnToDashboard = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   return (
     <div className="fleet-root">
       <div className="app">
         <nav className="rail">
           <div className="rail-mark"><Truck /></div>
-          <button className="rail-btn rail-btn-back" onClick={backToDashboard}>
-            <ArrowLeft size={20} /><span className="rail-tip">Back to dashboard</span>
-          </button>
-          <div className="rail-div" />
+          {canReturnToDashboard && (
+            <>
+              <button className="rail-btn rail-btn-back" onClick={() => navigate('/dashboard')}>
+                <ArrowLeft size={20} /><span className="rail-tip">Back to dashboard</span>
+              </button>
+              <div className="rail-div" />
+            </>
+          )}
           {railItems.map(([v, icon, tip]) => (
             <button key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
               {icon}<span className="rail-tip">{tip}</span>
