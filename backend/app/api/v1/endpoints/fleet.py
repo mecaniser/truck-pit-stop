@@ -18,6 +18,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
@@ -53,6 +54,7 @@ from app.schemas.fleet import (
     TruckUpdate,
     WorkOrderCreate,
     FleetMechanicOption,
+    FleetSettingsResponse,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -72,7 +74,7 @@ PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
-    RepairOrderStatus.DRAFT: "Diagnosing",
+    RepairOrderStatus.DRAFT: "Draft",
     RepairOrderStatus.QUOTED: "Diagnosing",
     RepairOrderStatus.APPROVED: "Scheduled",
     RepairOrderStatus.ASSIGNED: "Assigned",
@@ -574,6 +576,14 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
     if open_ro is not None:
         if open_ro.hold_reason and "part" in open_ro.hold_reason.lower():
             return "parts"
+        # A fresh, unassigned, not-yet-started work order is a draft — keep it
+        # visually distinct from a truck that's actively in the shop.
+        if (
+            open_ro.status == RepairOrderStatus.DRAFT
+            and open_ro.assigned_mechanic_id is None
+            and open_ro.work_started_at is None
+        ):
+            return "draft"
         return "shop"
     rem = _pm_remaining(v)
     if rem is not None and rem < PM_DUE_SOON_MILES:
@@ -934,6 +944,20 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
     await db.commit()
     record_repair_order_created(str(tenant_id))
     return ro
+
+
+@router.get("/settings", response_model=FleetSettingsResponse)
+async def get_fleet_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Fleet-relevant garage settings (read-only), e.g. the in-house labor rate
+    that owner/admin configure in garage settings."""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return FleetSettingsResponse(internal_labor_rate=float(tenant.internal_labor_rate or 0))
 
 
 @router.get("/mechanics", response_model=List[FleetMechanicOption])

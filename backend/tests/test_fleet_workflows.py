@@ -286,3 +286,23 @@ async def test_list_fleet_mechanics_returns_tenant_mechanics(db_session):
     names = {o.name for o in options}
     assert "Mick Wrench" in names
     assert "Gone Away" not in names  # inactive excluded
+
+
+@pytest.mark.asyncio
+async def test_fleet_settings_returns_internal_labor_rate(db_session):
+    tenant, _, user = await _seed_fleet(db_session)
+    tenant.internal_labor_rate = 65
+    await db_session.commit()
+    settings = await fleet.get_fleet_settings(db=db_session, current_user=user)
+    assert settings.internal_labor_rate == 65.0
+
+
+@pytest.mark.asyncio
+async def test_fresh_work_order_shows_draft_status(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    truck = next(t for t in board.trucks if t.id == vehicle.id)
+    assert truck.status == "draft"
+    assert truck.work_order is not None and truck.work_order.status == "Draft"
