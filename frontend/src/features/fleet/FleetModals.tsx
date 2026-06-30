@@ -198,36 +198,42 @@ const costInput: React.CSSProperties = {
 }
 const iconBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }
 
-function LaborAddRow({ roId, onChanged }: { roId: string; onChanged: () => void }) {
+function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internalRate: number; onChanged: () => void }) {
   const [desc, setDesc] = useState('')
   const [hours, setHours] = useState('')
-  const [rate, setRate] = useState('')
   const add = useMutation({
     mutationFn: async () => (await api.post(`/repair-orders/${roId}/labor`, {
-      description: desc.trim() || undefined, hours: Number(hours), hourly_rate: Number(rate),
+      description: desc.trim() || undefined, hours: Number(hours), hourly_rate: internalRate,
     })).data,
-    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(''); setRate(''); onChanged() },
+    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(''); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add labor'),
   })
-  const valid = hours !== '' && Number(hours) > 0 && rate !== '' && Number(rate) >= 0
+  const valid = hours !== '' && Number(hours) > 0
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-      <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
-      <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
-      <input style={{ ...costInput, width: 72 }} value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" placeholder="$/hr" />
-      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-      </button>
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+        <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
+        {/* Rate is the configured in-house labor cost — read-only. */}
+        <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in garage settings)">{money(internalRate)}/h</span>
+        <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+        </button>
+      </div>
+      {internalRate <= 0 && (
+        <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 5, color: '#fb923c' }}>
+          In-house labor rate is $0 — set it in garage settings (owner/admin) so labor is costed.
+        </p>
+      )}
     </div>
   )
 }
 
 function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onChanged: () => void }) {
   const [hours, setHours] = useState(String(toNum(line.hours)))
-  const [rate, setRate] = useState(String(toNum(line.hourly_rate)))
-  const dirty = Number(hours) !== toNum(line.hours) || Number(rate) !== toNum(line.hourly_rate)
+  const dirty = Number(hours) !== toNum(line.hours)
   const save = useMutation({
-    mutationFn: async () => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours: Number(hours), hourly_rate: Number(rate) })).data,
+    mutationFn: async () => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours: Number(hours) })).data,
     onSuccess: () => { toast.success('Labor updated'); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
   })
@@ -240,7 +246,7 @@ function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onCh
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
       <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" />
-      <input style={{ ...costInput, width: 72 }} value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" />
+      <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
       {dirty && (
         <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
@@ -324,6 +330,11 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     queryKey: ['fleet-inventory'],
     queryFn: async () => (await api.get('/inventory', { params: { limit: 100 } })).data,
   })
+  const { data: fleetSettings } = useQuery<{ internal_labor_rate: number }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => (await api.get('/fleet/settings')).data,
+  })
+  const internalRate = toNum(fleetSettings?.internal_labor_rate)
 
   const [description, setDescription] = useState('')
   const [descDirty, setDescDirty] = useState(false)
@@ -397,7 +408,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
             <div style={{ display: 'grid', gap: 6 }}>
               {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} />)}
             </div>
-            <LaborAddRow roId={repairOrderId} onChanged={refresh} />
+            <LaborAddRow roId={repairOrderId} internalRate={internalRate} onChanged={refresh} />
           </div>
 
           <div>

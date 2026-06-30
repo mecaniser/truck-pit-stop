@@ -18,6 +18,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
@@ -53,6 +54,7 @@ from app.schemas.fleet import (
     TruckUpdate,
     WorkOrderCreate,
     FleetMechanicOption,
+    FleetSettingsResponse,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -934,6 +936,20 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
     await db.commit()
     record_repair_order_created(str(tenant_id))
     return ro
+
+
+@router.get("/settings", response_model=FleetSettingsResponse)
+async def get_fleet_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Fleet-relevant garage settings (read-only), e.g. the in-house labor rate
+    that owner/admin configure in garage settings."""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return FleetSettingsResponse(internal_labor_rate=float(tenant.internal_labor_rate or 0))
 
 
 @router.get("/mechanics", response_model=List[FleetMechanicOption])

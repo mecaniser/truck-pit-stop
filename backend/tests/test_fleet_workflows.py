@@ -286,3 +286,12 @@ async def test_list_fleet_mechanics_returns_tenant_mechanics(db_session):
     names = {o.name for o in options}
     assert "Mick Wrench" in names
     assert "Gone Away" not in names  # inactive excluded
+
+
+@pytest.mark.asyncio
+async def test_fleet_settings_returns_internal_labor_rate(db_session):
+    tenant, _, user = await _seed_fleet(db_session)
+    tenant.internal_labor_rate = 65
+    await db_session.commit()
+    settings = await fleet.get_fleet_settings(db=db_session, current_user=user)
+    assert settings.internal_labor_rate == 65.0

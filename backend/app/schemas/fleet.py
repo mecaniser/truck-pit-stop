@@ -275,3 +275,8 @@ class WorkOrderCreate(BaseModel):
 class FleetMechanicOption(BaseModel):
     id: UUID
     name: str
+
+
+class FleetSettingsResponse(BaseModel):
+    # In-house labor cost rate, configured by owner/admin in garage settings.
+    internal_labor_rate: float = 0.0
