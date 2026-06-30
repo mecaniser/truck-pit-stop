@@ -103,15 +103,9 @@ export default function TruckDetail({
             <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)}>
               <Pencil size={15} /> Edit
             </button>
-            {t.work_order?.repair_order_id ? (
-              <button className="dbtn dbtn-ghost" onClick={() => setWoPanelId(t.work_order!.repair_order_id)}>
-                <ClipboardList size={15} /> Open work order
-              </button>
-            ) : (
-              <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)}>
-                <ClipboardList size={15} /> New work order
-              </button>
-            )}
+            <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)}>
+              <ClipboardList size={15} /> New work order
+            </button>
             <button className="dbtn dbtn-yellow" onClick={() => schedulePM.mutate()} disabled={schedulePM.isPending}>
               <Calendar size={15} /> Schedule PM
             </button>
@@ -128,6 +122,25 @@ export default function TruckDetail({
 
       <div className="dgrid">
         <div className="dcol">
+          <Section title="Open work orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length}>
+            {data.open_work_orders.length === 0 ? (
+              <div className="empty-note"><ClipboardList size={16} /> No open work orders.</div>
+            ) : (
+              <div className="list-rows">
+                {data.open_work_orders.map((wo) => (
+                  <button key={wo.repair_order_id} className="lrow" onClick={() => setWoPanelId(wo.repair_order_id)}>
+                    <span className="lrow-mono">{wo.id}</span>
+                    <span className="lrow-tx">{wo.summary || '—'}</span>
+                    <span className="lrow-r">
+                      <span className="lrow-st">{wo.status}</span>
+                      <span className="lrow-tx">{wo.mechanic || 'Unassigned'}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Section>
+
           <Section title="Service history" icon={<History size={17} />} count={data.history.length}>
             {data.history.length === 0 ? (
               <div className="empty-note"><History size={16} /> No service history yet.</div>

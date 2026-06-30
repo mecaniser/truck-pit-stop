@@ -591,19 +591,48 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
     return "active"
 
 
-def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_count: int) -> BoardTruck:
+def _board_work_order(ro: RepairOrder) -> BoardWorkOrder:
+    return BoardWorkOrder(
+        id=ro.order_number,
+        repair_order_id=ro.id,
+        status=_wo_label(ro),
+        summary=ro.description,
+        mechanic=_mechanic_name(ro.assigned_mechanic),
+    )
+
+
+# Lower sort key = more urgent. Parts-hold beats everything, then active work
+# down to drafts; most-recently-created breaks ties.
+_WO_URGENCY = {
+    RepairOrderStatus.IN_PROGRESS: 0,
+    RepairOrderStatus.PENDING_REVIEW: 1,
+    RepairOrderStatus.ACKNOWLEDGED: 2,
+    RepairOrderStatus.ASSIGNED: 3,
+    RepairOrderStatus.APPROVED: 4,
+    RepairOrderStatus.QUOTED: 5,
+    RepairOrderStatus.DRAFT: 6,
+}
+
+
+def _most_urgent_ro(ros: list[RepairOrder]) -> Optional[RepairOrder]:
+    if not ros:
+        return None
+
+    def key(r: RepairOrder):
+        is_parts = bool(r.hold_reason and "part" in r.hold_reason.lower())
+        created = r.created_at.timestamp() if r.created_at else 0
+        return (0 if is_parts else 1, _WO_URGENCY.get(r.status, 9), -created)
+
+    return sorted(ros, key=key)[0]
+
+
+def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_count: int, open_wo_count: int = 0) -> BoardTruck:
     status_str = _derive_status(v, open_ro)
     wo = None
     mechanic = None
     if open_ro is not None:
         mechanic = _mechanic_name(open_ro.assigned_mechanic)
-        wo = BoardWorkOrder(
-            id=open_ro.order_number,
-            repair_order_id=open_ro.id,
-            status=_wo_label(open_ro),
-            summary=open_ro.description,
-            mechanic=mechanic,
-        )
+        wo = _board_work_order(open_ro)
     moving = bool(v.last_speed_mph and v.last_speed_mph > 0)
     return BoardTruck(
         id=v.id,
@@ -630,6 +659,7 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         heading=v.last_heading,
         assigned_mechanic=mechanic,
         work_order=wo,
+        open_work_order_count=open_wo_count,
         open_incident_count=incident_count,
     )
 
@@ -648,8 +678,13 @@ async def _fleet_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
     return list(result.scalars().all())
 
 
-async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dict[UUID, RepairOrder]:
-    """Most-recent active (non-terminal) internal RO per vehicle."""
+async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dict[UUID, list[RepairOrder]]:
+    """All active (non-terminal) internal ROs per vehicle, newest first.
+
+    A truck can have several open work orders at once (e.g. multiple in a week);
+    callers pick the most-urgent for the board card and list the rest on the
+    truck profile.
+    """
     if not vehicle_ids:
         return {}
     result = await db.execute(
@@ -664,9 +699,9 @@ async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dic
         .options(selectinload(RepairOrder.assigned_mechanic))
         .order_by(RepairOrder.vehicle_id, RepairOrder.created_at.desc())
     )
-    out: dict[UUID, RepairOrder] = {}
+    out: dict[UUID, list[RepairOrder]] = {}
     for ro in result.scalars().all():
-        out.setdefault(ro.vehicle_id, ro)
+        out.setdefault(ro.vehicle_id, []).append(ro)
     return out
 
 
@@ -696,7 +731,12 @@ async def fleet_board(
     open_ros = await _open_ros_by_vehicle(db, ids)
     incidents = await _open_incident_counts(db, ids)
 
-    trucks = [_build_board_truck(v, open_ros.get(v.id), incidents.get(v.id, 0)) for v in vehicles]
+    trucks = [
+        _build_board_truck(
+            v, _most_urgent_ro(open_ros.get(v.id, [])), incidents.get(v.id, 0), len(open_ros.get(v.id, []))
+        )
+        for v in vehicles
+    ]
     stats = FleetStats(
         total=len(trucks),
         active=sum(1 for t in trucks if t.status == "active"),
@@ -738,10 +778,10 @@ async def truck_detail(
         .order_by(RepairOrder.created_at.desc())
     )
     ros = list(ro_result.scalars().all())
-    open_ro = next((r for r in ros if r.status not in TERMINAL_RO_STATUSES), None)
+    open_ros = [r for r in ros if r.status not in TERMINAL_RO_STATUSES]
     completed = [r for r in ros if r.status in (RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)]
 
-    board = _build_board_truck(vehicle, open_ro, 0)
+    board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros))
 
     # History: completed internal ROs (PM/Repair) + completed inspections.
     history: list[HistoryEntry] = []
@@ -836,13 +876,14 @@ async def truck_detail(
             miles = _haversine_miles(vehicle.last_lat, vehicle.last_lng, o.last_lat, o.last_lng)
             cand.append(NearestUnit(
                 id=o.id, unit_number=o.unit_number, city=o.last_location_city,
-                status=_derive_status(o, others_open.get(o.id)), miles=miles,
+                status=_derive_status(o, _most_urgent_ro(others_open.get(o.id, []))), miles=miles,
             ))
         cand.sort(key=lambda n: n.miles)
         nearest = cand[:3]
 
     return TruckDetailResponse(
         truck=board,
+        open_work_orders=[_board_work_order(r) for r in open_ros],
         driver_phone=vehicle.driver_phone,
         lifetime_spend=round(lifetime, 2),
         incidents_count=len(incident_rows),
@@ -914,9 +955,101 @@ async def update_truck(
             pass
     await db.commit()
 
-    open_ro = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id)
+    open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, open_ro, counts.get(vehicle.id, 0))
+    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
+
+
+async def _create_internal_invoice(db: AsyncSession, tenant_id: UUID, ro: RepairOrder) -> None:
+    """Generate the internal invoice (cost record) for a completed work order.
+    No customer billing/tax/markup; idempotent (one invoice per RO)."""
+    from decimal import Decimal
+    from app.db.models.invoice import Invoice, InvoiceStatus
+    from app.api.v1.endpoints.invoices import generate_invoice_number
+    from app.core.unique_id import create_with_retry
+
+    existing = await db.execute(select(Invoice).where(Invoice.repair_order_id == ro.id))
+    if existing.scalar_one_or_none():
+        return
+
+    total = ro.total_cost or Decimal("0.00")
+
+    async def _create(invoice_number: str) -> Invoice:
+        inv = Invoice(
+            tenant_id=tenant_id, repair_order_id=ro.id, invoice_number=invoice_number,
+            status=InvoiceStatus.DRAFT, is_internal=True,
+            subtotal=total, shop_supplies_amount=Decimal("0.00"), service_fee_amount=Decimal("0.00"),
+            tax_amount=Decimal("0.00"), discount_amount=Decimal("0.00"), total_amount=total,
+            due_date=None, paid_at=None, notes="Internal fleet work order",
+        )
+        db.add(inv)
+        return inv
+
+    await create_with_retry(
+        db=db, create_fn=_create,
+        generate_number_fn=lambda: generate_invoice_number(db, tenant_id),
+        entity_name="invoice",
+    )
+
+
+async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> RepairOrder:
+    result = await db.execute(
+        select(RepairOrder)
+        .where(and_(
+            RepairOrder.id == ro_id,
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.is_internal.is_(True),
+        ))
+        .options(selectinload(RepairOrder.assigned_mechanic))
+    )
+    ro = result.scalar_one_or_none()
+    if not ro:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+    return ro
+
+
+@router.post("/work-orders/{ro_id}/start", response_model=BoardWorkOrder)
+async def start_work_order(
+    ro_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Move an internal work order into progress. Fleet-manager driven —
+    assigning a mechanic is optional, not required to start."""
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    startable = (
+        RepairOrderStatus.DRAFT, RepairOrderStatus.ASSIGNED,
+        RepairOrderStatus.ACKNOWLEDGED, RepairOrderStatus.IN_PROGRESS,
+    )
+    if ro.status not in startable:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot start a work order in '{ro.status.value}' status")
+    if ro.status != RepairOrderStatus.IN_PROGRESS:
+        ro.status = RepairOrderStatus.IN_PROGRESS
+        if ro.work_started_at is None:
+            ro.work_started_at = datetime.now(timezone.utc)
+        await db.commit()
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    return _board_work_order(ro)
+
+
+@router.post("/work-orders/{ro_id}/complete", response_model=BoardWorkOrder)
+async def complete_work_order(
+    ro_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Complete an internal work order. No external invoice; an internal
+    invoice (cost record) is generated."""
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
+    ro.status = RepairOrderStatus.COMPLETED
+    ro.work_completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    # No external invoice for internal repairs — generate an internal cost record.
+    await _create_internal_invoice(db, current_user.tenant_id, ro)
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    return _board_work_order(ro)
 
 
 async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle, *, is_pm: bool, description: str) -> RepairOrder:
@@ -990,28 +1123,12 @@ async def new_work_order(
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
 
-    # Guard against stacking multiple open corrective work orders on one truck.
-    existing = await db.execute(
-        select(RepairOrder).where(
-            and_(
-                RepairOrder.vehicle_id == vehicle.id,
-                RepairOrder.is_internal.is_(True),
-                RepairOrder.is_pm.is_(False),
-                RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
-            )
-        )
-    )
-    if existing.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="This truck already has an open work order.",
-        )
-
+    # A truck can carry several open work orders at once, so no single-open guard.
     description = (body.description.strip() if body and body.description else "") or "Fleet work order"
-    ro = await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description=description)
-    open_ro = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id) or ro
+    await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description=description)
+    open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, open_ro, counts.get(vehicle.id, 0))
+    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
 
 
 @router.post("/trucks/{vehicle_id}/schedule-pm", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
@@ -1021,10 +1138,10 @@ async def schedule_pm(
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
-    ro = await _spawn_internal_ro(
+    await _spawn_internal_ro(
         db, current_user.tenant_id, vehicle, is_pm=True,
         description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
     )
-    open_ro = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id) or ro
+    open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, open_ro, counts.get(vehicle.id, 0))
+    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))

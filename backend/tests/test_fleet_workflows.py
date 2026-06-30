@@ -22,7 +22,7 @@ from app.db.models.fleet import (
     IncidentSeverity,
     DEFAULT_INSPECTION_CHECKLIST,
 )
-from app.db.models.repair_order import RepairOrder
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
@@ -256,14 +256,19 @@ async def test_new_work_order_defaults_blank_description(db_session):
 
 
 @pytest.mark.asyncio
-async def test_new_work_order_blocks_duplicate_open(db_session):
+async def test_truck_allows_multiple_open_work_orders(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="First"),
                                db=db_session, current_user=user)
-    with pytest.raises(HTTPException) as exc:
-        await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Second"),
-                                   db=db_session, current_user=user)
-    assert exc.value.status_code == 409
+    truck = await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Second"),
+                                       db=db_session, current_user=user)
+    # No 409 anymore; the board card reflects the count.
+    assert truck.open_work_order_count == 2
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.open_work_order_count == 2
+    detail = await fleet.truck_detail(vehicle_id=vehicle.id, db=db_session, current_user=user)
+    assert len(detail.open_work_orders) == 2
 
 
 @pytest.mark.asyncio
@@ -306,3 +311,65 @@ async def test_fresh_work_order_shows_draft_status(db_session):
     truck = next(t for t in board.trucks if t.id == vehicle.id)
     assert truck.status == "draft"
     assert truck.work_order is not None and truck.work_order.status == "Draft"
+
+
+@pytest.mark.asyncio
+async def test_fleet_lifecycle_start_and_complete_without_mechanic(db_session):
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    assert ro.assigned_mechanic_id is None  # mechanic optional
+
+    wo = await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    assert wo.status == "In progress"
+    await db_session.refresh(ro)
+    assert ro.status == RepairOrderStatus.IN_PROGRESS and ro.work_started_at is not None
+
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await db_session.refresh(ro)
+    assert ro.status == RepairOrderStatus.COMPLETED and ro.work_completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_complete_requires_in_progress(db_session):
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    with pytest.raises(HTTPException) as exc:
+        await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_complete_generates_internal_invoice(db_session):
+    import sqlalchemy
+    from app.db.models.invoice import Invoice
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+
+    inv = (await db_session.execute(
+        sqlalchemy.select(Invoice).where(Invoice.repair_order_id == ro.id)
+    )).scalar_one()
+    assert inv.is_internal is True
+    assert inv.tax_amount == 0 and inv.service_fee_amount == 0
+
+    # Idempotent: completing/calling again doesn't create a second invoice.
+    await fleet._create_internal_invoice(db_session, ro.tenant_id, ro)
+    count = (await db_session.execute(
+        sqlalchemy.select(sqlalchemy.func.count(Invoice.id)).where(Invoice.repair_order_id == ro.id)
+    )).scalar()
+    assert count == 1

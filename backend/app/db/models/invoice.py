@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer
+from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -24,6 +24,9 @@ class Invoice(BaseModel):
     repair_order = relationship("RepairOrder", back_populates="invoice")
     
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
+    # Internal fleet invoice: a cost record for the garage's own work orders —
+    # no customer billing, tax, or markup.
+    is_internal = Column(Boolean, default=False, nullable=False, index=True)
     status = Column(
         SQLEnum(InvoiceStatus, values_callable=lambda e: [m.value for m in e]),
         nullable=False,

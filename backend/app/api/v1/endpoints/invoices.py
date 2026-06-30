@@ -309,6 +309,7 @@ class InvoiceResponse(BaseModel):
     repair_order_id: UUID
     invoice_number: str
     status: str
+    is_internal: bool = False
     subtotal: Decimal
     shop_supplies_amount: Decimal = Decimal("0.00")
     service_fee_amount: Decimal = Decimal("0.00")

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2, Play, Flag,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
@@ -365,6 +365,16 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     onSuccess: () => { toast.success('Work order deleted'); qc.invalidateQueries({ queryKey: ['fleet-board'] }); onChanged(); onClose() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete work order'),
   })
+  const startWO = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/work-orders/${repairOrderId}/start`)).data,
+    onSuccess: () => { toast.success('Work order in progress'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to start work order'),
+  })
+  const completeWO = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/work-orders/${repairOrderId}/complete`)).data,
+    onSuccess: () => { toast.success('Work order completed'); refresh(); onClose() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to complete work order'),
+  })
 
   // The RO can only be deleted before work starts (draft/quoted).
   const deletable = wo ? ['draft', 'quoted'].includes(wo.status) : false
@@ -376,9 +386,30 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
         <div className="loader"><Loader2 size={18} className="animate-spin" /></div>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
-          <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
-            Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
-            <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>· internal (in-house cost)</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
+              Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
+              <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>· internal (in-house cost)</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['draft', 'assigned', 'acknowledged'].includes(wo.status) && (
+                <button className={ghostBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  disabled={startWO.isPending} onClick={() => startWO.mutate()}>
+                  {startWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={14} />} Start work
+                </button>
+              )}
+              {['in_progress', 'pending_review'].includes(wo.status) && (
+                <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  disabled={completeWO.isPending} onClick={() => { if (window.confirm('Complete this work order? An internal invoice will be generated.')) completeWO.mutate() }}>
+                  {completeWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Flag size={14} />} Mark completed
+                </button>
+              )}
+              {wo.status === 'completed' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--yellow)', fontSize: 13 }}>
+                  <CheckCircle2 size={15} /> Completed
+                </span>
+              )}
+            </div>
           </div>
 
           <Field label="Work / complaint">
@@ -407,7 +438,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               {(mechanics || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
-              The mechanic starts and completes the job from their own board; status above reflects their progress.
+              Optional — you can run this internal work order start to finish without assigning a mechanic.
             </p>
           </Field>
 
