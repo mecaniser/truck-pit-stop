@@ -39,6 +39,36 @@ function Field({ label, children, full }: { label: string; children: React.React
 const yellowBtn = 'dbtn dbtn-yellow'
 const ghostBtn = 'dbtn dbtn-ghost'
 
+/* Two-step inline confirmation — replaces a browser confirm() pop-up. The
+   caller renders its own trigger button via renderTrigger(arm). */
+function InlineConfirm({ renderTrigger, message, confirmLabel, onConfirm, pending, danger }: {
+  renderTrigger: (arm: () => void) => React.ReactNode
+  message: string
+  confirmLabel: string
+  onConfirm: () => void
+  pending?: boolean
+  danger?: boolean
+}) {
+  const [armed, setArmed] = useState(false)
+  if (!armed) return <>{renderTrigger(() => setArmed(true))}</>
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{message}</span>
+      <button className={ghostBtn} style={{ height: 30, padding: '0 10px', fontSize: 12 }} disabled={pending} onClick={() => setArmed(false)}>
+        Cancel
+      </button>
+      <button
+        className={ghostBtn}
+        style={{ height: 30, padding: '0 10px', fontSize: 12, color: danger ? 'var(--red)' : 'var(--yellow)' }}
+        disabled={pending}
+        onClick={onConfirm}
+      >
+        {pending ? <Loader2 size={13} className="animate-spin" /> : null} {confirmLabel}
+      </button>
+    </span>
+  )
+}
+
 /* ---------- Edit truck (odometer / driver / PM / manual location) ---------- */
 
 export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; detail: TruckDetail; onClose: () => void }) {
@@ -399,10 +429,18 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
                 </button>
               )}
               {['in_progress', 'pending_review'].includes(wo.status) && (
-                <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
-                  disabled={completeWO.isPending} onClick={() => { if (window.confirm('Complete this work order? An internal invoice will be generated.')) completeWO.mutate() }}>
-                  {completeWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Flag size={14} />} Mark completed
-                </button>
+                <InlineConfirm
+                  message="Complete & generate an internal invoice?"
+                  confirmLabel="Complete"
+                  pending={completeWO.isPending}
+                  onConfirm={() => completeWO.mutate()}
+                  renderTrigger={(arm) => (
+                    <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
+                      disabled={completeWO.isPending} onClick={arm}>
+                      <Flag size={14} /> Mark completed
+                    </button>
+                  )}
+                />
               )}
               {wo.status === 'completed' && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--yellow)', fontSize: 13 }}>
@@ -468,14 +506,23 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
           </div>
 
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-            <button
-              className={ghostBtn}
-              style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
-              disabled={!deletable || del.isPending}
-              onClick={() => { if (window.confirm('Delete this work order? This cannot be undone.')) del.mutate() }}
-            >
-              {del.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={14} />} Delete work order
-            </button>
+            <InlineConfirm
+              danger
+              message="Delete this work order? This can't be undone."
+              confirmLabel="Delete"
+              pending={del.isPending}
+              onConfirm={() => del.mutate()}
+              renderTrigger={(arm) => (
+                <button
+                  className={ghostBtn}
+                  style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  disabled={!deletable || del.isPending}
+                  onClick={arm}
+                >
+                  <Trash2 size={14} /> Delete work order
+                </button>
+              )}
+            />
             {!deletable && (
               <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
                 Work has started — a work order can only be deleted while it's a draft.
