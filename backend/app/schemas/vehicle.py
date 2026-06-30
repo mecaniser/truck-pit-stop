@@ -18,6 +18,10 @@ class VehicleBase(BaseModel):
 
 class VehicleCreate(VehicleBase):
     customer_id: UUID
+    # Optional driver assignment at creation (driver is two simple fields on the
+    # vehicle, not a managed entity).
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
 
 
 class VehicleUpdate(BaseModel):
