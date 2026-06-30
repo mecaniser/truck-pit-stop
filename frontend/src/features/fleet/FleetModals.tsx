@@ -189,7 +189,7 @@ interface WODetail {
   labor_items: WOLabor[]; parts_usage: WOPart[]
 }
 
-interface WOInventory { id: string; name: string; sku: string; selling_price: number | string; stock_quantity: number }
+interface WOInventory { id: string; name: string; sku: string; cost: number | string; selling_price: number | string; stock_quantity: number }
 
 const toNum = (v: number | string | null | undefined) => (v == null ? 0 : Number(v))
 const costInput: React.CSSProperties = {
@@ -272,7 +272,8 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
       <select style={{ ...costInput, flex: 1, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
         <option value="">Add part from inventory…</option>
-        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.selling_price))}</option>)}
+        {/* Internal fleet repairs are costed at the part's cost, not list price. */}
+        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.cost))} cost</option>)}
       </select>
       <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" placeholder="qty" />
       <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
