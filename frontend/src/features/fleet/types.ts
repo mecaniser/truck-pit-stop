@@ -76,10 +76,11 @@ export interface Incident {
 }
 
 // ---- Fleet board (design) ----
-export type TruckStatus = 'active' | 'shop' | 'pm' | 'parts'
+export type TruckStatus = 'active' | 'shop' | 'pm' | 'parts' | 'draft'
 
 export interface BoardWorkOrder {
   id: string
+  repair_order_id: string
   status: string
   summary?: string | null
   mechanic?: string | null

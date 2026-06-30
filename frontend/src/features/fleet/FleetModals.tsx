@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, UserRound,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2, UserRound,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, IncidentSeverity,
 } from './types'
-import { fmtDate } from './helpers'
+import { fmtDate, money } from './helpers'
 
 /* shared modal shell (fleet design system) */
 function Modal({ title, icon, onClose, children, width = 480 }: {
@@ -127,6 +127,342 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />} Save changes
       </button>
     </Modal>
+  )
+}
+
+/* ---------- New work order (corrective) ---------- */
+
+export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
+  truckId: string; unitNumber?: string | null; onClose: () => void; onCreated: () => void
+}) {
+  const [description, setDescription] = useState('')
+
+  const create = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {
+      description: description.trim(),
+    })).data,
+    onSuccess: () => { toast.success('Work order created'); onCreated(); onClose() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create work order'),
+  })
+
+  return (
+    <Modal title={`New work order${unitNumber ? ` · ${unitNumber}` : ''}`} icon={<ClipboardList size={17} />} onClose={onClose} width={460}>
+      <Field label="What's the work / complaint?">
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
+          placeholder="e.g. Air leak on front brake chamber; DOT inspection due; check engine light"
+          style={{
+            width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9,
+            color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical',
+          }}
+        />
+      </Field>
+      <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 8 }}>
+        Creates an internal (in-house cost) work order in Draft. A description is required.
+      </p>
+      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
+        disabled={create.isPending || !description.trim()} onClick={() => create.mutate()}>
+        {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} Create work order
+      </button>
+    </Modal>
+  )
+}
+
+/* ---------- Work order panel (view / describe / assign mechanic / cost) ---------- */
+
+const WO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft', assigned: 'Assigned', acknowledged: 'Acknowledged',
+  in_progress: 'In progress', pending_review: 'Pending review',
+  completed: 'Completed', invoiced: 'Invoiced', paid: 'Paid', cancelled: 'Cancelled',
+}
+
+interface WOMechanic { id: string; name: string }
+interface WOLabor { id: string; description: string; hours: number | string; hourly_rate: number | string; total_cost: number | string }
+interface WOPart { id: string; inventory_name: string; quantity: number; unit_price: number | string; total_price: number | string }
+interface WODetail {
+  id: string; order_number: string; status: string; description?: string | null
+  assigned_mechanic_id?: string | null
+  total_parts_cost: number | string; total_labor_cost: number | string; total_cost: number | string
+  is_pm?: boolean
+  labor_items: WOLabor[]; parts_usage: WOPart[]
+}
+
+interface WOInventory { id: string; name: string; sku: string; cost: number | string; selling_price: number | string; stock_quantity: number }
+
+const toNum = (v: number | string | null | undefined) => (v == null ? 0 : Number(v))
+const costInput: React.CSSProperties = {
+  height: 34, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8,
+  color: 'var(--text)', padding: '0 8px', font: 'inherit', fontSize: 13,
+}
+const iconBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }
+
+function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internalRate: number; onChanged: () => void }) {
+  const [desc, setDesc] = useState('')
+  const [hours, setHours] = useState('')
+  const add = useMutation({
+    mutationFn: async () => (await api.post(`/repair-orders/${roId}/labor`, {
+      description: desc.trim() || undefined, hours: Number(hours), hourly_rate: internalRate,
+    })).data,
+    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(''); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add labor'),
+  })
+  const valid = hours !== '' && Number(hours) > 0
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+        <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
+        {/* Rate is the configured in-house labor cost — read-only. */}
+        <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in garage settings)">{money(internalRate)}/h</span>
+        <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+        </button>
+      </div>
+      {internalRate <= 0 && (
+        <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 5, color: '#fb923c' }}>
+          In-house labor rate is $0 — set it in garage settings (owner/admin) so labor is costed.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onChanged: () => void }) {
+  const [hours, setHours] = useState(String(toNum(line.hours)))
+  const dirty = Number(hours) !== toNum(line.hours)
+  const save = useMutation({
+    mutationFn: async () => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours: Number(hours) })).data,
+    onSuccess: () => { toast.success('Labor updated'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+  })
+  const del = useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${roId}/labor/${line.id}`)).data,
+    onSuccess: () => { toast.success('Labor removed'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
+  })
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+      <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
+      <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" />
+      <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
+      {dirty && (
+        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
+        </button>
+      )}
+      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
+        <XCircle size={15} color="var(--red)" />
+      </button>
+    </div>
+  )
+}
+
+function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: WOInventory[]; onChanged: () => void }) {
+  const [invId, setInvId] = useState('')
+  const [qty, setQty] = useState('1')
+  const add = useMutation({
+    mutationFn: async () => (await api.post(`/repair-orders/${roId}/parts`, { inventory_id: invId, quantity: Number(qty) })).data,
+    onSuccess: () => { toast.success('Part added'); setInvId(''); setQty('1'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add part'),
+  })
+  const valid = invId !== '' && Number(qty) > 0
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <select style={{ ...costInput, flex: 1, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
+        <option value="">Add part from inventory…</option>
+        {/* Internal fleet repairs are costed at the part's cost, not list price. */}
+        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.cost))} cost</option>)}
+      </select>
+      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" placeholder="qty" />
+      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      </button>
+    </div>
+  )
+}
+
+function PartRow({ roId, line, onChanged }: { roId: string; line: WOPart; onChanged: () => void }) {
+  const [qty, setQty] = useState(String(line.quantity))
+  const dirty = Number(qty) !== line.quantity
+  const save = useMutation({
+    mutationFn: async () => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity: Number(qty) })).data,
+    onSuccess: () => { toast.success('Part updated'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+  })
+  const del = useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${roId}/parts/${line.id}`)).data,
+    onSuccess: () => { toast.success('Part removed'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
+  })
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+      <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name} · {money(toNum(line.unit_price))}</span>
+      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" />
+      <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>
+      {dirty && (
+        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
+        </button>
+      )}
+      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
+        <XCircle size={15} color="var(--red)" />
+      </button>
+    </div>
+  )
+}
+
+export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
+  repairOrderId: string; onClose: () => void; onChanged: () => void
+}) {
+  const qc = useQueryClient()
+  const num = (v: number | string | null | undefined) => (v == null ? 0 : Number(v))
+
+  const { data: wo, isLoading } = useQuery<WODetail>({
+    queryKey: ['fleet-wo', repairOrderId],
+    queryFn: async () => (await api.get(`/repair-orders/${repairOrderId}/detail`)).data,
+  })
+  const { data: mechanics } = useQuery<WOMechanic[]>({
+    queryKey: ['fleet-mechanics'],
+    queryFn: async () => (await api.get('/fleet/mechanics')).data,
+  })
+  const { data: inventory } = useQuery<WOInventory[]>({
+    queryKey: ['fleet-inventory'],
+    queryFn: async () => (await api.get('/inventory', { params: { limit: 100 } })).data,
+  })
+  const { data: fleetSettings } = useQuery<{ internal_labor_rate: number }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => (await api.get('/fleet/settings')).data,
+  })
+  const internalRate = toNum(fleetSettings?.internal_labor_rate)
+
+  const [description, setDescription] = useState('')
+  const [descDirty, setDescDirty] = useState(false)
+  // Seed the editable description once the work order loads.
+  if (wo && !descDirty && description === '') {
+    if (wo.description) setDescription(wo.description)
+  }
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['fleet-wo', repairOrderId] })
+    qc.invalidateQueries({ queryKey: ['fleet-board'] })
+    onChanged()
+  }
+
+  const saveDesc = useMutation({
+    mutationFn: async () => (await api.put(`/repair-orders/${repairOrderId}`, { description: description.trim() })).data,
+    onSuccess: () => { toast.success('Work order updated'); setDescDirty(false); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+  })
+  const assign = useMutation({
+    mutationFn: async (mechanicId: string) => (await api.post(`/repair-orders/${repairOrderId}/assign-mechanic`, { mechanic_id: mechanicId })).data,
+    onSuccess: () => { toast.success('Mechanic assigned'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to assign'),
+  })
+  const del = useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${repairOrderId}`)).data,
+    onSuccess: () => { toast.success('Work order deleted'); qc.invalidateQueries({ queryKey: ['fleet-board'] }); onChanged(); onClose() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete work order'),
+  })
+
+  // The RO can only be deleted before work starts (draft/quoted).
+  const deletable = wo ? ['draft', 'quoted'].includes(wo.status) : false
+  const title = wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Work order'
+
+  return (
+    <Modal title={title} icon={<ClipboardList size={17} />} onClose={onClose} width={560}>
+      {isLoading || !wo ? (
+        <div className="loader"><Loader2 size={18} className="animate-spin" /></div>
+      ) : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
+            Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
+            <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>· internal (in-house cost)</span>
+          </div>
+
+          <Field label="Work / complaint">
+            <textarea
+              value={description}
+              onChange={(e) => { setDescription(e.target.value); setDescDirty(true) }}
+              rows={3}
+              style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical' }}
+            />
+            {descDirty && (
+              <button className={ghostBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
+                disabled={saveDesc.isPending} onClick={() => saveDesc.mutate()}>
+                {saveDesc.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save description
+              </button>
+            )}
+          </Field>
+
+          <Field label="Assigned mechanic">
+            <select
+              value={wo.assigned_mechanic_id || ''}
+              onChange={(e) => e.target.value && assign.mutate(e.target.value)}
+              disabled={assign.isPending}
+              style={{ width: '100%', height: 40, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '0 10px' }}
+            >
+              <option value="">Unassigned — choose a mechanic…</option>
+              {(mechanics || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+              The mechanic starts and completes the job from their own board; status above reflects their progress.
+            </p>
+          </Field>
+
+          <div>
+            <div className="dmap-side-h" style={{ marginBottom: 8 }}>Labor ({wo.labor_items.length})</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} />)}
+            </div>
+            <LaborAddRow roId={repairOrderId} internalRate={internalRate} onChanged={refresh} />
+          </div>
+
+          <div>
+            <div className="dmap-side-h" style={{ marginBottom: 8 }}>Parts ({wo.parts_usage.length})</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {wo.parts_usage.map((p) => <PartRow key={p.id} roId={repairOrderId} line={p} onChanged={refresh} />)}
+            </div>
+            <PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
+            <Row k="Labor" v={money(num(wo.total_labor_cost))} />
+            <Row k="Parts" v={money(num(wo.total_parts_cost))} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4 }}>
+              <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
+              <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+            <button
+              className={ghostBtn}
+              style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
+              disabled={!deletable || del.isPending}
+              onClick={() => { if (window.confirm('Delete this work order? This cannot be undone.')) del.mutate() }}
+            >
+              {del.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={14} />} Delete work order
+            </button>
+            {!deletable && (
+              <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+                Work has started — a work order can only be deleted while it's a draft.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ color: 'var(--muted-2)' }}>{k}</span>
+      <span style={{ color: 'var(--text)' }}>{v}</span>
+    </div>
   )
 }
 

@@ -18,6 +18,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
@@ -51,6 +52,9 @@ from app.schemas.fleet import (
     NearestUnit,
     TruckDetailResponse,
     TruckUpdate,
+    WorkOrderCreate,
+    FleetMechanicOption,
+    FleetSettingsResponse,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -70,7 +74,7 @@ PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
-    RepairOrderStatus.DRAFT: "Diagnosing",
+    RepairOrderStatus.DRAFT: "Draft",
     RepairOrderStatus.QUOTED: "Diagnosing",
     RepairOrderStatus.APPROVED: "Scheduled",
     RepairOrderStatus.ASSIGNED: "Assigned",
@@ -572,6 +576,14 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
     if open_ro is not None:
         if open_ro.hold_reason and "part" in open_ro.hold_reason.lower():
             return "parts"
+        # A fresh, unassigned, not-yet-started work order is a draft — keep it
+        # visually distinct from a truck that's actively in the shop.
+        if (
+            open_ro.status == RepairOrderStatus.DRAFT
+            and open_ro.assigned_mechanic_id is None
+            and open_ro.work_started_at is None
+        ):
+            return "draft"
         return "shop"
     rem = _pm_remaining(v)
     if rem is not None and rem < PM_DUE_SOON_MILES:
@@ -587,6 +599,7 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         mechanic = _mechanic_name(open_ro.assigned_mechanic)
         wo = BoardWorkOrder(
             id=open_ro.order_number,
+            repair_order_id=open_ro.id,
             status=_wo_label(open_ro),
             summary=open_ro.description,
             mechanic=mechanic,
@@ -933,14 +946,69 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
     return ro
 
 
+@router.get("/settings", response_model=FleetSettingsResponse)
+async def get_fleet_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Fleet-relevant garage settings (read-only), e.g. the in-house labor rate
+    that owner/admin configure in garage settings."""
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    return FleetSettingsResponse(internal_labor_rate=float(tenant.internal_labor_rate or 0))
+
+
+@router.get("/mechanics", response_model=List[FleetMechanicOption])
+async def list_fleet_mechanics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Active mechanics in the tenant, for assigning to fleet work orders."""
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRole.MECHANIC,
+                User.is_active.is_(True),
+            )
+        ).order_by(User.first_name, User.last_name)
+    )
+    return [
+        FleetMechanicOption(id=u.id, name=f"{u.first_name} {u.last_name}".strip() or u.email)
+        for u in result.scalars().all()
+    ]
+
+
 @router.post("/trucks/{vehicle_id}/work-order", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
 async def new_work_order(
     vehicle_id: UUID,
+    body: Optional[WorkOrderCreate] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
-    ro = await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description="Fleet work order")
+
+    # Guard against stacking multiple open corrective work orders on one truck.
+    existing = await db.execute(
+        select(RepairOrder).where(
+            and_(
+                RepairOrder.vehicle_id == vehicle.id,
+                RepairOrder.is_internal.is_(True),
+                RepairOrder.is_pm.is_(False),
+                RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+            )
+        )
+    )
+    if existing.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This truck already has an open work order.",
+        )
+
+    description = (body.description.strip() if body and body.description else "") or "Fleet work order"
+    ro = await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description=description)
     open_ro = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id) or ro
     counts = await _open_incident_counts(db, [vehicle.id])
     return _build_board_truck(vehicle, open_ro, counts.get(vehicle.id, 0))

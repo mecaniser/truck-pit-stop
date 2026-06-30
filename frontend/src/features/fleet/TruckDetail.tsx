@@ -9,7 +9,7 @@ import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, InspectionsSection, AssignDriverModal } from './FleetModals'
+import { TruckEditModal, LogIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal } from './FleetModals'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -57,11 +57,6 @@ export default function TruckDetail({
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
     qc.invalidateQueries({ queryKey: ['fleet-board'] })
   }
-  const newWO = useMutation({
-    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`)).data,
-    onSuccess: () => { toast.success('Work order created'); refresh() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
-  })
   const schedulePM = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/schedule-pm`)).data,
     onSuccess: () => { toast.success('PM work order scheduled'); refresh() },
@@ -79,6 +74,8 @@ export default function TruckDetail({
   })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
+  const [newWOOpen, setNewWOOpen] = useState(false)
+  const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
 
   if (isLoading || !data) return <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
@@ -107,9 +104,15 @@ export default function TruckDetail({
             <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)}>
               <Pencil size={15} /> Edit
             </button>
-            <button className="dbtn dbtn-ghost" onClick={() => newWO.mutate()} disabled={newWO.isPending}>
-              <ClipboardList size={15} /> New work order
-            </button>
+            {t.work_order?.repair_order_id ? (
+              <button className="dbtn dbtn-ghost" onClick={() => setWoPanelId(t.work_order!.repair_order_id)}>
+                <ClipboardList size={15} /> Open work order
+              </button>
+            ) : (
+              <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)}>
+                <ClipboardList size={15} /> New work order
+              </button>
+            )}
             <button className="dbtn dbtn-yellow" onClick={() => schedulePM.mutate()} disabled={schedulePM.isPending}>
               <Calendar size={15} /> Schedule PM
             </button>
@@ -309,6 +312,8 @@ export default function TruckDetail({
       {editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={data.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
+      {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={t.unit_number} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
+      {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
     </div>
   )
 }
