@@ -71,6 +71,8 @@ TERMINAL_RO_STATUSES = {
     RepairOrderStatus.DECLINED,
 }
 PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
+# Operator-set idle statuses (no open work order). "active" = on the road.
+VALID_STATUS_OVERRIDES = {"active", "yard", "available", "out_of_service"}
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
@@ -585,6 +587,9 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
         ):
             return "draft"
         return "shop"
+    # No open work order: honor the operator's manual status if set.
+    if v.status_override in VALID_STATUS_OVERRIDES:
+        return v.status_override
     rem = _pm_remaining(v)
     if rem is not None and rem < PM_DUE_SOON_MILES:
         return "pm"
@@ -661,6 +666,7 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         work_order=wo,
         open_work_order_count=open_wo_count,
         open_incident_count=incident_count,
+        status_override=v.status_override if v.status_override in VALID_STATUS_OVERRIDES else None,
     )
 
 
@@ -944,6 +950,14 @@ async def update_truck(
         vehicle.last_speed_mph = body.speed_mph
     if body.heading is not None:
         vehicle.last_heading = body.heading or None
+    if body.status_override is not None:
+        val = body.status_override.strip().lower()
+        if val in ("", "auto"):
+            vehicle.status_override = None
+        elif val in VALID_STATUS_OVERRIDES:
+            vehicle.status_override = val
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status")
     if any(v is not None for v in (body.lat, body.lng, body.speed_mph, body.heading, body.location_label)):
         vehicle.last_location_at = datetime.now(timezone.utc)
     # Refresh body type from the new VIN (only touches nhtsa_* fields, not make/model).

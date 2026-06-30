@@ -28,6 +28,12 @@ class Vehicle(BaseModel):
     driver_name = Column(String(160), nullable=True)
     driver_phone = Column(String(20), nullable=True)
 
+    # Manual status for the idle (no open work order) state — operator sets it
+    # from the board. One of: active (on the road), yard, available,
+    # out_of_service. NULL = auto (on the road / PM due). An open work order
+    # always wins over this.
+    status_override = Column(String(20), nullable=True)
+
     # Mileage-based preventive maintenance. pm_remaining = next_pm_miles - mileage.
     pm_interval_miles = Column(Integer, nullable=False, default=25000)
     next_pm_miles = Column(Integer, nullable=True)  # odometer at which next PM is due
