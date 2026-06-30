@@ -189,6 +189,123 @@ interface WODetail {
   labor_items: WOLabor[]; parts_usage: WOPart[]
 }
 
+interface WOInventory { id: string; name: string; sku: string; selling_price: number | string; stock_quantity: number }
+
+const toNum = (v: number | string | null | undefined) => (v == null ? 0 : Number(v))
+const costInput: React.CSSProperties = {
+  height: 34, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8,
+  color: 'var(--text)', padding: '0 8px', font: 'inherit', fontSize: 13,
+}
+const iconBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }
+
+function LaborAddRow({ roId, onChanged }: { roId: string; onChanged: () => void }) {
+  const [desc, setDesc] = useState('')
+  const [hours, setHours] = useState('')
+  const [rate, setRate] = useState('')
+  const add = useMutation({
+    mutationFn: async () => (await api.post(`/repair-orders/${roId}/labor`, {
+      description: desc.trim() || undefined, hours: Number(hours), hourly_rate: Number(rate),
+    })).data,
+    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(''); setRate(''); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add labor'),
+  })
+  const valid = hours !== '' && Number(hours) > 0 && rate !== '' && Number(rate) >= 0
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+      <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
+      <input style={{ ...costInput, width: 72 }} value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" placeholder="$/hr" />
+      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      </button>
+    </div>
+  )
+}
+
+function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onChanged: () => void }) {
+  const [hours, setHours] = useState(String(toNum(line.hours)))
+  const [rate, setRate] = useState(String(toNum(line.hourly_rate)))
+  const dirty = Number(hours) !== toNum(line.hours) || Number(rate) !== toNum(line.hourly_rate)
+  const save = useMutation({
+    mutationFn: async () => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours: Number(hours), hourly_rate: Number(rate) })).data,
+    onSuccess: () => { toast.success('Labor updated'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+  })
+  const del = useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${roId}/labor/${line.id}`)).data,
+    onSuccess: () => { toast.success('Labor removed'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
+  })
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+      <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
+      <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" />
+      <input style={{ ...costInput, width: 72 }} value={rate} onChange={(e) => setRate(e.target.value)} inputMode="decimal" />
+      {dirty && (
+        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
+        </button>
+      )}
+      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
+        <XCircle size={15} color="var(--red)" />
+      </button>
+    </div>
+  )
+}
+
+function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: WOInventory[]; onChanged: () => void }) {
+  const [invId, setInvId] = useState('')
+  const [qty, setQty] = useState('1')
+  const add = useMutation({
+    mutationFn: async () => (await api.post(`/repair-orders/${roId}/parts`, { inventory_id: invId, quantity: Number(qty) })).data,
+    onSuccess: () => { toast.success('Part added'); setInvId(''); setQty('1'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add part'),
+  })
+  const valid = invId !== '' && Number(qty) > 0
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <select style={{ ...costInput, flex: 1, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
+        <option value="">Add part from inventory…</option>
+        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.selling_price))}</option>)}
+      </select>
+      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" placeholder="qty" />
+      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      </button>
+    </div>
+  )
+}
+
+function PartRow({ roId, line, onChanged }: { roId: string; line: WOPart; onChanged: () => void }) {
+  const [qty, setQty] = useState(String(line.quantity))
+  const dirty = Number(qty) !== line.quantity
+  const save = useMutation({
+    mutationFn: async () => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity: Number(qty) })).data,
+    onSuccess: () => { toast.success('Part updated'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+  })
+  const del = useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${roId}/parts/${line.id}`)).data,
+    onSuccess: () => { toast.success('Part removed'); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
+  })
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+      <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name} · {money(toNum(line.unit_price))}</span>
+      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" />
+      <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>
+      {dirty && (
+        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
+        </button>
+      )}
+      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
+        <XCircle size={15} color="var(--red)" />
+      </button>
+    </div>
+  )
+}
+
 export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   repairOrderId: string; onClose: () => void; onChanged: () => void
 }) {
@@ -202,6 +319,10 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   const { data: mechanics } = useQuery<WOMechanic[]>({
     queryKey: ['fleet-mechanics'],
     queryFn: async () => (await api.get('/fleet/mechanics')).data,
+  })
+  const { data: inventory } = useQuery<WOInventory[]>({
+    queryKey: ['fleet-inventory'],
+    queryFn: async () => (await api.get('/inventory', { params: { limit: 100 } })).data,
   })
 
   const [description, setDescription] = useState('')
@@ -273,34 +394,18 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
 
           <div>
             <div className="dmap-side-h" style={{ marginBottom: 8 }}>Labor ({wo.labor_items.length})</div>
-            {wo.labor_items.length === 0 ? (
-              <div className="empty-note" style={{ fontSize: 13 }}>No labor lines yet.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 6 }}>
-                {wo.labor_items.map((l) => (
-                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
-                    <span style={{ color: 'var(--text)' }}>{l.description || 'Labor'} · {num(l.hours)}h @ {money(num(l.hourly_rate))}</span>
-                    <strong style={{ color: 'var(--text)' }}>{money(num(l.total_cost))}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div style={{ display: 'grid', gap: 6 }}>
+              {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} />)}
+            </div>
+            <LaborAddRow roId={repairOrderId} onChanged={refresh} />
           </div>
 
           <div>
             <div className="dmap-side-h" style={{ marginBottom: 8 }}>Parts ({wo.parts_usage.length})</div>
-            {wo.parts_usage.length === 0 ? (
-              <div className="empty-note" style={{ fontSize: 13 }}>No parts lines yet.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 6 }}>
-                {wo.parts_usage.map((p) => (
-                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
-                    <span style={{ color: 'var(--text)' }}>{p.inventory_name} · {p.quantity} @ {money(num(p.unit_price))}</span>
-                    <strong style={{ color: 'var(--text)' }}>{money(num(p.total_price))}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div style={{ display: 'grid', gap: 6 }}>
+              {wo.parts_usage.map((p) => <PartRow key={p.id} roId={repairOrderId} line={p} onChanged={refresh} />)}
+            </div>
+            <PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} />
           </div>
 
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
