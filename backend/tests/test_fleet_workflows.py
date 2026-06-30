@@ -22,7 +22,7 @@ from app.db.models.fleet import (
     IncidentSeverity,
     DEFAULT_INSPECTION_CHECKLIST,
 )
-from app.db.models.repair_order import RepairOrder
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
@@ -311,3 +311,38 @@ async def test_fresh_work_order_shows_draft_status(db_session):
     truck = next(t for t in board.trucks if t.id == vehicle.id)
     assert truck.status == "draft"
     assert truck.work_order is not None and truck.work_order.status == "Draft"
+
+
+@pytest.mark.asyncio
+async def test_fleet_lifecycle_start_and_complete_without_mechanic(db_session):
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    assert ro.assigned_mechanic_id is None  # mechanic optional
+
+    wo = await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    assert wo.status == "In progress"
+    await db_session.refresh(ro)
+    assert ro.status == RepairOrderStatus.IN_PROGRESS and ro.work_started_at is not None
+
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await db_session.refresh(ro)
+    assert ro.status == RepairOrderStatus.COMPLETED and ro.work_completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_complete_requires_in_progress(db_session):
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    with pytest.raises(HTTPException) as exc:
+        await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    assert exc.value.status_code == 400

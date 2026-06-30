@@ -960,6 +960,65 @@ async def update_truck(
     return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
 
 
+async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> RepairOrder:
+    result = await db.execute(
+        select(RepairOrder)
+        .where(and_(
+            RepairOrder.id == ro_id,
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.is_internal.is_(True),
+        ))
+        .options(selectinload(RepairOrder.assigned_mechanic))
+    )
+    ro = result.scalar_one_or_none()
+    if not ro:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+    return ro
+
+
+@router.post("/work-orders/{ro_id}/start", response_model=BoardWorkOrder)
+async def start_work_order(
+    ro_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Move an internal work order into progress. Fleet-manager driven —
+    assigning a mechanic is optional, not required to start."""
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    startable = (
+        RepairOrderStatus.DRAFT, RepairOrderStatus.ASSIGNED,
+        RepairOrderStatus.ACKNOWLEDGED, RepairOrderStatus.IN_PROGRESS,
+    )
+    if ro.status not in startable:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot start a work order in '{ro.status.value}' status")
+    if ro.status != RepairOrderStatus.IN_PROGRESS:
+        ro.status = RepairOrderStatus.IN_PROGRESS
+        if ro.work_started_at is None:
+            ro.work_started_at = datetime.now(timezone.utc)
+        await db.commit()
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    return _board_work_order(ro)
+
+
+@router.post("/work-orders/{ro_id}/complete", response_model=BoardWorkOrder)
+async def complete_work_order(
+    ro_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Complete an internal work order. No external invoice; an internal
+    invoice (cost record) is generated."""
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
+    ro.status = RepairOrderStatus.COMPLETED
+    ro.work_completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    # Phase 3c: generate the internal invoice for this completed work order.
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    return _board_work_order(ro)
+
+
 async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle, *, is_pm: bool, description: str) -> RepairOrder:
     from app.api.v1.endpoints.repair_orders import generate_order_number
     from app.core.unique_id import create_with_retry
