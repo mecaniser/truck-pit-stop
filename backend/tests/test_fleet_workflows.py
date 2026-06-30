@@ -256,14 +256,19 @@ async def test_new_work_order_defaults_blank_description(db_session):
 
 
 @pytest.mark.asyncio
-async def test_new_work_order_blocks_duplicate_open(db_session):
+async def test_truck_allows_multiple_open_work_orders(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="First"),
                                db=db_session, current_user=user)
-    with pytest.raises(HTTPException) as exc:
-        await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Second"),
-                                   db=db_session, current_user=user)
-    assert exc.value.status_code == 409
+    truck = await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Second"),
+                                       db=db_session, current_user=user)
+    # No 409 anymore; the board card reflects the count.
+    assert truck.open_work_order_count == 2
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.open_work_order_count == 2
+    detail = await fleet.truck_detail(vehicle_id=vehicle.id, db=db_session, current_user=user)
+    assert len(detail.open_work_orders) == 2
 
 
 @pytest.mark.asyncio

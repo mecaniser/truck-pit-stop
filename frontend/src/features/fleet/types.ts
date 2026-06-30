@@ -111,6 +111,7 @@ export interface BoardTruck {
   heading?: string | null
   assigned_mechanic?: string | null
   work_order?: BoardWorkOrder | null
+  open_work_order_count: number
   open_incident_count: number
 }
 
@@ -171,6 +172,7 @@ export interface NearestUnit {
 
 export interface TruckDetail {
   truck: BoardTruck
+  open_work_orders: BoardWorkOrder[]
   driver_phone?: string | null
   lifetime_spend: number
   incidents_count: number
