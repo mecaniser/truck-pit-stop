@@ -264,3 +264,25 @@ async def test_new_work_order_blocks_duplicate_open(db_session):
         await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Second"),
                                    db=db_session, current_user=user)
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_list_fleet_mechanics_returns_tenant_mechanics(db_session):
+    tenant, _, user = await _seed_fleet(db_session)
+    mech = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"m-{uuid4().hex[:8]}@example.com",
+        hashed_password="x", first_name="Mick", last_name="Wrench",
+        role=UserRole.MECHANIC, is_active=True, is_verified=True,
+    )
+    inactive = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"m2-{uuid4().hex[:8]}@example.com",
+        hashed_password="x", first_name="Gone", last_name="Away",
+        role=UserRole.MECHANIC, is_active=False, is_verified=True,
+    )
+    db_session.add_all([mech, inactive])
+    await db_session.commit()
+
+    options = await fleet.list_fleet_mechanics(db=db_session, current_user=user)
+    names = {o.name for o in options}
+    assert "Mick Wrench" in names
+    assert "Gone Away" not in names  # inactive excluded

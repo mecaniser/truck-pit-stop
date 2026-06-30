@@ -52,6 +52,7 @@ from app.schemas.fleet import (
     TruckDetailResponse,
     TruckUpdate,
     WorkOrderCreate,
+    FleetMechanicOption,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -588,6 +589,7 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         mechanic = _mechanic_name(open_ro.assigned_mechanic)
         wo = BoardWorkOrder(
             id=open_ro.order_number,
+            repair_order_id=open_ro.id,
             status=_wo_label(open_ro),
             summary=open_ro.description,
             mechanic=mechanic,
@@ -932,6 +934,27 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
     await db.commit()
     record_repair_order_created(str(tenant_id))
     return ro
+
+
+@router.get("/mechanics", response_model=List[FleetMechanicOption])
+async def list_fleet_mechanics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Active mechanics in the tenant, for assigning to fleet work orders."""
+    result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRole.MECHANIC,
+                User.is_active.is_(True),
+            )
+        ).order_by(User.first_name, User.last_name)
+    )
+    return [
+        FleetMechanicOption(id=u.id, name=f"{u.first_name} {u.last_name}".strip() or u.email)
+        for u in result.scalars().all()
+    ]
 
 
 @router.post("/trucks/{vehicle_id}/work-order", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)

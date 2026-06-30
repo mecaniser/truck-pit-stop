@@ -140,6 +140,7 @@ FleetTruckStatus = str  # 'active' | 'shop' | 'pm' | 'parts'
 
 class BoardWorkOrder(BaseModel):
     id: str                 # order_number
+    repair_order_id: UUID   # actual RO id, for opening/editing the work order
     status: str             # shop-floor label (In progress, Awaiting parts, …)
     summary: Optional[str] = None
     mechanic: Optional[str] = None
@@ -269,3 +270,8 @@ class TruckUpdate(BaseModel):
 class WorkOrderCreate(BaseModel):
     # Optional description of the work needed; defaults server-side when blank.
     description: Optional[str] = None
+
+
+class FleetMechanicOption(BaseModel):
+    id: UUID
+    name: str

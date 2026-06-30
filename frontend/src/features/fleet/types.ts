@@ -80,6 +80,7 @@ export type TruckStatus = 'active' | 'shop' | 'pm' | 'parts'
 
 export interface BoardWorkOrder {
   id: string
+  repair_order_id: string
   status: string
   summary?: string | null
   mechanic?: string | null

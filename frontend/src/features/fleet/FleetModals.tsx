@@ -8,7 +8,7 @@ import api from '../../lib/api'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, IncidentSeverity,
 } from './types'
-import { fmtDate } from './helpers'
+import { fmtDate, money } from './helpers'
 
 /* shared modal shell (fleet design system) */
 function Modal({ title, icon, onClose, children, width = 480 }: {
@@ -167,6 +167,162 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
         {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} Create work order
       </button>
     </Modal>
+  )
+}
+
+/* ---------- Work order panel (view / describe / assign mechanic / cost) ---------- */
+
+const WO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft', assigned: 'Assigned', acknowledged: 'Acknowledged',
+  in_progress: 'In progress', pending_review: 'Pending review',
+  completed: 'Completed', invoiced: 'Invoiced', paid: 'Paid', cancelled: 'Cancelled',
+}
+
+interface WOMechanic { id: string; name: string }
+interface WOLabor { id: string; description: string; hours: number | string; hourly_rate: number | string; total_cost: number | string }
+interface WOPart { id: string; inventory_name: string; quantity: number; unit_price: number | string; total_price: number | string }
+interface WODetail {
+  id: string; order_number: string; status: string; description?: string | null
+  assigned_mechanic_id?: string | null
+  total_parts_cost: number | string; total_labor_cost: number | string; total_cost: number | string
+  is_pm?: boolean
+  labor_items: WOLabor[]; parts_usage: WOPart[]
+}
+
+export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
+  repairOrderId: string; onClose: () => void; onChanged: () => void
+}) {
+  const qc = useQueryClient()
+  const num = (v: number | string | null | undefined) => (v == null ? 0 : Number(v))
+
+  const { data: wo, isLoading } = useQuery<WODetail>({
+    queryKey: ['fleet-wo', repairOrderId],
+    queryFn: async () => (await api.get(`/repair-orders/${repairOrderId}/detail`)).data,
+  })
+  const { data: mechanics } = useQuery<WOMechanic[]>({
+    queryKey: ['fleet-mechanics'],
+    queryFn: async () => (await api.get('/fleet/mechanics')).data,
+  })
+
+  const [description, setDescription] = useState('')
+  const [descDirty, setDescDirty] = useState(false)
+  // Seed the editable description once the work order loads.
+  if (wo && !descDirty && description === '') {
+    if (wo.description) setDescription(wo.description)
+  }
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['fleet-wo', repairOrderId] })
+    qc.invalidateQueries({ queryKey: ['fleet-board'] })
+    onChanged()
+  }
+
+  const saveDesc = useMutation({
+    mutationFn: async () => (await api.put(`/repair-orders/${repairOrderId}`, { description: description.trim() })).data,
+    onSuccess: () => { toast.success('Work order updated'); setDescDirty(false); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+  })
+  const assign = useMutation({
+    mutationFn: async (mechanicId: string) => (await api.post(`/repair-orders/${repairOrderId}/assign-mechanic`, { mechanic_id: mechanicId })).data,
+    onSuccess: () => { toast.success('Mechanic assigned'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to assign'),
+  })
+
+  const title = wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Work order'
+
+  return (
+    <Modal title={title} icon={<ClipboardList size={17} />} onClose={onClose} width={560}>
+      {isLoading || !wo ? (
+        <div className="loader"><Loader2 size={18} className="animate-spin" /></div>
+      ) : (
+        <div style={{ display: 'grid', gap: 16 }}>
+          <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
+            Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
+            <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>· internal (in-house cost)</span>
+          </div>
+
+          <Field label="Work / complaint">
+            <textarea
+              value={description}
+              onChange={(e) => { setDescription(e.target.value); setDescDirty(true) }}
+              rows={3}
+              style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical' }}
+            />
+            {descDirty && (
+              <button className={ghostBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
+                disabled={saveDesc.isPending} onClick={() => saveDesc.mutate()}>
+                {saveDesc.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save description
+              </button>
+            )}
+          </Field>
+
+          <Field label="Assigned mechanic">
+            <select
+              value={wo.assigned_mechanic_id || ''}
+              onChange={(e) => e.target.value && assign.mutate(e.target.value)}
+              disabled={assign.isPending}
+              style={{ width: '100%', height: 40, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '0 10px' }}
+            >
+              <option value="">Unassigned — choose a mechanic…</option>
+              {(mechanics || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+              The mechanic starts and completes the job from their own board; status above reflects their progress.
+            </p>
+          </Field>
+
+          <div>
+            <div className="dmap-side-h" style={{ marginBottom: 8 }}>Labor ({wo.labor_items.length})</div>
+            {wo.labor_items.length === 0 ? (
+              <div className="empty-note" style={{ fontSize: 13 }}>No labor lines yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {wo.labor_items.map((l) => (
+                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
+                    <span style={{ color: 'var(--text)' }}>{l.description || 'Labor'} · {num(l.hours)}h @ {money(num(l.hourly_rate))}</span>
+                    <strong style={{ color: 'var(--text)' }}>{money(num(l.total_cost))}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="dmap-side-h" style={{ marginBottom: 8 }}>Parts ({wo.parts_usage.length})</div>
+            {wo.parts_usage.length === 0 ? (
+              <div className="empty-note" style={{ fontSize: 13 }}>No parts lines yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                {wo.parts_usage.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13 }}>
+                    <span style={{ color: 'var(--text)' }}>{p.inventory_name} · {p.quantity} @ {money(num(p.unit_price))}</span>
+                    <strong style={{ color: 'var(--text)' }}>{money(num(p.total_price))}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
+            <Row k="Labor" v={money(num(wo.total_labor_cost))} />
+            <Row k="Parts" v={money(num(wo.total_parts_cost))} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4 }}>
+              <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
+              <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ color: 'var(--muted-2)' }}>{k}</span>
+      <span style={{ color: 'var(--text)' }}>{v}</span>
+    </div>
   )
 }
 
