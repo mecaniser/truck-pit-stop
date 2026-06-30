@@ -346,3 +346,30 @@ async def test_complete_requires_in_progress(db_session):
     with pytest.raises(HTTPException) as exc:
         await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_complete_generates_internal_invoice(db_session):
+    import sqlalchemy
+    from app.db.models.invoice import Invoice
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+
+    inv = (await db_session.execute(
+        sqlalchemy.select(Invoice).where(Invoice.repair_order_id == ro.id)
+    )).scalar_one()
+    assert inv.is_internal is True
+    assert inv.tax_amount == 0 and inv.service_fee_amount == 0
+
+    # Idempotent: completing/calling again doesn't create a second invoice.
+    await fleet._create_internal_invoice(db_session, ro.tenant_id, ro)
+    count = (await db_session.execute(
+        sqlalchemy.select(sqlalchemy.func.count(Invoice.id)).where(Invoice.repair_order_id == ro.id)
+    )).scalar()
+    assert count == 1

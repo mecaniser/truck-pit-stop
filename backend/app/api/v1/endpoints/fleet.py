@@ -960,6 +960,38 @@ async def update_truck(
     return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
 
 
+async def _create_internal_invoice(db: AsyncSession, tenant_id: UUID, ro: RepairOrder) -> None:
+    """Generate the internal invoice (cost record) for a completed work order.
+    No customer billing/tax/markup; idempotent (one invoice per RO)."""
+    from decimal import Decimal
+    from app.db.models.invoice import Invoice, InvoiceStatus
+    from app.api.v1.endpoints.invoices import generate_invoice_number
+    from app.core.unique_id import create_with_retry
+
+    existing = await db.execute(select(Invoice).where(Invoice.repair_order_id == ro.id))
+    if existing.scalar_one_or_none():
+        return
+
+    total = ro.total_cost or Decimal("0.00")
+
+    async def _create(invoice_number: str) -> Invoice:
+        inv = Invoice(
+            tenant_id=tenant_id, repair_order_id=ro.id, invoice_number=invoice_number,
+            status=InvoiceStatus.DRAFT, is_internal=True,
+            subtotal=total, shop_supplies_amount=Decimal("0.00"), service_fee_amount=Decimal("0.00"),
+            tax_amount=Decimal("0.00"), discount_amount=Decimal("0.00"), total_amount=total,
+            due_date=None, paid_at=None, notes="Internal fleet work order",
+        )
+        db.add(inv)
+        return inv
+
+    await create_with_retry(
+        db=db, create_fn=_create,
+        generate_number_fn=lambda: generate_invoice_number(db, tenant_id),
+        entity_name="invoice",
+    )
+
+
 async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> RepairOrder:
     result = await db.execute(
         select(RepairOrder)
@@ -1014,7 +1046,8 @@ async def complete_work_order(
     ro.status = RepairOrderStatus.COMPLETED
     ro.work_completed_at = datetime.now(timezone.utc)
     await db.commit()
-    # Phase 3c: generate the internal invoice for this completed work order.
+    # No external invoice for internal repairs — generate an internal cost record.
+    await _create_internal_invoice(db, current_user.tenant_id, ro)
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     return _board_work_order(ro)
 
