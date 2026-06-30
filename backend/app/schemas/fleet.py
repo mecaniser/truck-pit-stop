@@ -170,7 +170,8 @@ class BoardTruck(BaseModel):
     speed_mph: Optional[int] = None
     heading: Optional[str] = None
     assigned_mechanic: Optional[str] = None
-    work_order: Optional[BoardWorkOrder] = None
+    work_order: Optional[BoardWorkOrder] = None  # most-urgent open work order
+    open_work_order_count: int = 0
     open_incident_count: int = 0
 
 
@@ -233,6 +234,7 @@ class NearestUnit(BaseModel):
 
 class TruckDetailResponse(BaseModel):
     truck: BoardTruck
+    open_work_orders: List[BoardWorkOrder] = []
     driver_phone: Optional[str] = None
     lifetime_spend: float = 0.0
     incidents_count: int = 0
