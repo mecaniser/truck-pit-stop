@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
@@ -139,7 +139,7 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
 
   const create = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {
-      description: description.trim() || undefined,
+      description: description.trim(),
     })).data,
     onSuccess: () => { toast.success('Work order created'); onCreated(); onClose() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create work order'),
@@ -160,10 +160,10 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
         />
       </Field>
       <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 8 }}>
-        Creates an internal (in-house cost) work order in Draft. Leave blank for a generic work order.
+        Creates an internal (in-house cost) work order in Draft. A description is required.
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={create.isPending} onClick={() => create.mutate()}>
+        disabled={create.isPending || !description.trim()} onClick={() => create.mutate()}>
         {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} Create work order
       </button>
     </Modal>
@@ -360,7 +360,14 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     onSuccess: () => { toast.success('Mechanic assigned'); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to assign'),
   })
+  const del = useMutation({
+    mutationFn: async () => (await api.delete(`/repair-orders/${repairOrderId}`)).data,
+    onSuccess: () => { toast.success('Work order deleted'); qc.invalidateQueries({ queryKey: ['fleet-board'] }); onChanged(); onClose() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete work order'),
+  })
 
+  // The RO can only be deleted before work starts (draft/quoted).
+  const deletable = wo ? ['draft', 'quoted'].includes(wo.status) : false
   const title = wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Work order'
 
   return (
@@ -427,6 +434,22 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
               <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
             </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+            <button
+              className={ghostBtn}
+              style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
+              disabled={!deletable || del.isPending}
+              onClick={() => { if (window.confirm('Delete this work order? This cannot be undone.')) del.mutate() }}
+            >
+              {del.isPending ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={14} />} Delete work order
+            </button>
+            {!deletable && (
+              <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+                Work has started — a work order can only be deleted while it's a draft.
+              </p>
+            )}
           </div>
         </div>
       )}

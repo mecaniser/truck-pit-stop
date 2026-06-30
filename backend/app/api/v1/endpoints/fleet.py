@@ -74,7 +74,7 @@ PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
-    RepairOrderStatus.DRAFT: "Diagnosing",
+    RepairOrderStatus.DRAFT: "Draft",
     RepairOrderStatus.QUOTED: "Diagnosing",
     RepairOrderStatus.APPROVED: "Scheduled",
     RepairOrderStatus.ASSIGNED: "Assigned",
@@ -576,6 +576,14 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
     if open_ro is not None:
         if open_ro.hold_reason and "part" in open_ro.hold_reason.lower():
             return "parts"
+        # A fresh, unassigned, not-yet-started work order is a draft — keep it
+        # visually distinct from a truck that's actively in the shop.
+        if (
+            open_ro.status == RepairOrderStatus.DRAFT
+            and open_ro.assigned_mechanic_id is None
+            and open_ro.work_started_at is None
+        ):
+            return "draft"
         return "shop"
     rem = _pm_remaining(v)
     if rem is not None and rem < PM_DUE_SOON_MILES:
