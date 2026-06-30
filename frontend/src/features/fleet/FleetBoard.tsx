@@ -55,6 +55,7 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
           <Wrench size={13} />
           <span className="tcard-wo-id">{t.work_order.id}</span>
           <span className="tcard-wo-st">{t.work_order.status}</span>
+          {t.open_work_order_count > 1 && <span className="tcard-wo-st">+{t.open_work_order_count - 1} more</span>}
         </div>
       ) : (
         <div className="tcard-wo tcard-wo--clear"><Check size={13} /><span>No open work orders</span></div>
