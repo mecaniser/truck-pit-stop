@@ -3,13 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
-  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check,
+  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal } from './FleetModals'
+import { TruckEditModal, LogIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal } from './FleetModals'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -82,6 +82,7 @@ export default function TruckDetail({
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
   const [schedulePMOpen, setSchedulePMOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const setStatus = useMutation({
     mutationFn: async (value: string) => (await api.patch(`/fleet/trucks/${truckId}`, { status_override: value })).data,
@@ -143,6 +144,13 @@ export default function TruckDetail({
                   </>
                 )}
               </div>
+              <button
+                className="dbtn dbtn-ghost"
+                style={{ height: 30, padding: '0 12px', fontSize: 12.5 }}
+                onClick={() => setDetailsOpen(true)}
+              >
+                <Info size={14} /> Details
+              </button>
             </div>
             <div className="dhead-sub">{`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}</div>
           </div>
@@ -267,57 +275,6 @@ export default function TruckDetail({
         </div>
 
         <div className="dcol">
-          <Section title="Truck identity" icon={<Truck size={17} />}>
-            <div className="id-grid">
-              <Stat label="VIN" value={t.vin || '—'} mono />
-              <Stat label="Plate" value={t.plate || '—'} mono />
-              <Stat label="Year" value={t.year ?? '—'} mono />
-              <Stat label="Body type" value={t.body_type || '—'} />
-              <Stat label="Make" value={t.make} />
-              <Stat label="Model" value={t.model} />
-            </div>
-          </Section>
-
-          <Section title="Driver & crew" icon={<User size={17} />}>
-            <div>
-              <div className="person person-driver">
-                <div className="avatar">{initials(t.driver_name)}</div>
-                <div>
-                  <div className="person-name">{t.driver_name || 'Unassigned'}</div>
-                  <div className="person-role">Assigned driver</div>
-                </div>
-                {data.driver_phone && (
-                  <a className="person-call" href={`tel:${data.driver_phone}`}><Phone size={15} /></a>
-                )}
-                <button
-                  className="dbtn dbtn-ghost"
-                  style={{ height: 34, padding: '0 12px', fontSize: 12.5, marginLeft: data.driver_phone ? 8 : 'auto' }}
-                  onClick={() => setAssigningDriver(true)}
-                >
-                  {t.driver_name ? 'Change driver' : 'Assign driver'}
-                </button>
-              </div>
-              {t.assigned_mechanic && (
-                <div className="person">
-                  <div className="avatar avatar-mech">{initials(t.assigned_mechanic)}</div>
-                  <div>
-                    <div className="person-name">{t.assigned_mechanic}</div>
-                    <div className="person-role">Lead mechanic on file</div>
-                  </div>
-                </div>
-              )}
-              {data.crew.filter((m) => m !== t.assigned_mechanic).slice(0, 3).map((m) => (
-                <div key={m} className="person person-sm">
-                  <div className="avatar avatar-sm">{initials(m)}</div>
-                  <div>
-                    <div className="person-name">{m}</div>
-                    <div className="person-role">Worked on this truck</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-
           <Section title="Parts & warranty" icon={<Box size={17} />} count={data.parts.length}>
             {data.parts.length === 0 ? (
               <div className="empty-note"><Box size={16} /> No parts on record.</div>
@@ -368,6 +325,7 @@ export default function TruckDetail({
         </div>
       </Section>
 
+      {detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onClose={() => setDetailsOpen(false)} />}
       {editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {schedulePMOpen && <SchedulePMModal truck={t} onClose={() => setSchedulePMOpen(false)} onDone={refresh} />}
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={data.driver_phone} onClose={() => setAssigningDriver(false)} />}
@@ -384,5 +342,61 @@ function Stat({ label, value, mono }: { label: string; value: React.ReactNode; m
       <div className="id-k">{label}</div>
       <div className={'id-v' + (mono ? ' mono' : '')}>{value}</div>
     </div>
+  )
+}
+
+/* Combined truck identity + driver & crew, behind the "Details" button. */
+function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
+  truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void; onClose: () => void
+}) {
+  return (
+    <Modal title={`Details · ${truck.unit_number || 'Truck'}`} icon={<Truck size={17} />} onClose={onClose} width={520}>
+      <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
+      <div className="id-grid">
+        <Stat label="VIN" value={truck.vin || '—'} mono />
+        <Stat label="Plate" value={truck.plate || '—'} mono />
+        <Stat label="Year" value={truck.year ?? '—'} mono />
+        <Stat label="Body type" value={truck.body_type || '—'} />
+        <Stat label="Make" value={truck.make} />
+        <Stat label="Model" value={truck.model} />
+      </div>
+
+      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Driver & crew</div>
+      <div className="person person-driver">
+        <div className="avatar">{initials(truck.driver_name)}</div>
+        <div>
+          <div className="person-name">{truck.driver_name || 'Unassigned'}</div>
+          <div className="person-role">Assigned driver</div>
+        </div>
+        {detail.driver_phone && (
+          <a className="person-call" href={`tel:${detail.driver_phone}`}><Phone size={15} /></a>
+        )}
+        <button
+          className="dbtn dbtn-ghost"
+          style={{ height: 34, padding: '0 12px', fontSize: 12.5, marginLeft: detail.driver_phone ? 8 : 'auto' }}
+          onClick={onChangeDriver}
+        >
+          {truck.driver_name ? 'Change driver' : 'Assign driver'}
+        </button>
+      </div>
+      {truck.assigned_mechanic && (
+        <div className="person">
+          <div className="avatar avatar-mech">{initials(truck.assigned_mechanic)}</div>
+          <div>
+            <div className="person-name">{truck.assigned_mechanic}</div>
+            <div className="person-role">Lead mechanic on file</div>
+          </div>
+        </div>
+      )}
+      {detail.crew.filter((m) => m !== truck.assigned_mechanic).slice(0, 3).map((m) => (
+        <div key={m} className="person person-sm">
+          <div className="avatar avatar-sm">{initials(m)}</div>
+          <div>
+            <div className="person-name">{m}</div>
+            <div className="person-role">Worked on this truck</div>
+          </div>
+        </div>
+      ))}
+    </Modal>
   )
 }

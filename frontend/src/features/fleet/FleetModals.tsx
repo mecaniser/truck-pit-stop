@@ -11,7 +11,7 @@ import type {
 import { fmtDate, money } from './helpers'
 
 /* shared modal shell (fleet design system) */
-function Modal({ title, icon, onClose, children, width = 480 }: {
+export function Modal({ title, icon, onClose, children, width = 480 }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number
 }) {
   return (
