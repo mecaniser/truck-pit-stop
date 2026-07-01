@@ -124,7 +124,9 @@ async def test_schedule_pm_and_new_work_order(db_session):
     db_session.add(v)
     await db_session.commit()
 
-    res = await fleet.schedule_pm(vehicle_id=v.id, db=db_session, current_user=user)
+    from app.schemas.fleet import SchedulePMRequest
+    res = await fleet.schedule_pm(vehicle_id=v.id, body=SchedulePMRequest(create_work_order=True),
+                                  db=db_session, current_user=user)
     assert res.work_order is not None
     # the spawned RO is an internal PM order
     ros = (await db_session.execute(

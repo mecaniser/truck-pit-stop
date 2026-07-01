@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, Float, DateTime
+from sqlalchemy import Column, String, Integer, ForeignKey, Text, Float, DateTime, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -37,6 +37,10 @@ class Vehicle(BaseModel):
     # Mileage-based preventive maintenance. pm_remaining = next_pm_miles - mileage.
     pm_interval_miles = Column(Integer, nullable=False, default=25000)
     next_pm_miles = Column(Integer, nullable=True)  # odometer at which next PM is due
+    # Date-based preventive maintenance (complements mileage). PM is due when
+    # either the odometer or the date threshold is reached.
+    pm_interval_days = Column(Integer, nullable=False, default=180)
+    pm_due_date = Column(Date, nullable=True)  # date the next PM is due/scheduled
 
     # Last-known location from telematics (or manual entry). Provider-agnostic:
     # telematics_device_id maps this truck to the external provider's vehicle id.

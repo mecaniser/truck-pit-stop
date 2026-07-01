@@ -376,6 +376,64 @@ async def test_complete_generates_internal_invoice(db_session):
 
 
 @pytest.mark.asyncio
+async def test_pm_due_by_date(db_session):
+    from datetime import date, timedelta
+    from app.schemas.fleet import SchedulePMRequest
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    # Plenty of mileage left, but PM date is within the window -> "pm".
+    vehicle.mileage = 1000
+    vehicle.next_pm_miles = 26000  # 25k miles out
+    await db_session.commit()
+    await fleet.schedule_pm(vehicle_id=vehicle.id,
+                            body=SchedulePMRequest(due_date=date.today() + timedelta(days=5)),
+                            db=db_session, current_user=user)
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.status == "pm"
+    assert bt.pm_days_remaining == 5
+
+
+@pytest.mark.asyncio
+async def test_schedule_pm_can_create_work_order(db_session):
+    from datetime import date, timedelta
+    from app.schemas.fleet import SchedulePMRequest
+    _, vehicle, user = await _seed_fleet(db_session)
+    truck = await fleet.schedule_pm(
+        vehicle_id=vehicle.id,
+        body=SchedulePMRequest(due_date=date.today() + timedelta(days=30), create_work_order=True),
+        db=db_session, current_user=user,
+    )
+    assert truck.open_work_order_count == 1
+    await db_session.refresh(vehicle)
+    assert vehicle.pm_due_date == date.today() + timedelta(days=30)
+
+
+@pytest.mark.asyncio
+async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
+    import sqlalchemy
+    from datetime import date, timedelta
+    from app.schemas.fleet import SchedulePMRequest
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 100000
+    vehicle.pm_interval_miles = 25000
+    vehicle.pm_interval_days = 180
+    await db_session.commit()
+    await fleet.schedule_pm(vehicle_id=vehicle.id,
+                            body=SchedulePMRequest(due_date=date.today(), create_work_order=True),
+                            db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+
+    await db_session.refresh(vehicle)
+    assert vehicle.next_pm_miles == 100000 + 25000
+    assert vehicle.pm_due_date == date.today() + timedelta(days=180)
+
+
+@pytest.mark.asyncio
 async def test_manual_status_override_when_idle(db_session):
     from app.schemas.fleet import TruckUpdate
     _, vehicle, user = await _seed_fleet(db_session)

@@ -1508,8 +1508,8 @@ async def approve_completion(
         veh_result = await db.execute(select(Vehicle).where(Vehicle.id == order.vehicle_id))
         veh = veh_result.scalar_one_or_none()
         if veh:
-            base_odo = order.mileage_out or veh.mileage or 0
-            veh.next_pm_miles = base_odo + (veh.pm_interval_miles or 25000)
+            from app.services.internal_fleet import advance_vehicle_pm
+            advance_vehicle_pm(veh, order.mileage_out)
 
     # Append review notes to internal_notes if provided
     if body and body.review_notes:

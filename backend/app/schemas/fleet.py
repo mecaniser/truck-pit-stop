@@ -162,6 +162,9 @@ class BoardTruck(BaseModel):
     pm_interval_miles: int = 25000
     next_pm_miles: Optional[int] = None
     pm_remaining: Optional[int] = None
+    pm_interval_days: int = 180
+    pm_due_date: Optional[date] = None
+    pm_days_remaining: Optional[int] = None
     location_label: Optional[str] = None
     location_city: Optional[str] = None
     lat: Optional[float] = None
@@ -260,6 +263,8 @@ class TruckUpdate(BaseModel):
     odometer: Optional[int] = None
     pm_interval_miles: Optional[int] = None
     next_pm_miles: Optional[int] = None
+    pm_interval_days: Optional[int] = None
+    pm_due_date: Optional[date] = None
     telematics_device_id: Optional[str] = None
     # Manual location entry (used until a telematics provider is connected).
     lat: Optional[float] = None
@@ -276,6 +281,12 @@ class TruckUpdate(BaseModel):
 class WorkOrderCreate(BaseModel):
     # Optional description of the work needed; defaults server-side when blank.
     description: Optional[str] = None
+
+
+class SchedulePMRequest(BaseModel):
+    due_date: Optional[date] = None            # scheduled/next PM date
+    next_pm_miles: Optional[int] = None         # odometer at which the next PM is due
+    create_work_order: bool = False             # also spawn the PM work order now
 
 
 class FleetMechanicOption(BaseModel):
