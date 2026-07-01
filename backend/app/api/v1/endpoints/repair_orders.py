@@ -73,6 +73,13 @@ price_build_service = PriceBuildService()
 # Only draft and quoted ROs can have parts/labor modified
 EDITABLE_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
 DANGER_ACTION_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
+# Internal fleet WOs log labor/parts as work happens, so they stay editable
+# through the whole active flow — only terminal states freeze them.
+INTERNAL_FROZEN_RO_STATUSES = (
+    RepairOrderStatus.COMPLETED,
+    RepairOrderStatus.INVOICED,
+    RepairOrderStatus.CANCELLED,
+)
 PRICE_BUILD_EDIT_ROLES = (
     UserRole.GARAGE_OWNER,
     UserRole.GARAGE_ADMIN,
@@ -679,8 +686,16 @@ async def assign_mechanic(
                 detail="Only shop managers can reassign mechanics. Please contact your manager.",
             )
     else:
-        # First assignment - must be approved status
-        if order.status != RepairOrderStatus.APPROVED:
+        # First assignment - customer ROs must be approved. Internal fleet WOs
+        # skip the approval flow (draft → in_progress), so allow assigning a
+        # mechanic any time before they're frozen.
+        if order.is_internal:
+            if order.status in INTERNAL_FROZEN_RO_STATUSES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Can't assign a mechanic after the work order is completed",
+                )
+        elif order.status != RepairOrderStatus.APPROVED:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Can only assign mechanic to approved repair orders",
@@ -1719,6 +1734,10 @@ def _require_cancelable_ro(order: RepairOrder) -> None:
 
 
 def _require_deletable_ro(order: RepairOrder) -> None:
+    # Internal fleet work orders have no customer quote/invoice/payment, so they can
+    # be deleted at any status. Customer-facing ROs stay locked to draft/quoted.
+    if order.is_internal:
+        return
     if order.status not in DANGER_ACTION_RO_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1732,6 +1751,15 @@ def _require_editable_ro(order: RepairOrder) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="Pricing is locked for this repair order",
         )
+    # Internal fleet WOs log labor/parts throughout the active flow; they only
+    # freeze once completed/invoiced/cancelled. Customer ROs stay draft/quoted.
+    if order.is_internal:
+        if order.status in INTERNAL_FROZEN_RO_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Parts and labor can't be modified after the work order is completed",
+            )
+        return
     if order.status not in EDITABLE_RO_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

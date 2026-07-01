@@ -367,6 +367,19 @@ async def complete_inspection(
     if insp.status == InspectionStatus.COMPLETED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inspection already completed")
 
+    # Odometer is required — it keeps the mileage-based PM estimate fresh.
+    if body.odometer is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter the truck's current odometer to complete the inspection",
+        )
+    vehicle = await _get_fleet_vehicle(db, current_user.tenant_id, insp.vehicle_id)
+    if vehicle.mileage is not None and body.odometer < vehicle.mileage:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Odometer ({body.odometer:,} mi) is below the last recorded {vehicle.mileage:,} mi — check the reading",
+        )
+
     # Compute overall result from items unless explicitly overridden.
     if body.result is not None:
         overall = body.result
@@ -384,8 +397,8 @@ async def complete_inspection(
     insp.result = overall
     insp.performed_at = datetime.now(timezone.utc)
     insp.inspector_id = current_user.id
-    if body.odometer is not None:
-        insp.odometer = body.odometer
+    insp.odometer = body.odometer
+    vehicle.mileage = body.odometer  # refresh the truck's odometer so PM-by-miles recomputes
     if body.notes is not None:
         insp.notes = body.notes
     await db.commit()
@@ -673,7 +686,7 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         pm_interval_miles=v.pm_interval_miles or 25000,
         next_pm_miles=v.next_pm_miles,
         pm_remaining=_pm_remaining(v),
-        pm_interval_days=v.pm_interval_days or 180,
+        pm_interval_days=v.pm_interval_days or 70,
         pm_due_date=v.pm_due_date,
         pm_days_remaining=_pm_days_remaining(v),
         location_label=v.last_location_label,

@@ -162,7 +162,7 @@ class BoardTruck(BaseModel):
     pm_interval_miles: int = 25000
     next_pm_miles: Optional[int] = None
     pm_remaining: Optional[int] = None
-    pm_interval_days: int = 180
+    pm_interval_days: int = 70
     pm_due_date: Optional[date] = None
     pm_days_remaining: Optional[int] = None
     location_label: Optional[str] = None

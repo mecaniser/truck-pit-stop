@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <style>
+    *{box-sizing:border-box;}
+    body{margin:0;background:#080a09;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+    button,input{font-family:inherit;}
+    input::placeholder{color:#565b57;}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+    .sb::-webkit-scrollbar{width:8px;}
+    .sb::-webkit-scrollbar-thumb{background:#262b27;border-radius:99px;}
+    .sb::-webkit-scrollbar-track{background:transparent;}
+  </style>
+</helmet>
+
+<section id="turn1" style="min-width:100%;padding:44px 40px 90px;background:#080a09;display:flex;flex-direction:column;gap:28px;">
+  <div>
+    <div style="font-size:23px;font-weight:800;color:#f4f5f3;letter-spacing:-.01em;">Weekly inspection — 3 fast-lane redesigns</div>
+    <div style="font-size:14px;color:#8b918d;margin-top:7px;max-width:700px;line-height:1.5;">Optimized dense list for gloved, one-handed, outdoor use. Bigger targets, mark-all-pass, live progress, and flag-only notes + photos. All three are fully tappable — try them.</div>
+  </div>
+
+  <div style="display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- ============ 1a ============ -->
+    <div id="1a" style="display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:12px;font-weight:800;color:#0c0d0c;background:#f5a623;padding:3px 9px;border-radius:7px;letter-spacing:.03em;">1a</span>
+        <span style="font-size:13px;color:#9aa09b;">Compact toggles · full overview</span>
+      </div>
+      <div style="width:432px;height:856px;display:flex;flex-direction:column;background:#0c0e0d;border:1px solid #242927;border-radius:22px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.5);">
+        <div style="padding:15px 16px 13px;background:#0f1211;border-bottom:1px solid #1e2320;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:26px;height:26px;border-radius:7px;background:#f5a623;display:flex;align-items:center;justify-content:center;color:#0c0d0c;font-size:15px;font-weight:900;">✓</div>
+              <div>
+                <div style="font-size:14px;font-weight:800;letter-spacing:.06em;color:#f4f5f3;">WEEKLY INSPECTION</div>
+                <div style="font-size:11px;color:#7c827d;margin-top:2px;">Unit 4471 · Freightliner Cascadia</div>
+              </div>
+            </div>
+            <button onClick="{{ toggleListenA }}" style="{{ micAStyle }}">● VOICE</button>
+          </div>
+          <div style="margin-top:13px;display:flex;align-items:center;gap:12px;">
+            <div style="flex:1;height:7px;border-radius:99px;background:#1c211e;overflow:hidden;"><div style="{{ progressA.fillStyle }}"></div></div>
+            <div style="font-size:13px;font-weight:800;color:#f4f5f3;font-variant-numeric:tabular-nums;">{{ progressA.done }}<span style="color:#5a605b;">/12</span></div>
+          </div>
+          <div style="margin-top:11px;display:flex;gap:8px;">
+            <button onClick="{{ markAllPassA }}" style="flex:1;height:38px;border-radius:9px;background:rgba(67,178,95,0.12);border:1px solid rgba(67,178,95,0.35);color:#43b25f;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer;">✓ MARK ALL PASS</button>
+            <button onClick="{{ resetA }}" style="width:40px;height:38px;border-radius:9px;background:#141817;border:1px solid #262b27;color:#8b918d;font-size:16px;cursor:pointer;">↺</button>
+          </div>
+        </div>
+        <div class="sb" style="flex:1;overflow:auto;padding:2px 15px 16px;">
+          <sc-if value="{{ listeningA }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:11px 0 2px;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(245,166,35,0.1);border:1px solid rgba(245,166,35,0.3);">
+              <span style="width:8px;height:8px;border-radius:50%;background:#f5a623;animation:blink 1s infinite;"></span>
+              <span style="font-size:12px;color:#f0b959;font-weight:600;">Listening — say “pass”, “fail”, or “skip”</span>
+            </div>
+          </sc-if>
+          <sc-for list="{{ groupsA }}" as="g" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 2px 2px;">
+              <span style="font-size:11px;font-weight:800;letter-spacing:.09em;color:#7c827d;">{{ g.cat }}</span>
+              <span style="font-size:11px;font-weight:700;color:#565b57;font-variant-numeric:tabular-nums;">{{ g.done }}/{{ g.total }}</span>
+            </div>
+            <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="2">
+              <div style="padding:11px 12px;background:#141817;border:1px solid #20251f;border-radius:12px;margin-top:8px;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                  <div style="flex:1;font-size:14px;font-weight:600;color:#e9ebe7;line-height:1.25;">{{ it.label }}</div>
+                  <div style="display:flex;gap:7px;flex:0 0 auto;">
+                    <button onClick="{{ it.setPass }}" style="{{ it.passStyle }}">✓</button>
+                    <button onClick="{{ it.setFail }}" style="{{ it.failStyle }}">✕</button>
+                    <button onClick="{{ it.setNa }}" style="{{ it.naStyle }}">–</button>
+                  </div>
+                </div>
+                <sc-if value="{{ it.isFail }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+                    <input value="{{ it.note }}" onChange="{{ it.onNote }}" placeholder="What's wrong? (quick note)" style="height:40px;border-radius:9px;background:#0f1211;border:1px solid #3a2a2b;color:#f4f5f3;font-size:13px;padding:0 12px;outline:none;" />
+                    <button onClick="{{ it.addPhoto }}" style="align-self:flex-start;display:flex;align-items:center;gap:7px;height:34px;padding:0 12px;border-radius:8px;background:#1a1412;border:1px dashed #5a4a3a;color:#e0a56b;font-size:12px;font-weight:700;cursor:pointer;">+ {{ it.photoLabel }}</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </sc-for>
+          <div style="margin-top:18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#141817;border:1px solid #20251f;border-radius:12px;">
+              <span style="font-size:10px;font-weight:800;letter-spacing:.09em;color:#7c827d;">PREVIOUS ODOMETER</span>
+              <span style="font-size:13px;color:#e9ebe7;font-variant-numeric:tabular-nums;">586,230 mi <span style="color:#6a706b;">· Jul 1</span></span>
+            </div>
+            <div style="margin-top:10px;font-size:10px;font-weight:800;letter-spacing:.09em;color:#7c827d;">NEW ODOMETER (MI)</div>
+            <input value="{{ odoA }}" onChange="{{ onOdoA }}" placeholder="Enter current reading" style="margin-top:7px;width:100%;height:46px;border-radius:11px;background:#0f1211;border:1px solid #262b27;color:#f4f5f3;font-size:15px;padding:0 14px;outline:none;font-variant-numeric:tabular-nums;" />
+          </div>
+        </div>
+        <div style="padding:12px 14px;background:#0f1211;border-top:1px solid #1e2320;">
+          <div style="text-align:center;font-size:11px;color:#8b918d;margin-bottom:9px;">{{ progressA.remainLabel }}</div>
+          <button style="width:100%;height:52px;border-radius:13px;background:#f5a623;border:none;color:#0c0d0c;font-size:15px;font-weight:800;letter-spacing:.02em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">✓ Review &amp; complete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 1b ============ -->
+    <div id="1b" style="display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:12px;font-weight:800;color:#0c0d0c;background:#f5a623;padding:3px 9px;border-radius:7px;letter-spacing:.03em;">1b</span>
+        <span style="font-size:13px;color:#9aa09b;">Traffic-light · auto-advance + hands-free</span>
+      </div>
+      <div style="width:432px;height:856px;display:flex;flex-direction:column;background:#0c0e0d;border:1px solid #242927;border-radius:22px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.5);">
+        <div style="padding:15px 16px 13px;background:#0f1211;border-bottom:1px solid #1e2320;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:26px;height:26px;border-radius:7px;background:#f5a623;display:flex;align-items:center;justify-content:center;color:#0c0d0c;font-size:15px;font-weight:900;">✓</div>
+              <div>
+                <div style="font-size:14px;font-weight:800;letter-spacing:.06em;color:#f4f5f3;">WEEKLY INSPECTION</div>
+                <div style="font-size:11px;color:#7c827d;margin-top:2px;">Unit 4471 · Freightliner Cascadia</div>
+              </div>
+            </div>
+            <button onClick="{{ toggleListenB }}" style="{{ micBStyle }}">● VOICE</button>
+          </div>
+          <div style="margin-top:13px;display:flex;align-items:center;gap:12px;">
+            <div style="flex:1;height:7px;border-radius:99px;background:#1c211e;overflow:hidden;"><div style="{{ progressB.fillStyle }}"></div></div>
+            <div style="font-size:13px;font-weight:800;color:#f4f5f3;font-variant-numeric:tabular-nums;">{{ progressB.done }}<span style="color:#5a605b;">/12</span></div>
+          </div>
+          <div style="margin-top:11px;display:flex;gap:8px;">
+            <button onClick="{{ markAllPassB }}" style="flex:1;height:38px;border-radius:9px;background:rgba(67,178,95,0.12);border:1px solid rgba(67,178,95,0.35);color:#43b25f;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer;">✓ MARK ALL PASS</button>
+            <button onClick="{{ resetB }}" style="width:40px;height:38px;border-radius:9px;background:#141817;border:1px solid #262b27;color:#8b918d;font-size:16px;cursor:pointer;">↺</button>
+          </div>
+        </div>
+        <div class="sb" style="flex:1;overflow:auto;padding:2px 15px 16px;">
+          <sc-if value="{{ listeningB }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:11px 0 2px;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(245,166,35,0.1);border:1px solid rgba(245,166,35,0.3);">
+              <span style="width:8px;height:8px;border-radius:50%;background:#f5a623;animation:blink 1s infinite;"></span>
+              <span style="font-size:12px;color:#f0b959;font-weight:600;">Listening — “pass” advances to next item</span>
+            </div>
+          </sc-if>
+          <sc-for list="{{ groupsB }}" as="g" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 2px 2px;">
+              <span style="font-size:11px;font-weight:800;letter-spacing:.09em;color:#7c827d;">{{ g.cat }}</span>
+              <span style="font-size:11px;font-weight:700;color:#565b57;font-variant-numeric:tabular-nums;">{{ g.done }}/{{ g.total }}</span>
+            </div>
+            <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="2">
+              <div style="position:relative;padding:13px 14px 13px 18px;background:#141817;border:1px solid #20251f;border-radius:12px;margin-top:8px;overflow:hidden;">
+                <div style="{{ it.accentStyle }}"></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                  <div style="min-width:0;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <span style="{{ it.statusStyle }}">{{ it.statusText }}</span>
+                      <sc-if value="{{ it.isCurrent }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:800;letter-spacing:.1em;color:#0c0d0c;background:#f5a623;padding:2px 6px;border-radius:5px;">NEXT</span></sc-if>
+                    </div>
+                    <div style="font-size:15px;font-weight:600;color:#e9ebe7;margin-top:4px;line-height:1.2;">{{ it.label }}</div>
+                  </div>
+                  <div style="display:flex;gap:9px;flex:0 0 auto;">
+                    <button onClick="{{ it.setPass }}" style="{{ it.passStyle }}">✓</button>
+                    <button onClick="{{ it.setFail }}" style="{{ it.failStyle }}">✕</button>
+                    <button onClick="{{ it.setNa }}" style="{{ it.naStyle }}">–</button>
+                  </div>
+                </div>
+                <sc-if value="{{ it.isFail }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:11px;display:flex;flex-direction:column;gap:8px;">
+                    <input value="{{ it.note }}" onChange="{{ it.onNote }}" placeholder="What's wrong? (quick note)" style="height:40px;border-radius:9px;background:#0f1211;border:1px solid #3a2a2b;color:#f4f5f3;font-size:13px;padding:0 12px;outline:none;" />
+                    <button onClick="{{ it.addPhoto }}" style="align-self:flex-start;display:flex;align-items:center;gap:7px;height:34px;padding:0 12px;border-radius:8px;background:#1a1412;border:1px dashed #5a4a3a;color:#e0a56b;font-size:12px;font-weight:700;cursor:pointer;">+ {{ it.photoLabel }}</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </sc-for>
+          <div style="margin-top:18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#141817;border:1px solid #20251f;border-radius:12px;">
+              <span style="font-size:10px;font-weight:800;letter-spacing:.09em;color:#7c827d;">PREVIOUS ODOMETER</span>
+              <span style="font-size:13px;color:#e9ebe7;font-variant-numeric:tabular-nums;">586,230 mi <span style="color:#6a706b;">· Jul 1</span></span>
+            </div>
+            <div style="margin-top:10px;font-size:10px;font-weight:800;letter-spacing:.09em;color:#7c827d;">NEW ODOMETER (MI)</div>
+            <input value="{{ odoB }}" onChange="{{ onOdoB }}" placeholder="Enter current reading" style="margin-top:7px;width:100%;height:46px;border-radius:11px;background:#0f1211;border:1px solid #262b27;color:#f4f5f3;font-size:15px;padding:0 14px;outline:none;font-variant-numeric:tabular-nums;" />
+          </div>
+        </div>
+        <div style="padding:12px 14px;background:#0f1211;border-top:1px solid #1e2320;">
+          <div style="text-align:center;font-size:11px;color:#8b918d;margin-bottom:9px;">{{ progressB.remainLabel }}</div>
+          <button style="width:100%;height:52px;border-radius:13px;background:#f5a623;border:none;color:#0c0d0c;font-size:15px;font-weight:800;letter-spacing:.02em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">✓ Review &amp; complete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 1c ============ -->
+    <div id="1c" style="display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:12px;font-weight:800;color:#0c0d0c;background:#f5a623;padding:3px 9px;border-radius:7px;letter-spacing:.03em;">1c</span>
+        <span style="font-size:13px;color:#9aa09b;">Pass-first · sections auto-collapse</span>
+      </div>
+      <div style="width:432px;height:856px;display:flex;flex-direction:column;background:#0c0e0d;border:1px solid #242927;border-radius:22px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.5);">
+        <div style="padding:15px 16px 13px;background:#0f1211;border-bottom:1px solid #1e2320;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:26px;height:26px;border-radius:7px;background:#f5a623;display:flex;align-items:center;justify-content:center;color:#0c0d0c;font-size:15px;font-weight:900;">✓</div>
+              <div>
+                <div style="font-size:14px;font-weight:800;letter-spacing:.06em;color:#f4f5f3;">WEEKLY INSPECTION</div>
+                <div style="font-size:11px;color:#7c827d;margin-top:2px;">Unit 4471 · Freightliner Cascadia</div>
+              </div>
+            </div>
+            <button onClick="{{ toggleListenC }}" style="{{ micCStyle }}">● VOICE</button>
+          </div>
+          <div style="margin-top:13px;display:flex;align-items:center;gap:12px;">
+            <div style="flex:1;height:7px;border-radius:99px;background:#1c211e;overflow:hidden;"><div style="{{ progressC.fillStyle }}"></div></div>
+            <div style="font-size:13px;font-weight:800;color:#f4f5f3;font-variant-numeric:tabular-nums;">{{ progressC.done }}<span style="color:#5a605b;">/12</span></div>
+          </div>
+          <div style="margin-top:11px;display:flex;gap:8px;">
+            <button onClick="{{ markAllPassC }}" style="flex:1;height:38px;border-radius:9px;background:rgba(67,178,95,0.12);border:1px solid rgba(67,178,95,0.35);color:#43b25f;font-size:12px;font-weight:800;letter-spacing:.03em;cursor:pointer;">✓ MARK ALL PASS</button>
+            <button onClick="{{ resetC }}" style="width:40px;height:38px;border-radius:9px;background:#141817;border:1px solid #262b27;color:#8b918d;font-size:16px;cursor:pointer;">↺</button>
+          </div>
+        </div>
+        <div class="sb" style="flex:1;overflow:auto;padding:8px 15px 16px;">
+          <sc-if value="{{ listeningC }}" hint-placeholder-val="{{ false }}">
+            <div style="margin:6px 0 2px;display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:10px;background:rgba(245,166,35,0.1);border:1px solid rgba(245,166,35,0.3);">
+              <span style="width:8px;height:8px;border-radius:50%;background:#f5a623;animation:blink 1s infinite;"></span>
+              <span style="font-size:12px;color:#f0b959;font-weight:600;">Listening — say “pass”, “fail”, or “skip”</span>
+            </div>
+          </sc-if>
+          <sc-for list="{{ groupsC }}" as="g" hint-placeholder-count="6">
+            <div style="margin-top:11px;border:1px solid #20251f;border-radius:14px;overflow:hidden;">
+              <div onClick="{{ g.toggle }}" style="{{ g.headerStyle }}">
+                <span style="font-size:11px;font-weight:800;letter-spacing:.09em;">{{ g.cat }}</span>
+                <span style="{{ g.summaryStyle }}">{{ g.summaryText }}</span>
+              </div>
+              <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                <div style="padding:8px 10px 10px;display:flex;flex-direction:column;gap:8px;">
+                  <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="2">
+                    <div style="padding:10px 11px;background:#141817;border:1px solid #20251f;border-radius:12px;">
+                      <div style="font-size:14px;font-weight:600;color:#e9ebe7;margin-bottom:9px;line-height:1.2;">{{ it.label }}</div>
+                      <div style="display:flex;gap:8px;">
+                        <button onClick="{{ it.setPass }}" style="{{ it.passStyle }}">✓ PASS</button>
+                        <button onClick="{{ it.setFail }}" style="{{ it.failStyle }}">✕</button>
+                        <button onClick="{{ it.setNa }}" style="{{ it.naStyle }}">–</button>
+                      </div>
+                      <sc-if value="{{ it.isFail }}" hint-placeholder-val="{{ false }}">
+                        <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+                          <input value="{{ it.note }}" onChange="{{ it.onNote }}" placeholder="What's wrong? (quick note)" style="height:40px;border-radius:9px;background:#0f1211;border:1px solid #3a2a2b;color:#f4f5f3;font-size:13px;padding:0 12px;outline:none;" />
+                          <button onClick="{{ it.addPhoto }}" style="align-self:flex-start;display:flex;align-items:center;gap:7px;height:34px;padding:0 12px;border-radius:8px;background:#1a1412;border:1px dashed #5a4a3a;color:#e0a56b;font-size:12px;font-weight:700;cursor:pointer;">+ {{ it.photoLabel }}</button>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <div style="margin-top:18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:#141817;border:1px solid #20251f;border-radius:12px;">
+              <span style="font-size:10px;font-weight:800;letter-spacing:.09em;color:#7c827d;">PREVIOUS ODOMETER</span>
+              <span style="font-size:13px;color:#e9ebe7;font-variant-numeric:tabular-nums;">586,230 mi <span style="color:#6a706b;">· Jul 1</span></span>
+            </div>
+            <div style="margin-top:10px;font-size:10px;font-weight:800;letter-spacing:.09em;color:#7c827d;">NEW ODOMETER (MI)</div>
+            <input value="{{ odoC }}" onChange="{{ onOdoC }}" placeholder="Enter current reading" style="margin-top:7px;width:100%;height:46px;border-radius:11px;background:#0f1211;border:1px solid #262b27;color:#f4f5f3;font-size:15px;padding:0 14px;outline:none;font-variant-numeric:tabular-nums;" />
+          </div>
+        </div>
+        <div style="padding:12px 14px;background:#0f1211;border-top:1px solid #1e2320;">
+          <div style="text-align:center;font-size:11px;color:#8b918d;margin-bottom:9px;">{{ progressC.remainLabel }}</div>
+          <button style="width:100%;height:52px;border-radius:13px;background:#f5a623;border:none;color:#0c0d0c;font-size:15px;font-weight:800;letter-spacing:.02em;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">✓ Review &amp; complete</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  CATS = [
+    {cat:'Brakes', items:[{id:'air',label:'Air brake system / lines'},{id:'pads',label:'Brake pads & rotors'}]},
+    {cat:'Fluids', items:[{id:'coolant',label:'Coolant level'},{id:'oil',label:'Engine oil level'},{id:'leaks',label:'Leaks under vehicle'}]},
+    {cat:'Lights', items:[{id:'marker',label:'Brake & marker lights'},{id:'head',label:'Headlights & turn signals'}]},
+    {cat:'Safety', items:[{id:'horn',label:'Horn, wipers & mirrors'},{id:'belts',label:'Seatbelts & fire extinguisher'}]},
+    {cat:'Steering', items:[{id:'steer',label:'Steering & suspension play'}]},
+    {cat:'Tires', items:[{id:'pressure',label:'Tire pressure'},{id:'tread',label:'Tread depth & wear'}]},
+  ];
+  CMAP = {
+    pass:{c:'#43b25f',tint:'rgba(67,178,95,0.16)',border:'rgba(67,178,95,0.55)'},
+    fail:{c:'#e5545a',tint:'rgba(229,84,90,0.16)',border:'rgba(229,84,90,0.55)'},
+    na:{c:'#9aa09b',tint:'rgba(154,160,155,0.14)',border:'rgba(154,160,155,0.4)'},
+  };
+  state = { A:{}, B:{}, C:{}, collapsedC:{}, userC:{}, listening:{A:false,B:false,C:false}, odo:{A:'',B:'',C:''} };
+
+  catOf(id){ let r; this.CATS.forEach(c=>c.items.forEach(it=>{ if(it.id===id) r=c.cat; })); return r; }
+  catComplete(cat,map){ const c=this.CATS.find(x=>x.cat===cat); return c.items.every(it=>map[it.id]&&map[it.id].status); }
+
+  setStatus(v,id,status){
+    this.setState(s=>{
+      const rec={...(s[v][id]||{})};
+      rec.status = rec.status===status ? null : status;
+      const nv={...s[v],[id]:rec};
+      const patch={[v]:nv};
+      if(v==='C'){
+        const cat=this.catOf(id);
+        const complete=this.catComplete(cat,nv);
+        const ct={...s.collapsedC};
+        if(complete && !s.userC[cat]) ct[cat]=true;
+        if(!complete) ct[cat]=false;
+        patch.collapsedC=ct;
+      }
+      return patch;
+    });
+  }
+  markAllPass(v){
+    this.setState(s=>{
+      const nv={};
+      this.CATS.forEach(c=>c.items.forEach(it=>{ nv[it.id]={...(s[v][it.id]||{}),status:'pass'}; }));
+      const patch={[v]:nv};
+      if(v==='C'){ const ct={}; this.CATS.forEach(c=>ct[c.cat]=true); patch.collapsedC=ct; patch.userC={}; }
+      return patch;
+    });
+  }
+  resetAll(v){ this.setState(s=>{ const patch={[v]:{}}; if(v==='C'){patch.collapsedC={};patch.userC={};} return patch; }); }
+  setNote(v,id,text){ this.setState(s=>({[v]:{...s[v],[id]:{...(s[v][id]||{}),note:text}}})); }
+  addPhoto(v,id){ this.setState(s=>({[v]:{...s[v],[id]:{...(s[v][id]||{}),photo:true}}})); }
+  toggleListen(v){ this.setState(s=>({listening:{...s.listening,[v]:!s.listening[v]}})); }
+  setOdo(v,text){ this.setState(s=>({odo:{...s.odo,[v]:text}})); }
+  toggleCollapse(cat){ this.setState(s=>({collapsedC:{...s.collapsedC,[cat]:!s.collapsedC[cat]}, userC:{...s.userC,[cat]:true}})); }
+
+  segStyle(kind,active){ const m=this.CMAP[kind]; return {width:'46px',height:'44px',flex:'0 0 auto',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'15px',fontWeight:'700',borderRadius:'10px',background:active?m.tint:'#0f1211',color:active?m.c:'#6b716d',border:'1px solid '+(active?m.border:'#262b27'),outline:'none',WebkitTapHighlightColor:'transparent'}; }
+  dotStyle(kind,active){ const m=this.CMAP[kind]; return {width:'50px',height:'50px',flex:'0 0 auto',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'19px',fontWeight:'700',background:active?m.c:'transparent',color:active?'#08110c':m.c,border:'2px solid '+(active?m.c:'rgba(255,255,255,0.16)'),outline:'none',WebkitTapHighlightColor:'transparent'}; }
+  cPass(active){ return {flex:'1 1 0',height:'50px',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',cursor:'pointer',fontSize:'14px',fontWeight:'800',letterSpacing:'.04em',borderRadius:'12px',background:active?'#43b25f':'rgba(67,178,95,0.1)',color:active?'#08110c':'#43b25f',border:'1px solid '+(active?'#43b25f':'rgba(67,178,95,0.35)'),outline:'none',WebkitTapHighlightColor:'transparent'}; }
+  cSmall(kind,active){ const m=this.CMAP[kind]; return {width:'50px',height:'50px',flex:'0 0 auto',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'17px',fontWeight:'700',borderRadius:'12px',background:active?m.tint:'#0f1211',color:active?m.c:'#6b716d',border:'1px solid '+(active?m.border:'#262b27'),outline:'none',WebkitTapHighlightColor:'transparent'}; }
+  micStyle(v){ const on=this.state.listening[v]; return {display:'flex',alignItems:'center',gap:'6px',height:'30px',padding:'0 11px',borderRadius:'99px',fontSize:'10px',fontWeight:'800',letterSpacing:'.06em',cursor:'pointer',border:'1px solid '+(on?'#f5a623':'#2a2f2b'),background:on?'#f5a623':'transparent',color:on?'#0c0d0c':'#8b918d',outline:'none'}; }
+
+  baseItem(v,it){
+    const rec=this.state[v][it.id]||{}; const s=rec.status||null;
+    return { _s:s, id:it.id, label:it.label, note:rec.note||'', photoLabel:rec.photo?'Photo attached':'Add photo', isFail:s==='fail',
+      setPass:()=>this.setStatus(v,it.id,'pass'), setFail:()=>this.setStatus(v,it.id,'fail'), setNa:()=>this.setStatus(v,it.id,'na'),
+      onNote:(e)=>this.setNote(v,it.id,e.target.value), addPhoto:()=>this.addPhoto(v,it.id) };
+  }
+  sectionMeta(v,c){ const items=c.items.map(it=>this.baseItem(v,it)); const done=items.filter(i=>i._s).length; return {items,done,total:items.length}; }
+
+  buildA(){
+    return this.CATS.map(c=>{ const m=this.sectionMeta('A',c);
+      const items=m.items.map(i=>({...i, passStyle:this.segStyle('pass',i._s==='pass'), failStyle:this.segStyle('fail',i._s==='fail'), naStyle:this.segStyle('na',i._s==='na')}));
+      return {cat:c.cat.toUpperCase(),done:m.done,total:m.total,items}; });
+  }
+  buildB(){
+    const order=[]; this.CATS.forEach(c=>c.items.forEach(it=>order.push(it.id)));
+    const cur=order.find(id=>!(this.state.B[id]&&this.state.B[id].status));
+    const TXT={pass:'PASS',fail:'FAIL',na:'N/A'};
+    return this.CATS.map(c=>{ const m=this.sectionMeta('B',c);
+      const items=m.items.map(i=>{ const s=i._s; const isCur=i.id===cur;
+        const barColor = s?this.CMAP[s].c:(isCur?'#f5a623':'#242a26');
+        return {...i, isCurrent:isCur, statusText:s?TXT[s]:'PENDING',
+          statusStyle:{fontSize:'10px',fontWeight:'800',letterSpacing:'.1em',color:s?this.CMAP[s].c:(isCur?'#f5a623':'#565b57')},
+          accentStyle:{position:'absolute',left:'0',top:'0',bottom:'0',width:'4px',background:barColor},
+          passStyle:this.dotStyle('pass',s==='pass'), failStyle:this.dotStyle('fail',s==='fail'), naStyle:this.dotStyle('na',s==='na')}; });
+      return {cat:c.cat.toUpperCase(),done:m.done,total:m.total,items}; });
+  }
+  buildC(){
+    return this.CATS.map(c=>{ const m=this.sectionMeta('C',c);
+      const items=m.items.map(i=>({...i, passStyle:this.cPass(i._s==='pass'), failStyle:this.cSmall('fail',i._s==='fail'), naStyle:this.cSmall('na',i._s==='na')}));
+      const fail=m.items.filter(i=>i._s==='fail').length; const na=m.items.filter(i=>i._s==='na').length;
+      const complete=m.done===m.total; const collapsed=!!this.state.collapsedC[c.cat];
+      let summary;
+      if(complete){ summary = fail>0 ? (fail+' flagged') : (na>0 ? ((m.total-na)+' pass · '+na+' N/A') : 'All passed ✓'); }
+      else { summary = m.done+'/'+m.total; }
+      return { cat:c.cat.toUpperCase(), rawCat:c.cat, done:m.done, total:m.total, fail, complete, open:!collapsed,
+        toggle:()=>this.toggleCollapse(c.cat),
+        headerStyle:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'13px 14px',cursor:'pointer',userSelect:'none',background:complete?'rgba(67,178,95,0.08)':'#12100e00',color:complete?'#43b25f':'#8b918d'},
+        summaryStyle:{fontSize:'11px',fontWeight:'800',letterSpacing:'.02em',color:fail>0?'#e5545a':(complete?'#43b25f':'#565b57'),fontVariantNumeric:'tabular-nums'},
+        summaryText:summary, items }; });
+  }
+  progressOf(v){
+    let done=0,fails=0; this.CATS.forEach(c=>c.items.forEach(it=>{ const r=this.state[v][it.id]; if(r&&r.status){done++; if(r.status==='fail')fails++;} }));
+    const pct=Math.round(done/12*100)+'%';
+    const fillStyle={height:'100%',width:pct,borderRadius:'99px',background:done===12?'#43b25f':'#43b25f',transition:'width .25s ease'};
+    let remainLabel;
+    if(done<12) remainLabel=(12-done)+' checks remaining';
+    else if(fails>0) remainLabel=fails+' item'+(fails>1?'s':'')+' flagged — ready to review';
+    else remainLabel='All clear — ready to submit';
+    return {done,fails,pct,fillStyle,remainLabel};
+  }
+
+  renderVals(){
+    return {
+      groupsA:this.buildA(), progressA:this.progressOf('A'), listeningA:this.state.listening.A, micAStyle:this.micStyle('A'),
+      toggleListenA:()=>this.toggleListen('A'), markAllPassA:()=>this.markAllPass('A'), resetA:()=>this.resetAll('A'), odoA:this.state.odo.A, onOdoA:(e)=>this.setOdo('A',e.target.value),
+      groupsB:this.buildB(), progressB:this.progressOf('B'), listeningB:this.state.listening.B, micBStyle:this.micStyle('B'),
+      toggleListenB:()=>this.toggleListen('B'), markAllPassB:()=>this.markAllPass('B'), resetB:()=>this.resetAll('B'), odoB:this.state.odo.B, onOdoB:(e)=>this.setOdo('B',e.target.value),
+      groupsC:this.buildC(), progressC:this.progressOf('C'), listeningC:this.state.listening.C, micCStyle:this.micStyle('C'),
+      toggleListenC:()=>this.toggleListen('C'), markAllPassC:()=>this.markAllPass('C'), resetC:()=>this.resetAll('C'), odoC:this.state.odo.C, onOdoC:(e)=>this.setOdo('C',e.target.value),
+    };
+  }
+}
+</script>
+</body>
+</html>

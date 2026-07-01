@@ -47,3 +47,6 @@ Thumbs.db
 # E2E artifacts
 e2e/playwright-report/
 
+
+# Stray service documents (data artifacts, may contain PII — never commit)
+/Service*.pdf

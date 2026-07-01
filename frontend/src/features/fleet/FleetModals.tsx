@@ -1,17 +1,18 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
+  Check, Minus, RotateCcw,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
-  BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, IncidentSeverity,
+  BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
 } from './types'
-import { fmtDate, money } from './helpers'
+import { fmtDate, money, fmt } from './helpers'
 
 /* shared modal shell (fleet design system) */
-function Modal({ title, icon, onClose, children, width = 480 }: {
+export function Modal({ title, icon, onClose, children, width = 480 }: {
   title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number
 }) {
   return (
@@ -204,7 +205,8 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
 
 export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck; onClose: () => void; onDone: () => void }) {
   const qc = useQueryClient()
-  const intervalDays = truck.pm_interval_days || 180
+  // Default cadence when the truck has no configured interval: 10 weeks (70 days).
+  const intervalDays = truck.pm_interval_days || 70
   const intervalMiles = truck.pm_interval_miles || 25000
   const defaultDate = () => {
     const base = truck.pm_due_date ? new Date(truck.pm_due_date) : new Date(Date.now() + intervalDays * 86400000)
@@ -213,6 +215,7 @@ export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck;
   const [dueDate, setDueDate] = useState(defaultDate())
   const [nextMiles, setNextMiles] = useState(String(truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)))
   const [createWO, setCreateWO] = useState(false)
+  const rescheduling = !!truck.pm_due_date
 
   const save = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, {
@@ -221,7 +224,7 @@ export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck;
       create_work_order: createWO,
     })).data,
     onSuccess: () => {
-      toast.success(createWO ? 'PM scheduled and work order created' : 'PM scheduled')
+      toast.success(createWO ? 'PM rescheduled and work order created' : (rescheduling ? 'PM rescheduled' : 'PM scheduled'))
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
       qc.invalidateQueries({ queryKey: ['fleet-board'] })
       onDone(); onClose()
@@ -230,7 +233,7 @@ export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck;
   })
 
   return (
-    <Modal title={`Schedule PM${truck.unit_number ? ` · ${truck.unit_number}` : ''}`} icon={<Calendar size={17} />} onClose={onClose} width={440}>
+    <Modal title={`${rescheduling ? 'Reschedule' : 'Schedule'} PM${truck.unit_number ? ` · ${truck.unit_number}` : ''}`} icon={<Calendar size={17} />} onClose={onClose} width={440}>
       <div style={{ display: 'grid', gap: 12 }}>
         <Field label="Next PM due date">
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
@@ -247,7 +250,7 @@ export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck;
         PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval.
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Calendar size={15} />} {createWO ? 'Schedule + create work order' : 'Save schedule'}
+        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Calendar size={15} />} {createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create work order` : 'Save schedule'}
       </button>
     </Modal>
   )
@@ -459,8 +462,9 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to complete work order'),
   })
 
-  // The RO can only be deleted before work starts (draft/quoted).
-  const deletable = wo ? ['draft', 'quoted'].includes(wo.status) : false
+  // Internal fleet work orders can be deleted at any status. The confirmation
+  // warns when work has already started, since deleting discards that progress.
+  const workStarted = wo ? !['draft', 'quoted'].includes(wo.status) : false
   const title = wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Work order'
 
   return (
@@ -468,7 +472,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
       {isLoading || !wo ? (
         <div className="loader"><Loader2 size={18} className="animate-spin" /></div>
       ) : (
-        <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
               Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
@@ -561,7 +565,9 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             <InlineConfirm
               danger
-              message="Delete this work order? This can't be undone."
+              message={workStarted
+                ? "Work has started — deleting discards all logged labor and parts. This can't be undone."
+                : "Delete this work order? This can't be undone."}
               confirmLabel="Delete"
               pending={del.isPending}
               onConfirm={() => del.mutate()}
@@ -569,18 +575,13 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
                 <button
                   className={ghostBtn}
                   style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
-                  disabled={!deletable || del.isPending}
+                  disabled={del.isPending}
                   onClick={arm}
                 >
                   <Trash2 size={14} /> Delete work order
                 </button>
               )}
             />
-            {!deletable && (
-              <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
-                Work has started — a work order can only be deleted while it's a draft.
-              </p>
-            )}
           </div>
         </div>
       )}
@@ -702,15 +703,61 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
   )
 }
 
+/* ---------- Edit incident (details, severity, location) ---------- */
+
+export function EditIncidentModal({ incident, truckId, onClose }: { incident: IncidentEntry; truckId: string; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [description, setDescription] = useState(incident.note || '')
+  const [location, setLocation] = useState(incident.location || '')
+  const [severity, setSeverity] = useState<IncidentSeverity>(incident.severity)
+
+  const save = useMutation({
+    mutationFn: async () => (await api.patch(`/fleet/incidents/${incident.id}`, {
+      location: location || null, severity, description,
+    })).data,
+    onSuccess: () => {
+      toast.success('Incident updated')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      onClose()
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+  })
+
+  return (
+    <Modal title="Edit incident" icon={<Pencil size={17} />} onClose={onClose}>
+      <div style={{ marginBottom: 12 }}>
+        <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {SEVS.map((s) => (
+            <button key={s} onClick={() => setSeverity(s)}
+              style={{
+                flex: 1, height: 36, borderRadius: 8, textTransform: 'capitalize', fontSize: 13, fontWeight: 600,
+                border: '1px solid ' + (severity === s ? sevTint[s] : 'var(--line)'),
+                background: severity === s ? `color-mix(in srgb, ${sevTint[s]} 16%, transparent)` : 'transparent',
+                color: severity === s ? sevTint[s] : 'var(--muted)',
+              }}>{s}</button>
+          ))}
+        </div>
+      </div>
+      <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="I-85 mile 42, Charlotte NC" /></Field>
+      <div style={{ marginTop: 12 }}>
+        <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened?</span>
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
+          style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5, padding: 10, outline: 'none' }}
+          placeholder="Describe the incident" />
+      </div>
+      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
+        disabled={!description.trim() || save.isPending} onClick={() => save.mutate()}>
+        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Save changes
+      </button>
+    </Modal>
+  )
+}
+
 /* ---------- Inspections: section + checklist ---------- */
 
-const itemBtns: [InspectionItemResult, React.ReactNode, string][] = [
-  ['pass', <CheckCircle2 size={16} />, 'var(--st-active)'],
-  ['fail', <XCircle size={16} />, 'var(--red)'],
-  ['na', <MinusCircle size={16} />, 'var(--muted)'],
-]
-
-export function InspectionsSection({ vehicleId, truckId }: { vehicleId: string; truckId: string }) {
+export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { vehicleId: string; truckId: string; currentOdometer?: number | null }) {
   const qc = useQueryClient()
   const [openId, setOpenId] = useState<string | null>(null)
   const { data: inspections } = useQuery<Inspection[]>({
@@ -725,6 +772,10 @@ export function InspectionsSection({ vehicleId, truckId }: { vehicleId: string; 
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
   })
+  // Most recent completed reading, for the "previous odometer" reference in the checklist.
+  const lastReading = (inspections || [])
+    .filter((i) => i.status === 'completed' && i.odometer != null && i.performed_at)
+    .sort((a, b) => (a.performed_at! < b.performed_at! ? 1 : -1))[0]
 
   return (
     <section className="dsec">
@@ -739,29 +790,49 @@ export function InspectionsSection({ vehicleId, truckId }: { vehicleId: string; 
         <div className="empty-note"><ClipboardCheck size={16} /> No inspections yet.</div>
       ) : (
         <div className="inc-list">
-          {inspections.map((i) => (
-            <button key={i.id} className="lrow" onClick={() => setOpenId(i.id)}>
-              <i className="lrow-dot" style={{ background: i.status === 'completed' ? 'var(--st-active)' : 'var(--yellow)' }} />
-              <span className="lrow-tx">{fmtDate(i.performed_at || i.scheduled_for)}</span>
-              <span className="lrow-r">
-                <span className="lrow-st" style={{ textTransform: 'capitalize' }}>
-                  {i.status === 'completed' ? (i.result || 'completed') : i.status}
+          {inspections.map((i) => {
+            const dot = i.status === 'completed'
+              ? (i.result === 'fail' ? 'var(--red)' : 'var(--st-active)')
+              : i.status === 'missed' ? 'var(--red)' : 'var(--yellow)'
+            const label = i.status === 'completed' ? (i.result || 'completed') : i.status
+            const labelColor = (i.status === 'missed' || i.result === 'fail') ? 'var(--red)' : undefined
+            const row = (
+              <>
+                <i className="lrow-dot" style={{ background: dot }} />
+                <span className="lrow-tx">{fmtDate(i.performed_at || i.scheduled_for)}</span>
+                <span className="lrow-r">
+                  {i.odometer != null && <span className="lrow-tx" style={{ color: 'var(--muted)' }}>{fmt(i.odometer)} mi</span>}
+                  <span className="lrow-st" style={{ textTransform: 'capitalize', color: labelColor }}>{label}</span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </>
+            )
+            // Missed markers have no checklist to open.
+            return i.status === 'missed'
+              ? <div key={i.id} className="lrow" style={{ cursor: 'default' }}>{row}</div>
+              : <button key={i.id} className="lrow" onClick={() => setOpenId(i.id)}>{row}</button>
+          })}
         </div>
       )}
-      {openId && <InspectionChecklistModal inspectionId={openId} truckId={truckId} vehicleId={vehicleId} onClose={() => setOpenId(null)} />}
+      {openId && <InspectionChecklistModal inspectionId={openId} truckId={truckId} vehicleId={vehicleId} currentOdometer={currentOdometer} lastReadingDate={lastReading?.performed_at || null} onClose={() => setOpenId(null)} />}
     </section>
   )
 }
 
-function InspectionChecklistModal({ inspectionId, truckId, vehicleId, onClose }: {
-  inspectionId: string; truckId: string; vehicleId: string; onClose: () => void
+const CATEGORY_ORDER = ['Brakes', 'Fluids', 'Lights', 'Safety', 'Steering', 'Tires']
+
+function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdometer, lastReadingDate, onClose }: {
+  inspectionId: string; truckId: string; vehicleId: string; currentOdometer?: number | null; lastReadingDate?: string | null; onClose: () => void
 }) {
   const qc = useQueryClient()
-  const [notes, setNotes] = useState('')
+  const [odometer, setOdometer] = useState('')  // fresh reading; previous stays read-only
+  const [confirming, setConfirming] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
+  const firstErrorRef = useRef<HTMLDivElement | null>(null)
+  const odoRef = useRef<HTMLInputElement | null>(null)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [userToggled, setUserToggled] = useState<Record<string, boolean>>({})
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
+
   const { data: insp } = useQuery<InspectionDetail>({
     queryKey: ['fleet-inspection', inspectionId],
     queryFn: async () => (await api.get(`/fleet/inspections/${inspectionId}`)).data,
@@ -769,64 +840,272 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, onClose }:
   const refreshLists = () => {
     qc.invalidateQueries({ queryKey: ['fleet-inspections', vehicleId] })
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+    qc.invalidateQueries({ queryKey: ['fleet-board'] })
   }
-  const setItem = useMutation({
-    mutationFn: async ({ itemId, result }: { itemId: string; result: InspectionItemResult }) =>
-      (await api.patch(`/fleet/inspections/${inspectionId}/items/${itemId}`, { result })).data,
+  const patchItem = useMutation({
+    mutationFn: async ({ itemId, result, note }: { itemId: string; result?: InspectionItemResult; note?: string }) =>
+      (await api.patch(`/fleet/inspections/${inspectionId}/items/${itemId}`, { result, note })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }),
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to save'),
+  })
+  const bulk = useMutation({
+    mutationFn: async (result: InspectionItemResult) => {
+      await Promise.all((insp?.items || []).map((it) =>
+        api.patch(`/fleet/inspections/${inspectionId}/items/${it.id}`, { result })))
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }),
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
   })
   const complete = useMutation({
-    mutationFn: async () => (await api.post(`/fleet/inspections/${inspectionId}/complete`, { notes: notes || undefined })).data,
-    onSuccess: () => { toast.success('Inspection completed'); refreshLists(); qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }) },
+    mutationFn: async () => (await api.post(`/fleet/inspections/${inspectionId}/complete`, { odometer: Number(odometer) })).data,
+    onSuccess: () => { toast.success('Inspection completed'); refreshLists(); qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }); onClose() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Could not complete'),
   })
+
+  const items = insp?.items || []
   const done = insp?.status === 'completed'
-  const grouped = (insp?.items || []).reduce((acc, it) => { (acc[it.category] ||= []).push(it); return acc }, {} as Record<string, InspectionItem[]>)
+  const total = items.length
+  const doneCount = items.filter((i) => i.result !== 'pending').length
+  const passCount = items.filter((i) => i.result === 'pass').length
+  const failCount = items.filter((i) => i.result === 'fail').length
+  const naCount = items.filter((i) => i.result === 'na').length
+  const remaining = total - doneCount
+  const computedResult: InspectionResult = failCount > 0 ? 'fail' : 'pass'
+  const allMarked = total > 0 && remaining === 0
+  const progressPct = total ? (doneCount / total) * 100 : 0
+
+  const grouped = items.reduce((acc, it) => { (acc[it.category] ||= []).push(it); return acc }, {} as Record<string, InspectionItem[]>)
+  const cats = Object.keys(grouped).sort((a, b) => {
+    const ia = CATEGORY_ORDER.indexOf(a), ib = CATEGORY_ORDER.indexOf(b)
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b)
+  })
+  const secComplete = (cat: string) => grouped[cat].every((it) => it.result !== 'pending')
+  const isCollapsed = (cat: string) => (userToggled[cat] ? !!collapsed[cat] : secComplete(cat))
+  const secSummary = (cat: string): { text: string; color: string } => {
+    const its = grouped[cat]
+    const d = its.filter((i) => i.result !== 'pending').length
+    if (d < its.length) return { text: `${d}/${its.length}`, color: 'var(--muted-3)' }
+    const f = its.filter((i) => i.result === 'fail').length
+    const na = its.filter((i) => i.result === 'na').length
+    const p = its.filter((i) => i.result === 'pass').length
+    if (f > 0) return { text: `${f} flagged`, color: 'var(--red)' }
+    if (na > 0) return { text: `${p} pass · ${na} N/A`, color: 'var(--st-active)' }
+    return { text: 'All passed ✓', color: 'var(--st-active)' }
+  }
+
+  const odoNum = odometer.trim() ? Number(odometer) : null
+  const odoValid = odoNum != null && Number.isFinite(odoNum) && odoNum >= 0
+  const odoBackwards = odoValid && currentOdometer != null && (odoNum as number) < currentOdometer
+
+  // Live-computed problems so highlights + message clear as each is fixed.
+  const problems: string[] = []
+  if (!allMarked) problems.push(`${remaining} item${remaining > 1 ? 's' : ''} still unmarked`)
+  if (!odoValid) problems.push('enter the current odometer')
+  else if (odoBackwards) problems.push('odometer is below the previous reading')
+  const odoError = showErrors && (!odoValid || odoBackwards)
+
+  // First unmarked item (in display order) — the scroll/highlight target.
+  let firstPendingId: string | null = null
+  for (const cat of cats) { for (const it of grouped[cat]) { if (it.result === 'pending') { firstPendingId = it.id; break } } if (firstPendingId) break }
+
+  const setStatus = (item: InspectionItem, result: InspectionItemResult) => {
+    const next: InspectionItemResult = item.result === result ? 'pending' : result  // tap active to clear
+    patchItem.mutate({ itemId: item.id, result: next })
+  }
+  const markAllPass = () => { bulk.mutate('pass'); setUserToggled({}); setCollapsed({}) }
+  const resetAll = () => { bulk.mutate('pending'); setUserToggled({}); setCollapsed({}); setNoteDrafts({}) }
+  const toggleSection = (cat: string) => {
+    const nextCollapsed = !isCollapsed(cat)
+    setUserToggled((u) => ({ ...u, [cat]: true }))
+    setCollapsed((c) => ({ ...c, [cat]: nextCollapsed }))
+  }
+
+  const reviewAndComplete = () => {
+    if (problems.length) {
+      setShowErrors(true)
+      requestAnimationFrame(() => {
+        if (firstPendingId && firstErrorRef.current) {
+          firstErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        } else if (odoRef.current) {
+          odoRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          odoRef.current.focus()
+        }
+      })
+      return
+    }
+    setShowErrors(false); setConfirming(true)
+  }
+
+  const hasUnit = !!insp?.vehicle_unit_number
+  const unitLabel = insp ? (hasUnit ? insp.vehicle_unit_number! : `${insp.vehicle_make} ${insp.vehicle_model}`.trim()) : ''
+  const makeModel = insp && hasUnit ? `${insp.vehicle_year ? `${insp.vehicle_year} ` : ''}${insp.vehicle_make} ${insp.vehicle_model}`.trim() : ''
+  const statusText = !allMarked
+    ? `${remaining} check${remaining === 1 ? '' : 's'} remaining`
+    : failCount > 0 ? `${failCount} item${failCount === 1 ? '' : 's'} flagged — ready to review` : 'All clear — ready to submit'
 
   return (
-    <Modal title="Weekly inspection" icon={<ClipboardCheck size={17} />} onClose={onClose} width={520}>
-      {!insp ? <div className="loader"><Loader2 size={18} className="animate-spin" /></div> : (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12 }}>
-            <span style={{ color: 'var(--muted-2)' }}>Status:</span>
-            <span style={{ textTransform: 'capitalize' }}>{insp.status}</span>
-            {insp.result && <span className="part-w w-on" style={{ textTransform: 'uppercase' }}>{insp.result}</span>}
-          </div>
-          {Object.entries(grouped).map(([cat, items]) => (
-            <div key={cat} style={{ marginBottom: 12 }}>
-              <div className="id-k" style={{ marginBottom: 6 }}>{cat}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {items.map((item) => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '8px 12px' }}>
-                    <span style={{ fontSize: 13.5 }}>{item.label}</span>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {itemBtns.map(([res, icon, color]) => (
-                        <button key={res} disabled={done || setItem.isPending}
-                          onClick={() => setItem.mutate({ itemId: item.id, result: res })}
-                          title={res}
-                          style={{
-                            padding: 6, borderRadius: 7, border: 'none', background: item.result === res ? `color-mix(in srgb, ${color} 22%, transparent)` : 'transparent',
-                            color: item.result === res ? color : 'var(--muted-3)', opacity: done ? 0.5 : 1,
-                          }}>{icon}</button>
-                      ))}
+    <div className="ip-overlay" onClick={onClose}>
+      <div className="ip-frame" onClick={(e) => e.stopPropagation()}>
+        {!insp ? (
+          <div className="loader" style={{ margin: 'auto' }}><Loader2 size={20} className="animate-spin" /></div>
+        ) : (
+          <>
+            <div className="ip-head">
+              <div className="ip-head-row">
+                <div className="ip-brand">
+                  <span className="ip-brand-sq"><Check size={19} strokeWidth={3} /></span>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="ip-eyebrow">Weekly Inspection</div>
+                    <div className="ip-unit">{unitLabel}</div>
+                    {makeModel && <div className="ip-sub">{makeModel}</div>}
+                  </div>
+                </div>
+                <button className="ip-close" onClick={onClose} title="Close"><X size={15} /></button>
+              </div>
+              {!done && (
+                <>
+                  <div className="ip-progress">
+                    <div className="ip-track"><div className="ip-fill" style={{ width: `${progressPct}%` }} /></div>
+                    <div className="ip-count">{doneCount}<span>/{total}</span></div>
+                  </div>
+                  <div className="ip-bulk">
+                    <button className="ip-markall" onClick={markAllPass} disabled={bulk.isPending}>
+                      <Check size={14} strokeWidth={3} /> MARK ALL PASS
+                    </button>
+                    <button className="ip-reset" onClick={resetAll} disabled={bulk.isPending} title="Reset all"><RotateCcw size={16} /></button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="ip-body">
+              {done && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '10px 2px 4px' }}>
+                  <span className={'part-w ' + (insp.result === 'fail' ? 'w-off' : 'w-on')} style={{ textTransform: 'uppercase' }}>{insp.result || 'completed'}</span>
+                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                    {insp.odometer != null ? `${fmt(insp.odometer)} mi` : '—'} · {insp.performed_at ? fmtDate(insp.performed_at) : '—'}
+                  </span>
+                </div>
+              )}
+              {cats.map((cat) => {
+                const its = grouped[cat]
+                const complete = secComplete(cat)
+                const catHasPending = its.some((i) => i.result === 'pending')
+                // Force the section open when we're pointing out its unmarked items.
+                const collapsedNow = !done && isCollapsed(cat) && !(showErrors && catHasPending)
+                const sum = secSummary(cat)
+                return (
+                  <div key={cat} className="ip-sec">
+                    <div className={'ip-sec-head' + (complete ? ' done' : '')} onClick={() => toggleSection(cat)}>
+                      <span className="ip-sec-name">{cat}</span>
+                      <span className="ip-sec-sum" style={{ color: sum.color }}>{sum.text}</span>
+                    </div>
+                    {!collapsedNow && (
+                      <div className="ip-sec-body">
+                        {its.map((item) => {
+                          const noteVal = noteDrafts[item.id] ?? (item.note || '')
+                          const itemErr = showErrors && item.result === 'pending'
+                          return (
+                            <div key={item.id} className={'ip-item' + (itemErr ? ' err' : '')}
+                              ref={item.id === firstPendingId ? firstErrorRef : undefined}>
+                              <div className="ip-item-label">{item.label}
+                                {itemErr && <span style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11, marginLeft: 8, letterSpacing: '.04em' }}>· NOT SET</span>}
+                              </div>
+                              {done ? (
+                                <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase',
+                                  color: item.result === 'fail' ? 'var(--red)' : item.result === 'na' ? 'var(--muted)' : 'var(--st-active)' }}>
+                                  {item.result === 'na' ? 'N/A' : item.result}
+                                  {item.note && <span style={{ display: 'block', fontWeight: 400, textTransform: 'none', color: 'var(--muted)', marginTop: 4 }}>{item.note}</span>}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="ip-btns">
+                                    <button className={'ip-pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')}>
+                                      <Check size={16} strokeWidth={3} /> PASS
+                                    </button>
+                                    <button className={'ip-sm fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail"><X size={18} /></button>
+                                    <button className={'ip-sm na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A"><Minus size={18} /></button>
+                                  </div>
+                                  {item.result === 'fail' && (
+                                    <div className="ip-flag">
+                                      <input value={noteVal}
+                                        onChange={(e) => setNoteDrafts((d) => ({ ...d, [item.id]: e.target.value }))}
+                                        onBlur={() => { if ((noteDrafts[item.id] ?? '') !== (item.note || '')) patchItem.mutate({ itemId: item.id, note: noteDrafts[item.id] ?? '' }) }}
+                                        placeholder="What's wrong? (quick note)" />
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {!done && (
+                <div className="ip-odo">
+                  <div className="ip-odo-card">
+                    <span className="ip-odo-k">Previous odometer</span>
+                    <span className="ip-odo-v">
+                      {currentOdometer != null ? `${fmt(currentOdometer)} mi` : 'None on record'}
+                      {lastReadingDate && <span> · {fmtDate(lastReadingDate)}</span>}
+                    </span>
+                  </div>
+                  <div className="ip-odo-k" style={{ marginTop: 10, color: odoError ? 'var(--red)' : undefined }}>New odometer (mi)</div>
+                  <input ref={odoRef} className={'ip-odo-input' + (odoError ? ' err' : '')}
+                    value={odometer} inputMode="numeric" placeholder="Enter current reading"
+                    onChange={(e) => setOdometer(e.target.value)} />
+                  {odoBackwards && (
+                    <p style={{ fontSize: 12, color: 'var(--red)', marginTop: 6 }}>
+                      Below the previous {fmt(currentOdometer as number)} mi — odometers don't go backwards, check the reading.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="ip-foot">
+              {done ? (
+                <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
+              ) : confirming ? (
+                <>
+                  <div style={{
+                    borderRadius: 11, padding: '11px 13px', marginBottom: 10,
+                    border: '1px solid ' + (computedResult === 'fail' ? 'var(--red)' : 'var(--st-active)'),
+                    background: `color-mix(in srgb, ${computedResult === 'fail' ? 'var(--red)' : 'var(--st-active)'} 12%, transparent)`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 800, color: computedResult === 'fail' ? 'var(--red)' : 'var(--st-active)' }}>
+                      {computedResult === 'fail' ? <XCircle size={17} /> : <CheckCircle2 size={17} />}
+                      Will be recorded as {computedResult === 'fail' ? 'FAILED' : 'PASSED'}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 6 }}>
+                      {passCount} passed · {failCount} failed · {naCount} N/A · odometer {fmt(odoNum)} mi
                     </div>
                   </div>
-                ))}
-              </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="ip-cta ip-cta-ghost" style={{ flex: 1 }} disabled={complete.isPending} onClick={() => setConfirming(false)}>Back</button>
+                    <button className="ip-cta" style={{ flex: 2 }} disabled={complete.isPending} onClick={() => complete.mutate()}>
+                      {complete.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={3} />} Confirm &amp; submit
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className={'ip-status' + (showErrors && problems.length ? ' warn' : '')}>
+                    {showErrors && problems.length ? `Can't complete yet — ${problems.join(' · ')}.` : statusText}
+                  </div>
+                  <button className="ip-cta" onClick={reviewAndComplete}>
+                    <Check size={16} strokeWidth={3} /> Review &amp; complete
+                  </button>
+                </>
+              )}
             </div>
-          ))}
-          {!done && (
-            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 4 }}>
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Inspection notes (optional)"
-                style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, padding: 10, outline: 'none', marginBottom: 10 }} />
-              <button className={yellowBtn} style={{ width: '100%', justifyContent: 'center' }} disabled={complete.isPending} onClick={() => complete.mutate()}>
-                {complete.isPending ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Complete inspection
-              </button>
-              <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 8 }}>Mark every item before completing. Any failed item fails the inspection.</p>
-            </div>
-          )}
-        </div>
-      )}
-    </Modal>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

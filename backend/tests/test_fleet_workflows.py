@@ -105,9 +105,69 @@ async def test_complete_inspection_with_failure(db_session):
             body=InspectionItemUpdate(result=res), db=db_session, current_user=user,
         )
     completed = await fleet.complete_inspection(
-        inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+        inspection_id=detail.id, body=InspectionComplete(odometer=125000), db=db_session, current_user=user
     )
     assert completed.result == InspectionResult.FAIL
+
+
+@pytest.mark.asyncio
+async def test_complete_inspection_updates_vehicle_mileage(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 100000
+    await db_session.commit()
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    for item in detail.items:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS), db=db_session, current_user=user,
+        )
+    await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(odometer=112500), db=db_session, current_user=user
+    )
+    await db_session.refresh(vehicle)
+    assert vehicle.mileage == 112500  # odometer from the inspection refreshes the truck
+
+
+@pytest.mark.asyncio
+async def test_complete_inspection_requires_odometer(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    for item in detail.items:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS), db=db_session, current_user=user,
+        )
+    with pytest.raises(HTTPException) as exc:
+        await fleet.complete_inspection(
+            inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+        )
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_complete_inspection_rejects_backwards_odometer(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 120000
+    await db_session.commit()
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user
+    )
+    for item in detail.items:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS), db=db_session, current_user=user,
+        )
+    with pytest.raises(HTTPException) as exc:
+        await fleet.complete_inspection(
+            inspection_id=detail.id, body=InspectionComplete(odometer=12000), db=db_session, current_user=user
+        )
+    assert exc.value.status_code == 400
+    await db_session.refresh(vehicle)
+    assert vehicle.mileage == 120000  # unchanged after a rejected reading
 
 
 @pytest.mark.asyncio
@@ -118,7 +178,7 @@ async def test_complete_inspection_rejects_pending_items(db_session):
     )
     with pytest.raises(HTTPException) as exc:
         await fleet.complete_inspection(
-            inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+            inspection_id=detail.id, body=InspectionComplete(odometer=125000), db=db_session, current_user=user
         )
     assert exc.value.status_code == 400
 
@@ -144,7 +204,7 @@ async def test_roster_overdue_then_current(db_session):
             db=db_session, current_user=user,
         )
     await fleet.complete_inspection(
-        inspection_id=detail.id, body=InspectionComplete(), db=db_session, current_user=user
+        inspection_id=detail.id, body=InspectionComplete(odometer=125000), db=db_session, current_user=user
     )
     roster = await fleet.list_fleet_vehicles(db=db_session, current_user=user)
     assert roster[0].inspection_overdue is False
@@ -473,3 +533,63 @@ async def test_invalid_status_override_rejected(db_session):
         await fleet.update_truck(vehicle_id=vehicle.id, body=TruckUpdate(status_override="flying"),
                                  db=db_session, current_user=user)
     assert exc.value.status_code == 400
+
+
+# --- Weekly inspection compliance (missed-inspection recording) ---
+
+async def _missed_records(db_session, vehicle_id):
+    from sqlalchemy import select as _select, and_ as _and
+    from app.db.models.fleet import FleetInspection
+    rows = (await db_session.execute(
+        _select(FleetInspection).where(_and(
+            FleetInspection.vehicle_id == vehicle_id,
+            FleetInspection.status == InspectionStatus.MISSED,
+        ))
+    )).scalars().all()
+    return rows
+
+
+@pytest.mark.asyncio
+async def test_compliance_records_missed_for_uninspected_truck(db_session):
+    from app.tasks.fleet_inspection_compliance import record_missed_inspections
+    _, vehicle, _ = await _seed_fleet(db_session)
+    missed_by_tenant = await record_missed_inspections(db_session)
+    assert vehicle.tenant_id in missed_by_tenant
+    rows = await _missed_records(db_session, vehicle.id)
+    assert len(rows) == 1
+    assert rows[0].result == InspectionResult.FAIL
+
+
+@pytest.mark.asyncio
+async def test_compliance_skips_recently_inspected_truck(db_session):
+    from app.tasks.fleet_inspection_compliance import record_missed_inspections
+    from app.db.models.fleet import FleetInspection
+    _, vehicle, _ = await _seed_fleet(db_session)
+    db_session.add(FleetInspection(
+        id=uuid4(), tenant_id=vehicle.tenant_id, vehicle_id=vehicle.id,
+        status=InspectionStatus.COMPLETED, result=InspectionResult.PASS,
+        scheduled_for=datetime.now(timezone.utc).date(),
+        performed_at=datetime.now(timezone.utc) - timedelta(days=2),
+    ))
+    await db_session.commit()
+    await record_missed_inspections(db_session)
+    assert await _missed_records(db_session, vehicle.id) == []
+
+
+@pytest.mark.asyncio
+async def test_compliance_is_idempotent_within_the_week(db_session):
+    from app.tasks.fleet_inspection_compliance import record_missed_inspections
+    _, vehicle, _ = await _seed_fleet(db_session)
+    await record_missed_inspections(db_session)
+    await record_missed_inspections(db_session)
+    assert len(await _missed_records(db_session, vehicle.id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_compliance_skips_out_of_service_truck(db_session):
+    from app.tasks.fleet_inspection_compliance import record_missed_inspections
+    _, vehicle, _ = await _seed_fleet(db_session)
+    vehicle.status_override = "out_of_service"
+    await db_session.commit()
+    await record_missed_inspections(db_session)
+    assert await _missed_records(db_session, vehicle.id) == []
