@@ -76,7 +76,7 @@ export interface Incident {
 }
 
 // ---- Fleet board (design) ----
-export type TruckStatus = 'active' | 'shop' | 'pm' | 'parts' | 'draft'
+export type TruckStatus = 'active' | 'shop' | 'pm' | 'parts' | 'draft' | 'yard' | 'available' | 'out_of_service'
 
 export interface BoardWorkOrder {
   id: string
@@ -116,6 +116,7 @@ export interface BoardTruck {
   work_order?: BoardWorkOrder | null
   open_work_order_count: number
   open_incident_count: number
+  status_override?: string | null
 }
 
 export interface FleetStats {

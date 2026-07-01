@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
-  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2,
+  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity } from './types'
@@ -14,6 +14,15 @@ import { TruckEditModal, LogIncidentModal, InspectionsSection, NewWorkOrderModal
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
 }
+
+// Manual idle-status options. 'auto' clears the override (back to derived).
+const STATUS_OPTIONS: { value: string; label: string; dot: string }[] = [
+  { value: 'auto', label: 'Auto (on the road / PM due)', dot: '#22c55e' },
+  { value: 'active', label: 'On the road', dot: '#22c55e' },
+  { value: 'available', label: 'Available', dot: '#14b8a6' },
+  { value: 'yard', label: 'In the yard', dot: '#64748b' },
+  { value: 'out_of_service', label: 'Out of service', dot: '#ef4444' },
+]
 
 function Section({ title, icon, count, right, children }: {
   title: string; icon: React.ReactNode; count?: number; right?: React.ReactNode; children: React.ReactNode
@@ -73,6 +82,12 @@ export default function TruckDetail({
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
   const [schedulePMOpen, setSchedulePMOpen] = useState(false)
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
+  const setStatus = useMutation({
+    mutationFn: async (value: string) => (await api.patch(`/fleet/trucks/${truckId}`, { status_override: value })).data,
+    onSuccess: () => { toast.success('Status updated'); setStatusMenuOpen(false); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to set status'),
+  })
 
   if (isLoading || !data) return <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
 
@@ -90,9 +105,44 @@ export default function TruckDetail({
           <div>
             <div className="dhead-unit-row">
               <h1 className="dhead-unit">{t.unit_number}</h1>
-              <span className="dbadge" style={{ ['--st' as any]: meta.dot }}>
-                <i className={t.moving ? 'is-moving' : ''} />{meta.label}
-              </span>
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="dbadge"
+                  style={{ ['--st' as any]: meta.dot, cursor: 'pointer', border: 'none', font: 'inherit' }}
+                  onClick={() => setStatusMenuOpen((o) => !o)}
+                  title="Change status"
+                >
+                  <i className={t.moving ? 'is-moving' : ''} />{meta.label}
+                  <ChevronDown size={12} style={{ marginLeft: 5, opacity: 0.7 }} />
+                </button>
+                {statusMenuOpen && (
+                  <>
+                    <div onClick={() => setStatusMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                    <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 41, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, padding: 6, minWidth: 230, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
+                      {t.open_work_order_count > 0 && (
+                        <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0, padding: '4px 8px 6px', color: 'var(--muted-2)' }}>
+                          A work order is open, so the board shows that until it's done — this applies once it closes.
+                        </div>
+                      )}
+                      {STATUS_OPTIONS.map((opt) => {
+                        const current = (t.status_override || 'auto') === opt.value
+                        return (
+                          <button
+                            key={opt.value}
+                            onClick={() => setStatus.mutate(opt.value)}
+                            disabled={setStatus.isPending}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 8px', background: current ? 'var(--surface-2)' : 'transparent', border: 'none', borderRadius: 7, color: 'var(--text)', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}
+                          >
+                            <span style={{ width: 8, height: 8, borderRadius: 99, background: opt.dot, flexShrink: 0 }} />
+                            {opt.label}
+                            {current && <Check size={14} style={{ marginLeft: 'auto', color: 'var(--yellow)' }} />}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
             <div className="dhead-sub">{`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}</div>
           </div>

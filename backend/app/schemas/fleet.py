@@ -176,6 +176,7 @@ class BoardTruck(BaseModel):
     work_order: Optional[BoardWorkOrder] = None  # most-urgent open work order
     open_work_order_count: int = 0
     open_incident_count: int = 0
+    status_override: Optional[str] = None  # operator's manual idle status, if set
 
 
 class FleetStats(BaseModel):
@@ -272,6 +273,9 @@ class TruckUpdate(BaseModel):
     location_city: Optional[str] = None
     speed_mph: Optional[int] = None
     heading: Optional[str] = None
+    # Manual idle status: 'active' | 'yard' | 'available' | 'out_of_service' |
+    # 'auto' ('auto' or '' clears the override).
+    status_override: Optional[str] = None
 
 
 class WorkOrderCreate(BaseModel):

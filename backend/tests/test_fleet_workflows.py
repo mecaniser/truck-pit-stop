@@ -431,3 +431,45 @@ async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
     await db_session.refresh(vehicle)
     assert vehicle.next_pm_miles == 100000 + 25000
     assert vehicle.pm_due_date == date.today() + timedelta(days=180)
+
+
+@pytest.mark.asyncio
+async def test_manual_status_override_when_idle(db_session):
+    from app.schemas.fleet import TruckUpdate
+    _, vehicle, user = await _seed_fleet(db_session)
+
+    # No work order, no override -> on the road ("active").
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.status == "active"
+
+    # Operator marks it out of service.
+    await fleet.update_truck(vehicle_id=vehicle.id, body=TruckUpdate(status_override="out_of_service"),
+                             db=db_session, current_user=user)
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.status == "out_of_service"
+    assert bt.status_override == "out_of_service"
+
+    # An open work order wins over the manual status.
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.status == "draft"  # fresh work order
+
+    # 'auto' clears the override.
+    await fleet.update_truck(vehicle_id=vehicle.id, body=TruckUpdate(status_override="auto"),
+                             db=db_session, current_user=user)
+    await db_session.refresh(vehicle)
+    assert vehicle.status_override is None
+
+
+@pytest.mark.asyncio
+async def test_invalid_status_override_rejected(db_session):
+    from app.schemas.fleet import TruckUpdate
+    _, vehicle, user = await _seed_fleet(db_session)
+    with pytest.raises(HTTPException) as exc:
+        await fleet.update_truck(vehicle_id=vehicle.id, body=TruckUpdate(status_override="flying"),
+                                 db=db_session, current_user=user)
+    assert exc.value.status_code == 400
