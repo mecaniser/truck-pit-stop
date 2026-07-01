@@ -152,7 +152,12 @@ export default function TruckDetail({
                 <Info size={14} /> Details
               </button>
             </div>
-            <div className="dhead-sub">{`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}</div>
+            <div className="dhead-sub">
+              {`${t.year || ''} ${t.make} ${t.model}`.trim()}{t.body_type ? ` · ${t.body_type}` : ''}
+              <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--muted)' }}>
+                · <User size={12} /> {t.driver_name || 'No driver'}
+              </span>
+            </div>
           </div>
           <div className="dhead-r">
             <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)}>
