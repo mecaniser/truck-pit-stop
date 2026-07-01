@@ -19,7 +19,7 @@ def advance_vehicle_pm(vehicle, base_odometer: Optional[int], completed_on: Opti
     both the mileage target and the scheduled date."""
     base = base_odometer or vehicle.mileage or 0
     vehicle.next_pm_miles = base + (vehicle.pm_interval_miles or 25000)
-    vehicle.pm_due_date = (completed_on or date.today()) + timedelta(days=vehicle.pm_interval_days or 180)
+    vehicle.pm_due_date = (completed_on or date.today()) + timedelta(days=vehicle.pm_interval_days or 70)
 
 
 async def get_internal_fleet_customer(

@@ -20,6 +20,7 @@ celery_app.conf.update(
         "app.tasks.invoice_reminders",
         "app.tasks.pending_zelle_reminders",
         "app.tasks.mechanic_timer_maintenance",
+        "app.tasks.fleet_inspection_compliance",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
@@ -34,6 +35,10 @@ celery_app.conf.update(
         "process-mechanic-timer-maintenance": {
             "task": "process_mechanic_timer_maintenance",
             "schedule": crontab(minute="*/5"),  # Every 5 minutes
+        },
+        "process-fleet-inspection-compliance-weekly": {
+            "task": "process_fleet_inspection_compliance",
+            "schedule": crontab(hour=8, minute=0, day_of_week=1),  # Mondays 8 AM UTC
         },
     },
 )

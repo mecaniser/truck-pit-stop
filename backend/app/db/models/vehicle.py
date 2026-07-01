@@ -39,7 +39,7 @@ class Vehicle(BaseModel):
     next_pm_miles = Column(Integer, nullable=True)  # odometer at which next PM is due
     # Date-based preventive maintenance (complements mileage). PM is due when
     # either the odometer or the date threshold is reached.
-    pm_interval_days = Column(Integer, nullable=False, default=180)
+    pm_interval_days = Column(Integer, nullable=False, default=70)  # ~10 weeks (typical PM cadence)
     pm_due_date = Column(Date, nullable=True)  # date the next PM is due/scheduled
 
     # Last-known location from telematics (or manual entry). Provider-agnostic:

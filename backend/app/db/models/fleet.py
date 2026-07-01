@@ -45,6 +45,7 @@ class InspectionStatus(str, enum.Enum):
     SCHEDULED = "scheduled"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    MISSED = "missed"  # weekly cadence lapsed with no inspection performed
 
 
 class InspectionResult(str, enum.Enum):
