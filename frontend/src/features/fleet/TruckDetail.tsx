@@ -6,10 +6,10 @@ import {
   Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info,
 } from 'lucide-react'
 import api from '../../lib/api'
-import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity } from './types'
+import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal } from './FleetModals'
+import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal } from './FleetModals'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -78,6 +78,7 @@ export default function TruckDetail({
   })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
+  const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
   const [newWOOpen, setNewWOOpen] = useState(false)
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
@@ -167,7 +168,7 @@ export default function TruckDetail({
               <ClipboardList size={15} /> New work order
             </button>
             <button className="dbtn dbtn-yellow" onClick={() => setSchedulePMOpen(true)}>
-              <Calendar size={15} /> Schedule PM
+              <Calendar size={15} /> {t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}
             </button>
           </div>
         </div>
@@ -266,6 +267,10 @@ export default function TruckDetail({
                       {inc.location && <div className="inc-loc"><MapIcon size={12} /> {inc.location}</div>}
                       <div className="inc-note">{inc.note}</div>
                       <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                        <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
+                          onClick={() => setEditingIncident(inc)}>
+                          <Pencil size={12} /> Edit
+                        </button>
                         {inc.repair_order_id ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--st-active)' }}>
                             <Wrench size={12} /> Repair linked
@@ -295,7 +300,7 @@ export default function TruckDetail({
             )}
           </Section>
 
-          <InspectionsSection vehicleId={t.id} truckId={t.id} />
+          <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} />
 
           <Section
             title="Current location & nearby units"
@@ -331,6 +336,7 @@ export default function TruckDetail({
       {schedulePMOpen && <SchedulePMModal truck={t} onClose={() => setSchedulePMOpen(false)} onDone={refresh} />}
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={data.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
+      {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
       {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={t.unit_number} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
       {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
     </div>

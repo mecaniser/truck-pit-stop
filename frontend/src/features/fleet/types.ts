@@ -1,4 +1,4 @@
-export type InspectionStatus = 'scheduled' | 'completed' | 'cancelled'
+export type InspectionStatus = 'scheduled' | 'completed' | 'cancelled' | 'missed'
 export type InspectionResult = 'pass' | 'attention' | 'fail'
 export type InspectionItemResult = 'pending' | 'pass' | 'fail' | 'na'
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical'
