@@ -102,6 +102,9 @@ export interface BoardTruck {
   pm_interval_miles: number
   next_pm_miles?: number | null
   pm_remaining?: number | null
+  pm_interval_days?: number
+  pm_due_date?: string | null
+  pm_days_remaining?: number | null
   location_label?: string | null
   location_city?: string | null
   lat?: number | null

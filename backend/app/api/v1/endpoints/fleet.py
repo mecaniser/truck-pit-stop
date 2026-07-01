@@ -53,6 +53,7 @@ from app.schemas.fleet import (
     TruckDetailResponse,
     TruckUpdate,
     WorkOrderCreate,
+    SchedulePMRequest,
     FleetMechanicOption,
     FleetSettingsResponse,
 )
@@ -71,6 +72,7 @@ TERMINAL_RO_STATUSES = {
     RepairOrderStatus.DECLINED,
 }
 PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
+PM_DUE_SOON_DAYS = 14      # date-based PM "due soon" window
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
@@ -572,6 +574,23 @@ def _pm_remaining(v: Vehicle) -> Optional[int]:
     return v.next_pm_miles - v.mileage
 
 
+def _pm_days_remaining(v: Vehicle) -> Optional[int]:
+    if v.pm_due_date is None:
+        return None
+    return (v.pm_due_date - date.today()).days
+
+
+def _pm_due_soon(v: Vehicle) -> bool:
+    """PM is due soon when either the odometer or the scheduled date is close."""
+    rem_mi = _pm_remaining(v)
+    if rem_mi is not None and rem_mi < PM_DUE_SOON_MILES:
+        return True
+    rem_days = _pm_days_remaining(v)
+    if rem_days is not None and rem_days <= PM_DUE_SOON_DAYS:
+        return True
+    return False
+
+
 def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
     if open_ro is not None:
         if open_ro.hold_reason and "part" in open_ro.hold_reason.lower():
@@ -585,8 +604,7 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
         ):
             return "draft"
         return "shop"
-    rem = _pm_remaining(v)
-    if rem is not None and rem < PM_DUE_SOON_MILES:
+    if _pm_due_soon(v):
         return "pm"
     return "active"
 
@@ -650,6 +668,9 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         pm_interval_miles=v.pm_interval_miles or 25000,
         next_pm_miles=v.next_pm_miles,
         pm_remaining=_pm_remaining(v),
+        pm_interval_days=v.pm_interval_days or 180,
+        pm_due_date=v.pm_due_date,
+        pm_days_remaining=_pm_days_remaining(v),
         location_label=v.last_location_label,
         location_city=v.last_location_city,
         lat=v.last_lat,
@@ -929,6 +950,10 @@ async def update_truck(
         vehicle.pm_interval_miles = body.pm_interval_miles
     if body.next_pm_miles is not None:
         vehicle.next_pm_miles = body.next_pm_miles
+    if body.pm_interval_days is not None:
+        vehicle.pm_interval_days = body.pm_interval_days
+    if body.pm_due_date is not None:
+        vehicle.pm_due_date = body.pm_due_date
     if body.telematics_device_id is not None:
         vehicle.telematics_device_id = body.telematics_device_id or None
     # Manual location entry.
@@ -1045,6 +1070,13 @@ async def complete_work_order(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
     ro.status = RepairOrderStatus.COMPLETED
     ro.work_completed_at = datetime.now(timezone.utc)
+    # A completed PM rolls the truck's next PM forward (mileage + date).
+    if ro.is_pm:
+        from app.services.internal_fleet import advance_vehicle_pm
+        veh_result = await db.execute(select(Vehicle).where(Vehicle.id == ro.vehicle_id))
+        veh = veh_result.scalar_one_or_none()
+        if veh:
+            advance_vehicle_pm(veh, ro.mileage_out)
     await db.commit()
     # No external invoice for internal repairs — generate an internal cost record.
     await _create_internal_invoice(db, current_user.tenant_id, ro)
@@ -1134,14 +1166,29 @@ async def new_work_order(
 @router.post("/trucks/{vehicle_id}/schedule-pm", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
 async def schedule_pm(
     vehicle_id: UUID,
+    body: Optional[SchedulePMRequest] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
+    """Schedule the next PM: set the due date and/or mileage, and optionally
+    create the PM work order now."""
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
-    await _spawn_internal_ro(
-        db, current_user.tenant_id, vehicle, is_pm=True,
-        description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
-    )
+    body = body or SchedulePMRequest()
+
+    if body.due_date is not None:
+        vehicle.pm_due_date = body.due_date
+    if body.next_pm_miles is not None:
+        vehicle.next_pm_miles = body.next_pm_miles
+
+    if body.create_work_order:
+        # _spawn_internal_ro commits (and persists the schedule changes above).
+        await _spawn_internal_ro(
+            db, current_user.tenant_id, vehicle, is_pm=True,
+            description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
+        )
+    else:
+        await db.commit()
+
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
     return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))

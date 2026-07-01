@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag,
+  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, MinusCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type {
@@ -195,6 +195,59 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
         disabled={create.isPending || !description.trim()} onClick={() => create.mutate()}>
         {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} Create work order
+      </button>
+    </Modal>
+  )
+}
+
+/* ---------- Schedule PM (date + mileage) ---------- */
+
+export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck; onClose: () => void; onDone: () => void }) {
+  const qc = useQueryClient()
+  const intervalDays = truck.pm_interval_days || 180
+  const intervalMiles = truck.pm_interval_miles || 25000
+  const defaultDate = () => {
+    const base = truck.pm_due_date ? new Date(truck.pm_due_date) : new Date(Date.now() + intervalDays * 86400000)
+    return base.toISOString().slice(0, 10)
+  }
+  const [dueDate, setDueDate] = useState(defaultDate())
+  const [nextMiles, setNextMiles] = useState(String(truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)))
+  const [createWO, setCreateWO] = useState(false)
+
+  const save = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, {
+      due_date: dueDate || null,
+      next_pm_miles: nextMiles.trim() ? Number(nextMiles) : null,
+      create_work_order: createWO,
+    })).data,
+    onSuccess: () => {
+      toast.success(createWO ? 'PM scheduled and work order created' : 'PM scheduled')
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
+      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      onDone(); onClose()
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to schedule PM'),
+  })
+
+  return (
+    <Modal title={`Schedule PM${truck.unit_number ? ` · ${truck.unit_number}` : ''}`} icon={<Calendar size={17} />} onClose={onClose} width={440}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <Field label="Next PM due date">
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </Field>
+        <Field label="Next PM at odometer (mi)">
+          <input value={nextMiles} onChange={(e) => setNextMiles(e.target.value)} inputMode="numeric" placeholder={`${intervalMiles} mi interval`} />
+        </Field>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={createWO} onChange={(e) => setCreateWO(e.target.checked)} style={{ width: 'auto' }} />
+          Create the PM work order now
+        </label>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 10 }}>
+        PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval.
+      </p>
+      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
+        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Calendar size={15} />} {createWO ? 'Schedule + create work order' : 'Save schedule'}
       </button>
     </Modal>
   )

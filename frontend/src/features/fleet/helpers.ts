@@ -18,13 +18,28 @@ export function fmtDate(s?: string | null) {
 
 export interface PmState { label: string; cls: 'pm-ok' | 'pm-soon' | 'pm-over'; pct: number }
 
-export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles'>): PmState {
-  const r = t.pm_remaining
+export function pmState(t: Pick<BoardTruck, 'pm_remaining' | 'pm_interval_miles' | 'pm_days_remaining'>): PmState {
+  const r = t.pm_remaining          // miles remaining (may be negative)
+  const d = t.pm_days_remaining     // days remaining (may be negative)
   const interval = t.pm_interval_miles || 25000
-  if (r == null) return { label: 'PM not scheduled', cls: 'pm-over', pct: 100 }
-  if (r <= 0) return { label: `OVERDUE ${fmt(Math.abs(r))} mi`, cls: 'pm-over', pct: 100 }
-  if (r < 2500) return { label: `Due in ${fmt(r)} mi`, cls: 'pm-soon', pct: 100 - (r / interval) * 100 }
-  return { label: `${fmt(r)} mi to PM`, cls: 'pm-ok', pct: 100 - (r / interval) * 100 }
+  const milePct = r != null ? 100 - (r / interval) * 100 : 100
+
+  if (r == null && d == null) return { label: 'PM not scheduled', cls: 'pm-over', pct: 100 }
+
+  // Overdue on either axis.
+  if ((r != null && r <= 0) || (d != null && d < 0)) {
+    const label = r != null && r <= 0 ? `OVERDUE ${fmt(Math.abs(r))} mi` : `OVERDUE ${Math.abs(d as number)} d`
+    return { label, cls: 'pm-over', pct: 100 }
+  }
+  // Due soon on either axis.
+  const mileSoon = r != null && r < 2500
+  const dateSoon = d != null && d <= 14
+  if (mileSoon || dateSoon) {
+    const label = mileSoon ? `Due in ${fmt(r as number)} mi` : `Due in ${d} d`
+    return { label, cls: 'pm-soon', pct: milePct }
+  }
+  const label = r != null ? `${fmt(r)} mi to PM` : `${d} d to PM`
+  return { label, cls: 'pm-ok', pct: r != null ? milePct : 50 }
 }
 
 export function rank(t: BoardTruck): number {

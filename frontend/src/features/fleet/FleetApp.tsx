@@ -10,7 +10,7 @@ import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
-import { STATUS_META, fmt, pmState, initials } from './helpers'
+import { STATUS_META, fmt, fmtDate, pmState, initials } from './helpers'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
@@ -179,7 +179,8 @@ function SchedulePage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: s
             <div className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</div>
             <div className={'scard-urgency ' + ucls}>{pm.label}</div>
             <div className="tcard-odo" style={{ borderTop: 'none', paddingTop: 0 }}>
-              <span>ODO</span><b>{fmt(t.odometer)}</b><span>mi · next at {fmt(t.next_pm_miles)}</span>
+              <span>ODO</span><b>{fmt(t.odometer)}</b>
+              <span>mi · next at {fmt(t.next_pm_miles)}{t.pm_due_date ? ` · by ${fmtDate(t.pm_due_date)}` : ''}</span>
             </div>
           </button>
         )
