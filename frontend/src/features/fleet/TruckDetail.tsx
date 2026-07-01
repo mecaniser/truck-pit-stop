@@ -180,8 +180,7 @@ export default function TruckDetail({
         <Metric icon={<AlertTriangle size={18} />} label="Incidents on record" value={data.incidents_count} note={data.incidents_count ? 'see log' : 'clean'} />
       </div>
 
-      <div className="dgrid">
-        <div className="dcol">
+      <div className="dcol">
           <Section title="Open work orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length}>
             {data.open_work_orders.length === 0 ? (
               <div className="empty-note"><ClipboardList size={16} /> No open work orders.</div>
@@ -221,6 +220,26 @@ export default function TruckDetail({
                         {h.cost != null && <span className="tl-cost">{money(h.cost)}</span>}
                       </div>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Parts & warranty" icon={<Box size={17} />} count={data.parts.length}>
+            {data.parts.length === 0 ? (
+              <div className="empty-note"><Box size={16} /> No parts on record.</div>
+            ) : (
+              <div className="parts">
+                {data.parts.map((p) => (
+                  <div key={p.id} className="part">
+                    <div>
+                      <div className="part-name">{p.name}</div>
+                      <div className="part-meta">{fmtDate(p.date)} · {fmt(p.odometer)} mi</div>
+                    </div>
+                    <span className={'part-w ' + (p.active ? 'w-on' : 'w-off')}>
+                      {p.active ? 'Warranty to ' + fmtDate(p.warranty_until) : (p.warranty_until ? 'Expired' : 'No warranty')}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -277,33 +296,9 @@ export default function TruckDetail({
           </Section>
 
           <InspectionsSection vehicleId={t.id} truckId={t.id} />
-        </div>
 
-        <div className="dcol">
-          <Section title="Parts & warranty" icon={<Box size={17} />} count={data.parts.length}>
-            {data.parts.length === 0 ? (
-              <div className="empty-note"><Box size={16} /> No parts on record.</div>
-            ) : (
-              <div className="parts">
-                {data.parts.map((p) => (
-                  <div key={p.id} className="part">
-                    <div>
-                      <div className="part-name">{p.name}</div>
-                      <div className="part-meta">{fmtDate(p.date)} · {fmt(p.odometer)} mi</div>
-                    </div>
-                    <span className={'part-w ' + (p.active ? 'w-on' : 'w-off')}>
-                      {p.active ? 'Warranty to ' + fmtDate(p.warranty_until) : (p.warranty_until ? 'Expired' : 'No warranty')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Section>
-        </div>
-      </div>
-
-      <Section
-        title="Current location & nearby units"
+          <Section
+            title="Current location & nearby units"
         icon={<MapIcon size={17} />}
         right={
           <div className="loc-now">
@@ -329,6 +324,7 @@ export default function TruckDetail({
           </div>
         </div>
       </Section>
+      </div>
 
       {detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onClose={() => setDetailsOpen(false)} />}
       {editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
