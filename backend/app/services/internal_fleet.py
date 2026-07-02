@@ -22,6 +22,18 @@ def advance_vehicle_pm(vehicle, base_odometer: Optional[int], completed_on: Opti
     vehicle.pm_due_date = (completed_on or date.today()) + timedelta(days=vehicle.pm_interval_days or 70)
 
 
+def fleet_display_name(customer, fleet_company_name: Optional[str]) -> str:
+    """Customer display name for a repair order.
+
+    For internal fleet ROs the customer is the tenant's house account, which
+    shouldn't show its generic placeholder name. Prefer the configured fleet
+    company name (e.g. "77 Cargo"); fall back to the customer's first/last name.
+    """
+    if getattr(customer, "is_internal_fleet", False) and fleet_company_name:
+        return fleet_company_name
+    return f"{customer.first_name} {customer.last_name}".strip()
+
+
 async def get_internal_fleet_customer(
     db: AsyncSession, tenant_id: UUID
 ) -> Optional[Customer]:

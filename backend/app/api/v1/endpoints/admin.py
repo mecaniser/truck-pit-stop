@@ -869,6 +869,7 @@ class TaxFeeSettingsRequest(BaseModel):
     service_fee_rate: float  # Percentage of subtotal
     labor_rate: float  # Default hourly rate
     internal_labor_rate: float = 0.0  # Hourly labor cost for internal fleet repairs
+    fleet_company_name: Optional[str] = None  # Company that operates the internal fleet
 
 
 class TaxFeeSettingsResponse(BaseModel):
@@ -877,6 +878,7 @@ class TaxFeeSettingsResponse(BaseModel):
     service_fee_rate: float
     labor_rate: float
     internal_labor_rate: float = 0.0
+    fleet_company_name: Optional[str] = None
 
 
 class WorkforceSettingsRequest(BaseModel):
@@ -1264,6 +1266,7 @@ async def get_tax_fee_settings(
         service_fee_rate=float(tenant.service_fee_rate or 0),
         labor_rate=float(tenant.labor_rate if tenant.labor_rate is not None else 100),
         internal_labor_rate=float(tenant.internal_labor_rate or 0),
+        fleet_company_name=tenant.fleet_company_name,
     )
 
 
@@ -1292,11 +1295,16 @@ async def update_tax_fee_settings(
     if not 0 <= body.internal_labor_rate <= 9999.99:
         raise HTTPException(status_code=400, detail="internal_labor_rate must be between 0 and 9999.99")
 
+    fleet_company_name = (body.fleet_company_name or "").strip() or None
+    if fleet_company_name is not None and len(fleet_company_name) > 255:
+        raise HTTPException(status_code=400, detail="fleet_company_name must be 255 characters or fewer")
+
     tenant.sales_tax_rate = body.sales_tax_rate
     tenant.shop_supplies_rate = body.shop_supplies_rate
     tenant.service_fee_rate = body.service_fee_rate
     tenant.labor_rate = body.labor_rate
     tenant.internal_labor_rate = body.internal_labor_rate
+    tenant.fleet_company_name = fleet_company_name
 
     await db.commit()
     await db.refresh(tenant)
@@ -1307,6 +1315,7 @@ async def update_tax_fee_settings(
         service_fee_rate=float(tenant.service_fee_rate),
         labor_rate=float(tenant.labor_rate),
         internal_labor_rate=float(tenant.internal_labor_rate),
+        fleet_company_name=tenant.fleet_company_name,
     )
 
 

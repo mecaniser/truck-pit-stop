@@ -185,6 +185,7 @@ interface TaxFeeSettings {
   service_fee_rate: number
   labor_rate: number
   internal_labor_rate: number
+  fleet_company_name: string | null
 }
 
 interface WorkforceSettings {
@@ -1577,6 +1578,7 @@ function FeesSection() {
   const [serviceFeeRate, setServiceFeeRate] = useState('')
   const [laborRate, setLaborRate] = useState('')
   const [internalLaborRate, setInternalLaborRate] = useState('')
+  const [fleetCompanyName, setFleetCompanyName] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -1597,6 +1599,7 @@ function FeesSection() {
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
       setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
       setInternalLaborRate(taxFeeSettings.internal_labor_rate?.toString() || '0')
+      setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
     }
   }, [taxFeeSettings])
 
@@ -1605,7 +1608,8 @@ function FeesSection() {
     shopSuppliesRate !== (taxFeeSettings.shop_supplies_rate?.toString() || '') ||
     serviceFeeRate !== (taxFeeSettings.service_fee_rate?.toString() || '') ||
     laborRate !== (taxFeeSettings.labor_rate?.toString() || '100') ||
-    internalLaborRate !== (taxFeeSettings.internal_labor_rate?.toString() || '0')
+    internalLaborRate !== (taxFeeSettings.internal_labor_rate?.toString() || '0') ||
+    fleetCompanyName !== (taxFeeSettings.fleet_company_name || '')
   )
 
   const handleUnlock = async () => {
@@ -1638,6 +1642,7 @@ function FeesSection() {
         service_fee_rate: parseFloat(serviceFeeRate) || 0,
         labor_rate: laborRate === '' ? 100 : parseFloat(laborRate),
         internal_labor_rate: internalLaborRate === '' ? 0 : parseFloat(internalLaborRate),
+        fleet_company_name: fleetCompanyName.trim() || null,
       })
       return response.data
     },
@@ -1658,6 +1663,7 @@ function FeesSection() {
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
       setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
       setInternalLaborRate(taxFeeSettings.internal_labor_rate?.toString() || '0')
+      setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
     }
     setIsUnlocked(false)
   }
@@ -1794,6 +1800,18 @@ function FeesSection() {
                   className={industrialStyles.input}
                 />
                 <p className="mt-1 text-xs text-zinc-500">Labor cost rate for repairs on the garage's own fleet (no customer markup).</p>
+              </div>
+              <div>
+                <label className={industrialStyles.label}>Internal Fleet Company Name</label>
+                <input
+                  type="text"
+                  value={fleetCompanyName}
+                  onChange={(e) => setFleetCompanyName(e.target.value)}
+                  placeholder="e.g. 77 Cargo"
+                  maxLength={255}
+                  className={industrialStyles.input}
+                />
+                <p className="mt-1 text-xs text-zinc-500">The company that operates the fleet. Shown as the customer on internal fleet work orders.</p>
               </div>
             </div>
 

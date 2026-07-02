@@ -25,6 +25,8 @@ from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession, MiscWorkCategory
+from app.db.models.tenant import Tenant
+from app.services.internal_fleet import fleet_display_name
 from app.services.pricing import get_order_labor_total, get_order_subtotal
 from app.services.mechanic_time_service import (
     ATTENTION_REASON_LABELS,
@@ -164,6 +166,11 @@ async def get_dashboard_stats(
             orders_ready_to_close=[],
         )
 
+    # Fleet operator name, for displaying internal fleet ROs on the board.
+    fleet_company_name = (
+        await db.execute(select(Tenant.fleet_company_name).where(Tenant.id == tenant_id))
+    ).scalar_one_or_none()
+
     # Total customers
     result = await db.execute(
         select(func.count(Customer.id)).where(Customer.tenant_id == tenant_id)
@@ -264,7 +271,7 @@ async def get_dashboard_stats(
             order_number=order.order_number,
             status=order.status.value if hasattr(order.status, "value") else order.status,
             description=order.description,
-            customer_name=f"{customer.first_name} {customer.last_name}",
+            customer_name=fleet_display_name(customer, fleet_company_name),
             vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
@@ -286,7 +293,7 @@ async def get_dashboard_stats(
             status=order.status.value if hasattr(order.status, "value") else order.status,
             pending_zelle_confirmation=pending_zelle_confirmation,
             description=order.description,
-            customer_name=f"{customer.first_name} {customer.last_name}",
+            customer_name=fleet_display_name(customer, fleet_company_name),
             vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
