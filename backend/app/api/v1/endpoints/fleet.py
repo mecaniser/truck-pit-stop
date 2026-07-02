@@ -54,6 +54,7 @@ from app.schemas.fleet import (
     TruckUpdate,
     WorkOrderCreate,
     SchedulePMRequest,
+    FleetManagerOption,
     FleetMechanicOption,
     FleetSettingsResponse,
 )
@@ -1143,13 +1144,40 @@ async def get_fleet_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    """Fleet-relevant garage settings (read-only), e.g. the in-house labor rate
-    that owner/admin configure in garage settings."""
+    """Fleet-relevant garage settings: the in-house labor rate and fleet company
+    name (owner/admin configure these), plus a live read of the fleet managers
+    and truck count derived from the fleet board."""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = result.scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-    return FleetSettingsResponse(internal_labor_rate=float(tenant.internal_labor_rate or 0))
+
+    managers_result = await db.execute(
+        select(User).where(
+            and_(
+                User.tenant_id == current_user.tenant_id,
+                User.role == UserRole.FLEET_MANAGER,
+                User.is_active.is_(True),
+            )
+        ).order_by(User.first_name, User.last_name)
+    )
+    fleet_managers = [
+        FleetManagerOption(
+            id=u.id,
+            name=f"{u.first_name} {u.last_name}".strip() or u.email,
+            email=u.email,
+        )
+        for u in managers_result.scalars().all()
+    ]
+
+    trucks = await _fleet_vehicles(db, current_user.tenant_id)
+
+    return FleetSettingsResponse(
+        internal_labor_rate=float(tenant.internal_labor_rate or 0),
+        fleet_company_name=tenant.fleet_company_name,
+        fleet_managers=fleet_managers,
+        truck_count=len(trucks),
+    )
 
 
 @router.get("/mechanics", response_model=List[FleetMechanicOption])

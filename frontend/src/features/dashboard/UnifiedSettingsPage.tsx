@@ -188,6 +188,28 @@ interface TaxFeeSettings {
   fleet_company_name: string | null
 }
 
+interface FleetManager {
+  id: string
+  name: string
+  email: string
+}
+
+interface FleetSettings {
+  internal_labor_rate: number
+  fleet_company_name: string | null
+  fleet_managers: FleetManager[]
+  truck_count: number
+}
+
+interface FleetBoardTruck {
+  id: string
+  unit_number?: string | null
+  year?: number | null
+  make?: string | null
+  model?: string | null
+  status: string
+}
+
 interface WorkforceSettings {
   timezone: string
   default_core_hours_minutes: number
@@ -1824,13 +1846,14 @@ function FeesSection() {
 
 function FleetSection() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [fleetCompanyName, setFleetCompanyName] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
 
-  // Fleet settings live on the same endpoint as tax/fees today.
+  // The fleet company name is stored on the tax/fee settings endpoint today.
   const { data: taxFeeSettings } = useQuery<TaxFeeSettings>({
     queryKey: ['tax-fee-settings'],
     queryFn: async () => {
@@ -1838,6 +1861,25 @@ function FleetSection() {
       return response.data
     },
   })
+
+  // Fleet managers + truck count, derived live from the fleet board.
+  const { data: fleetSettings } = useQuery<FleetSettings>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => {
+      const response = await api.get('/fleet/settings')
+      return response.data
+    },
+  })
+
+  // The truck list itself comes from the board (single source of truth).
+  const { data: fleetBoard } = useQuery<{ trucks: FleetBoardTruck[] }>({
+    queryKey: ['fleet-board-summary'],
+    queryFn: async () => {
+      const response = await api.get('/fleet/board')
+      return response.data
+    },
+  })
+  const trucks = fleetBoard?.trucks || []
 
   useEffect(() => {
     if (taxFeeSettings) {
@@ -1986,6 +2028,71 @@ function FleetSection() {
             </div>
           </div>
         )}
+      </IndustrialCard>
+
+      {/* Live fleet summary — managers and trucks, pulled from the fleet board. */}
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className={industrialStyles.sectionHeader} style={{ marginBottom: 0 }}>
+            <Truck className="w-4 h-4 text-[var(--accent-400)]" />
+            <span>Fleet Overview</span>
+          </div>
+          <button onClick={() => navigate('/fleet')} className={industrialStyles.btnSecondary}>
+            <span className="flex items-center gap-2">
+              Manage on Fleet board
+              <ChevronRight className="w-4 h-4" />
+            </span>
+          </button>
+        </div>
+
+        {/* Counts */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+            <label className={industrialStyles.label}>Fleet Managers</label>
+            <p className="text-lg text-zinc-100">{fleetSettings?.fleet_managers.length ?? 0}</p>
+          </div>
+          <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+            <label className={industrialStyles.label}>Active Trucks</label>
+            <p className="text-lg text-zinc-100">{fleetSettings?.truck_count ?? trucks.length}</p>
+          </div>
+        </div>
+
+        {/* Fleet managers list */}
+        <div className="mb-6">
+          <label className={industrialStyles.label}>Managers</label>
+          {(fleetSettings?.fleet_managers.length ?? 0) === 0 ? (
+            <p className="text-sm text-zinc-500 mt-1">No fleet managers assigned yet.</p>
+          ) : (
+            <div className="mt-2 space-y-1">
+              {fleetSettings?.fleet_managers.map((m) => (
+                <div key={m.id} className="flex items-center justify-between p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                  <span className="text-sm text-zinc-100">{m.name}</span>
+                  <span className="text-xs text-zinc-500">{m.email}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Trucks list */}
+        <div>
+          <label className={industrialStyles.label}>Trucks</label>
+          {trucks.length === 0 ? (
+            <p className="text-sm text-zinc-500 mt-1">No trucks on the fleet yet. Add them from the Fleet board.</p>
+          ) : (
+            <div className="mt-2 max-h-72 overflow-y-auto space-y-1">
+              {trucks.map((t) => (
+                <div key={t.id} className="flex items-center justify-between p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                  <span className="text-sm text-zinc-100">
+                    {t.unit_number ? `${t.unit_number} · ` : ''}
+                    {[t.year, t.make, t.model].filter(Boolean).join(' ') || 'Truck'}
+                  </span>
+                  <span className="text-xs text-zinc-500 capitalize">{t.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </IndustrialCard>
     </div>
   )
