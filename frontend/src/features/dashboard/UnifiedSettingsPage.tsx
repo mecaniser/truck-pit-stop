@@ -207,6 +207,8 @@ interface FleetBoardTruck {
   year?: number | null
   make?: string | null
   model?: string | null
+  vin?: string | null
+  odometer?: number | null
   status: string
 }
 
@@ -2082,12 +2084,19 @@ function FleetSection() {
           ) : (
             <div className="mt-2 max-h-72 overflow-y-auto space-y-1">
               {trucks.map((t) => (
-                <div key={t.id} className="flex items-center justify-between p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
-                  <span className="text-sm text-zinc-100">
-                    {t.unit_number ? `${t.unit_number} · ` : ''}
-                    {[t.year, t.make, t.model].filter(Boolean).join(' ') || 'Truck'}
-                  </span>
-                  <span className="text-xs text-zinc-500 capitalize">{t.status}</span>
+                <div key={t.id} className="flex items-start justify-between gap-3 p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                  <div className="min-w-0">
+                    <p className="text-sm text-zinc-100 truncate">
+                      {t.unit_number ? `${t.unit_number} · ` : ''}
+                      {[t.year, t.make, t.model].filter(Boolean).join(' ') || 'Truck'}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      <span className="font-mono">VIN: {t.vin || '—'}</span>
+                      <span className="mx-2">·</span>
+                      {t.odometer != null ? `${t.odometer.toLocaleString()} mi` : '— mi'}
+                    </p>
+                  </div>
+                  <span className="text-xs text-zinc-500 capitalize shrink-0">{t.status}</span>
                 </div>
               ))}
             </div>
