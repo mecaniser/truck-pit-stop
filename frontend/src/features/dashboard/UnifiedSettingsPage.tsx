@@ -12,7 +12,7 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, Zap, Shield, Settings2
+  ChevronRight, Zap, Shield, Settings2, Truck
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -157,7 +157,7 @@ type PasswordFormData = z.infer<typeof passwordSchema>
 type GarageProfileFormData = z.infer<typeof garageProfileSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'garageProfile' | 'payments' | 'zelle' | 'notifications' | 'fees' | 'workforce'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'garageProfile' | 'payments' | 'zelle' | 'notifications' | 'fees' | 'fleet' | 'workforce'
 
 interface ConnectStatus {
   is_connected: boolean
@@ -1578,7 +1578,6 @@ function FeesSection() {
   const [serviceFeeRate, setServiceFeeRate] = useState('')
   const [laborRate, setLaborRate] = useState('')
   const [internalLaborRate, setInternalLaborRate] = useState('')
-  const [fleetCompanyName, setFleetCompanyName] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -1599,7 +1598,6 @@ function FeesSection() {
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
       setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
       setInternalLaborRate(taxFeeSettings.internal_labor_rate?.toString() || '0')
-      setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
     }
   }, [taxFeeSettings])
 
@@ -1608,8 +1606,7 @@ function FeesSection() {
     shopSuppliesRate !== (taxFeeSettings.shop_supplies_rate?.toString() || '') ||
     serviceFeeRate !== (taxFeeSettings.service_fee_rate?.toString() || '') ||
     laborRate !== (taxFeeSettings.labor_rate?.toString() || '100') ||
-    internalLaborRate !== (taxFeeSettings.internal_labor_rate?.toString() || '0') ||
-    fleetCompanyName !== (taxFeeSettings.fleet_company_name || '')
+    internalLaborRate !== (taxFeeSettings.internal_labor_rate?.toString() || '0')
   )
 
   const handleUnlock = async () => {
@@ -1642,7 +1639,9 @@ function FeesSection() {
         service_fee_rate: parseFloat(serviceFeeRate) || 0,
         labor_rate: laborRate === '' ? 100 : parseFloat(laborRate),
         internal_labor_rate: internalLaborRate === '' ? 0 : parseFloat(internalLaborRate),
-        fleet_company_name: fleetCompanyName.trim() || null,
+        // Preserve the fleet company name (managed in the Fleet section) so
+        // saving tax/fees doesn't clear it.
+        fleet_company_name: taxFeeSettings?.fleet_company_name ?? null,
       })
       return response.data
     },
@@ -1663,7 +1662,6 @@ function FeesSection() {
       setServiceFeeRate(taxFeeSettings.service_fee_rate?.toString() || '')
       setLaborRate(taxFeeSettings.labor_rate?.toString() || '100')
       setInternalLaborRate(taxFeeSettings.internal_labor_rate?.toString() || '0')
-      setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
     }
     setIsUnlocked(false)
   }
@@ -1801,18 +1799,175 @@ function FeesSection() {
                 />
                 <p className="mt-1 text-xs text-zinc-500">Labor cost rate for repairs on the garage's own fleet (no customer markup).</p>
               </div>
-              <div>
-                <label className={industrialStyles.label}>Internal Fleet Company Name</label>
-                <input
-                  type="text"
-                  value={fleetCompanyName}
-                  onChange={(e) => setFleetCompanyName(e.target.value)}
-                  placeholder="e.g. 77 Cargo"
-                  maxLength={255}
-                  className={industrialStyles.input}
-                />
-                <p className="mt-1 text-xs text-zinc-500">The company that operates the fleet. Shown as the customer on internal fleet work orders.</p>
+            </div>
+
+            <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
+              <button onClick={cancelEdit} className={industrialStyles.btnSecondary}>
+                Cancel
+              </button>
+              {hasChanges && (
+                <button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={saveMutation.isPending}
+                  className={industrialStyles.btnPrimary}
+                >
+                  {saveMutation.isPending ? 'Saving...' : 'Save Changes'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </IndustrialCard>
+    </div>
+  )
+}
+
+function FleetSection() {
+  const queryClient = useQueryClient()
+  const [fleetCompanyName, setFleetCompanyName] = useState('')
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [password, setPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
+
+  // Fleet settings live on the same endpoint as tax/fees today.
+  const { data: taxFeeSettings } = useQuery<TaxFeeSettings>({
+    queryKey: ['tax-fee-settings'],
+    queryFn: async () => {
+      const response = await api.get('/admin/tax-fee-settings')
+      return response.data
+    },
+  })
+
+  useEffect(() => {
+    if (taxFeeSettings) {
+      setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
+    }
+  }, [taxFeeSettings])
+
+  const hasChanges = !!taxFeeSettings &&
+    fleetCompanyName !== (taxFeeSettings.fleet_company_name || '')
+
+  const handleUnlock = async () => {
+    if (!password) {
+      setPasswordError('Password is required')
+      return
+    }
+    setIsVerifying(true)
+    setPasswordError('')
+    try {
+      const response = await api.post('/auth/verify-password', { password })
+      if (response.data.valid) {
+        setIsUnlocked(true)
+        setPassword('')
+      } else {
+        setPasswordError('Incorrect password')
+      }
+    } catch {
+      setPasswordError('Failed to verify password')
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      // Send the current tax/fee values back unchanged (this endpoint updates
+      // all of them); only fleet_company_name is edited here.
+      const response = await api.put('/admin/tax-fee-settings', {
+        sales_tax_rate: taxFeeSettings?.sales_tax_rate ?? 0,
+        shop_supplies_rate: taxFeeSettings?.shop_supplies_rate ?? 0,
+        service_fee_rate: taxFeeSettings?.service_fee_rate ?? 0,
+        labor_rate: taxFeeSettings?.labor_rate ?? 100,
+        internal_labor_rate: taxFeeSettings?.internal_labor_rate ?? 0,
+        fleet_company_name: fleetCompanyName.trim() || null,
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      toast.success('Fleet settings saved')
+      queryClient.invalidateQueries({ queryKey: ['tax-fee-settings'] })
+      setIsUnlocked(false)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to save settings')
+    },
+  })
+
+  const cancelEdit = () => {
+    if (taxFeeSettings) {
+      setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
+    }
+    setIsUnlocked(false)
+  }
+
+  return (
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Truck className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Fleet Configuration</span>
+        </div>
+
+        {!isUnlocked ? (
+          <div className="space-y-6">
+            {/* Locked display */}
+            <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+              <label className={industrialStyles.label}>Fleet Company</label>
+              <p className="text-lg text-zinc-100">{taxFeeSettings?.fleet_company_name || 'Not set'}</p>
+            </div>
+
+            {/* Unlock form */}
+            <div className="p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+              <p className="text-xs text-zinc-500 mb-3">
+                <Lock className="w-3 h-3 inline mr-2" />
+                Enter password to edit
+              </p>
+              <div className="flex gap-3 items-start">
+                <div className="flex-1 max-w-xs">
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
+                    placeholder="Enter password"
+                    className={`${industrialStyles.input} ${passwordError ? 'border-red-500' : ''}`}
+                  />
+                  {passwordError && <p className="text-xs text-red-400 mt-2">{passwordError}</p>}
+                </div>
+                <button
+                  onClick={handleUnlock}
+                  disabled={isVerifying}
+                  className={industrialStyles.btnPrimary}
+                >
+                  {isVerifying ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-zinc-600 border-t-white animate-spin" />
+                      Verifying
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      Unlock
+                    </span>
+                  )}
+                </button>
               </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <div>
+              <label className={industrialStyles.label}>Internal Fleet Company Name</label>
+              <input
+                type="text"
+                value={fleetCompanyName}
+                onChange={(e) => setFleetCompanyName(e.target.value)}
+                placeholder="e.g. 77 Cargo"
+                maxLength={255}
+                className={`${industrialStyles.input} max-w-md`}
+              />
+              <p className="mt-1 text-xs text-zinc-500">The company that operates your internal fleet. Shown as the customer on internal fleet work orders and on the owner's board.</p>
             </div>
 
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">
@@ -2218,6 +2373,7 @@ const GARAGE_SECTIONS = [
   { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode },
   { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell },
   { id: 'fees' as const, label: 'Tax & Fees', shortLabel: 'Fees', icon: Percent },
+  { id: 'fleet' as const, label: 'Fleet', shortLabel: 'Fleet', icon: Truck },
   { id: 'workforce' as const, label: 'Workforce', shortLabel: 'Workforce', icon: Globe },
 ]
 
@@ -2324,6 +2480,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
         {activeSection === 'zelle' && <ZelleSection />}
         {activeSection === 'notifications' && <NotificationsSection />}
         {activeSection === 'fees' && <FeesSection />}
+        {activeSection === 'fleet' && <FleetSection />}
         {activeSection === 'workforce' && <WorkforceSection />}
       </div>
     </div>
