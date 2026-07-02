@@ -5,15 +5,15 @@ import { STATUS_META, fmt, pmState, rank } from './helpers'
 type Filter = 'all' | TruckStatus
 type Sort = 'attention' | 'unit' | 'pm' | 'odo'
 
-function Kpi({ icon, value, label, accent, active, onClick }: {
-  icon: React.ReactNode; value: number; label: string; accent: string; active: boolean; onClick: () => void
+function Kpi({ icon, value, label, short, accent, active, onClick }: {
+  icon: React.ReactNode; value: number; label: string; short?: string; accent: string; active: boolean; onClick: () => void
 }) {
   return (
-    <button className={'kpi' + (active ? ' is-active' : '')} style={{ ['--ac' as any]: accent }} onClick={onClick}>
+    <button className={'kpi' + (active ? ' is-active' : '')} style={{ ['--ac' as any]: accent }} onClick={onClick} title={label}>
       <div className="kpi-ic">{icon}</div>
-      <div>
+      <div className="kpi-tx">
         <div className="kpi-val">{value}</div>
-        <div className="kpi-lbl">{label}</div>
+        <div className="kpi-lbl">{short || label}</div>
       </div>
     </button>
   )
@@ -65,14 +65,6 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
   )
 }
 
-function chip(key: Filter, label: string, filter: Filter, setFilter: (f: Filter) => void, dot?: string) {
-  return (
-    <button key={key} className={'chip' + (filter === key ? ' is-on' : '')} onClick={() => setFilter(key)}>
-      {dot && <i className="chip-dot" style={{ background: dot }} />}{label}
-    </button>
-  )
-}
-
 export default function FleetBoard({
   data, onOpen, filter, setFilter, query, setQuery, sort, setSort,
 }: {
@@ -101,12 +93,12 @@ export default function FleetBoard({
   return (
     <div>
       <div className="kpis">
-        <Kpi icon={<Truck size={19} />} value={stats.total} label="Trucks in fleet" accent="var(--yellow)" active={filter === 'all'} onClick={() => setFilter('all')} />
-        <Kpi icon={<Navigation size={19} />} value={stats.active} label="On the road" accent={STATUS_META.active.dot} active={filter === 'active'} onClick={() => setFilter('active')} />
-        <Kpi icon={<Wrench size={19} />} value={stats.shop} label="In the shop" accent={STATUS_META.shop.dot} active={filter === 'shop'} onClick={() => setFilter('shop')} />
-        <Kpi icon={<Gauge size={19} />} value={stats.pm} label="PM due soon" accent={STATUS_META.pm.dot} active={filter === 'pm'} onClick={() => setFilter('pm')} />
-        <Kpi icon={<Box size={19} />} value={stats.parts} label="Awaiting parts" accent={STATUS_META.parts.dot} active={filter === 'parts'} onClick={() => setFilter('parts')} />
-        <Kpi icon={<ClipboardList size={19} />} value={stats.open_wo} label="Open work orders" accent="var(--muted)" active={false} onClick={() => setFilter('all')} />
+        <Kpi icon={<Truck size={18} />} value={stats.total} label="Trucks in fleet" short="Fleet" accent="var(--yellow)" active={filter === 'all'} onClick={() => setFilter('all')} />
+        <Kpi icon={<Navigation size={18} />} value={stats.active} label="On the road" short="OTR" accent={STATUS_META.active.dot} active={filter === 'active'} onClick={() => setFilter('active')} />
+        <Kpi icon={<Wrench size={18} />} value={stats.shop} label="In the shop" short="Shop" accent={STATUS_META.shop.dot} active={filter === 'shop'} onClick={() => setFilter('shop')} />
+        <Kpi icon={<Gauge size={18} />} value={stats.pm} label="PM due soon" short="PM" accent={STATUS_META.pm.dot} active={filter === 'pm'} onClick={() => setFilter('pm')} />
+        <Kpi icon={<Box size={18} />} value={stats.parts} label="Awaiting parts" short="Parts" accent={STATUS_META.parts.dot} active={filter === 'parts'} onClick={() => setFilter('parts')} />
+        <Kpi icon={<ClipboardList size={18} />} value={stats.open_wo} label="Open work orders" short="Open WO" accent="var(--muted)" active={false} onClick={() => setFilter('all')} />
       </div>
 
       <div className="board-bar">
@@ -115,13 +107,7 @@ export default function FleetBoard({
             <Search size={16} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
           </div>
-          <div className="chips">
-            {chip('all', 'All', filter, setFilter)}
-            {chip('active', STATUS_META.active.label, filter, setFilter, STATUS_META.active.dot)}
-            {chip('shop', STATUS_META.shop.label, filter, setFilter, STATUS_META.shop.dot)}
-            {chip('pm', STATUS_META.pm.label, filter, setFilter, STATUS_META.pm.dot)}
-            {chip('parts', STATUS_META.parts.label, filter, setFilter, STATUS_META.parts.dot)}
-          </div>
+          {/* Status filters live in the KPI pills above; duplicate chips removed. */}
         </div>
         <div className="board-bar-r">
           <span className="board-sort-lbl">Sort</span>
