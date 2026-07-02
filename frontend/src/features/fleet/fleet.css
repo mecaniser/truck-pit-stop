@@ -44,32 +44,36 @@
   font-family:var(--display);font-weight:800;font-size:15px;color:var(--yellow);}
 
 .fleet-root .main{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;}
-.fleet-root .topbar{height:64px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;
+.fleet-root .topbar{height:64px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:0 28px;background:var(--ink);flex-shrink:0;}
-.fleet-root .topbar-l{display:flex;align-items:baseline;gap:14px;}
-.fleet-root .topbar-title{font-family:var(--display);font-weight:800;font-size:25px;text-transform:uppercase;letter-spacing:.4px;line-height:1;}
-.fleet-root .topbar-sub{font-size:13px;color:var(--muted-2);}
-.fleet-root .topbar-r{display:flex;align-items:center;gap:18px;}
-.fleet-root .topbar-clock{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.3px;}
-.fleet-root .topbar-icbtn{width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--muted);display:grid;place-items:center;position:relative;transition:.14s;}
+.fleet-root .topbar-l{display:flex;align-items:baseline;gap:14px;min-width:0;}
+.fleet-root .topbar-title{font-family:var(--display);font-weight:800;font-size:25px;text-transform:uppercase;letter-spacing:.4px;line-height:1;white-space:nowrap;}
+.fleet-root .topbar-sub{font-size:13px;color:var(--muted-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fleet-root .topbar-r{display:flex;align-items:center;gap:18px;flex-shrink:0;}
+.fleet-root .topbar-clock{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.3px;white-space:nowrap;}
+.fleet-root .topbar-clock-short{display:none;}
+.fleet-root .topbar-icbtn{width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--muted);display:grid;place-items:center;position:relative;transition:.14s;flex-shrink:0;}
 .fleet-root .topbar-icbtn:hover{color:var(--text);border-color:var(--line-2);}
 .fleet-root .topbar-user{display:flex;align-items:center;gap:10px;padding-left:18px;border-left:1px solid var(--line);}
-.fleet-root .topbar-user .nm{font-size:13.5px;font-weight:600;line-height:1.1;}
+.fleet-root .topbar-user-av{display:none;width:34px;height:34px;border-radius:999px;background:var(--surface-3);place-items:center;font-size:12.5px;font-weight:700;letter-spacing:.3px;flex-shrink:0;}
+.fleet-root .topbar-user-txt{min-width:0;}
+.fleet-root .topbar-user .nm{font-size:13.5px;font-weight:600;line-height:1.1;white-space:nowrap;}
 .fleet-root .topbar-user .rl{font-size:11.5px;color:var(--muted-2);}
 
 .fleet-root .scroll{flex:1;overflow-y:auto;}
 .fleet-root .page-pad{padding:26px 28px 60px;max-width:1680px;margin:0 auto;width:100%;}
 
-.fleet-root .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px;}
-.fleet-root .kpi{display:flex;align-items:center;gap:13px;padding:16px 16px;background:var(--surface);border:1px solid var(--line);
+.fleet-root .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:20px;}
+.fleet-root .kpi{display:flex;align-items:center;gap:10px;padding:11px 12px;background:var(--surface);border:1px solid var(--line);
   border-radius:13px;text-align:left;transition:.14s;position:relative;overflow:hidden;}
 .fleet-root .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ac);opacity:0;transition:.14s;}
 .fleet-root .kpi:hover{border-color:var(--line-2);background:var(--surface-2);}
 .fleet-root .kpi.is-active{border-color:color-mix(in srgb,var(--ac) 55%,var(--line));background:var(--surface-2);}
 .fleet-root .kpi.is-active::before{opacity:1;}
-.fleet-root .kpi-ic{width:40px;height:40px;border-radius:10px;background:color-mix(in srgb,var(--ac) 14%,transparent);color:var(--ac);display:grid;place-items:center;flex-shrink:0;}
-.fleet-root .kpi-val{font-family:var(--display);font-weight:800;font-size:30px;line-height:.9;}
-.fleet-root .kpi-lbl{font-size:12.5px;color:var(--muted);margin-top:4px;}
+.fleet-root .kpi-ic{width:34px;height:34px;border-radius:9px;background:color-mix(in srgb,var(--ac) 14%,transparent);color:var(--ac);display:grid;place-items:center;flex-shrink:0;}
+.fleet-root .kpi-tx{min-width:0;}
+.fleet-root .kpi-val{font-family:var(--display);font-weight:800;font-size:23px;line-height:.9;}
+.fleet-root .kpi-lbl{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 .fleet-root .board-bar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px;flex-wrap:wrap;}
 .fleet-root .board-bar-l{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
@@ -131,7 +135,8 @@
 .fleet-root .dback:hover{color:var(--yellow);}
 .fleet-root .dhead{margin-bottom:22px;}
 .fleet-root .dhead-main{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap;}
-.fleet-root .dhead-unit-row{display:flex;align-items:center;gap:14px;}
+.fleet-root .dhead-unit-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.fleet-root .dbtn-abbr{display:none;}
 .fleet-root .dhead-unit{font-family:var(--display);font-weight:800;font-size:46px;line-height:.9;text-transform:uppercase;letter-spacing:.5px;margin:0;white-space:nowrap;}
 .fleet-root .dbadge{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
   color:var(--st);background:color-mix(in srgb,var(--st) 14%,transparent);padding:7px 13px;border-radius:8px;}
@@ -144,14 +149,17 @@
 .fleet-root .dbtn-yellow{background:var(--yellow);color:var(--ink);}
 .fleet-root .dbtn-yellow:hover{background:#ffc21f;}
 
-.fleet-root .dmetrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;}
-.fleet-root .metric{display:flex;align-items:flex-start;gap:13px;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px;}
-.fleet-root .metric-ic{width:38px;height:38px;border-radius:10px;background:var(--surface-3);color:var(--muted);display:grid;place-items:center;flex-shrink:0;}
-.fleet-root .metric-lbl{font-size:12px;color:var(--muted-2);text-transform:uppercase;letter-spacing:1px;}
-.fleet-root .metric-val{font-family:var(--display);font-weight:800;font-size:27px;line-height:1;margin-top:5px;}
-.fleet-root .metric-unit{font-size:14px;color:var(--muted-2);font-family:var(--body);font-weight:600;}
-.fleet-root .metric-note{font-size:12px;margin-top:5px;color:var(--muted);}
-.fleet-root .metric-note.pm-soon{color:var(--yellow);} .fleet-root .metric-note.pm-over{color:var(--red);} .fleet-root .metric-note.pm-ok{color:var(--st-active);}
+/* Odometer + Next PM readout, folded into the hero header.
+   On wide screens it floats in the gap between identity and the action buttons. */
+.fleet-root .dhead-stats{display:flex;align-items:center;gap:26px;margin:2px auto 0;align-self:center;}
+.fleet-root .dhead-stat{display:grid;grid-template-columns:auto auto;grid-template-rows:auto auto auto;column-gap:11px;align-items:center;}
+.fleet-root .dhead-stat-ic{grid-row:1 / span 3;width:42px;height:42px;border-radius:11px;background:var(--surface-3);color:var(--muted);display:grid;place-items:center;}
+.fleet-root .dhead-stat-k{font-size:11.5px;color:var(--muted-2);text-transform:uppercase;letter-spacing:1px;align-self:end;}
+.fleet-root .dhead-stat-v{font-family:var(--display);font-weight:800;font-size:30px;line-height:1;margin-top:3px;white-space:nowrap;display:flex;align-items:baseline;gap:7px;}
+.fleet-root .dhead-stat-u{font-size:14px;color:var(--muted-2);font-family:var(--body);font-weight:600;}
+.fleet-root .dhead-stat-note{font-size:12.5px;font-weight:700;letter-spacing:.2px;white-space:nowrap;margin-top:4px;}
+.fleet-root .dhead-stat-note.pm-soon{color:var(--yellow);} .fleet-root .dhead-stat-note.pm-over{color:var(--red);} .fleet-root .dhead-stat-note.pm-ok{color:var(--st-active);}
+.fleet-root .dhead-stat-div{width:1px;background:var(--line);}
 
 .fleet-root .dgrid{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-bottom:16px;}
 .fleet-root .dcol{display:flex;flex-direction:column;gap:16px;min-width:0;}
@@ -159,7 +167,9 @@
 .fleet-root .dsec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;}
 .fleet-root .dsec-title{display:flex;align-items:center;gap:9px;color:var(--text);}
 .fleet-root .dsec-title svg{color:var(--yellow);}
-.fleet-root .dsec-title h3{font-family:var(--display);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.5px;margin:0;}
+.fleet-root .dsec-title h3{font-family:var(--display);font-weight:700;font-size:20px;text-transform:uppercase;letter-spacing:.5px;margin:0;white-space:nowrap;}
+.fleet-root .dsec-title{min-width:0;}
+.fleet-root .dsec-action{flex-shrink:0;}
 .fleet-root .dsec-count{font-family:var(--mono);font-size:12px;color:var(--muted-2);background:var(--surface-3);border-radius:99px;padding:2px 9px;}
 
 .fleet-root .timeline{position:relative;padding-left:6px;}
@@ -360,11 +370,86 @@
 @media(max-width:1180px){
   .fleet-root .kpis{grid-template-columns:repeat(3,1fr);}
   .fleet-root .dgrid{grid-template-columns:1fr;}
-  .fleet-root .dmetrics{grid-template-columns:repeat(2,1fr);}
   .fleet-root .dmap-wrap{grid-template-columns:1fr;}
+  /* Topbar: tighten spacing and trim the clock to time-only */
+  .fleet-root .topbar{padding:0 18px;gap:10px;}
+  .fleet-root .topbar-r{gap:12px;}
+  .fleet-root .topbar-clock-full{display:none;}
+  .fleet-root .topbar-clock-short{display:inline;}
+  .fleet-root .topbar-user{padding-left:12px;}
+}
+@media(max-width:900px){
+  /* Detail header stacks: identity, then the odometer/PM readout on its own line */
+  .fleet-root .dhead-stats{flex-basis:100%;order:3;margin:16px 0 0;align-self:auto;justify-content:flex-start;}
+  .fleet-root .dhead-r{order:2;}
+  /* Topbar: collapse Add-truck to an icon, swap name text for an avatar */
+  .fleet-root .topbar-title{font-size:21px;}
+  .fleet-root .dbtn-label{display:none;}
+  .fleet-root .topbar .dbtn-yellow{gap:0;padding:0;width:38px;justify-content:center;}
+  .fleet-root .topbar-user{gap:0;padding-left:12px;}
+  .fleet-root .topbar-user-av{display:grid;}
+  .fleet-root .topbar-user-txt{display:none;}
 }
 @media(max-width:680px){
-  .fleet-root .kpis{grid-template-columns:repeat(2,1fr);}
+  /* KPIs are duplicated by the quick-filter chips below the search, so on
+     mobile shrink them into compact "dot value label" pills, kept on one line
+     in a horizontally scrollable strip instead of wrapping. */
+  .fleet-root .kpis{display:flex;flex-wrap:nowrap;gap:6px;margin-bottom:14px;
+    overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+    margin-left:-2px;margin-right:-2px;padding:2px;}
+  .fleet-root .kpis::-webkit-scrollbar{display:none;}
+  .fleet-root .kpi{flex:0 0 auto;padding:7px 10px;gap:7px;border-radius:9px;}
+  .fleet-root .kpi-ic{width:8px;height:8px;border-radius:99px;background:var(--ac);color:transparent;}
+  .fleet-root .kpi-ic svg{display:none;}
+  .fleet-root .kpi-tx{display:flex;align-items:baseline;gap:5px;min-width:0;}
+  .fleet-root .kpi-val{font-size:15px;line-height:1;}
+  .fleet-root .kpi-lbl{margin-top:0;font-size:11.5px;white-space:nowrap;}
   .fleet-root .id-grid{grid-template-columns:1fr;}
+  /* Search takes the full row on mobile; Sort wraps below, aligned right */
+  .fleet-root .board-bar{gap:12px;}
+  .fleet-root .board-bar-l{flex:1 1 100%;width:100%;}
+  .fleet-root .board-bar-r{margin-left:auto;}
   .fleet-root .fld-search{width:100%;}
+  /* Topbar: drop the subtitle and the clock to reclaim width */
+  .fleet-root .topbar{padding:0 14px;}
+  .fleet-root .topbar-sub{display:none;}
+  .fleet-root .topbar-clock{display:none;}
+  .fleet-root .topbar-user{border-left:none;padding-left:4px;}
+
+  /* Detail header: keep the unit + status legible, abbreviate the actions */
+  .fleet-root .dhead-unit{font-size:34px;}
+  .fleet-root .dhead-unit-row{gap:10px;}
+  /* Keep the odometer / PM readout inline, just tighter */
+  .fleet-root .dhead-stats{gap:16px;}
+  .fleet-root .dhead-stat{column-gap:9px;}
+  .fleet-root .dhead-stat-ic{width:38px;height:38px;}
+  .fleet-root .dhead-stat-v{font-size:24px;}
+  .fleet-root .dhead-stat-note{font-size:11.5px;}
+  /* Status badge and Details stay on their own line so they can't crumble */
+  .fleet-root .dhead-unit-row{width:100%;}
+  .fleet-root .dhead-details .dbtn-label{display:none;}
+  .fleet-root .dhead-details{padding:0 10px !important;}
+  /* Actions: bigger icons, PM / WO abbreviations, Edit becomes icon-only */
+  .fleet-root .dhead-r{gap:8px;}
+  .fleet-root .dhead-r .dbtn-label{display:none;}
+  .fleet-root .dhead-r .dbtn-abbr{display:inline;}
+  .fleet-root .dhead-r .dbtn{gap:6px;padding:0 14px;font-weight:800;letter-spacing:.5px;}
+  .fleet-root .dhead-r .dbtn svg{width:18px;height:18px;}
+  /* Edit has no abbreviation label — render as a square icon button */
+  .fleet-root .dhead-r>.dbtn:first-child{width:42px;padding:0;justify-content:center;}
+
+  /* Section headers: title on one line, action collapses to an icon button */
+  .fleet-root .dsec-title h3{font-size:17px;}
+  .fleet-root .dsec-action .dbtn-label{display:none;}
+  .fleet-root .dsec-action{width:34px;padding:0;justify-content:center;flex-shrink:0;}
+}
+
+@media(max-width:400px){
+  /* Narrowest phones: shrink the readout so odometer + PM stay side by side */
+  .fleet-root .dhead-stats{gap:12px;}
+  .fleet-root .dhead-stat{column-gap:8px;}
+  .fleet-root .dhead-stat-ic{width:34px;height:34px;}
+  .fleet-root .dhead-stat-v{font-size:21px;gap:4px;}
+  .fleet-root .dhead-stat-u{font-size:12px;}
+  .fleet-root .dhead-stat-div{display:none;}
 }
