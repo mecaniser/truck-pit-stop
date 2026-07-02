@@ -294,6 +294,18 @@ class FleetMechanicOption(BaseModel):
     name: str
 
 
+class FleetManagerOption(BaseModel):
+    id: UUID
+    name: str
+    email: str
+
+
 class FleetSettingsResponse(BaseModel):
     # In-house labor cost rate, configured by owner/admin in garage settings.
     internal_labor_rate: float = 0.0
+    # Name of the company that operates the internal fleet (e.g. "77 Cargo").
+    fleet_company_name: Optional[str] = None
+    # Users who manage the fleet (FLEET_MANAGER role in this tenant).
+    fleet_managers: List[FleetManagerOption] = []
+    # Live count of trucks on the fleet board (vehicles on the house account).
+    truck_count: int = 0

@@ -58,6 +58,10 @@ class Tenant(BaseModel):
     ein = Column(String(20), nullable=True)  # Employer Identification Number
     website = Column(String(255), nullable=True)
     logo_url = Column(String(500), nullable=True)
+    # Name of the company that operates the garage's internal fleet (e.g. "77 Cargo").
+    # Shown as the customer on internal fleet repair orders. Distinct from `name`
+    # (the garage's own business name).
+    fleet_company_name = Column(String(255), nullable=True)
     partner_summary = Column(String(280), nullable=True)
     partner_services = Column(String(180), nullable=True)
     applied_at = Column(DateTime(timezone=True), nullable=True)
