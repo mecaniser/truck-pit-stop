@@ -38,21 +38,6 @@ function Section({ title, icon, count, right, children }: {
   )
 }
 
-function Metric({ icon, label, value, unit, note, noteCls }: {
-  icon: React.ReactNode; label: string; value: React.ReactNode; unit?: string; note?: string; noteCls?: string
-}) {
-  return (
-    <div className="metric">
-      <div className="metric-ic">{icon}</div>
-      <div>
-        <div className="metric-lbl">{label}</div>
-        <div className="metric-val">{value}{unit && <span className="metric-unit"> {unit}</span>}</div>
-        {note && <div className={'metric-note ' + (noteCls || '')}>{note}</div>}
-      </div>
-    </div>
-  )
-}
-
 export default function TruckDetail({
   truckId, trucks, onBack, onOpen,
 }: { truckId: string; trucks: BoardTruck[]; onBack: () => void; onOpen: (id: string) => void }) {
@@ -146,11 +131,12 @@ export default function TruckDetail({
                 )}
               </div>
               <button
-                className="dbtn dbtn-ghost"
+                className="dbtn dbtn-ghost dhead-details"
                 style={{ height: 30, padding: '0 12px', fontSize: 12.5 }}
                 onClick={() => setDetailsOpen(true)}
+                title="Details"
               >
-                <Info size={14} /> Details
+                <Info size={14} /> <span className="dbtn-label">Details</span>
               </button>
             </div>
             <div className="dhead-sub">
@@ -160,28 +146,92 @@ export default function TruckDetail({
               </span>
             </div>
           </div>
+          <div className="dhead-stats">
+            <div className="dhead-stat">
+              <span className="dhead-stat-ic"><Gauge size={17} /></span>
+              <span className="dhead-stat-k">Odometer</span>
+              <span className="dhead-stat-v">{fmt(t.odometer)} <span className="dhead-stat-u">mi</span></span>
+            </div>
+            <div className="dhead-stat-div" />
+            <div className="dhead-stat has-note">
+              <span className="dhead-stat-ic"><Calendar size={17} /></span>
+              <span className="dhead-stat-k">Next PM</span>
+              <span className="dhead-stat-v">
+                {t.next_pm_miles != null ? <>{fmt(t.next_pm_miles)} <span className="dhead-stat-u">mi</span></> : '—'}
+              </span>
+              <span className={'dhead-stat-note ' + pm.cls}>{pm.label}</span>
+            </div>
+          </div>
           <div className="dhead-r">
-            <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)}>
-              <Pencil size={15} /> Edit
+            <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)} title="Edit">
+              <Pencil size={15} /> <span className="dbtn-label">Edit</span>
             </button>
-            <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)}>
-              <ClipboardList size={15} /> New work order
+            <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)} title="New work order">
+              <ClipboardList size={15} /> <span className="dbtn-label">New work order</span><span className="dbtn-abbr">WO</span>
             </button>
-            <button className="dbtn dbtn-yellow" onClick={() => setSchedulePMOpen(true)}>
-              <Calendar size={15} /> {t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}
+            <button className="dbtn dbtn-yellow" onClick={() => setSchedulePMOpen(true)} title={t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}>
+              <Calendar size={15} /> <span className="dbtn-label">{t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}</span><span className="dbtn-abbr">PM</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div className="dmetrics">
-        <Metric icon={<Gauge size={18} />} label="Odometer" value={fmt(t.odometer)} unit="mi" />
-        <Metric icon={<Calendar size={18} />} label="Next PM" value={fmt(t.next_pm_miles)} unit="mi" note={pm.label} noteCls={pm.cls} />
-        <Metric icon={<Wrench size={18} />} label="Lifetime service spend" value={money(data.lifetime_spend)} />
-        <Metric icon={<AlertTriangle size={18} />} label="Incidents on record" value={data.incidents_count} note={data.incidents_count ? 'see log' : 'clean'} />
-      </div>
-
       <div className="dcol">
+          <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} />
+
+          <Section
+            title="Incidents on the road"
+            icon={<AlertTriangle size={17} />}
+            count={data.incidents.length}
+            right={
+              <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setLogging(true)} title="Log incident">
+                <Plus size={14} /> <span className="dbtn-label">Log incident</span>
+              </button>
+            }
+          >
+            {data.incidents.length ? (
+              <div className="inc-list">
+                {data.incidents.map((inc) => (
+                  <div key={inc.id} className={'inc ' + sevClass[inc.severity]}>
+                    <div className="inc-sev" />
+                    <div className="inc-body">
+                      <div className="inc-row1"><b>{inc.type}</b><span className="inc-date">{fmtDate(inc.date)}</span></div>
+                      {inc.location && <div className="inc-loc"><MapIcon size={12} /> {inc.location}</div>}
+                      <div className="inc-note">{inc.note}</div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                        <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
+                          onClick={() => setEditingIncident(inc)}>
+                          <Pencil size={12} /> Edit
+                        </button>
+                        {inc.repair_order_id ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--st-active)' }}>
+                            <Wrench size={12} /> Repair linked
+                          </span>
+                        ) : (
+                          <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
+                            onClick={() => repairFromIncident.mutate(inc.id)} disabled={repairFromIncident.isPending}>
+                            <Wrench size={12} /> Create repair
+                          </button>
+                        )}
+                        {inc.status !== 'resolved' && (
+                          <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
+                            onClick={() => resolveIncident.mutate(inc.id)} disabled={resolveIncident.isPending}>
+                            <CheckCircle2 size={12} /> Resolve
+                          </button>
+                        )}
+                        {inc.status === 'resolved' && (
+                          <span style={{ fontSize: 12, color: 'var(--st-active)' }}>Resolved</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
+            )}
+          </Section>
+
           <Section title="Open work orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length}>
             {data.open_work_orders.length === 0 ? (
               <div className="empty-note"><ClipboardList size={16} /> No open work orders.</div>
@@ -248,61 +298,6 @@ export default function TruckDetail({
           </Section>
 
           <Section
-            title="Incidents on the road"
-            icon={<AlertTriangle size={17} />}
-            count={data.incidents.length}
-            right={
-              <button className="dbtn dbtn-ghost" style={{ height: 34 }} onClick={() => setLogging(true)}>
-                <Plus size={14} /> Log incident
-              </button>
-            }
-          >
-            {data.incidents.length ? (
-              <div className="inc-list">
-                {data.incidents.map((inc) => (
-                  <div key={inc.id} className={'inc ' + sevClass[inc.severity]}>
-                    <div className="inc-sev" />
-                    <div className="inc-body">
-                      <div className="inc-row1"><b>{inc.type}</b><span className="inc-date">{fmtDate(inc.date)}</span></div>
-                      {inc.location && <div className="inc-loc"><MapIcon size={12} /> {inc.location}</div>}
-                      <div className="inc-note">{inc.note}</div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
-                        <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                          onClick={() => setEditingIncident(inc)}>
-                          <Pencil size={12} /> Edit
-                        </button>
-                        {inc.repair_order_id ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--st-active)' }}>
-                            <Wrench size={12} /> Repair linked
-                          </span>
-                        ) : (
-                          <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                            onClick={() => repairFromIncident.mutate(inc.id)} disabled={repairFromIncident.isPending}>
-                            <Wrench size={12} /> Create repair
-                          </button>
-                        )}
-                        {inc.status !== 'resolved' && (
-                          <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                            onClick={() => resolveIncident.mutate(inc.id)} disabled={resolveIncident.isPending}>
-                            <CheckCircle2 size={12} /> Resolve
-                          </button>
-                        )}
-                        {inc.status === 'resolved' && (
-                          <span style={{ fontSize: 12, color: 'var(--st-active)' }}>Resolved</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
-            )}
-          </Section>
-
-          <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} />
-
-          <Section
             title="Current location & nearby units"
         icon={<MapIcon size={17} />}
         right={
@@ -366,6 +361,12 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
         <Stat label="Body type" value={truck.body_type || '—'} />
         <Stat label="Make" value={truck.make} />
         <Stat label="Model" value={truck.model} />
+      </div>
+
+      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Service record</div>
+      <div className="id-grid">
+        <Stat label="Lifetime service spend" value={money(detail.lifetime_spend)} />
+        <Stat label="Incidents on record" value={detail.incidents_count || '—'} />
       </div>
 
       <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Driver & crew</div>

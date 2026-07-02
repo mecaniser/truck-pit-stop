@@ -116,11 +116,15 @@ export default function FleetApp() {
               <span className="topbar-sub">{user?.tenant_name || 'Truck Pit Stop'} · internal fleet</span>
             </div>
             <div className="topbar-r">
-              <span className="topbar-clock">{clock.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-              <button className="dbtn dbtn-yellow" onClick={() => setAdding(true)}><Plus size={15} /> Add truck</button>
+              <span className="topbar-clock" title={clock.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}>
+                <span className="topbar-clock-full">{clock.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                <span className="topbar-clock-short">{clock.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+              </span>
+              <button className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></button>
               <button className="topbar-icbtn"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</button>
-              <div className="topbar-user">
-                <div>
+              <div className="topbar-user" title={`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet Manager'}>
+                <div className="topbar-user-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</div>
+                <div className="topbar-user-txt">
                   <div className="nm">{`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet Manager'}</div>
                   <div className="rl">Fleet manager</div>
                 </div>

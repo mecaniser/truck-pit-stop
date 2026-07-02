@@ -782,8 +782,8 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
       <div className="dsec-head">
         <div className="dsec-title"><ClipboardCheck size={17} /><h3>Weekly inspections</h3>
           {inspections != null && <span className="dsec-count">{inspections.length}</span>}</div>
-        <button className={ghostBtn} style={{ height: 34 }} onClick={() => start.mutate()} disabled={start.isPending}>
-          {start.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Start inspection
+        <button className={ghostBtn + ' dsec-action'} style={{ height: 34 }} onClick={() => start.mutate()} disabled={start.isPending} title="Start inspection">
+          {start.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} <span className="dbtn-label">Start inspection</span>
         </button>
       </div>
       {!inspections?.length ? (
