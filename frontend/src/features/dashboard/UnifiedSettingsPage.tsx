@@ -1707,13 +1707,14 @@ function FeesSection() {
 
         {!isUnlocked ? (
           <div className="space-y-6">
-            {/* Locked display */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {/* Read-only display of every field (values always visible, edit requires password) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               {[
-                { label: 'Tax', value: `${taxFeeSettings?.sales_tax_rate || 0}%` },
-                { label: 'Supplies', value: `${taxFeeSettings?.shop_supplies_rate || 0}%` },
-                { label: 'Service', value: `${taxFeeSettings?.service_fee_rate || 0}%` },
-                { label: 'Labor', value: '••••' },
+                { label: 'Sales Tax', value: `${taxFeeSettings?.sales_tax_rate ?? 0}%` },
+                { label: 'Supplies', value: `${taxFeeSettings?.shop_supplies_rate ?? 0}%` },
+                { label: 'Service Fee', value: `${taxFeeSettings?.service_fee_rate ?? 0}%` },
+                { label: 'Labor Rate', value: `$${taxFeeSettings?.labor_rate ?? 100}/hr` },
+                { label: 'Internal Fleet Labor', value: `$${taxFeeSettings?.internal_labor_rate ?? 0}/hr` },
               ].map((item, i) => (
                 <div key={item.label} style={staggeredReveal(i)} className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
                   <label className={industrialStyles.label}>{item.label}</label>
