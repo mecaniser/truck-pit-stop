@@ -2047,21 +2047,9 @@ function FleetSection() {
           </button>
         </div>
 
-        {/* Counts */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
-            <label className={industrialStyles.label}>Fleet Managers</label>
-            <p className="text-lg text-zinc-100">{fleetSettings?.fleet_managers.length ?? 0}</p>
-          </div>
-          <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
-            <label className={industrialStyles.label}>Active Trucks</label>
-            <p className="text-lg text-zinc-100">{fleetSettings?.truck_count ?? trucks.length}</p>
-          </div>
-        </div>
-
         {/* Fleet managers list */}
         <div className="mb-6">
-          <label className={industrialStyles.label}>Managers</label>
+          <label className={industrialStyles.label}>Managers ({fleetSettings?.fleet_managers.length ?? 0})</label>
           {(fleetSettings?.fleet_managers.length ?? 0) === 0 ? (
             <p className="text-sm text-zinc-500 mt-1">No fleet managers assigned yet.</p>
           ) : (
@@ -2078,7 +2066,7 @@ function FleetSection() {
 
         {/* Trucks list */}
         <div>
-          <label className={industrialStyles.label}>Trucks</label>
+          <label className={industrialStyles.label}>Trucks ({fleetSettings?.truck_count ?? trucks.length})</label>
           {trucks.length === 0 ? (
             <p className="text-sm text-zinc-500 mt-1">No trucks on the fleet yet. Add them from the Fleet board.</p>
           ) : (
