@@ -710,6 +710,9 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
   const [description, setDescription] = useState('')
   const [location, setLocation] = useState('')
   const [severity, setSeverity] = useState<IncidentSeverity>('medium')
+  const [attempted, setAttempted] = useState(false)
+
+  const descError = description.trim() === '' ? 'Describe what happened before logging the incident.' : null
 
   const create = useMutation({
     mutationFn: async () => (await api.post('/fleet/incidents', {
@@ -724,6 +727,12 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
   })
+
+  const submit = () => {
+    setAttempted(true)
+    if (descError) return
+    create.mutate()
+  }
 
   return (
     <Modal title="Log incident" icon={<AlertTriangle size={17} />} onClose={onClose}>
@@ -743,13 +752,16 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       </div>
       <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="I-85 mile 42, Charlotte NC" /></Field>
       <div style={{ marginTop: 12 }}>
-        <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened?</span>
+        <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened? <span style={{ color: 'var(--red)' }}>*</span></span>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
-          style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5, padding: 10, outline: 'none' }}
+          style={{ width: '100%', background: 'var(--ink)', border: '1px solid ' + (attempted && descError ? 'var(--red)' : 'var(--line)'), borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5, padding: 10, outline: 'none' }}
           placeholder="Describe the incident" />
+        {attempted && descError && (
+          <span style={{ display: 'block', marginTop: 5, fontSize: 12, color: 'var(--red)' }}>{descError}</span>
+        )}
       </div>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={!description.trim() || create.isPending} onClick={() => create.mutate()}>
+        disabled={create.isPending} onClick={submit}>
         {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Log incident
       </button>
     </Modal>
@@ -763,6 +775,9 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
   const [description, setDescription] = useState(incident.note || '')
   const [location, setLocation] = useState(incident.location || '')
   const [severity, setSeverity] = useState<IncidentSeverity>(incident.severity)
+  const [attempted, setAttempted] = useState(false)
+
+  const descError = description.trim() === '' ? 'Describe what happened before saving.' : null
 
   const save = useMutation({
     mutationFn: async () => (await api.patch(`/fleet/incidents/${incident.id}`, {
@@ -776,6 +791,12 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
   })
+
+  const submit = () => {
+    setAttempted(true)
+    if (descError) return
+    save.mutate()
+  }
 
   return (
     <Modal title="Edit incident" icon={<Pencil size={17} />} onClose={onClose}>
@@ -795,13 +816,16 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
       </div>
       <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="I-85 mile 42, Charlotte NC" /></Field>
       <div style={{ marginTop: 12 }}>
-        <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened?</span>
+        <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened? <span style={{ color: 'var(--red)' }}>*</span></span>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
-          style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5, padding: 10, outline: 'none' }}
+          style={{ width: '100%', background: 'var(--ink)', border: '1px solid ' + (attempted && descError ? 'var(--red)' : 'var(--line)'), borderRadius: 9, color: 'var(--text)', fontFamily: 'inherit', fontSize: 13.5, padding: 10, outline: 'none' }}
           placeholder="Describe the incident" />
+        {attempted && descError && (
+          <span style={{ display: 'block', marginTop: 5, fontSize: 12, color: 'var(--red)' }}>{descError}</span>
+        )}
       </div>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={!description.trim() || save.isPending} onClick={() => save.mutate()}>
+        disabled={save.isPending} onClick={submit}>
         {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Save changes
       </button>
     </Modal>
