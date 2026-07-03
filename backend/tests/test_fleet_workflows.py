@@ -33,6 +33,7 @@ from app.schemas.fleet import (
     IncidentCreate,
     IncidentUpdate,
     WorkOrderCreate,
+    WorkOrderComplete,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -316,6 +317,52 @@ async def test_new_work_order_defaults_blank_description(db_session):
 
 
 @pytest.mark.asyncio
+async def test_internal_wo_captures_mileage_in_and_out(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 305000
+    await db_session.commit()
+
+    truck = await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brake chamber"),
+        db=db_session, current_user=user,
+    )
+    ro = (await db_session.execute(
+        __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    # mileage-in auto-captured from the truck's odometer at creation.
+    assert ro.mileage_in == 305000
+
+    # Take it through start -> complete; mileage-out auto-captures from the vehicle.
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, body=None, db=db_session, current_user=user)
+    await db_session.refresh(ro)
+    assert ro.mileage_out == 305000
+    assert ro.status == RepairOrderStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_internal_wo_complete_manual_mileage_out_overrides(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 305000
+    await db_session.commit()
+
+    await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brake chamber"),
+        db=db_session, current_user=user,
+    )
+    ro = (await db_session.execute(
+        __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    # Manual reading provided at completion takes precedence over the odometer.
+    await fleet.complete_work_order(
+        ro_id=ro.id, body=WorkOrderComplete(mileage_out=305150), db=db_session, current_user=user,
+    )
+    await db_session.refresh(ro)
+    assert ro.mileage_out == 305150
+
+
+@pytest.mark.asyncio
 async def test_truck_allows_multiple_open_work_orders(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="First"),
@@ -593,3 +640,33 @@ async def test_compliance_skips_out_of_service_truck(db_session):
     await db_session.commit()
     await record_missed_inspections(db_session)
     assert await _missed_records(db_session, vehicle.id) == []
+
+
+@pytest.mark.asyncio
+async def test_delete_inspection_owner_only(db_session):
+    from fastapi import HTTPException
+    from sqlalchemy import select, func
+    from app.db.models.fleet import FleetInspection, FleetInspectionItem
+    tenant, vehicle, fm = await _seed_fleet(db_session)  # fm is a fleet_manager
+    owner = User(id=uuid4(), tenant_id=tenant.id, email=f"own-{uuid4().hex[:6]}@example.com",
+                 hashed_password="x", first_name="O", last_name="W",
+                 role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True)
+    admin_user = User(id=uuid4(), tenant_id=tenant.id, email=f"adm-{uuid4().hex[:6]}@example.com",
+                      hashed_password="x", first_name="A", last_name="D",
+                      role=UserRole.GARAGE_ADMIN, is_active=True, is_verified=True)
+    db_session.add_all([owner, admin_user])
+    await db_session.commit()
+
+    insp = await fleet.create_inspection(body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=fm)
+
+    # Fleet manager and garage admin are blocked from the owner-only guard.
+    for blocked in (fm, admin_user):
+        with pytest.raises(HTTPException) as exc:
+            fleet.require_garage_owner_only(current_user=blocked)
+        assert exc.value.status_code == 403
+
+    # Owner deletes; inspection and its checklist items are gone.
+    await fleet.delete_inspection(inspection_id=insp.id, db=db_session, current_user=owner)
+    gone = (await db_session.execute(select(FleetInspection).where(FleetInspection.id == insp.id))).scalar_one_or_none()
+    items = (await db_session.execute(select(func.count(FleetInspectionItem.id)).where(FleetInspectionItem.inspection_id == insp.id))).scalar()
+    assert gone is None and items == 0

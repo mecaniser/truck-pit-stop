@@ -212,6 +212,18 @@ interface FleetBoardTruck {
   status: string
 }
 
+interface FleetInvoice {
+  id: string
+  invoice_number: string
+  repair_order_id: string
+  order_number?: string | null
+  status: string
+  total_amount: number
+  created_at: string
+  unit_number?: string | null
+  vehicle_label?: string | null
+}
+
 interface WorkforceSettings {
   timezone: string
   default_core_hours_minutes: number
@@ -1884,6 +1896,16 @@ function FleetSection() {
   })
   const trucks = fleetBoard?.trucks || []
 
+  // Internal fleet invoices (cost records) generated on work-order completion.
+  const { data: fleetInvoices } = useQuery<FleetInvoice[]>({
+    queryKey: ['fleet-invoices'],
+    queryFn: async () => {
+      const response = await api.get('/fleet/invoices')
+      return response.data
+    },
+  })
+  const invoices = fleetInvoices || []
+
   useEffect(() => {
     if (taxFeeSettings) {
       setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
@@ -2091,6 +2113,40 @@ function FleetSection() {
             </div>
           )}
         </div>
+      </IndustrialCard>
+
+      {/* Internal fleet invoices — cost records generated when internal work
+          orders complete. Read-only. */}
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Truck className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Internal Invoices ({invoices.length})</span>
+        </div>
+        {invoices.length === 0 ? (
+          <p className="text-sm text-zinc-500">No internal invoices yet. Completing an internal work order records one here.</p>
+        ) : (
+          <div className="max-h-80 overflow-y-auto space-y-1">
+            {invoices.map((inv) => (
+              <div key={inv.id} className="flex items-start justify-between gap-3 p-2 bg-zinc-800/30 border border-zinc-700/40 rounded-lg">
+                <div className="min-w-0">
+                  <p className="text-sm text-zinc-100 truncate">
+                    {inv.invoice_number}
+                    {inv.unit_number ? ` · ${inv.unit_number}` : ''}
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {inv.vehicle_label || 'Truck'}
+                    <span className="mx-2">·</span>
+                    {new Date(inv.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm text-zinc-100">${inv.total_amount.toFixed(2)}</p>
+                  <p className="text-xs text-zinc-500 capitalize">{inv.status}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </IndustrialCard>
     </div>
   )

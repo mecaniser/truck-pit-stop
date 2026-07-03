@@ -10,6 +10,7 @@ import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
+import { customerDisplayName as customerNameOf } from '../../lib/customerName'
 import { formatUSPhone } from '@/utils/phone'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 import BaseSelect from '../../components/BaseSelect'
@@ -152,6 +153,7 @@ export default function RepairOrdersPage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
+  const [mileageIn, setMileageIn] = useState('')
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   // Inline stock-replenish state (keyed by inventory_id) for the new-RO modal's warning panel.
@@ -194,6 +196,7 @@ export default function RepairOrdersPage() {
   const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false)
   const [showReassignMechanic, setShowReassignMechanic] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
+  const [mileageOut, setMileageOut] = useState('')
   const [showReviewNotes, setShowReviewNotes] = useState(false)
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
   const [invoiceDiscountAmount, setInvoiceDiscountAmount] = useState('')
@@ -267,6 +270,16 @@ export default function RepairOrdersPage() {
     queryKey: ['customers'],
     queryFn: async () => {
       const response = await api.get('/customers')
+      return response.data
+    },
+  })
+
+  // Fleet company name, so internal fleet ROs show the fleet operator (e.g.
+  // "77 Cargo") as the customer instead of the generic house account.
+  const { data: fleetSettings } = useQuery<{ fleet_company_name: string | null }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => {
+      const response = await api.get('/fleet/settings')
       return response.data
     },
   })
@@ -429,9 +442,20 @@ export default function RepairOrdersPage() {
   const selectedOrderCustomer = selectedOrder ? customerLookup.get(selectedOrder.customer_id) : undefined
   const selectedOrderVehicle = selectedOrder ? vehicleLookup.get(selectedOrder.vehicle_id) : undefined
   const isSelectedOrderWalkIn = isWalkInPlaceholderCustomer(selectedOrderCustomer)
-  const paymentCustomerName = selectedOrderCustomer
-    ? `${selectedOrderCustomer.first_name} ${selectedOrderCustomer.last_name}`
-    : 'Unknown customer'
+  // Display name for the selected order's customer. Internal fleet ROs resolve
+  // to the fleet company name; otherwise the customer's company name (primary),
+  // falling back to their personal name.
+  const customerDisplayName = selectedOrder?.is_internal
+    ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
+    : customerNameOf(selectedOrderCustomer)
+  const paymentCustomerName = customerDisplayName
+
+  // Display name for an order in a list row: fleet company for internal ROs,
+  // else the customer's company name (primary) / personal name (fallback).
+  const orderCustomerName = (order: RepairOrder, customer?: Customer | null, fallback = '—'): string =>
+    order.is_internal
+      ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
+      : customerNameOf(customer, fallback)
   const paymentCompanyName = selectedOrderCustomer?.company_name || 'No company on file'
   const paymentCompanyNameShort = truncateWithEllipsis(paymentCompanyName, 34)
   const paymentTruckUnit = selectedOrderVehicle?.unit_number || 'No unit number'
@@ -474,7 +498,11 @@ export default function RepairOrdersPage() {
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
   const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
   const showLaborBreakdown = detailStatus ? LABOR_BREAKDOWN_STATUSES.includes(detailStatus) : false
-  const showDangerZone = detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false
+  // Internal fleet ROs can be deleted at any status (no customer invoice/payment
+  // to protect), so the danger zone stays available for them beyond draft/quoted.
+  const showDangerZone = (orderDetail ?? selectedOrder)?.is_internal
+    ? true
+    : (detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false)
   const invoiceOptionSummary = useMemo(() => {
     const summary: string[] = []
     if (invoiceDueDate) {
@@ -521,12 +549,14 @@ export default function RepairOrdersPage() {
       vehicle_id,
       description: roDescription,
       internal_notes,
-    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null }) => {
+      mileage_in,
+    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null }) => {
       const response = await api.post('/repair-orders', {
         customer_id,
         vehicle_id,
         description: roDescription || null,
         internal_notes: internal_notes || null,
+        mileage_in: mileage_in ?? null,
       })
       return response.data as RepairOrder
     },
@@ -593,9 +623,10 @@ export default function RepairOrdersPage() {
   })
 
   const approveCompletionMutation = useMutation({
-    mutationFn: async ({ orderId, reviewNotes }: { orderId: string; reviewNotes?: string }) => {
+    mutationFn: async ({ orderId, reviewNotes, mileageOut }: { orderId: string; reviewNotes?: string; mileageOut?: number | null }) => {
       const response = await api.post(`/repair-orders/${orderId}/approve-completion`, {
         review_notes: reviewNotes || null,
+        mileage_out: mileageOut ?? null,
       })
       return response.data as RepairOrder
     },
@@ -1039,6 +1070,7 @@ export default function RepairOrdersPage() {
     setSelectedVehicleId('')
     setShowNewVehicleForm(false)
     setDescription('')
+    setMileageIn('')
     setServiceSearch('')
     setSelectedServiceIds([])
     setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
@@ -1166,6 +1198,7 @@ export default function RepairOrdersPage() {
         vehicle_id: finalVehicleId,
         description: combinedDescription,
         internal_notes: null,
+        mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
       })
 
       if (selectedServicePayload.length > 0) {
@@ -1333,7 +1366,7 @@ export default function RepairOrdersPage() {
                         </span>
                       </div>
                       <p className="text-white/50 text-xs truncate">
-                        {customer ? `${customer.first_name} ${customer.last_name}` : ''}
+                        {orderCustomerName(order, customer, '')}
                         {vehicle ? ` · ${[vehicle.year, vehicle.make].filter(Boolean).join(' ')}` : ''}
                       </p>
                     </div>
@@ -1401,7 +1434,7 @@ export default function RepairOrdersPage() {
                           {order.description || '—'}
                         </td>
                         <td className="px-4 py-3 text-white/70 hidden md:table-cell">
-                          {customer ? `${customer.first_name} ${customer.last_name}` : '—'}
+                          {orderCustomerName(order, customer)}
                         </td>
                         <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
                           {vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : '—'}
@@ -2006,6 +2039,18 @@ export default function RepairOrdersPage() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mileage In</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={mileageIn}
+                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageIn(v) }}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="Odometer reading when the vehicle arrived"
+                  />
+                </div>
+
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
                   <button
                     type="button"
@@ -2126,8 +2171,9 @@ export default function RepairOrdersPage() {
         {selectedOrder && (
           <div className="p-6 space-y-6">
 
-                {/* Quote Workflow */}
-                {(() => {
+                {/* Quote Workflow — the customer quote/approval flow doesn't
+                    apply to internal fleet ROs (the fleet manager runs them). */}
+                {!selectedOrder.is_internal && (() => {
                   const hasQuote = !!quoteForOrder
                   const isApproved = quoteForOrder?.is_approved
                   const isSent = quoteForOrder?.sent_to_customer || quoteSent
@@ -2856,9 +2902,7 @@ export default function RepairOrdersPage() {
                     <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer & Vehicle</span>
                     <div className="flex items-center gap-2">
                       <span className="text-gray-900 font-medium truncate max-w-[200px]">
-                        {customerLookup.get(selectedOrder.customer_id)
-                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                          : 'Unknown'}
+                        {customerDisplayName}
                       </span>
                       {customerSectionExpanded ? (
                         <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
@@ -2877,9 +2921,7 @@ export default function RepairOrdersPage() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-gray-900 font-semibold text-sm truncate">
-                              {customerLookup.get(selectedOrder.customer_id)
-                                ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                                : 'Unknown customer'}
+                              {customerDisplayName}
                             </p>
                             <p className="text-xs text-gray-500 truncate">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
                             {customerLookup.get(selectedOrder.customer_id)?.phone && (
@@ -2968,7 +3010,19 @@ export default function RepairOrdersPage() {
                         <p className="text-sm text-orange-700">Review and approve to notify customer</p>
                       </div>
                     </div>
-                    
+
+                    <div className="mb-3">
+                      <label className="block text-sm font-medium text-orange-800 mb-1">Mileage Out</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={mileageOut}
+                        onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageOut(v) }}
+                        placeholder={selectedOrder.mileage_in != null ? `Odometer at return (in: ${selectedOrder.mileage_in.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
+                        className="w-full px-3 py-2 border border-orange-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm"
+                      />
+                    </div>
+
                     <div className="mb-3">
                       <button
                         type="button"
@@ -3000,8 +3054,13 @@ export default function RepairOrdersPage() {
                       type="button"
                       onClick={() => {
                         if (selectedOrder.id) {
-                          approveCompletionMutation.mutate({ orderId: selectedOrder.id, reviewNotes: reviewNotes || undefined })
+                          approveCompletionMutation.mutate({
+                            orderId: selectedOrder.id,
+                            reviewNotes: reviewNotes || undefined,
+                            mileageOut: mileageOut.trim() === '' ? null : Number(mileageOut),
+                          })
                           setReviewNotes('')
+                          setMileageOut('')
                         }
                       }}
                       disabled={approveCompletionMutation.isPending}
@@ -3022,8 +3081,35 @@ export default function RepairOrdersPage() {
                   </div>
                 )}
 
-                {/* Create Invoice Button for completed orders */}
-                {(orderDetail ?? selectedOrder).status === 'completed' && (
+                {/* Internal fleet cost summary — internal ROs are not invoiced to
+                    a customer; completing one records an internal cost only. */}
+                {(orderDetail ?? selectedOrder).status === 'completed' && selectedOrder.is_internal && (() => {
+                  const o = orderDetail ?? selectedOrder
+                  const labor = parseFloat(o.total_labor_cost ?? '0') || 0
+                  const parts = parseFloat(o.total_parts_cost ?? '0') || 0
+                  const total = parseFloat(o.total_cost ?? '0') || (labor + parts)
+                  return (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
+                          <Wrench className="w-5 h-5 text-slate-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-900">Internal Repair — Cost Record</p>
+                          <p className="text-sm text-slate-600">In-house fleet repair. No customer invoice.</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between text-slate-600"><span>Labor</span><span>${formatMoney(o.total_labor_cost ?? '0')}</span></div>
+                        <div className="flex justify-between text-slate-600"><span>Parts</span><span>${formatMoney(o.total_parts_cost ?? '0')}</span></div>
+                        <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-slate-200 mt-1"><span>Internal cost</span><span>${formatMoney(String(total))}</span></div>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Create Invoice Button for completed customer orders */}
+                {(orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">

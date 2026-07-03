@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, Vehicle, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
+import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { AlertTriangle, ArrowRight, DollarSign, Loader2, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, Truck, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
@@ -808,8 +809,8 @@ export default function CustomersPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!formData.first_name.trim() || !formData.last_name.trim() || !formData.email.trim()) {
-      toast.error('First name, last name, and email are required')
+    if (!formData.company_name.trim() || !formData.first_name.trim() || !formData.last_name.trim() || !formData.email.trim()) {
+      toast.error('Company name, first name, last name, and email are required')
       return
     }
 
@@ -980,13 +981,14 @@ export default function CustomersPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Company Name
+            Company Name <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
             name="company_name"
             value={formData.company_name}
             onChange={handleInputChange}
+            required
             className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="Acme Logistics"
           />
@@ -1725,7 +1727,7 @@ export default function CustomersPage() {
                               {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                             </span>
                           </div>
-                          <span className="text-white font-medium">{customer.first_name} {customer.last_name}</span>
+                          <span className="text-white font-medium">{customerDisplayName(customer)}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-white/70 hidden sm:table-cell">{customer.email}</td>
@@ -1770,11 +1772,14 @@ export default function CustomersPage() {
                       </span>
                     </div>
                     <h3 className="text-lg font-bold text-slate-800 leading-tight">
-                      {customer.first_name} {customer.last_name}
+                      {customerDisplayName(customer)}
                     </h3>
                   </div>
-                  
+
                   <div className="space-y-2 text-sm">
+                    {customer.company_name && customerPersonalName(customer) && (
+                      <div className="text-slate-500">{customerPersonalName(customer)}</div>
+                    )}
                     <div className="flex items-center gap-2 text-slate-600">
                       <Mail className="w-4 h-4 flex-shrink-0" />
                       <span className="truncate">{customer.email}</span>
@@ -1877,7 +1882,7 @@ export default function CustomersPage() {
           selectedVehicleInPanel
             ? `${selectedVehicleInPanel.year ? `${selectedVehicleInPanel.year} ` : ''}${selectedVehicleInPanel.make} ${selectedVehicleInPanel.model}`
             : selectedCustomer
-            ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`
+            ? customerDisplayName(selectedCustomer, '')
             : ''
         }
         subtitle={
@@ -1936,8 +1941,11 @@ export default function CustomersPage() {
                 </div>
                 <div>
                   <p className="text-gray-900 font-semibold">
-                    {selectedCustomer.first_name} {selectedCustomer.last_name}
+                    {customerDisplayName(selectedCustomer)}
                   </p>
+                  {selectedCustomer.company_name && customerPersonalName(selectedCustomer) && (
+                    <p className="text-sm text-gray-500">{customerPersonalName(selectedCustomer)}</p>
+                  )}
                   <p className="text-sm text-gray-500">{selectedCustomer.email}</p>
                 </div>
               </div>

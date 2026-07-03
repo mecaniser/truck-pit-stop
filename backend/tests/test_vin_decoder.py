@@ -158,6 +158,7 @@ async def test_create_customer_requires_vehicle_or_no_vehicle_flag():
     payload = CustomerCreate(
         first_name="Test",
         last_name="Customer",
+        company_name="Test Customer LLC",
         email="test@example.com",
     )
     current_user = SimpleNamespace(

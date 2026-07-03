@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime
 from uuid import UUID
@@ -38,8 +38,20 @@ class InitialVehicle(BaseModel):
 
 
 class CustomerCreate(CustomerBase):
+    # The business is LLC-based: every customer created through the app is a
+    # company, so company_name is required here (no default). Walk-in and
+    # internal-fleet house accounts are created via the model directly and
+    # bypass this schema.
+    company_name: str
     initial_vehicle: Optional[InitialVehicle] = None
     no_vehicle: bool = False  # Explicit flag when customer has no truck
+
+    @field_validator("company_name")
+    @classmethod
+    def company_name_required(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Company name is required")
+        return v.strip()
 
 
 class CustomerUpdate(BaseModel):

@@ -42,6 +42,13 @@ class InspectionComplete(BaseModel):
     result: Optional[InspectionResult] = None  # override; otherwise computed from items
 
 
+class WorkOrderComplete(BaseModel):
+    # Odometer at completion. Optional: when omitted, mileage_out is taken from
+    # the truck's current odometer. Provided as a manual fallback when the
+    # vehicle odometer isn't current.
+    mileage_out: Optional[int] = None
+
+
 class InspectionResponse(BaseModel):
     id: UUID
     vehicle_id: UUID
@@ -298,6 +305,20 @@ class FleetManagerOption(BaseModel):
     id: UUID
     name: str
     email: str
+
+
+class FleetInvoiceEntry(BaseModel):
+    id: UUID
+    invoice_number: str
+    repair_order_id: UUID
+    order_number: Optional[str] = None
+    status: str
+    total_amount: float
+    created_at: datetime
+    # Truck context
+    vehicle_id: Optional[UUID] = None
+    unit_number: Optional[str] = None
+    vehicle_label: Optional[str] = None
 
 
 class FleetSettingsResponse(BaseModel):
