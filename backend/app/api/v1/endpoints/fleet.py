@@ -54,6 +54,7 @@ from app.schemas.fleet import (
     TruckUpdate,
     WorkOrderCreate,
     SchedulePMRequest,
+    FleetInvoiceEntry,
     FleetManagerOption,
     FleetMechanicOption,
     FleetSettingsResponse,
@@ -1178,6 +1179,46 @@ async def get_fleet_settings(
         fleet_managers=fleet_managers,
         truck_count=len(trucks),
     )
+
+
+@router.get("/invoices", response_model=List[FleetInvoiceEntry])
+async def list_fleet_invoices(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Internal fleet invoices (cost records) generated when internal work orders
+    complete. Read-only list, newest first, with truck context."""
+    from app.db.models.invoice import Invoice
+
+    result = await db.execute(
+        select(Invoice, RepairOrder, Vehicle)
+        .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id, isouter=True)
+        .where(and_(
+            Invoice.tenant_id == current_user.tenant_id,
+            Invoice.is_internal.is_(True),
+        ))
+        .order_by(Invoice.created_at.desc())
+    )
+    entries = []
+    for inv, ro, veh in result.all():
+        status_val = inv.status.value if hasattr(inv.status, "value") else str(inv.status)
+        vehicle_label = None
+        if veh is not None:
+            vehicle_label = " ".join(str(p) for p in [veh.year, veh.make, veh.model] if p) or None
+        entries.append(FleetInvoiceEntry(
+            id=inv.id,
+            invoice_number=inv.invoice_number,
+            repair_order_id=ro.id,
+            order_number=ro.order_number,
+            status=status_val,
+            total_amount=float(inv.total_amount or 0),
+            created_at=inv.created_at,
+            vehicle_id=veh.id if veh is not None else None,
+            unit_number=veh.unit_number if veh is not None else None,
+            vehicle_label=vehicle_label,
+        ))
+    return entries
 
 
 @router.get("/mechanics", response_model=List[FleetMechanicOption])

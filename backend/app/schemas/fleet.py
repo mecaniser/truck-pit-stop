@@ -300,6 +300,20 @@ class FleetManagerOption(BaseModel):
     email: str
 
 
+class FleetInvoiceEntry(BaseModel):
+    id: UUID
+    invoice_number: str
+    repair_order_id: UUID
+    order_number: Optional[str] = None
+    status: str
+    total_amount: float
+    created_at: datetime
+    # Truck context
+    vehicle_id: Optional[UUID] = None
+    unit_number: Optional[str] = None
+    vehicle_label: Optional[str] = None
+
+
 class FleetSettingsResponse(BaseModel):
     # In-house labor cost rate, configured by owner/admin in garage settings.
     internal_labor_rate: float = 0.0

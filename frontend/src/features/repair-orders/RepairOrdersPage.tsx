@@ -271,6 +271,16 @@ export default function RepairOrdersPage() {
     },
   })
 
+  // Fleet company name, so internal fleet ROs show the fleet operator (e.g.
+  // "77 Cargo") as the customer instead of the generic house account.
+  const { data: fleetSettings } = useQuery<{ fleet_company_name: string | null }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => {
+      const response = await api.get('/fleet/settings')
+      return response.data
+    },
+  })
+
   const { data: vehicles } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
     queryFn: async () => {
@@ -429,9 +439,14 @@ export default function RepairOrdersPage() {
   const selectedOrderCustomer = selectedOrder ? customerLookup.get(selectedOrder.customer_id) : undefined
   const selectedOrderVehicle = selectedOrder ? vehicleLookup.get(selectedOrder.vehicle_id) : undefined
   const isSelectedOrderWalkIn = isWalkInPlaceholderCustomer(selectedOrderCustomer)
-  const paymentCustomerName = selectedOrderCustomer
-    ? `${selectedOrderCustomer.first_name} ${selectedOrderCustomer.last_name}`
-    : 'Unknown customer'
+  // Display name for the selected order's customer. Internal fleet ROs resolve
+  // to the fleet company name; otherwise the customer's name (or 'Unknown').
+  const customerDisplayName = selectedOrder?.is_internal
+    ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
+    : (selectedOrderCustomer
+        ? `${selectedOrderCustomer.first_name} ${selectedOrderCustomer.last_name}`
+        : 'Unknown customer')
+  const paymentCustomerName = customerDisplayName
   const paymentCompanyName = selectedOrderCustomer?.company_name || 'No company on file'
   const paymentCompanyNameShort = truncateWithEllipsis(paymentCompanyName, 34)
   const paymentTruckUnit = selectedOrderVehicle?.unit_number || 'No unit number'
@@ -474,7 +489,11 @@ export default function RepairOrdersPage() {
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
   const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
   const showLaborBreakdown = detailStatus ? LABOR_BREAKDOWN_STATUSES.includes(detailStatus) : false
-  const showDangerZone = detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false
+  // Internal fleet ROs can be deleted at any status (no customer invoice/payment
+  // to protect), so the danger zone stays available for them beyond draft/quoted.
+  const showDangerZone = (orderDetail ?? selectedOrder)?.is_internal
+    ? true
+    : (detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false)
   const invoiceOptionSummary = useMemo(() => {
     const summary: string[] = []
     if (invoiceDueDate) {
@@ -2126,8 +2145,9 @@ export default function RepairOrdersPage() {
         {selectedOrder && (
           <div className="p-6 space-y-6">
 
-                {/* Quote Workflow */}
-                {(() => {
+                {/* Quote Workflow — the customer quote/approval flow doesn't
+                    apply to internal fleet ROs (the fleet manager runs them). */}
+                {!selectedOrder.is_internal && (() => {
                   const hasQuote = !!quoteForOrder
                   const isApproved = quoteForOrder?.is_approved
                   const isSent = quoteForOrder?.sent_to_customer || quoteSent
@@ -2877,9 +2897,7 @@ export default function RepairOrdersPage() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-gray-900 font-semibold text-sm truncate">
-                              {customerLookup.get(selectedOrder.customer_id)
-                                ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                                : 'Unknown customer'}
+                              {customerDisplayName}
                             </p>
                             <p className="text-xs text-gray-500 truncate">{customerLookup.get(selectedOrder.customer_id)?.email}</p>
                             {customerLookup.get(selectedOrder.customer_id)?.phone && (
@@ -3022,8 +3040,35 @@ export default function RepairOrdersPage() {
                   </div>
                 )}
 
-                {/* Create Invoice Button for completed orders */}
-                {(orderDetail ?? selectedOrder).status === 'completed' && (
+                {/* Internal fleet cost summary — internal ROs are not invoiced to
+                    a customer; completing one records an internal cost only. */}
+                {(orderDetail ?? selectedOrder).status === 'completed' && selectedOrder.is_internal && (() => {
+                  const o = orderDetail ?? selectedOrder
+                  const labor = parseFloat(o.total_labor_cost ?? '0') || 0
+                  const parts = parseFloat(o.total_parts_cost ?? '0') || 0
+                  const total = parseFloat(o.total_cost ?? '0') || (labor + parts)
+                  return (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
+                          <Wrench className="w-5 h-5 text-slate-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-900">Internal Repair — Cost Record</p>
+                          <p className="text-sm text-slate-600">In-house fleet repair. No customer invoice.</p>
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between text-slate-600"><span>Labor</span><span>${formatMoney(o.total_labor_cost ?? '0')}</span></div>
+                        <div className="flex justify-between text-slate-600"><span>Parts</span><span>${formatMoney(o.total_parts_cost ?? '0')}</span></div>
+                        <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-slate-200 mt-1"><span>Internal cost</span><span>${formatMoney(String(total))}</span></div>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Create Invoice Button for completed customer orders */}
+                {(orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
