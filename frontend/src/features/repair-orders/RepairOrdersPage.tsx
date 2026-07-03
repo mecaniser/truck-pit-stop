@@ -2049,7 +2049,7 @@ export default function RepairOrdersPage() {
         onClose={closeDetail}
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
-        width="max-w-[max(50vw,_400px)]"
+        width="max-w-[max(400px,_min(90vw,_1100px))]"
         onPrev={showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
         onNext={showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
         prevDisabled={!hasPrev}
