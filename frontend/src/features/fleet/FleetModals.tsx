@@ -6,6 +6,7 @@ import {
   Check, Minus, RotateCcw,
 } from 'lucide-react'
 import api from '../../lib/api'
+import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
 } from './types'
@@ -25,6 +26,31 @@ export function Modal({ title, icon, onClose, children, width = 480 }: {
         {children}
       </div>
     </div>
+  )
+}
+
+/* Centered confirmation modal (styled — replaces window.confirm). */
+export function ConfirmModal({ title, message, confirmLabel = 'Delete', pending, onConfirm, onClose }: {
+  title: string; message: string; confirmLabel?: string; pending?: boolean; onConfirm: () => void; onClose: () => void
+}) {
+  return (
+    <Modal title={title} icon={<Trash2 size={17} />} onClose={onClose} width={420}>
+      <p style={{ fontSize: 14, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 20 }}>{message}</p>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <button className="dbtn dbtn-ghost" onClick={onClose} disabled={pending}>Cancel</button>
+        <button
+          onClick={onConfirm}
+          disabled={pending}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, height: 42, padding: '0 17px',
+            borderRadius: 10, fontSize: 13.5, fontWeight: 700, border: 'none',
+            background: 'var(--red)', color: '#fff', cursor: 'pointer', opacity: pending ? 0.6 : 1,
+          }}
+        >
+          {pending ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} {confirmLabel}
+        </button>
+      </div>
+    </Modal>
   )
 }
 
@@ -272,6 +298,7 @@ interface WODetail {
   assigned_mechanic_id?: string | null
   total_parts_cost: number | string; total_labor_cost: number | string; total_cost: number | string
   is_pm?: boolean
+  mileage_in?: number | null; mileage_out?: number | null
   labor_items: WOLabor[]; parts_usage: WOPart[]
 }
 
@@ -425,6 +452,8 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
 
   const [description, setDescription] = useState('')
   const [descDirty, setDescDirty] = useState(false)
+  const [mileageOut, setMileageOut] = useState('')
+  const [armComplete, setArmComplete] = useState(false)
   // Seed the editable description once the work order loads.
   if (wo && !descDirty && description === '') {
     if (wo.description) setDescription(wo.description)
@@ -457,7 +486,9 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to start work order'),
   })
   const completeWO = useMutation({
-    mutationFn: async () => (await api.post(`/fleet/work-orders/${repairOrderId}/complete`)).data,
+    mutationFn: async (mileageOut?: number | null) =>
+      (await api.post(`/fleet/work-orders/${repairOrderId}/complete`,
+        { mileage_out: mileageOut ?? null })).data,
     onSuccess: () => { toast.success('Work order completed'); refresh(); onClose() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to complete work order'),
   })
@@ -485,19 +516,12 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
                   {startWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={14} />} Start work
                 </button>
               )}
-              {['in_progress', 'pending_review'].includes(wo.status) && (
-                <InlineConfirm
-                  message="Complete & generate an internal invoice?"
-                  confirmLabel="Complete"
-                  pending={completeWO.isPending}
-                  onConfirm={() => completeWO.mutate()}
-                  renderTrigger={(arm) => (
-                    <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
-                      disabled={completeWO.isPending} onClick={arm}>
-                      <Flag size={14} /> Mark completed
-                    </button>
-                  )}
-                />
+              {['in_progress', 'pending_review'].includes(wo.status) && !armComplete && (
+                <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  disabled={completeWO.isPending}
+                  onClick={() => { setMileageOut(wo.mileage_in != null ? String(wo.mileage_in) : ''); setArmComplete(true) }}>
+                  <Flag size={14} /> Mark completed
+                </button>
               )}
               {wo.status === 'completed' && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--yellow)', fontSize: 13 }}>
@@ -506,6 +530,35 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               )}
             </div>
           </div>
+
+          {armComplete && (
+            <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, display: 'grid', gap: 8 }}>
+              <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                Enter the truck's odometer at completion, then complete the work order.
+              </div>
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span className="id-k">Mileage out</span>
+                <input
+                  style={{ ...costInput, height: 38 }}
+                  value={mileageOut}
+                  inputMode="numeric"
+                  onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageOut(v) }}
+                  placeholder={wo.mileage_in != null ? `In: ${wo.mileage_in.toLocaleString()} mi` : 'Odometer at completion'}
+                />
+              </label>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className={ghostBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  disabled={completeWO.isPending} onClick={() => setArmComplete(false)}>
+                  Cancel
+                </button>
+                <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  disabled={completeWO.isPending}
+                  onClick={() => completeWO.mutate(mileageOut.trim() === '' ? null : Number(mileageOut))}>
+                  {completeWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Flag size={14} />} Complete work order
+                </button>
+              </div>
+            </div>
+          )}
 
           <Field label="Work / complaint">
             <textarea
@@ -759,7 +812,10 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
 
 export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { vehicleId: string; truckId: string; currentOdometer?: number | null }) {
   const qc = useQueryClient()
+  const { user } = useAuthStore()
+  const isOwner = user?.role === 'garage_owner'  // only the owner may delete inspections
   const [openId, setOpenId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<Inspection | null>(null)
   const { data: inspections } = useQuery<Inspection[]>({
     queryKey: ['fleet-inspections', vehicleId],
     queryFn: async () => (await api.get('/fleet/inspections', { params: { vehicle_id: vehicleId } })).data,
@@ -771,6 +827,17 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
       setOpenId(insp.id)
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+  })
+  const del = useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/fleet/inspections/${id}`)).data,
+    onSuccess: () => {
+      toast.success('Inspection deleted')
+      setConfirmDelete(null)
+      qc.invalidateQueries({ queryKey: ['fleet-inspections', vehicleId] })
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete'),
   })
   // Most recent completed reading, for the "previous odometer" reference in the checklist.
   const lastReading = (inspections || [])
@@ -796,24 +863,46 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
               : i.status === 'missed' ? 'var(--red)' : 'var(--yellow)'
             const label = i.status === 'completed' ? (i.result || 'completed') : i.status
             const labelColor = (i.status === 'missed' || i.result === 'fail') ? 'var(--red)' : undefined
-            const row = (
-              <>
+            const openable = i.status !== 'missed'  // missed markers have no checklist to open
+            return (
+              <div
+                key={i.id}
+                className="lrow"
+                style={{ cursor: openable ? 'pointer' : 'default' }}
+                onClick={openable ? () => setOpenId(i.id) : undefined}
+              >
                 <i className="lrow-dot" style={{ background: dot }} />
                 <span className="lrow-tx">{fmtDate(i.performed_at || i.scheduled_for)}</span>
                 <span className="lrow-r">
                   {i.odometer != null && <span className="lrow-tx" style={{ color: 'var(--muted)' }}>{fmt(i.odometer)} mi</span>}
                   <span className="lrow-st" style={{ textTransform: 'capitalize', color: labelColor }}>{label}</span>
+                  {isOwner && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete(i) }}
+                      disabled={del.isPending}
+                      title="Delete inspection (owner only)"
+                      style={{ background: 'none', border: 'none', color: 'var(--muted-2)', cursor: 'pointer', padding: 2, display: 'inline-flex' }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </span>
-              </>
+              </div>
             )
-            // Missed markers have no checklist to open.
-            return i.status === 'missed'
-              ? <div key={i.id} className="lrow" style={{ cursor: 'default' }}>{row}</div>
-              : <button key={i.id} className="lrow" onClick={() => setOpenId(i.id)}>{row}</button>
           })}
         </div>
       )}
       {openId && <InspectionChecklistModal inspectionId={openId} truckId={truckId} vehicleId={vehicleId} currentOdometer={currentOdometer} lastReadingDate={lastReading?.performed_at || null} onClose={() => setOpenId(null)} />}
+      {confirmDelete && (
+        <ConfirmModal
+          title="Delete inspection"
+          message={`Permanently delete the ${fmtDate(confirmDelete.performed_at || confirmDelete.scheduled_for)} inspection? This removes the record and its checklist and cannot be undone.`}
+          confirmLabel="Delete inspection"
+          pending={del.isPending}
+          onConfirm={() => del.mutate(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
+        />
+      )}
     </section>
   )
 }
