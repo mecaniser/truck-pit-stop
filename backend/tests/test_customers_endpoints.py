@@ -45,6 +45,7 @@ async def test_create_customer(client, staff_token):
         json={
             "first_name": "John",
             "last_name": "Doe",
+            "company_name": "Doe Logistics LLC",
             "email": "john@example.com",
             "no_vehicle": True,
         },
@@ -64,6 +65,7 @@ async def test_create_customer_with_vehicle(client, staff_token):
         json={
             "first_name": "Jane",
             "last_name": "Doe",
+            "company_name": "Jane Freight LLC",
             "email": "jane@example.com",
             "initial_vehicle": {
                 "make": "Freightliner",
@@ -85,6 +87,7 @@ async def test_create_customer_duplicate_email_fails(client, staff_token):
     payload = {
         "first_name": "Dup",
         "last_name": "User",
+        "company_name": "Dup Transport LLC",
         "email": "dup@example.com",
         "no_vehicle": True,
     }
@@ -100,7 +103,7 @@ async def test_list_customers(client, staff_token):
     for name in ("Alice", "Bob"):
         await client.post(
             CUSTOMERS_URL,
-            json={"first_name": name, "last_name": "T", "email": f"{name.lower()}@example.com", "no_vehicle": True},
+            json={"first_name": name, "last_name": "T", "company_name": f"{name} LLC", "email": f"{name.lower()}@example.com", "no_vehicle": True},
             headers={"Authorization": f"Bearer {token}"},
         )
     r = await client.get(CUSTOMERS_URL, headers={"Authorization": f"Bearer {token}"})

@@ -10,6 +10,7 @@ import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
+import { customerDisplayName as customerNameOf } from '../../lib/customerName'
 import { formatUSPhone } from '@/utils/phone'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 import BaseSelect from '../../components/BaseSelect'
@@ -440,13 +441,19 @@ export default function RepairOrdersPage() {
   const selectedOrderVehicle = selectedOrder ? vehicleLookup.get(selectedOrder.vehicle_id) : undefined
   const isSelectedOrderWalkIn = isWalkInPlaceholderCustomer(selectedOrderCustomer)
   // Display name for the selected order's customer. Internal fleet ROs resolve
-  // to the fleet company name; otherwise the customer's name (or 'Unknown').
+  // to the fleet company name; otherwise the customer's company name (primary),
+  // falling back to their personal name.
   const customerDisplayName = selectedOrder?.is_internal
     ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
-    : (selectedOrderCustomer
-        ? `${selectedOrderCustomer.first_name} ${selectedOrderCustomer.last_name}`
-        : 'Unknown customer')
+    : customerNameOf(selectedOrderCustomer)
   const paymentCustomerName = customerDisplayName
+
+  // Display name for an order in a list row: fleet company for internal ROs,
+  // else the customer's company name (primary) / personal name (fallback).
+  const orderCustomerName = (order: RepairOrder, customer?: Customer | null, fallback = '—'): string =>
+    order.is_internal
+      ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
+      : customerNameOf(customer, fallback)
   const paymentCompanyName = selectedOrderCustomer?.company_name || 'No company on file'
   const paymentCompanyNameShort = truncateWithEllipsis(paymentCompanyName, 34)
   const paymentTruckUnit = selectedOrderVehicle?.unit_number || 'No unit number'
@@ -1352,7 +1359,7 @@ export default function RepairOrdersPage() {
                         </span>
                       </div>
                       <p className="text-white/50 text-xs truncate">
-                        {customer ? `${customer.first_name} ${customer.last_name}` : ''}
+                        {orderCustomerName(order, customer, '')}
                         {vehicle ? ` · ${[vehicle.year, vehicle.make].filter(Boolean).join(' ')}` : ''}
                       </p>
                     </div>
@@ -1420,7 +1427,7 @@ export default function RepairOrdersPage() {
                           {order.description || '—'}
                         </td>
                         <td className="px-4 py-3 text-white/70 hidden md:table-cell">
-                          {customer ? `${customer.first_name} ${customer.last_name}` : '—'}
+                          {orderCustomerName(order, customer)}
                         </td>
                         <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
                           {vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : '—'}
@@ -2876,9 +2883,7 @@ export default function RepairOrdersPage() {
                     <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Customer & Vehicle</span>
                     <div className="flex items-center gap-2">
                       <span className="text-gray-900 font-medium truncate max-w-[200px]">
-                        {customerLookup.get(selectedOrder.customer_id)
-                          ? `${customerLookup.get(selectedOrder.customer_id)?.first_name} ${customerLookup.get(selectedOrder.customer_id)?.last_name}`
-                          : 'Unknown'}
+                        {customerDisplayName}
                       </span>
                       {customerSectionExpanded ? (
                         <ChevronUp className="w-5 h-5 text-gray-500 shrink-0" />
