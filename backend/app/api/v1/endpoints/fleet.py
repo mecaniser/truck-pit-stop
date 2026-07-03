@@ -599,6 +599,25 @@ async def create_repair_for_incident(
     return _incident_response(incident)
 
 
+@router.delete("/incidents/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_incident(
+    incident_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Delete a road-incident log entry. Blocked when a repair order was spawned
+    from it — handle/delete that repair order first, so the incident→repair trail
+    isn't silently orphaned."""
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    if incident.repair_order_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This incident has a linked repair order. Delete or unlink the repair order first.",
+        )
+    await db.delete(incident)
+    await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Fleet board & truck detail (design: KPI strip + truck cards + detail)
 # ---------------------------------------------------------------------------

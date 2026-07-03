@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
-  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info,
+  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry } from './types'
@@ -61,9 +61,15 @@ export default function TruckDetail({
     onSuccess: () => { toast.success('Internal repair order created'); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
   })
+  const deleteIncident = useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/fleet/incidents/${id}`)).data,
+    onSuccess: () => { toast.success('Incident deleted'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
+  })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
+  const [armedDeleteIncidentId, setArmedDeleteIncidentId] = useState<string | null>(null)
   const [newWOOpen, setNewWOOpen] = useState(false)
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
@@ -221,6 +227,29 @@ export default function TruckDetail({
                         )}
                         {inc.status === 'resolved' && (
                           <span style={{ fontSize: 12, color: 'var(--st-active)' }}>Resolved</span>
+                        )}
+                        {/* Delete is only available when no repair order was spawned
+                            from this incident; the backend blocks it otherwise. */}
+                        {!inc.repair_order_id && (
+                          armedDeleteIncidentId === inc.id ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>Delete this incident?</span>
+                              <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
+                                disabled={deleteIncident.isPending} onClick={() => setArmedDeleteIncidentId(null)}>
+                                Cancel
+                              </button>
+                              <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12, color: 'var(--red)' }}
+                                disabled={deleteIncident.isPending}
+                                onClick={() => deleteIncident.mutate(inc.id, { onSuccess: () => setArmedDeleteIncidentId(null) })}>
+                                {deleteIncident.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
+                              </button>
+                            </span>
+                          ) : (
+                            <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12, color: 'var(--red)' }}
+                              onClick={() => setArmedDeleteIncidentId(inc.id)}>
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          )
                         )}
                       </div>
                     </div>
