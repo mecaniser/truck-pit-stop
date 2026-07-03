@@ -363,6 +363,36 @@ async def test_internal_wo_complete_manual_mileage_out_overrides(db_session):
 
 
 @pytest.mark.asyncio
+async def test_delete_completed_internal_wo_removes_invoice(db_session):
+    """A completed internal WO has an internal invoice (FK to the RO). Deleting
+    the RO must clean up that invoice first, or the FK blocks the delete."""
+    from sqlalchemy import select
+    from app.api.v1.endpoints import repair_orders as ro_ep
+    from app.db.models.invoice import Invoice
+
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 200000
+    await db_session.commit()
+
+    await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Radiator"),
+        db=db_session, current_user=user,
+    )
+    ro = (await db_session.execute(select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id))).scalar_one()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, body=WorkOrderComplete(mileage_out=200050), db=db_session, current_user=user)
+
+    ro_id = ro.id
+    assert (await db_session.execute(select(Invoice).where(Invoice.repair_order_id == ro_id))).scalar_one_or_none() is not None
+
+    # Deleting the completed internal RO must succeed (no FK error).
+    await ro_ep.delete_repair_order(order_id=ro_id, db=db_session, current_user=user)
+
+    assert (await db_session.execute(select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one_or_none() is None
+    assert (await db_session.execute(select(Invoice).where(Invoice.repair_order_id == ro_id))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
 async def test_truck_allows_multiple_open_work_orders(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="First"),

@@ -1700,6 +1700,17 @@ async def delete_repair_order(
     for labor in labor_result.scalars().all():
         await db.delete(labor)
 
+    # Delete any invoice (and its payments) tied to this RO. Internal fleet ROs
+    # generate an internal cost invoice on completion; without this, the
+    # Invoice.repair_order_id FK blocks deleting a completed RO.
+    from app.db.models.payment import Payment
+    invoice_result = await db.execute(select(Invoice).where(Invoice.repair_order_id == order_id))
+    for invoice in invoice_result.scalars().all():
+        payment_result = await db.execute(select(Payment).where(Payment.invoice_id == invoice.id))
+        for payment in payment_result.scalars().all():
+            await db.delete(payment)
+        await db.delete(invoice)
+
     await db.delete(order)
     await db.commit()
 
