@@ -42,6 +42,13 @@ class InspectionComplete(BaseModel):
     result: Optional[InspectionResult] = None  # override; otherwise computed from items
 
 
+class WorkOrderComplete(BaseModel):
+    # Odometer at completion. Optional: when omitted, mileage_out is taken from
+    # the truck's current odometer. Provided as a manual fallback when the
+    # vehicle odometer isn't current.
+    mileage_out: Optional[int] = None
+
+
 class InspectionResponse(BaseModel):
     id: UUID
     vehicle_id: UUID

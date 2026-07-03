@@ -53,6 +53,7 @@ from app.schemas.fleet import (
     TruckDetailResponse,
     TruckUpdate,
     WorkOrderCreate,
+    WorkOrderComplete,
     SchedulePMRequest,
     FleetInvoiceEntry,
     FleetManagerOption,
@@ -93,6 +94,15 @@ WO_STATUS_LABELS = {
 def require_fleet_access(current_user: User = Depends(get_current_active_user)) -> User:
     if current_user.role not in FLEET_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    return current_user
+
+
+def require_garage_owner_only(current_user: User = Depends(get_current_active_user)) -> User:
+    """Owner-only guard. Fleet managers/admins cannot delete inspection records."""
+    if current_user.role != UserRole.GARAGE_OWNER:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the garage owner can delete inspections")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     return current_user
@@ -426,6 +436,26 @@ async def cancel_inspection(
     insp.status = InspectionStatus.CANCELLED
     await db.commit()
     return _inspection_response(insp)
+
+
+@router.delete("/inspections/{inspection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_inspection(
+    inspection_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner_only),
+):
+    """Permanently delete an inspection record. Garage owner only."""
+    result = await db.execute(
+        select(FleetInspection).where(
+            and_(FleetInspection.id == inspection_id, FleetInspection.tenant_id == current_user.tenant_id)
+        )
+    )
+    insp = result.scalar_one_or_none()
+    if not insp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
+    await db.delete(insp)  # checklist items cascade
+    await db.commit()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -1089,6 +1119,7 @@ async def start_work_order(
 @router.post("/work-orders/{ro_id}/complete", response_model=BoardWorkOrder)
 async def complete_work_order(
     ro_id: UUID,
+    body: Optional[WorkOrderComplete] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
@@ -1097,15 +1128,25 @@ async def complete_work_order(
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
+
+    veh_result = await db.execute(select(Vehicle).where(Vehicle.id == ro.vehicle_id))
+    veh = veh_result.scalar_one_or_none()
+
+    # Mileage-out: use the manual reading if provided (fallback), otherwise the
+    # truck's current odometer (kept current by inspections).
+    manual_out = body.mileage_out if body else None
+    if manual_out is not None:
+        ro.mileage_out = manual_out
+    elif veh is not None and veh.mileage is not None:
+        ro.mileage_out = veh.mileage
+
     ro.status = RepairOrderStatus.COMPLETED
     ro.work_completed_at = datetime.now(timezone.utc)
-    # A completed PM rolls the truck's next PM forward (mileage + date).
-    if ro.is_pm:
+    # A completed PM rolls the truck's next PM forward (mileage + date), using
+    # the mileage-out we just recorded.
+    if ro.is_pm and veh is not None:
         from app.services.internal_fleet import advance_vehicle_pm
-        veh_result = await db.execute(select(Vehicle).where(Vehicle.id == ro.vehicle_id))
-        veh = veh_result.scalar_one_or_none()
-        if veh:
-            advance_vehicle_pm(veh, ro.mileage_out)
+        advance_vehicle_pm(veh, ro.mileage_out)
     await db.commit()
     # No external invoice for internal repairs — generate an internal cost record.
     await _create_internal_invoice(db, current_user.tenant_id, ro)
@@ -1126,6 +1167,9 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
             vehicle_id=vehicle.id, order_number=order_number,
             status=RepairOrderStatus.DRAFT, is_internal=True, is_pm=is_pm,
             description=description,
+            # Auto-capture mileage-in from the truck's current odometer (kept
+            # current by inspections). Fleet managers don't re-enter it.
+            mileage_in=vehicle.mileage,
         )
         db.add(ro)
         return ro

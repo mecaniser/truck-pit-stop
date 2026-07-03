@@ -153,6 +153,7 @@ export default function RepairOrdersPage() {
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
+  const [mileageIn, setMileageIn] = useState('')
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   // Inline stock-replenish state (keyed by inventory_id) for the new-RO modal's warning panel.
@@ -195,6 +196,7 @@ export default function RepairOrdersPage() {
   const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false)
   const [showReassignMechanic, setShowReassignMechanic] = useState(false)
   const [reviewNotes, setReviewNotes] = useState('')
+  const [mileageOut, setMileageOut] = useState('')
   const [showReviewNotes, setShowReviewNotes] = useState(false)
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
   const [invoiceDiscountAmount, setInvoiceDiscountAmount] = useState('')
@@ -547,12 +549,14 @@ export default function RepairOrdersPage() {
       vehicle_id,
       description: roDescription,
       internal_notes,
-    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null }) => {
+      mileage_in,
+    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null }) => {
       const response = await api.post('/repair-orders', {
         customer_id,
         vehicle_id,
         description: roDescription || null,
         internal_notes: internal_notes || null,
+        mileage_in: mileage_in ?? null,
       })
       return response.data as RepairOrder
     },
@@ -619,9 +623,10 @@ export default function RepairOrdersPage() {
   })
 
   const approveCompletionMutation = useMutation({
-    mutationFn: async ({ orderId, reviewNotes }: { orderId: string; reviewNotes?: string }) => {
+    mutationFn: async ({ orderId, reviewNotes, mileageOut }: { orderId: string; reviewNotes?: string; mileageOut?: number | null }) => {
       const response = await api.post(`/repair-orders/${orderId}/approve-completion`, {
         review_notes: reviewNotes || null,
+        mileage_out: mileageOut ?? null,
       })
       return response.data as RepairOrder
     },
@@ -1065,6 +1070,7 @@ export default function RepairOrdersPage() {
     setSelectedVehicleId('')
     setShowNewVehicleForm(false)
     setDescription('')
+    setMileageIn('')
     setServiceSearch('')
     setSelectedServiceIds([])
     setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
@@ -1192,6 +1198,7 @@ export default function RepairOrdersPage() {
         vehicle_id: finalVehicleId,
         description: combinedDescription,
         internal_notes: null,
+        mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
       })
 
       if (selectedServicePayload.length > 0) {
@@ -2029,6 +2036,18 @@ export default function RepairOrdersPage() {
                     rows={3}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
                     placeholder="Briefly describe the repair work or concern..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mileage In</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={mileageIn}
+                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageIn(v) }}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                    placeholder="Odometer reading when the vehicle arrived"
                   />
                 </div>
 
@@ -2991,7 +3010,19 @@ export default function RepairOrdersPage() {
                         <p className="text-sm text-orange-700">Review and approve to notify customer</p>
                       </div>
                     </div>
-                    
+
+                    <div className="mb-3">
+                      <label className="block text-sm font-medium text-orange-800 mb-1">Mileage Out</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={mileageOut}
+                        onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setMileageOut(v) }}
+                        placeholder={selectedOrder.mileage_in != null ? `Odometer at return (in: ${selectedOrder.mileage_in.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
+                        className="w-full px-3 py-2 border border-orange-200 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400 text-sm"
+                      />
+                    </div>
+
                     <div className="mb-3">
                       <button
                         type="button"
@@ -3023,8 +3054,13 @@ export default function RepairOrdersPage() {
                       type="button"
                       onClick={() => {
                         if (selectedOrder.id) {
-                          approveCompletionMutation.mutate({ orderId: selectedOrder.id, reviewNotes: reviewNotes || undefined })
+                          approveCompletionMutation.mutate({
+                            orderId: selectedOrder.id,
+                            reviewNotes: reviewNotes || undefined,
+                            mileageOut: mileageOut.trim() === '' ? null : Number(mileageOut),
+                          })
                           setReviewNotes('')
+                          setMileageOut('')
                         }
                       }}
                       disabled={approveCompletionMutation.isPending}

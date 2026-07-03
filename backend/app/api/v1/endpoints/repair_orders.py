@@ -1483,6 +1483,7 @@ async def complete_work(
 
 class ApproveCompletionRequest(BaseModel):
     review_notes: Optional[str] = None
+    mileage_out: Optional[int] = None  # odometer at completion
 
 
 @router.post("/{order_id}/approve-completion", response_model=RepairOrderResponse)
@@ -1516,6 +1517,10 @@ async def approve_completion(
             detail=f"Cannot approve job in '{order.status.value}' status",
         )
     
+    # Record the odometer at completion when provided.
+    if body and body.mileage_out is not None:
+        order.mileage_out = body.mileage_out
+
     order.status = RepairOrderStatus.COMPLETED
 
     # Completing an internal preventive-maintenance order advances the truck's next PM.
