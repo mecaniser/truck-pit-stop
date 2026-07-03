@@ -262,6 +262,46 @@ async def test_incident_resolve_sets_resolved_at(db_session):
 
 
 @pytest.mark.asyncio
+async def test_delete_incident_without_repair(db_session):
+    from sqlalchemy import select
+    from app.db.models.fleet import FleetIncident
+
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id, occurred_at=datetime.now(timezone.utc),
+            description="Mistaken entry",
+        ),
+        db=db_session, current_user=user,
+    )
+    inc_id = incident.id
+    await fleet.delete_incident(incident_id=inc_id, db=db_session, current_user=user)
+    assert (await db_session.execute(select(FleetIncident).where(FleetIncident.id == inc_id))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_incident_blocked_when_repair_linked(db_session):
+    from sqlalchemy import select
+    from app.db.models.fleet import FleetIncident
+
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id, occurred_at=datetime.now(timezone.utc),
+            description="Blowout", severity=IncidentSeverity.HIGH,
+        ),
+        db=db_session, current_user=user,
+    )
+    await fleet.create_repair_for_incident(incident_id=incident.id, db=db_session, current_user=user)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.delete_incident(incident_id=incident.id, db=db_session, current_user=user)
+    assert exc.value.status_code == 400
+    # Incident is untouched.
+    assert (await db_session.execute(select(FleetIncident).where(FleetIncident.id == incident.id))).scalar_one_or_none() is not None
+
+
+@pytest.mark.asyncio
 async def test_fleet_access_denied_for_mechanic(db_session):
     _, _, mechanic = await _seed_fleet(db_session, role=UserRole.MECHANIC)
     with pytest.raises(HTTPException) as exc:
