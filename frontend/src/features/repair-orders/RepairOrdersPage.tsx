@@ -3100,9 +3100,9 @@ export default function RepairOrdersPage() {
                         </div>
                       </div>
                       <div className="space-y-1 text-sm">
-                        <div className="flex justify-between text-slate-600"><span>Labor</span><span>${formatMoney(o.total_labor_cost ?? '0')}</span></div>
-                        <div className="flex justify-between text-slate-600"><span>Parts</span><span>${formatMoney(o.total_parts_cost ?? '0')}</span></div>
-                        <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-slate-200 mt-1"><span>Internal cost</span><span>${formatMoney(String(total))}</span></div>
+                        <div className="flex justify-between text-slate-600"><span>Labor</span><span>{formatMoney(o.total_labor_cost ?? '0')}</span></div>
+                        <div className="flex justify-between text-slate-600"><span>Parts</span><span>{formatMoney(o.total_parts_cost ?? '0')}</span></div>
+                        <div className="flex justify-between font-semibold text-slate-900 pt-1 border-t border-slate-200 mt-1"><span>Internal cost</span><span>{formatMoney(String(total))}</span></div>
                       </div>
                     </div>
                   )
