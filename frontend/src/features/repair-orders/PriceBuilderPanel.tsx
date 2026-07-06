@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   Gauge,
-  Minus,
   Pencil,
   Plane,
   Plus,
@@ -23,23 +22,22 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
-import BaseSelect from '@/components/BaseSelect'
+import QuantityStepper from '@/components/QuantityStepper'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import {
   PartsUsage,
+  PartSuggestionsResponse,
   PriceBuildSummary,
   InventoryItem,
   RecommendedService,
   RecommendedServicePriority,
   RepairOperationCandidate,
   RepairOrderStatus,
-  Service,
 } from '@/types'
 
 type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
-  services?: Service[]
   canEdit: boolean
   isInternalOrder?: boolean
   defaultLaborRate?: number
@@ -207,7 +205,7 @@ function laborBookTimeScope(entry: LaborBookTimeEntry) {
   }
 }
 
-const UNIT_ABBR: Record<string, string> = { each: '', gallon: 'gal', quart: 'qt', liter: 'L' }
+const UNIT_ABBR: Record<string, string> = { each: 'ea', gallon: 'gal', quart: 'qt', liter: 'L' }
 
 /**
  * Amazon-style quantity stepper for a part line. `[−] N [+]` increments/
@@ -231,20 +229,12 @@ function PartQtyStepper({
   const isFluid = part.unit_type && part.unit_type !== 'each'
   const step = isFluid ? 0.25 : 1
   const unitAbbr = UNIT_ABBR[part.unit_type] || ''
-
-  // part.quantity is a Decimal on the backend (fluids use fractional amounts),
-  // so it arrives over the wire as a string — parse it once here so all local
-  // state/arithmetic below works with real numbers.
   const currentQuantity = parseFloat(part.quantity) || 0
-
-  // Optimistic local quantity so the number reacts instantly; the debounced
-  // save reconciles with the server, and props re-sync it when data refetches.
   const [qty, setQty] = useState(currentQuantity)
   const [busy, setBusy] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(currentQuantity)
 
-  // Re-sync from server after a refetch (unless a save is mid-flight).
   useEffect(() => {
     if (saveTimer.current == null && !busy) {
       setQty(currentQuantity)
@@ -254,6 +244,13 @@ function PartQtyStepper({
   }, [currentQuantity])
 
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
+
+  const commit = (next: number) => {
+    if (next < step) return
+    const rounded = Math.round(next / step) * step
+    setQty(rounded)
+    scheduleSave(rounded)
+  }
 
   const scheduleSave = (next: number) => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -270,96 +267,18 @@ function PartQtyStepper({
     }, 500)
   }
 
-  const commit = (next: number) => {
-    if (next < step) return
-    const rounded = Math.round(next / step) * step
-    setQty(rounded)
-    setDraft(isFluid ? rounded.toFixed(2) : String(rounded))
-    scheduleSave(rounded)
-  }
-
-  const bump = (delta: number) => commit(qty + delta)
-
-  // Free-typed value while the input is focused; reconciled to a valid
-  // stepped number on blur/Enter so partial input (e.g. "1.") isn't clobbered
-  // by the formatted display on every keystroke.
-  const [draft, setDraft] = useState(isFluid ? qty.toFixed(2) : String(qty))
-  const [editing, setEditing] = useState(false)
-
-  useEffect(() => {
-    if (!editing) setDraft(isFluid ? qty.toFixed(2) : String(qty))
-  }, [qty, isFluid, editing])
-
-  const commitDraft = () => {
-    setEditing(false)
-    const parsed = parseFloat(draft)
-    if (!Number.isFinite(parsed) || parsed < step) {
-      setDraft(isFluid ? qty.toFixed(2) : String(qty))
-      return
-    }
-    commit(parsed)
-  }
-
-  // Ctrl/Cmd+= and Ctrl/Cmd+- step the quantity even while the field has focus,
-  // rather than triggering the browser's page zoom.
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) {
-      e.preventDefault()
-      commit(qty + (e.key === '-' || e.key === '_' ? -step : step))
-      return
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      commitDraft()
-      e.currentTarget.blur()
-    } else if (e.key === 'Escape') {
-      setEditing(false)
-      setDraft(isFluid ? qty.toFixed(2) : String(qty))
-      e.currentTarget.blur()
-    }
-  }
-
-  const atMin = qty <= step
-
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="inline-flex items-center rounded-lg border border-gray-200 bg-white shadow-sm">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={atMin ? onDelete : () => bump(-step)}
-          aria-label={atMin ? `Remove ${part.inventory_name}` : `Decrease quantity of ${part.inventory_name}`}
-          className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
-            atMin ? 'text-red-500 hover:bg-red-50' : 'text-gray-500 hover:bg-gray-50'
-          }`}
-        >
-          {atMin ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
-        </button>
-        <input
-          type="text"
-          inputMode="decimal"
-          disabled={disabled}
-          value={draft}
-          onFocus={() => setEditing(true)}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commitDraft}
-          onKeyDown={handleKeyDown}
-          aria-label={`Quantity for ${part.inventory_name}`}
-          title="Type a value, or use Ctrl/Cmd + and Ctrl/Cmd − to step"
-          className={`h-8 border-x border-gray-200 bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums text-gray-900 outline-none focus:bg-gray-50 disabled:opacity-50 ${isFluid ? 'w-14' : 'w-10'}`}
-        />
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => bump(step)}
-          aria-label={`Increase quantity of ${part.inventory_name}`}
-          className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </span>
-      {unitAbbr && <span className="text-xs text-gray-500">{unitAbbr}</span>}
-    </span>
+    <QuantityStepper
+      value={qty}
+      min={step}
+      step={step}
+      unitLabel={unitAbbr}
+      disabled={disabled}
+      ariaLabel={`Quantity for ${part.inventory_name}`}
+      removeAtMin
+      onRemove={onDelete}
+      onChange={commit}
+    />
   )
 }
 
@@ -530,7 +449,6 @@ function PartPricePopover({
 export default function PriceBuilderPanel({
   orderId,
   orderStatus,
-  services,
   canEdit,
   isInternalOrder = false,
   defaultLaborRate,
@@ -578,18 +496,16 @@ export default function PriceBuilderPanel({
   onUpdated,
 }: Props) {
   const queryClient = useQueryClient()
-  const [serviceId, setServiceId] = useState('')
-  const [serviceHours, setServiceHours] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
-  const [addType, setAddType] = useState<'operation' | 'saved_labor' | 'diagnostic' | 'part'>('operation')
+  const [addType, setAddType] = useState<'operation' | 'saved_labor' | 'part'>('operation')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const [discountsOpen, setDiscountsOpen] = useState(false)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
-  const [partQuantity, setPartQuantity] = useState(1)
+  const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
   const initialLaborBookTimeForm = (): LaborBookTimeForm => ({
     operation_name: searchTerm.trim(),
@@ -633,6 +549,15 @@ export default function PriceBuilderPanel({
       const response = await api.get('/inventory')
       return response.data
     },
+  })
+
+  const { data: partSuggestions } = useQuery<PartSuggestionsResponse>({
+    queryKey: ['price-build-part-suggestions', orderId],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${orderId}/parts/suggestions`)
+      return response.data
+    },
+    enabled: !!orderId && addType === 'part',
   })
 
   const laborBookSearchTerm = searchTerm.trim()
@@ -694,19 +619,10 @@ export default function PriceBuilderPanel({
   const isLocked = !!summary?.pricing_locked
   const canMutate = canEdit && !isLocked && ['draft', 'quoted'].includes(orderStatus)
 
-  const serviceOptions = useMemo(() => {
-    const list = services || []
-    return list
-      .filter((svc) => svc.is_active !== false)
-      .map((svc) => ({
-        value: svc.id,
-        label: svc.name,
-      }))
-  }, [services])
-
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
     await queryClient.invalidateQueries({ queryKey: ['price-build-parts', orderId] })
+    await queryClient.invalidateQueries({ queryKey: ['price-build-part-suggestions', orderId] })
     await queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
     await queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
     await refetch()
@@ -769,22 +685,6 @@ export default function PriceBuilderPanel({
     }
   }
 
-  const addServiceLaborLine = useMutation({
-    mutationFn: async () => {
-      await api.post(`/repair-orders/${orderId}/price-build/flat-service`, {
-        service_id: serviceId,
-        quantity: serviceHours,
-      })
-    },
-    onSuccess: async () => {
-      setServiceId('')
-      setServiceHours(1)
-      await invalidate()
-      toast.success('Labor line added')
-    },
-    onError: () => toast.error('Unable to add labor line'),
-  })
-
   const addPart = useMutation({
     mutationFn: async ({ inventoryId, quantity }: { inventoryId: string; quantity: number }) => {
       await api.post(`/repair-orders/${orderId}/parts`, {
@@ -792,9 +692,14 @@ export default function PriceBuilderPanel({
         quantity,
       })
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       setSearchTerm('')
-      setPartQuantity(1)
+      setPartQuantitiesByItemId((current) => {
+        const next = { ...current }
+        delete next[variables.inventoryId]
+        return next
+      })
+      setPaletteOpen(false)
       await invalidate()
       toast.success('Part added')
     },
@@ -869,6 +774,7 @@ export default function PriceBuilderPanel({
       setBookTimeHours('1')
       setCandidates([])
       setSearchWarnings([])
+      setPaletteOpen(false)
       await invalidate()
       toast.success('Repair operation applied')
     },
@@ -890,6 +796,7 @@ export default function PriceBuilderPanel({
     onSuccess: async () => {
       setSearchTerm('')
       setLaborBookTimeForm(initialLaborBookTimeForm())
+      setPaletteOpen(false)
       await invalidate()
       toast.success('Labor book time added')
     },
@@ -1166,10 +1073,9 @@ export default function PriceBuilderPanel({
 
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="grid grid-cols-4 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
+          <div className="grid grid-cols-3 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
             {([
               ['operation', Wrench, 'Operation'],
-              ['diagnostic', Gauge, 'Diagnostic'],
               ['part', Box, 'Part'],
               ['saved_labor', Tag, 'Labor Book Time'],
             ] as const).map(([key, Icon, label]) => (
@@ -1200,10 +1106,9 @@ export default function PriceBuilderPanel({
                 setPaletteOpen(true)
               }}
               placeholder={
-                addType === 'operation' ? 'Add operation — search jobs, e.g. brake change, EGR…' :
+                addType === 'operation' ? 'Add operation — search jobs or services, e.g. brake change, EGR, PM Level A…' :
                 addType === 'saved_labor' ? 'Search labor book time — e.g. DPF filter replacement…' :
-                addType === 'part' ? 'Add part — search inventory by name or SKU…' :
-                'Select diagnostic service below…'
+                'Add part — search inventory by name or SKU…'
               }
               className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
             />
@@ -1214,39 +1119,11 @@ export default function PriceBuilderPanel({
           <div className="mt-3 rounded-[14px] border border-gray-200 bg-white p-2 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
             <div className="mb-2 flex items-center justify-between border-b border-gray-100 px-2 pb-2">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
-                {addType === 'diagnostic' ? 'Diagnostics · hourly' : addType === 'operation' ? 'Repair operations' : addType === 'saved_labor' ? 'Labor book time' : 'Parts'}
+                {addType === 'operation' ? 'Repair operations & services' : addType === 'saved_labor' ? 'Labor book time' : 'Parts'}
               </span>
               <span className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-400">↵ to add</span>
             </div>
-            {addType === 'diagnostic' ? (
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <div className="min-w-0 flex-1">
-                  <BaseSelect
-                    options={serviceOptions}
-                    value={serviceId}
-                    onChange={setServiceId}
-                    placeholder="Select diagnostics or inspection service"
-                    allowAddNew={false}
-                  />
-                </div>
-                <input
-                  type="number"
-                  min={1}
-                  value={serviceHours}
-                  onChange={(e) => setServiceHours(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="h-10 w-20 rounded-lg border border-gray-200 px-2 text-sm"
-                  aria-label="Hours"
-                />
-                <button
-                  type="button"
-                  onClick={() => addServiceLaborLine.mutate()}
-                  disabled={!canMutate || !serviceId || addServiceLaborLine.isPending}
-                  className="inline-flex h-10 items-center justify-center gap-1 rounded-lg bg-orange-500 px-3 text-sm font-bold text-white disabled:bg-gray-300"
-                >
-                  <Plus className="h-4 w-4" /> Add
-                </button>
-              </div>
-            ) : addType === 'operation' ? (
+            {addType === 'operation' ? (
               <>
                 {searchOps.isPending && <p className="px-2 py-3 text-xs text-gray-500">Searching…</p>}
                 {!searchOps.isPending && !candidates.length && (
@@ -1266,6 +1143,11 @@ export default function PriceBuilderPanel({
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">
                           {isAddNew ? `Add "${c.name}" as new operation` : c.name}
+                          {c.provider === 'service_catalog' && (
+                            <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700">
+                              bundles parts
+                            </span>
+                          )}
                         </p>
                         <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
                           {isAddNew
@@ -1477,53 +1359,103 @@ export default function PriceBuilderPanel({
               <>
                 {(() => {
                   const term = searchTerm.trim().toLowerCase()
+
+                  const renderItemRow = (item: { id: string; name: string; sku: string; stock_quantity: number; unit_type: string; selling_price: string }, index: number) => {
+                    const isFluid = item.unit_type && item.unit_type !== 'each'
+                    const step = isFluid ? 0.25 : 1
+                    const unitAbbr = UNIT_ABBR[item.unit_type] || ''
+                    const rowQuantity = Math.max(step, partQuantitiesByItemId[item.id] ?? 1)
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
+                          index === 0 ? 'bg-orange-50 shadow-[inset_3px_0_0_#ef8a12]' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                          <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
+                            {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <QuantityStepper
+                            value={rowQuantity}
+                            min={step}
+                            step={step}
+                            unitLabel={unitAbbr}
+                            disabled={!canMutate || addPart.isPending}
+                            ariaLabel={`Quantity for ${item.name}`}
+                            onChange={(next) => {
+                              setPartQuantitiesByItemId((current) => ({
+                                ...current,
+                                [item.id]: next,
+                              }))
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addPart.mutate({ inventoryId: item.id, quantity: rowQuantity })}
+                            disabled={!canMutate || addPart.isPending}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                            aria-label={`Add ${item.name}`}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  if (!term) {
+                    const forThisOrder = partSuggestions?.for_this_order || []
+                    const mostUsed = (partSuggestions?.most_used || [])
+                      .filter((s) => !forThisOrder.some((f) => f.inventory_id === s.inventory_id))
+
+                    if (!forThisOrder.length && !mostUsed.length) {
+                      const fallback = (inventory || []).filter((item) => item.stock_quantity > 0).slice(0, 8)
+                      if (!fallback.length) {
+                        return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts yet.</p>
+                      }
+                      return fallback.map((item, index) => renderItemRow(item, index))
+                    }
+
+                    return (
+                      <>
+                        {!!forThisOrder.length && (
+                          <div className="mb-2">
+                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">
+                              Suggested for this order
+                            </p>
+                            {forThisOrder.map((s, index) => renderItemRow(
+                              { id: s.inventory_id, name: s.name, sku: s.sku, stock_quantity: s.stock_quantity, unit_type: s.unit_type, selling_price: s.selling_price },
+                              index,
+                            ))}
+                          </div>
+                        )}
+                        {!!mostUsed.length && (
+                          <div>
+                            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">
+                              Most used parts
+                            </p>
+                            {mostUsed.map((s, index) => renderItemRow(
+                              { id: s.inventory_id, name: s.name, sku: s.sku, stock_quantity: s.stock_quantity, unit_type: s.unit_type, selling_price: s.selling_price },
+                              forThisOrder.length ? -1 : index,
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )
+                  }
+
                   const matches = (inventory || [])
                     .filter((item) => item.stock_quantity > 0)
-                    .filter((item) => !term || item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
+                    .filter((item) => item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
                     .slice(0, 8)
                   if (!matches.length) {
                     return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts match this search.</p>
                   }
-                  return matches.map((item, index) => {
-                    const isFluid = item.unit_type && item.unit_type !== 'each'
-                    const step = isFluid ? 0.25 : 1
-                    const unitAbbr = UNIT_ABBR[item.unit_type] || ''
-                    return (
-                    <div
-                      key={item.id}
-                      className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
-                        index === 0 ? 'bg-orange-50 shadow-[inset_3px_0_0_#ef8a12]' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
-                        <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                          {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <input
-                          type="number"
-                          min={step}
-                          step={step}
-                          value={partQuantity}
-                          onChange={(e) => setPartQuantity(Math.max(step, parseFloat(e.target.value) || step))}
-                          className="h-8 w-16 rounded-lg border border-gray-200 px-2 text-sm"
-                          aria-label={`Quantity for ${item.name}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => addPart.mutate({ inventoryId: item.id, quantity: partQuantity })}
-                          disabled={!canMutate || addPart.isPending}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                          aria-label={`Add ${item.name}`}
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                    )
-                  })
+                  return matches.map((item, index) => renderItemRow(item, index))
                 })()}
               </>
             ) : null}
@@ -1600,7 +1532,7 @@ export default function PriceBuilderPanel({
                             const isFluid = pu.unit_type && pu.unit_type !== 'each'
                             const unitAbbr = UNIT_ABBR[pu.unit_type] || ''
                             const qtyNum = parseFloat(pu.quantity) || 0
-                            return `${isFluid ? qtyNum.toFixed(2) : qtyNum}${unitAbbr ? ` ${unitAbbr}` : ''}`
+                            return `${isFluid ? qtyNum.toFixed(2) : qtyNum} ${unitAbbr}`
                           })()
                         )}
                       </td>

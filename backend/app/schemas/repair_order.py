@@ -53,6 +53,21 @@ class PartsUsageResponse(BaseModel):
         from_attributes = True
 
 
+class PartSuggestion(BaseModel):
+    inventory_id: UUID
+    sku: str
+    name: str
+    stock_quantity: int
+    unit_type: str = "each"
+    selling_price: Decimal
+    use_count: int
+
+
+class PartSuggestionsResponse(BaseModel):
+    for_this_order: List[PartSuggestion] = []
+    most_used: List[PartSuggestion] = []
+
+
 class LaborCreate(BaseModel):
     description: Optional[str] = None
     hours: Decimal

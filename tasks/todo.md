@@ -1595,3 +1595,97 @@
 ## Review
 - Internal repair orders keep the redesigned price-builder controls but no longer show the customer quote workflow strip or `Send quote` CTA.
 - Backend quote protection was already present; this restores the matching UI behavior in the redesigned sidekick.
+
+---
+
+# Price Builder Parts Stepper Unit Alignment (2026-07-06)
+
+## Plan
+- [x] Confirm why fluid-part unit labels shift standalone part steppers out of alignment.
+- [x] Reserve a consistent unit-label slot for all part steppers.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Found `PartQtyStepper` only renders a unit label for fluid parts and uses a wider input for fluids than discrete parts.
+- [x] Added `ea` as the unit label for discrete parts.
+- [x] Normalized the quantity input width for all part steppers and reserved a fixed unit-label slot.
+- [x] Updated read-only quantity display to include unit labels consistently.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Standalone part steppers now keep a consistent width and unit-label slot across fluids and discrete parts, so rows should align vertically.
+
+---
+
+# Reusable Quantity Stepper Component (2026-07-06)
+
+## Plan
+- [x] Extract the price-builder part quantity control into a reusable component with unit labels, fractional steps, keyboard handling, and optional delete-at-min behavior.
+- [x] Replace existing price-builder part-line quantity controls with the reusable component.
+- [x] Replace the price-builder part-search add quantity input with the reusable component.
+- [x] Run focused frontend lint/build and document the result.
+
+## Progress Notes
+- [x] User requested this starts with Price Builder, especially the part search list where quantity is currently a plain number input.
+- [x] Added reusable `QuantityStepper` component with unit-label slot, typed input, plus/minus controls, Ctrl/Cmd +/- keyboard stepping, and optional remove-at-min support.
+- [x] Replaced the existing standalone/service part-line quantity stepper wrapper with `QuantityStepper` while preserving debounced API saves.
+- [x] Replaced the Part search list's plain quantity input with `QuantityStepper`.
+- [x] Clamped the shared part-search quantity per row so fractional fluid quantities do not carry into discrete `ea` parts.
+- [x] Passed focused frontend lint:
+  `npx eslint src/components/QuantityStepper.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Price Builder now uses a reusable quantity stepper for both existing part lines and part search/add rows.
+- The component is ready to migrate other quantity controls incrementally without duplicating stepper UI behavior.
+
+---
+
+# Price Builder Part Search Per-Row Stepper State (2026-07-06)
+
+## Plan
+- [x] Confirm the part-search list uses one shared quantity state across all rows.
+- [x] Store part-search quantities by inventory item id.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User screenshot confirmed changing one Part search stepper updates every visible row.
+- [x] Replaced the shared `partQuantity` state with `partQuantitiesByItemId`.
+- [x] Part search steppers now read/write quantities by inventory item id.
+- [x] Add success resets only the added item's quantity state.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/components/QuantityStepper.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Each Part search result row now owns its displayed quantity, so changing one stepper no longer updates every row in the list.
+
+---
+
+# Unify Operation/Diagnostic Search + Part Suggestions (2026-07-06)
+
+## Plan
+- [x] Merge the tenant's Service catalog into the Repair Operation search so package services (PM Level A, kingpin replacement, etc.) are searchable and still bundle their parts when applied.
+- [x] Remove the Diagnostic tab — it only showed a dropdown of every active Service with no diagnostic-specific filtering, and its search box was disconnected from that dropdown.
+- [x] Fix the Part/Operation/Labor Book Time palettes staying open after a successful add.
+- [x] Add most-used and per-order part suggestions to the Part tab's empty state.
+
+## Progress Notes
+- [x] Investigated Service vs. Repair Operation data models: Service is a priced catalog item with bundled parts (booking/fleet PM facing); Repair Operation is a labor-hours estimator with learned memory, no parts, no price.
+- [x] `price_build_service.py`: added `_search_service_catalog`, merged into `search_repair_operations` results; `add_repair_operation_line` now routes `service:<uuid>` candidates to the existing `add_flat_service_line` so parts bundling/pricing is preserved.
+- [x] New `GET /repair-orders/{id}/parts/suggestions` endpoint: `for_this_order` (parts that co-occurred with this RO's already-applied services/operations elsewhere) and `most_used` (tenant-wide frequency), both excluding parts already on the order and out-of-stock items.
+- [x] `PriceBuilderPanel.tsx`: dropped the Diagnostic tab, `serviceOptions`/`serviceId`/`serviceHours`/`addServiceLaborLine`, and the now-dead `services` prop (also removed from `RepairOrdersPage.tsx`'s call site). Down to 3 tabs: Operation, Part, Labor Book Time.
+- [x] Service-backed operation candidates show a "bundles parts" tag in the search results.
+- [x] `setPaletteOpen(false)` added to the `addPart`/`applyRepairOp`/`applyLaborBookEntry` mutation `onSuccess` handlers.
+- [x] Backend: `python -m pytest tests/` — 296 passed, 3 skipped (17 pre-existing unrelated failures in `test_auth_endpoints.py`/`test_security_middlewares.py`, confirmed present on a clean stash).
+- [x] Frontend: `npx tsc --noEmit -p .` clean.
+- [x] Verified live in browser: typing "EGR" surfaces the library candidate; typing "tire rotation" now surfaces the real "Tire Rotation" Service (tagged bundles parts) instead of offering to create a duplicate; applying it adds a labor line correctly; Part tab shows "Most used parts" before typing and closes after adding.
+
+## Review
+- Repair Operation search is now the single place to find any billable work — library estimates, learned hours, and the shop's own Service catalog — instead of a separate, partially-broken Diagnostic tab.
+- Part-add UX no longer leaves a stale full-inventory list open after adding; Part tab's empty state now surfaces relevant suggestions instead of nothing.

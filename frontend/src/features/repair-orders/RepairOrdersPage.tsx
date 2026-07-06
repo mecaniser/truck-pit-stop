@@ -2534,7 +2534,6 @@ export default function RepairOrdersPage() {
                   <PriceBuilderPanel
                     orderId={selectedOrder.id}
                     orderStatus={(orderDetail ?? selectedOrder).status}
-                    services={services}
                     canEdit={canEditPriceBuilderByRole}
                     isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}
                     defaultLaborRate={taxFeeSettings?.labor_rate}
