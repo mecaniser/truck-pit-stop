@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
-import { InventoryItem, Supplier } from '../../types'
+import { InventoryItem, Supplier, UnitType } from '../../types'
 import { ArrowRight, Download, PackageCheck, Pencil, Plus, Settings, Trash2 } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
@@ -33,6 +33,7 @@ export default function InventoryPage() {
     reorder_level: '',
     cost: '',
     selling_price: '',
+    unit_type: 'each' as UnitType,
     supplier_name: '',
     supplier_contact: '',
   })
@@ -55,6 +56,7 @@ export default function InventoryPage() {
     reorder_level: '',
     cost: '',
     selling_price: '',
+    unit_type: 'each' as UnitType,
     supplier_name: '',
     supplier_contact: '',
   })
@@ -191,6 +193,7 @@ export default function InventoryPage() {
         reorder_level: String(selectedItem.reorder_level ?? ''),
         cost: selectedItem.cost ? String(selectedItem.cost) : '',
         selling_price: selectedItem.selling_price ? String(selectedItem.selling_price) : '',
+        unit_type: selectedItem.unit_type || 'each',
         supplier_name: selectedItem.supplier_name || '',
         supplier_contact: selectedItem.supplier_contact || '',
       })
@@ -274,6 +277,7 @@ export default function InventoryPage() {
 
       if (manageForm.supplier_name !== '') payload.supplier_name = manageForm.supplier_name
       if (manageForm.supplier_contact !== '') payload.supplier_contact = manageForm.supplier_contact
+      if (manageForm.unit_type !== selectedItem.unit_type) payload.unit_type = manageForm.unit_type
 
       return api.put(`/inventory/${selectedItem.id}`, payload)
     },
@@ -324,6 +328,7 @@ export default function InventoryPage() {
         name: addForm.name.trim(),
         cost: Number(addForm.cost) || 0,
         selling_price: Number(addForm.selling_price) || 0,
+        unit_type: addForm.unit_type,
       }
 
       if (addForm.description.trim()) payload.description = addForm.description.trim()
@@ -348,6 +353,7 @@ export default function InventoryPage() {
         reorder_level: '',
         cost: '',
         selling_price: '',
+        unit_type: 'each',
         supplier_name: '',
         supplier_contact: '',
       })
@@ -455,6 +461,7 @@ export default function InventoryPage() {
       reorder_level: '',
       cost: '',
       selling_price: '',
+      unit_type: 'each',
       supplier_name: '',
       supplier_contact: '',
     })
@@ -1181,6 +1188,19 @@ export default function InventoryPage() {
               onChange={(val) => handleManageChange('selling_price', val)}
             />
           </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Unit</span>
+            <select
+              value={manageForm.unit_type}
+              onChange={(e) => handleManageChange('unit_type', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+            >
+              <option value="each">Each</option>
+              <option value="gallon">Gallon</option>
+              <option value="quart">Quart</option>
+              <option value="liter">Liter</option>
+            </select>
+          </label>
         </div>
 
         {/* Receive Shipment */}
@@ -1446,6 +1466,19 @@ export default function InventoryPage() {
               value={addForm.selling_price}
               onChange={(val) => handleAddFormChange('selling_price', val)}
             />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Unit</span>
+            <select
+              value={addForm.unit_type}
+              onChange={(e) => handleAddFormChange('unit_type', e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+            >
+              <option value="each">Each</option>
+              <option value="gallon">Gallon</option>
+              <option value="quart">Quart</option>
+              <option value="liter">Liter</option>
+            </select>
           </label>
         </div>
 

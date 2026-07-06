@@ -199,7 +199,10 @@ export interface PartsUsage {
   inventory_id: string
   inventory_sku: string
   inventory_name: string
-  quantity: number
+  // Decimal on the backend (fluids like oil/coolant use fractional amounts),
+  // so it serializes over the wire as a string, same as unit_price/total_price.
+  quantity: string
+  unit_type: UnitType
   unit_price: string
   unit_cost: string | null
   list_price: string | null
@@ -350,11 +353,16 @@ export interface InventoryItem {
   reorder_level: number
   cost: string
   selling_price: string
+  // "each" (default) for discrete parts, or a fluid unit ("gallon", "quart",
+  // "liter") so the Price Builder can offer 0.25-increment quantities.
+  unit_type: UnitType
   supplier_name: string | null
   supplier_contact: string | null
   created_at: string
   updated_at: string
 }
+
+export type UnitType = 'each' | 'gallon' | 'quart' | 'liter'
 
 export type RecommendedServicePriority = 'urgent' | 'soon' | 'monitor'
 
@@ -385,7 +393,9 @@ export interface ServicePart {
   inventory_id: string
   sku: string
   name: string
-  quantity: number
+  // Decimal on the backend (fluids use fractional amounts), so it serializes
+  // over the wire as a string, same as unit_price/line_total.
+  quantity: string
   unit_price: string
   line_total: string
   stock_quantity: number

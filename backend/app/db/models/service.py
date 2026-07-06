@@ -73,4 +73,6 @@ class ServicePart(BaseModel):
     inventory_id = Column(UUID(as_uuid=True), ForeignKey("inventory.id"), nullable=False, index=True)
     inventory_item = relationship("Inventory")
 
-    quantity = Column(Integer, nullable=False, default=1)
+    # Numeric to match PartsUsage.quantity — a service bundling a fluid (e.g. an
+    # oil change bundling 1.25 gal of oil) needs a fractional default quantity.
+    quantity = Column(Numeric(6, 2), nullable=False, default=1)

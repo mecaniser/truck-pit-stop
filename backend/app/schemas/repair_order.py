@@ -13,12 +13,14 @@ from app.db.models.recommended_service import RecommendedServicePriority
 
 class PartsUsageCreate(BaseModel):
     inventory_id: UUID
-    quantity: int
+    # Decimal so fluid parts (oil, coolant, DEF) can be entered in fractional
+    # amounts, e.g. 1.25 gallons.
+    quantity: Decimal
     unit_price: Optional[Decimal] = None  # override; else use inventory selling_price
 
 
 class PartsUsageUpdate(BaseModel):
-    quantity: Optional[int] = None
+    quantity: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
 
 
@@ -37,7 +39,8 @@ class PartsUsageResponse(BaseModel):
     inventory_id: UUID
     inventory_sku: str
     inventory_name: str
-    quantity: int
+    quantity: Decimal
+    unit_type: str = "each"
     unit_price: Decimal
     unit_cost: Optional[Decimal] = None
     list_price: Optional[Decimal] = None

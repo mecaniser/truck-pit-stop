@@ -17,7 +17,9 @@ interface ServicePart {
   inventory_id: string
   sku: string
   name: string
-  quantity: number
+  // Decimal on the backend (fluids use fractional amounts), so it serializes
+  // over the wire as a string, same as unit_price/line_total.
+  quantity: string
   unit_price: string
   line_total: string
   stock_quantity: number
@@ -922,7 +924,7 @@ export default function ServicesManagementPage() {
                                 value={part.quantity}
                                 onChange={(e) => {
                                   const qty = Math.max(1, parseInt(e.target.value || '1', 10))
-                                  if (qty !== part.quantity) {
+                                  if (qty !== Number(part.quantity)) {
                                     updatePartMutation.mutate({
                                       serviceId: editingService.id,
                                       partId: part.id,
