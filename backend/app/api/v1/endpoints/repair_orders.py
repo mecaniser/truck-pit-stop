@@ -6,7 +6,7 @@ from uuid import UUID
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
@@ -66,6 +66,8 @@ from app.schemas.repair_order import (
     RecommendedServiceCreate,
     RecommendedServiceUpdate,
     RecommendedServiceResponse,
+    PartSuggestion,
+    PartSuggestionsResponse,
 )
 
 logger = get_logger(__name__)
@@ -2194,6 +2196,94 @@ async def list_repair_order_parts(
 
     out = [_build_parts_usage_response(pu) for pu in parts_usage]
     return paginated_or_list(out, total, skip, limit, paginated)
+
+
+@router.get("/{order_id}/parts/suggestions", response_model=PartSuggestionsResponse)
+async def get_repair_order_part_suggestions(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Part-tab empty-state suggestions: parts that paired with the operations/
+    services already on this order elsewhere in the shop's history, plus the
+    tenant's overall most-frequently-used in-stock parts as a fallback."""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id)
+        .options(selectinload(RepairOrder.labor_items))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+
+    already_added_result = await db.execute(
+        select(PartsUsage.inventory_id).where(PartsUsage.repair_order_id == order_id)
+    )
+    already_added_ids = {row[0] for row in already_added_result.all()}
+
+    service_ids = {li.source_service_id for li in order.labor_items if li.source_service_id}
+    operation_ids = {li.provider_operation_id for li in order.labor_items if li.provider_operation_id}
+
+    def _to_suggestions(rows) -> List[PartSuggestion]:
+        suggestions: List[PartSuggestion] = []
+        for inv, use_count in rows:
+            if inv.id in already_added_ids or inv.deleted_at is not None or (inv.stock_quantity or 0) <= 0:
+                continue
+            suggestions.append(
+                PartSuggestion(
+                    inventory_id=inv.id,
+                    sku=inv.sku,
+                    name=inv.name,
+                    stock_quantity=inv.stock_quantity,
+                    unit_type=inv.unit_type,
+                    selling_price=inv.selling_price,
+                    use_count=use_count,
+                )
+            )
+        return suggestions[:8]
+
+    for_this_order: List[PartSuggestion] = []
+    if service_ids or operation_ids:
+        match_clauses = []
+        if service_ids:
+            match_clauses.append(Labor.source_service_id.in_(service_ids))
+        if operation_ids:
+            match_clauses.append(Labor.provider_operation_id.in_(operation_ids))
+        co_occurring_ro_ids_result = await db.execute(
+            select(Labor.repair_order_id)
+            .where(
+                and_(
+                    Labor.tenant_id == current_user.tenant_id,
+                    Labor.repair_order_id != order_id,
+                    or_(*match_clauses),
+                )
+            )
+            .distinct()
+        )
+        co_occurring_ro_ids = [row[0] for row in co_occurring_ro_ids_result.all()]
+        if co_occurring_ro_ids:
+            for_this_order_result = await db.execute(
+                select(Inventory, func.count(PartsUsage.id).label("use_count"))
+                .join(PartsUsage, PartsUsage.inventory_id == Inventory.id)
+                .where(PartsUsage.repair_order_id.in_(co_occurring_ro_ids))
+                .group_by(Inventory.id)
+                .order_by(func.count(PartsUsage.id).desc())
+                .limit(20)
+            )
+            for_this_order = _to_suggestions(for_this_order_result.all())
+
+    most_used_result = await db.execute(
+        select(Inventory, func.count(PartsUsage.id).label("use_count"))
+        .join(PartsUsage, PartsUsage.inventory_id == Inventory.id)
+        .where(Inventory.tenant_id == current_user.tenant_id)
+        .group_by(Inventory.id)
+        .order_by(func.count(PartsUsage.id).desc())
+        .limit(20)
+    )
+    most_used = _to_suggestions(most_used_result.all())
+
+    return PartSuggestionsResponse(for_this_order=for_this_order, most_used=most_used)
 
 
 @router.patch("/{order_id}/parts/{parts_usage_id}", response_model=PartsUsageResponse)

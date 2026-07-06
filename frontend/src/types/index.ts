@@ -364,6 +364,21 @@ export interface InventoryItem {
 
 export type UnitType = 'each' | 'gallon' | 'quart' | 'liter'
 
+export interface PartSuggestion {
+  inventory_id: string
+  sku: string
+  name: string
+  stock_quantity: number
+  unit_type: UnitType
+  selling_price: string
+  use_count: number
+}
+
+export interface PartSuggestionsResponse {
+  for_this_order: PartSuggestion[]
+  most_used: PartSuggestion[]
+}
+
 export type RecommendedServicePriority = 'urgent' | 'soon' | 'monitor'
 
 export interface RecommendedService {

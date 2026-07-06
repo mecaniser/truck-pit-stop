@@ -321,6 +321,37 @@ class PriceBuildService:
         order = await self.load_order(db, order.id)
         return await self.recalculate_order(db, order)
 
+    async def _search_service_catalog(
+        self,
+        db: AsyncSession,
+        order: RepairOrder,
+        query: str,
+    ) -> list[RepairOperationCandidate]:
+        """Tenant's own Service catalog (My Garage), surfaced as operation candidates
+        so package services (PM Level A, kingpin replacement, etc.) are reachable from
+        the same search box. Applying one still bundles its parts (see add_flat_service_line) —
+        only the search/discovery step is unified, not the underlying pricing model."""
+        result = await db.execute(
+            select(Service).where(
+                and_(
+                    Service.tenant_id == order.tenant_id,
+                    Service.is_active.is_(True),
+                    Service.name.ilike(f"%{query}%"),
+                )
+            ).limit(8)
+        )
+        services = result.scalars().all()
+        return [
+            RepairOperationCandidate(
+                operation_id=f"service:{svc.id}",
+                name=svc.name,
+                description=svc.description,
+                estimated_hours=(Decimal(svc.duration_minutes) / Decimal(60)),
+                provider="service_catalog",
+            )
+            for svc in services
+        ]
+
     async def search_repair_operations(
         self,
         db: AsyncSession,
@@ -332,8 +363,9 @@ class PriceBuildService:
             return [], [OperationWarning(code="invalid_query", message="Search query is required.")]
 
         learned_candidates, match_tier = await self._search_internal_memory(db, order, clean_query)
+        service_candidates = await self._search_service_catalog(db, order, clean_query)
         library_candidates = search_operation_library(clean_query)
-        candidates = self._merge_candidates(learned_candidates, library_candidates)
+        candidates = self._merge_candidates(learned_candidates, self._merge_candidates(service_candidates, library_candidates))
         warnings: list[OperationWarning] = []
         if learned_candidates:
             if match_tier == "component":
@@ -373,6 +405,14 @@ class PriceBuildService:
         auto_recalc_enabled: bool = True,
     ) -> PriceBuildResult:
         self._assert_editable(order)
+
+        # Service-catalog candidates (operation_id="service:<uuid>") carry their own
+        # parts bundle and pricing — route to the existing flat-service path instead
+        # of creating a bare labor line, so PM/kingpin-style packages still attach
+        # their parts automatically when picked from the unified operation search.
+        if operation_id.startswith("service:"):
+            service_id = UUID(operation_id[len("service:"):])
+            return await self.add_flat_service_line(db, order, service_id, quantity=1)
 
         tenant = await self._get_tenant(db, order.tenant_id)
         warnings: list[OperationWarning] = []
