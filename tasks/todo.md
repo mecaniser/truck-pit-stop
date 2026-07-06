@@ -1,3 +1,50 @@
+# Notification Position Preference - Task Plan (2026-07-05)
+
+## Plan
+- [x] Confirm current toast positioning and existing Appearance preference storage.
+- [x] Add a persisted Appearance setting for notification location with top, bottom, and center-top options.
+- [x] Wire the global toaster to the saved setting without changing individual toast call sites.
+- [x] Run targeted frontend verification and document residual risk.
+
+## Progress Notes
+- [x] Confirmed `frontend/src/App.tsx` owns the single global `react-hot-toast` `<Toaster>` and currently pins notifications to `bottom-right`.
+- [x] Confirmed `frontend/src/contexts/ThemeContext.tsx` already stores Appearance preferences in `localStorage`, making it the least invasive place for this UI preference.
+- [x] Added `theme-notification-position` with `Top`, `Bottom`, and `Center Top` choices in the Appearance panel.
+- [x] Updated the global toaster to map the saved preference to `top-right`, `bottom-right`, or `top-center`.
+- [x] Passed targeted verification:
+  `npm test -- UnifiedSettingsPage --run` (from `frontend/`)
+- [x] Passed production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Notification location is now a user Appearance preference and applies globally to all existing toast notifications.
+- Default behavior remains bottom-right for users without a saved preference.
+- Residual risk: verification covered TypeScript/build and the existing settings test; a live visual pass is still useful to confirm exact placement against dashboard chrome.
+
+---
+
+# Notification Position Preview Toast - Task Plan (2026-07-05)
+
+## Plan
+- [x] Confirm the existing Appearance notification-location control can trigger a preview without changing global toast call sites.
+- [x] Add a preview toast when selecting `Top`, `Bottom`, or `Center Top`, using the selected position immediately.
+- [x] Verify frontend build/test and document results.
+
+## Progress Notes
+- [x] User clarified that selecting the notification location should actually play a toast preview.
+- [x] Added a per-toast preview override so `Top` plays at `top-right`, `Bottom` plays at `bottom-right`, and `Center Top` plays at `top-center` immediately after selection.
+- [x] Passed targeted verification:
+  `npm test -- UnifiedSettingsPage --run` (from `frontend/`)
+- [x] Passed production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The Appearance location buttons now save the selected preference and immediately play a preview toast in that selected location.
+- Existing app notifications still inherit the global saved preference after selection.
+- Residual risk: automated checks prove compile/test health; exact visual placement was not browser-screenshot verified in this turn.
+
+---
+
 # Founding Garage Business Email Overflow - Task Plan (2026-04-12)
 
 ## Plan
@@ -1297,3 +1344,254 @@
 - Approved active businesses now feed a concrete landing-page partner section without hardcoded placeholders.
 - Garage owners/admins can control the public partner copy from `Garage Profile`, while approval status remains the gate for inclusion on the landing page.
 - Residual risk: approved businesses without curated `partner_summary` or `partner_services` fall back to generic copy until those new profile fields are filled in.
+
+---
+
+# Price Builder Sidekick Panel Redesign (2026-07-05)
+
+## Plan
+- [x] Inspect `docs/design_handoff_price_builder` and the current `PriceBuilderPanel` implementation to separate already-started work from missing redesign work.
+- [x] Rework the panel into the designed sidekick structure: gradient header, workflow strip, collapsed line-item list, unified add bar, contextual rows, sticky totals footer, and compact danger zone.
+- [x] Preserve existing repair-order API wiring for operation search/apply, service labor, line edits, part quantity/price edits, pricing mode, discounts, recalculate, and invalidation.
+- [x] Add anchored unit-price and discounts/pricing popovers that match the handoff interactions without floating/clipping issues.
+- [x] Verify TypeScript/build output and update this review with what was proven and any residual gaps.
+
+## Progress Notes
+- [x] Confirmed the handoff calls for a full high-fidelity redesign, while the current code still mostly uses the old three-box drawer layout.
+- [x] Found existing partial work in `PriceBuilderPanel.tsx`: live operation search, binary part price dropdown, bulk parts pricing, and manager discounts.
+- [x] Replaced the old three-box drawer presentation with one segmented add bar, one work/labor list, collapsed line summaries, expanded labor/parts editing, anchored unit-price popovers, contextual rows, and a sticky totals footer.
+- [x] Passed targeted lint: `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0`.
+- [x] Full `npm run build` remains blocked by existing unrelated `FleetApp.tsx` TypeScript errors; filtered output showed no `PriceBuilderPanel.tsx` or `RepairOrdersPage.tsx` TypeScript errors.
+
+## Review
+- The redesigned sidekick now follows the handoff structure while preserving the existing repair-order API paths and query invalidation behavior.
+- Residual gap: standalone Part and Labor segments display constrained helper states because this panel currently has operation apply and service-labor APIs, while standalone part/labor creation still lives elsewhere in the repair-order detail UI.
+- Full build verification is blocked by unrelated fleet profile/password compile errors in `frontend/src/features/fleet/FleetApp.tsx`.
+
+---
+
+# Price Builder Shell Deduplication (2026-07-05)
+
+## Plan
+- [x] Confirm which duplicated surfaces are coming from the parent repair-order detail panel versus the redesigned price-builder component.
+- [x] Let the redesigned price-builder own its shell by suppressing the parent panel header/navigation/footer in price-builder mode.
+- [x] Suppress old workflow, customer/vehicle, recommended-services, legacy totals, and parent danger-zone sections when the redesigned builder is active.
+- [x] Verify the touched files with targeted lint/build output and record remaining blockers.
+
+## Progress Notes
+- [x] Screenshot and code inspection confirm duplicate header, pagination, workflow, context rows, totals/danger surfaces are parent-rendered around the new `PriceBuilderPanel`.
+- [x] Added `hideHeader` to `SlidePanel`, passed real close/prev/next handlers into `PriceBuilderPanel`, and gated parent-only sections behind `!priceBuilderOwnsShell`.
+- [x] Passed targeted lint: `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx src/components/SlidePanel.tsx --max-warnings 0`.
+- [x] Full `npm run build` remains blocked by existing unrelated `FleetApp.tsx` TypeScript errors; filtered output showed no `PriceBuilderPanel.tsx`, `RepairOrdersPage.tsx`, or `SlidePanel.tsx` TypeScript errors.
+
+## Review
+- The redesigned price builder now owns the visible shell in price-builder statuses, preventing duplicate repair-order header, pagination, workflow, customer/recommended rows, legacy totals, and danger zone.
+- Non-price-builder statuses keep the existing `SlidePanel` header/footer and legacy detail sections.
+- Full build verification remains blocked by unrelated fleet profile/password compile errors in `frontend/src/features/fleet/FleetApp.tsx`.
+
+---
+
+# Price Builder Sidekick Functionality Restore (2026-07-05)
+
+## Plan
+- [x] Identify which suppressed parent controls still need to exist inside the redesigned sidekick.
+- [x] Restore real danger-zone expand/cancel/delete behavior inside the sidekick footer.
+- [x] Restore expandable customer/vehicle details and recommended-service add/resolve/delete behavior inside the sidekick.
+- [x] Make the sidekick occupy the full drawer height so the work list owns the middle and totals/danger stay at the bottom.
+- [x] Verify touched files and record remaining blockers.
+
+## Progress Notes
+- [x] Confirmed the static sidekick rows replaced working parent sections for danger zone, customer details, and recommended services.
+- [x] Passed the existing parent danger-zone mutation handlers and delete-confirm flow into `PriceBuilderPanel`.
+- [x] Passed recommended-service state and add/resolve/delete mutations into `PriceBuilderPanel`.
+- [x] Converted the sidekick to a full-height flex layout with the center content scrolling and the totals/danger footer anchored at the bottom.
+- [x] Passed targeted lint: `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx src/components/SlidePanel.tsx --max-warnings 0`.
+- [x] Full `npm run build` remains blocked by existing unrelated `FleetApp.tsx` TypeScript errors; filtered output showed no `PriceBuilderPanel.tsx`, `RepairOrdersPage.tsx`, or `SlidePanel.tsx` TypeScript errors.
+
+## Review
+- Danger zone, customer/vehicle details, and recommended services are functional inside the redesigned sidekick instead of being static placeholders.
+- The sidekick now uses the full panel height: header/workflow at top, work and expandable context in the middle, totals and danger zone at the bottom.
+- Full build verification remains blocked by unrelated fleet profile/password compile errors in `frontend/src/features/fleet/FleetApp.tsx`.
+
+---
+
+# Price Builder Labor Book Time Add Tab (2026-07-05)
+
+## Plan
+- [x] Verify the learned labor catalog path and confirm whether it differs from one-off manual labor.
+- [x] Add a dedicated Labor Book Time tab to the sidekick add bar that uses the internal labor-memory search/apply flow.
+- [x] Remove the manual Labor add-bar tab so labor entry flows through Labor Book Time.
+- [x] Verify frontend lint/build and document the behavior distinction.
+
+## Progress Notes
+- [x] Confirmed learned labor is implemented through `price-build/repair-ops/search`, `price-build/repair-ops/apply`, and `price-build/lines/{line_id}` hour edits, which upsert `LaborOperationMemory`.
+- [x] Added `Labor Book Time` as a fifth add-bar tab. It uses the learned operation-memory search/apply path and explains that entering hours teaches future matches.
+- [x] Removed the separate `Labor` tab and defaulted new Labor Book Time entries to `1` book hour, editable before adding.
+- [x] Passed verification: `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` and `npm run build`.
+
+## Review
+- The add bar now uses Labor Book Time as the single labor-entry path, so repeatable shop labor and simple one-hour labor are both reusable.
+- Labor Book Time is the path for examples like DPF filter replacement where hours should be reused next time; new entries default to one hour and can be adjusted before adding.
+
+---
+
+# My Garage Labor Book Time Library (2026-07-05)
+
+## Plan
+- [x] Confirm where learned Labor Book Time records are stored and how My Garage routes are structured.
+- [x] Add tenant-scoped backend endpoints to list, update, and delete Labor Book Time library entries.
+- [x] Add a dedicated My Garage tab/page for managing Labor Book Time entries without mixing them into Services.
+- [x] Verify backend tests and frontend build/lint, then document residual risk.
+
+## Progress Notes
+- [x] Confirmed learned Labor Book Time is stored in `labor_operation_memory`, separate from service catalog rows.
+- [x] Confirmed `MyGaragePage` owns the garage navigation and routed sections, making a sibling tab the right placement.
+- [x] Added `GET/PATCH/DELETE /api/v1/labor-book-time` endpoints scoped to the current garage owner/admin tenant.
+- [x] Added `Labor Book Time` as a My Garage navigation tab after Services, with search, inline edit, and delete controls.
+- [x] Passed backend verification:
+  `./.venv/bin/python -m pytest backend/tests/test_labor_book_time_endpoint.py -q`
+- [x] Passed combined learned-memory regression verification:
+  `./.venv/bin/python -m pytest backend/tests/test_labor_book_time_endpoint.py backend/tests/test_price_build_service.py -q`
+- [x] Passed frontend lint:
+  `npx eslint src/features/garage/LaborBookTimePage.tsx src/features/garage/MyGaragePage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+- [x] Passed API router import sanity check:
+  `../.venv/bin/python -c "from app.api.v1.router import api_router; print(any(getattr(r, 'path', '') == '/labor-book-time' for r in api_router.routes))"` (from `backend/`)
+
+## Review
+- Labor Book Time now has its own My Garage management surface and remains separate from customer-facing Services.
+- Garage owner/admin users can search learned entries, edit the reusable name/description/book hours, and delete incorrect entries.
+- Residual risk: verification covered tests, lint, build, and route registration; a live browser pass is still useful to confirm exact spacing against real tenant data.
+
+---
+
+# Structured Labor Book Time Creation Form (2026-07-06)
+
+## Plan
+- [x] Confirm current Labor Book Time storage fields and existing VIN decode API path.
+- [x] Add structured truck/application scope fields to labor-memory storage and expose them through the Labor Book Time API.
+- [x] Add a create endpoint that saves operation, book hours, and truck scope without requiring a customer vehicle record.
+- [x] Add a My Garage creation form matching the adopted redesigned garage UI, with manual fields and optional VIN decode.
+- [x] Verify backend tests, price-builder memory regressions, frontend lint, and production build.
+
+## Progress Notes
+- [x] Confirmed existing entries store reusable matching data in `labor_operation_memory` but lack explicit year/make/model/engine fields for admin-created library records.
+- [x] Confirmed the app already exposes VIN decode through the customer vehicle API and persists NHTSA snapshots for real vehicles.
+- [x] Added structured Labor Book Time fields for vehicle year/make/model/type/body, engine/application data, GVWR, and optional VIN sample.
+- [x] Added migration `063_add_structured_labor_book_time_scope.py`.
+- [x] Added `POST /api/v1/labor-book-time` for manual book-time creation with required year/make/model scope and duplicate protection.
+- [x] Updated price-builder matching to also consider a broad year/make/model application signature so manually-created records can appear for matching repair-order trucks.
+- [x] Added the My Garage creation form with service/book-hour fields, truck application fields, and optional VIN decode to fill NHTSA data.
+- [x] Passed backend verification:
+  `./.venv/bin/python -m pytest backend/tests/test_labor_book_time_endpoint.py backend/tests/test_price_build_service.py -q`
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/garage/LaborBookTimePage.tsx src/features/garage/MyGaragePage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+- [x] Passed backend import sanity:
+  `../.venv/bin/python -c "from app.api.v1.router import api_router; from app.db.models.labor_operation_memory import LaborOperationMemory; print(any(getattr(r, 'path', '') == '/labor-book-time' for r in api_router.routes), hasattr(LaborOperationMemory, 'vehicle_year'))"` (from `backend/`)
+
+## Review
+- Admins can now create a Labor Book Time record without a customer truck by entering the job, book hours, and truck application scope.
+- Optional VIN decode fills known NHTSA fields, but the form still supports manual motor-information-system or historical-data entry.
+- Price Builder can find manually-created records by the repair order truck's year/make/model application signature while keeping engine details visible in the library.
+- Residual risk: live browser verification with real VIN decode is still useful because the automated build verifies code health but not the visual spacing or external NHTSA response quality.
+
+---
+
+# Price Builder Labor Book Time Search Focus Fix (2026-07-06)
+
+## Plan
+- [x] Confirm why typing in the Labor Book Time search moves focus into the Book hrs field.
+- [x] Remove the focus-stealing behavior while keeping book-hour entry available for the add-new row.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Found `autoFocus` on the add-new candidate row's Book hrs input in `PriceBuilderPanel.tsx`; search result updates can remount that row and steal focus from the search input.
+- [x] Removed `autoFocus` from that Book hrs input so the search box keeps focus while typing.
+- [x] Confirmed remaining `autoFocus` usages in the component are limited to explicit edit modes, not the search candidate row.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Labor Book Time search no longer has a focus-stealing auto-focus path into the Book hrs field.
+- Book hrs is still available on the add-new row by click/tab when the user is ready to save the new labor book time.
+
+---
+
+# Price Builder Inline Labor Book Time Form (2026-07-06)
+
+## Plan
+- [x] Pass structured repair-order truck scope into `PriceBuilderPanel`.
+- [x] Make the Labor Book Time search tab display existing Labor Book Time library entries.
+- [x] Show the structured Labor Book Time creation form inline when no existing entry matches the search.
+- [x] Save a new Labor Book Time record and add it to the current repair order in one flow.
+- [x] Run focused frontend verification and document results.
+
+## Progress Notes
+- [x] Confirmed `PriceBuilderPanel` currently receives only display vehicle fields, while `RepairOrdersPage` has year/make/model/VIN available.
+- [x] Confirmed existing Labor Book Time add flow still uses repair-operation search candidates, not the dedicated `/labor-book-time` library API.
+- [x] Added `vehicleYear`, `vehicleMake`, and `vehicleModel` props from `RepairOrdersPage` into `PriceBuilderPanel`.
+- [x] Changed the Labor Book Time tab to query `/labor-book-time`, showing existing saved book-time entries when the tab opens and filtering them as the user types.
+- [x] Added an inline no-match form with labor name, book hours, source notes, year/make/model, engine/fuel/displacement, VIN helper, VIN decode, and `Save & add`.
+- [x] Existing library entries can be added directly to the current repair order.
+- [x] New no-match entries are saved to the Labor Book Time database and then applied to the current repair order.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The Price Builder Labor Book Time search now behaves like a mini Labor Book Time library: it shows existing entries, filters by typed text, and opens the structured create form when no entry matches.
+- The inline create flow saves the verified book-time record and adds it to the RO in one action.
+- Residual risk: automated verification covered lint/build; a live browser pass should confirm the compact inline form spacing inside the sidekick panel.
+
+---
+
+# Price Builder Labor Book Time Variant Add (2026-07-06)
+
+## Plan
+- [x] Confirm the current inline form only appears when no Labor Book Time matches exist.
+- [x] Add an explicit way to create another truck/engine variant even when matching book-time entries are displayed.
+- [x] Verify focused frontend lint/build and document result.
+
+## Progress Notes
+- [x] Confirmed the current form is gated by `laborBookEntries.length === 0`, so existing matches hide the create flow.
+- [x] Added `Add another truck / engine variant` below matching Labor Book Time entries when the user has typed a search term.
+- [x] Reused the same inline structured form for variant creation, with a close control when it is opened alongside matches.
+- [x] The variant form closes after `Save & add`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Existing Labor Book Time entries remain selectable, and users can now add a new truck/engine variant for the same labor name without needing zero matches.
+- Residual risk: this was verified by lint/build only; a live click-through should confirm the extra button placement works well with longer result lists.
+
+---
+
+# Price Builder Internal Order Quote UI Guard (2026-07-06)
+
+## Plan
+- [x] Pass the internal repair-order flag into the redesigned `PriceBuilderPanel`.
+- [x] Hide customer quote workflow UI for internal repair orders.
+- [x] Hide the `Send quote` footer CTA for internal repair orders.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the legacy workflow block still has `!selectedOrder.is_internal`, but the redesigned sidekick bypassed it with unconditional workflow/send-quote UI.
+- [x] Added `isInternalOrder` prop to `PriceBuilderPanel` and passed it from `(orderDetail ?? selectedOrder).is_internal`.
+- [x] Wrapped the redesigned quote workflow strip with `!isInternalOrder`.
+- [x] Wrapped the footer `Send quote` CTA with `!isInternalOrder`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Internal repair orders keep the redesigned price-builder controls but no longer show the customer quote workflow strip or `Send quote` CTA.
+- Backend quote protection was already present; this restores the matching UI behavior in the redesigned sidekick.

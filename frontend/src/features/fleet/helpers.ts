@@ -12,7 +12,8 @@ export const STATUS_META: Record<TruckStatus, { label: string; short: string; do
 }
 
 export const fmt = (n?: number | null) => (n == null ? '—' : n.toLocaleString('en-US'))
-export const money = (n?: number | null) => (n == null ? '—' : '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 }))
+export const money = (n?: number | null) =>
+  (n == null ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 
 export function fmtDate(s?: string | null) {
   if (!s) return '—'

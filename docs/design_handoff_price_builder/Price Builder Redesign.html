@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Price Builder — Redesign</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="design_doc_mode" content="canvas" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --orange1:#f7a823; --orange2:#e07c05; --brand:#ef8a12; --brand-dk:#d4770a;
+  --ink:#1b1f24; --text:#20242b; --muted:#6b7280; --muted2:#9aa1ab; --faint:#b9bec6;
+  --line:#e9ebef; --line2:#dcdfe5; --field:#f5f6f8; --field2:#eef0f3;
+  --blue:#2563eb; --orange-a:#ea6a05; --green:#159a52; --green-bg:#e7f6ee; --red:#dc2626;
+  --sh-1:0 1px 2px rgba(20,25,35,.05); --sh-2:0 10px 30px rgba(20,25,35,.10);
+  --sh-3:0 22px 60px rgba(20,25,35,.18);
+  --body:'Archivo',sans-serif; --disp:'Barlow Condensed',sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;}
+body{margin:0;font-family:var(--body);color:var(--text);-webkit-font-smoothing:antialiased;}
+.frame{position:absolute;}
+
+/* ---------- legend ---------- */
+.legend{width:760px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:34px 38px;box-shadow:var(--sh-2);}
+.legend .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--brand-dk);font-weight:600;}
+.legend h1{font-family:var(--disp);font-weight:800;font-size:42px;line-height:1.02;margin:10px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink);}
+.legend p.lede{font-size:16px;line-height:1.55;color:var(--muted);margin:0 0 26px;max-width:640px;}
+.legend p.lede b{color:var(--text);font-weight:700;}
+.moves{display:grid;grid-template-columns:1fr 1fr;gap:16px 30px;}
+.move{display:flex;gap:14px;}
+.move .n{width:30px;height:30px;flex-shrink:0;border-radius:9px;background:var(--ink);color:#fff;display:grid;place-items:center;font-family:var(--disp);font-weight:800;font-size:16px;}
+.move h3{margin:2px 0 3px;font-size:15px;font-weight:700;color:var(--text);}
+.move p{margin:0;font-size:13.5px;line-height:1.5;color:var(--muted);}
+
+/* ---------- artboard caption ---------- */
+.cap{position:absolute;top:-58px;left:2px;}
+.cap .t{display:flex;align-items:center;gap:10px;}
+.cap .num{font-family:var(--disp);font-weight:800;font-size:20px;color:var(--brand-dk);}
+.cap .t h2{font-family:var(--disp);font-weight:800;font-size:26px;text-transform:uppercase;letter-spacing:.4px;margin:0;color:var(--ink);}
+.cap p{margin:4px 0 0 0;font-size:14px;color:var(--muted);max-width:560px;line-height:1.45;}
+
+/* ---------- drawer shell ---------- */
+.drawer{width:680px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:var(--sh-3);border:1px solid rgba(20,25,35,.06);}
+.dhead{background:linear-gradient(100deg,var(--orange1),var(--orange2));padding:18px 24px 20px;color:#fff;position:relative;}
+.dhead-top{display:flex;align-items:center;justify-content:space-between;}
+.dhead-eye{font-family:var(--mono);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;opacity:.85;font-weight:500;}
+.dhead-ro{font-family:var(--disp);font-weight:800;font-size:27px;letter-spacing:.5px;margin-top:2px;line-height:1;}
+.dhead-nav{display:flex;align-items:center;gap:14px;}
+.dhead-pg{font-family:var(--mono);font-size:13px;opacity:.9;}
+.iconbtn{width:30px;height:30px;border-radius:8px;border:none;background:rgba(255,255,255,.16);color:#fff;display:grid;place-items:center;cursor:pointer;transition:.14s;}
+.iconbtn:hover{background:rgba(255,255,255,.28);}
+.dhead-meta{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap;}
+.pill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:999px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.9);color:#3257c4;}
+.pill .d{width:7px;height:7px;border-radius:999px;background:#3257c4;}
+.chip-ghost{display:inline-flex;align-items:center;gap:7px;height:26px;padding:0 11px;border-radius:999px;font-size:12.5px;font-weight:600;background:rgba(255,255,255,.16);color:#fff;}
+.chip-ghost svg{opacity:.9;}
+.dhead-meta .sep{color:rgba(255,255,255,.55);}
+
+/* workflow strip */
+.wf{display:flex;align-items:center;gap:8px;padding:13px 24px;background:#fffaf2;border-bottom:1px solid #f2e6d2;}
+.wf-step{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--muted2);}
+.wf-step .dot{width:16px;height:16px;border-radius:999px;border:2px solid var(--line2);display:grid;place-items:center;}
+.wf-step.done{color:var(--green);}
+.wf-step.done .dot{background:var(--green);border-color:var(--green);color:#fff;}
+.wf-step.active{color:#fff;}
+.wf-step.active .badge{background:var(--brand);color:#fff;padding:3px 10px;border-radius:999px;font-size:12.5px;}
+.wf-arrow{color:var(--faint);}
+.wf-spacer{flex:1;}
+.wf-quote{font-family:var(--mono);font-size:12px;color:var(--muted);}
+
+/* body */
+.dbody{padding:20px 24px 0;}
+.sec-label{font-size:11.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted2);display:flex;align-items:center;gap:7px;margin:0 0 12px;}
+.sec-label .cnt{font-family:var(--mono);font-weight:500;font-size:11px;color:var(--muted);background:var(--field2);border-radius:999px;padding:1px 8px;letter-spacing:0;}
+.sec-label .i{color:var(--faint);display:inline-grid;place-items:center;}
+
+/* ---- line item list ---- */
+.items{display:flex;flex-direction:column;}
+.li{border-top:1px solid var(--line);}
+.li:first-child{border-top:none;}
+.li-row{display:flex;align-items:center;gap:13px;padding:14px 4px;cursor:pointer;}
+.li-chev{color:var(--faint);flex-shrink:0;transition:transform .15s;}
+.li.open .li-chev{transform:rotate(90deg);color:var(--muted);}
+.li-ic{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;background:var(--field);color:var(--muted);}
+.li-ic.op{background:#fff4e6;color:var(--orange-a);}
+.li-ic.diag{background:#eaf1fe;color:var(--blue);}
+.li-main{flex:1;min-width:0;}
+.li-name{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:9px;}
+.li-tag{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--field2);color:var(--muted);}
+.li-tag.op{background:#fff1e0;color:var(--orange-a);}
+.li-tag.diag{background:#e8f0fe;color:var(--blue);}
+.li-sub{font-size:12.5px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:8px;}
+.li-sub .mono{font-family:var(--mono);font-size:11.5px;}
+.li-sub .d{width:3px;height:3px;border-radius:99px;background:var(--faint);}
+.li-tot{font-family:var(--disp);font-weight:800;font-size:20px;color:var(--text);flex-shrink:0;letter-spacing:.3px;}
+.li-tot small{font-family:var(--mono);font-weight:500;font-size:12px;color:var(--muted2);display:block;text-align:right;letter-spacing:0;}
+
+/* expanded body of a line */
+.li-exp{padding:2px 4px 20px 60px;}
+.labor-row{display:flex;align-items:center;gap:10px;background:var(--field);border-radius:11px;padding:12px 14px;margin-bottom:16px;}
+.labor-row .lbl{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-right:2px;}
+.mini{display:inline-flex;align-items:baseline;gap:6px;background:#fff;border:1px solid var(--line2);border-radius:8px;padding:7px 11px;font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);}
+.mini .u{color:var(--muted2);font-size:11px;}
+.labor-row .x{color:var(--faint);font-size:14px;}
+.labor-row .eq{margin-left:auto;font-family:var(--mono);font-size:14px;color:var(--muted);}
+.labor-row .eqv{font-family:var(--disp);font-weight:800;font-size:18px;color:var(--text);margin-left:4px;}
+
+/* parts table (flat, no box) */
+.parts-h{display:flex;align-items:center;justify-content:space-between;margin:0 2px 4px;}
+.parts-h .l{font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);}
+.ptable{width:100%;}
+.pt-head,.pt-row{display:grid;grid-template-columns:1fr 58px 96px 84px 88px;align-items:center;gap:8px;}
+.pt-head{padding:6px 2px;border-bottom:1px solid var(--line);}
+.pt-head span{font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--muted2);}
+.pt-head .r,.pt-row .r{text-align:right;}
+.pt-head .c,.pt-row .c{text-align:center;}
+.pt-row{padding:11px 2px;border-bottom:1px solid var(--line);}
+.pt-row:last-child{border-bottom:none;}
+.pp-name{font-size:13.5px;font-weight:600;color:var(--text);}
+.pp-sku{font-family:var(--mono);font-size:11px;color:var(--muted2);margin-top:2px;}
+.pt-qty{font-family:var(--mono);font-size:13px;color:var(--text);text-align:center;}
+.unit-cell{display:flex;justify-content:flex-end;}
+.unit-btn{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);background:#fff;border:1px solid var(--line2);border-radius:7px;padding:6px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.14s;}
+.unit-btn:hover{border-color:var(--brand);}
+.unit-btn .car{color:var(--faint);}
+.pt-save{font-family:var(--mono);font-size:12.5px;text-align:right;color:var(--green);font-weight:500;}
+.pt-save.none{color:var(--faint);}
+.pt-line{font-family:var(--mono);font-size:13.5px;text-align:right;font-weight:600;color:var(--text);}
+.addpart{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;font-weight:600;color:var(--brand-dk);background:none;border:1px dashed var(--line2);border-radius:9px;padding:9px 14px;cursor:pointer;transition:.14s;}
+.addpart:hover{border-color:var(--brand);background:#fff9f1;}
+
+/* unified add bar */
+.addbar{margin:8px 0 22px;border:1.5px dashed var(--line2);border-radius:13px;padding:6px;display:flex;align-items:center;gap:8px;background:var(--field);}
+.addbar .seg{display:flex;background:#fff;border:1px solid var(--line2);border-radius:9px;overflow:hidden;flex-shrink:0;}
+.addbar .seg button{border:none;background:none;font-family:var(--body);font-size:12.5px;font-weight:600;color:var(--muted);padding:8px 12px;cursor:pointer;border-right:1px solid var(--line);}
+.addbar .seg button:last-child{border-right:none;}
+.addbar .seg button.on{background:var(--ink);color:#fff;}
+.addbar .search{flex:1;display:flex;align-items:center;gap:9px;color:var(--muted2);padding:0 10px;}
+.addbar .search input{border:none;background:none;outline:none;font-family:var(--body);font-size:14px;color:var(--text);flex:1;padding:11px 0;}
+.addbar .search input::placeholder{color:var(--muted2);}
+
+/* command palette (screen 3) */
+.cmd{margin:8px 0 20px;border:1px solid var(--line2);border-radius:14px;box-shadow:var(--sh-2);overflow:hidden;}
+.cmd-in{display:flex;align-items:center;gap:11px;padding:15px 18px;border-bottom:1px solid var(--line);color:var(--muted);}
+.cmd-in input{border:none;outline:none;font-family:var(--body);font-size:16px;color:var(--text);flex:1;font-weight:500;}
+.cmd-in .kbd{font-family:var(--mono);font-size:11px;color:var(--muted2);border:1px solid var(--line2);border-radius:6px;padding:2px 7px;}
+.cmd-grp{padding:8px 0;}
+.cmd-grp+.cmd-grp{border-top:1px solid var(--line);}
+.cmd-gl{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);padding:8px 18px 6px;}
+.cmd-opt{display:flex;align-items:center;gap:13px;padding:10px 18px;cursor:pointer;}
+.cmd-opt:hover,.cmd-opt.sel{background:var(--field);}
+.cmd-opt.sel{box-shadow:inset 3px 0 0 var(--brand);}
+.cmd-oic{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;}
+.cmd-oic.op{background:#fff4e6;color:var(--orange-a);}
+.cmd-oic.diag{background:#eaf1fe;color:var(--blue);}
+.cmd-oic.part{background:#eef7f0;color:var(--green);}
+.cmd-otx{flex:1;min-width:0;}
+.cmd-on{font-size:14px;font-weight:600;color:var(--text);}
+.cmd-om{font-size:12px;color:var(--muted);margin-top:2px;}
+.cmd-om .mono{font-family:var(--mono);font-size:11px;}
+.cmd-price{font-family:var(--mono);font-size:13px;color:var(--muted);text-align:right;flex-shrink:0;}
+.cmd-price b{display:block;color:var(--text);font-size:13.5px;}
+.cmd-add{width:28px;height:28px;border-radius:7px;border:1px solid var(--line2);background:#fff;color:var(--brand-dk);display:grid;place-items:center;flex-shrink:0;}
+
+/* collapsed section rows (customer/vehicle, recommended) */
+.crow{display:flex;align-items:center;gap:12px;padding:15px 18px;border:1px solid var(--line);border-radius:13px;margin-bottom:12px;background:#fff;}
+.crow .ic{width:36px;height:36px;border-radius:9px;background:var(--field);color:var(--muted);display:grid;place-items:center;flex-shrink:0;}
+.crow .tx{flex:1;min-width:0;}
+.crow .tx .k{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);}
+.crow .tx .v{font-size:14.5px;font-weight:600;color:var(--text);margin-top:2px;}
+.crow .tx .v small{font-weight:500;color:var(--muted);font-size:13px;}
+.crow .go{color:var(--faint);}
+
+/* sticky totals footer */
+.foot{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);margin-top:6px;padding:16px 24px 20px;}
+.foot-break{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.bchip{display:inline-flex;align-items:baseline;gap:6px;font-size:12.5px;color:var(--muted);}
+.bchip b{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);}
+.bchip.blue b{color:var(--blue);}
+.bchip.orange b{color:var(--orange-a);}
+.bchip.green b{color:var(--green);}
+.bchip.red b{color:var(--red);}
+.bchip .dd{width:3px;height:3px;border-radius:99px;background:var(--faint);margin:0 4px;}
+.foot-main{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.foot-actions{display:flex;align-items:center;gap:10px;}
+.btn{height:44px;padding:0 18px;border-radius:11px;font-family:var(--body);font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;border:1px solid transparent;transition:.14s;}
+.btn-ghost{background:#fff;border-color:var(--line2);color:var(--text);}
+.btn-ghost:hover{border-color:var(--muted2);}
+.btn-primary{background:var(--brand);color:#fff;box-shadow:0 6px 16px rgba(239,138,18,.32);}
+.btn-primary:hover{background:var(--brand-dk);}
+.total-wrap{text-align:right;}
+.total-lbl{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2);}
+.total-val{font-family:var(--disp);font-weight:800;font-size:34px;line-height:1;color:var(--ink);letter-spacing:.5px;}
+.disc-btn{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--brand-dk);background:#fff9f1;border:1px solid #f4dcb8;border-radius:8px;padding:7px 11px;cursor:pointer;}
+
+/* danger zone slim */
+.danger{display:flex;align-items:center;gap:10px;padding:13px 24px;background:#fdf2f2;color:var(--red);font-size:12.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;border-top:1px solid #f6dede;}
+.danger .go{margin-left:auto;color:#e58a8a;}
+
+/* ---- floating detail callouts (screen 4) ---- */
+.callout{width:320px;background:#fff;border:1px solid var(--line2);border-radius:14px;box-shadow:var(--sh-2);overflow:hidden;}
+.callout-h{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;}
+.callout-h .t{font-size:13px;font-weight:700;color:var(--text);}
+.callout-h .close{color:var(--faint);}
+.pv-body{padding:6px 16px 14px;}
+.pv-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);}
+.pv-row:last-child{border-bottom:none;}
+.pv-k{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+.pv-v{font-family:var(--mono);font-size:13.5px;font-weight:600;color:var(--text);}
+.pv-row.edit{background:#fff9f1;margin:6px -16px 0;padding:11px 16px;border-bottom:none;border-top:1px solid var(--line);}
+.pv-input{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text);border:1.5px solid var(--brand);border-radius:8px;padding:8px 11px;width:110px;text-align:right;background:#fff;}
+.pv-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--green-bg);color:var(--green);}
+.pv-foot{padding:11px 16px;background:var(--field);display:flex;gap:8px;}
+.pv-foot .btn{height:36px;flex:1;justify-content:center;font-size:13px;}
+.dot-cust{width:8px;height:8px;border-radius:99px;background:var(--brand);}
+.dot-stock{width:8px;height:8px;border-radius:99px;background:var(--muted2);}
+
+/* discount editor callout */
+.de-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);}
+.de-row:last-child{border-bottom:none;}
+.de-k{font-size:13.5px;color:var(--text);font-weight:600;}
+.de-k small{display:block;font-weight:400;color:var(--muted2);font-size:11.5px;margin-top:1px;}
+.de-sel{font-family:var(--body);font-size:13px;font-weight:600;border:1px solid var(--line2);border-radius:8px;padding:8px 11px;background:#fff;color:var(--text);}
+.de-money{display:inline-flex;align-items:center;border:1px solid var(--line2);border-radius:8px;overflow:hidden;}
+.de-money .cur{padding:8px 9px;background:var(--field);color:var(--muted);font-family:var(--mono);font-size:13px;border-right:1px solid var(--line2);}
+.de-money input{border:none;outline:none;width:74px;padding:8px 10px;font-family:var(--mono);font-size:13px;text-align:right;color:var(--text);}
+
+.arrow-note{position:absolute;font-family:var(--mono);font-size:12px;color:var(--brand-dk);font-weight:600;background:#fff;border:1px solid #f4dcb8;border-radius:8px;padding:6px 10px;box-shadow:var(--sh-1);}
+</style>
+</head>
+<body>
+
+<!-- ============ LEGEND ============ -->
+<div class="frame" style="left:80px; top:60px;">
+  <div class="legend">
+    <div class="eyebrow">Price Builder · UX redesign</div>
+    <h1>One list, not a stack of boxes</h1>
+    <p class="lede">A repair order is really just a <b>list of work performed</b> — each operation carrying its labor and its parts. The current drawer wraps every one of those in its own bordered card, nesting three deep. The redesign keeps <b>all the complexity</b> — hourly diagnostics, repair operations, per-part customer-vs-stock pricing, discounts — but presents it as a single, scannable line-item list with progressive disclosure.</p>
+    <div class="moves">
+      <div class="move"><div class="n">1</div><div><h3>Merge the three add-boxes</h3><p>Diagnostics, Repair Operation and Services &amp; Labor become one line-item list with a single smart add bar.</p></div></div>
+      <div class="move"><div class="n">2</div><div><h3>Collapse by default</h3><p>Each operation is a one-line summary; expand only the one you're editing. A 6-line order fits on screen.</p></div></div>
+      <div class="move"><div class="n">3</div><div><h3>Hairlines, not nested cards</h3><p>Dividers + indentation replace box-in-box. The drawer is the only card.</p></div></div>
+      <div class="move"><div class="n">4</div><div><h3>Anchored price editing</h3><p>Customer vs stock price opens in a proper anchored popover with margin — never floating over the table.</p></div></div>
+      <div class="move"><div class="n">5</div><div><h3>Sticky totals footer</h3><p>A persistent, scannable breakdown + primary action. Discounts live in one popover, not a cramped row.</p></div></div>
+      <div class="move"><div class="n">6</div><div><h3>Context in the header</h3><p>Customer &amp; truck surface up top where they belong, not buried below the builder.</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 1 — OVERVIEW ============ -->
+<div class="frame" style="left:80px; top:620px;">
+  <div class="cap">
+    <div class="t"><span class="num">01</span><h2>Line-item overview</h2></div>
+    <p>The default state. Every operation collapses to one row — name, what's inside, line total. Scannable at a glance.</p>
+  </div>
+  <div class="drawer">
+    <!-- header -->
+    <div class="dhead">
+      <div class="dhead-top">
+        <div>
+          <div class="dhead-eye">Repair Order</div>
+          <div class="dhead-ro">#RO-F90D5493-000054</div>
+        </div>
+        <div class="dhead-nav">
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <span class="dhead-pg">1 / 50</span>
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="dhead-meta">
+        <span class="pill"><span class="d"></span>Quoted</span>
+        <span class="chip-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Elis Logistica</span>
+        <span class="chip-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1.5"/><path d="M15 9h4l3 3v5h-7"/><circle cx="7" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>TPS-118 · Freightliner Cascadia</span>
+      </div>
+    </div>
+    <!-- workflow -->
+    <div class="wf">
+      <span class="wf-step done"><span class="dot"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>Draft ready</span>
+      <span class="wf-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+      <span class="wf-step active"><span class="badge">Send</span></span>
+      <span class="wf-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+      <span class="wf-step"><span class="dot"></span>Approved</span>
+      <span class="wf-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+      <span class="wf-step"><span class="dot"></span>Technician</span>
+      <span class="wf-spacer"></span>
+      <span class="wf-quote">Q-F90D5493-000045</span>
+    </div>
+    <!-- body -->
+    <div class="dbody">
+      <div class="sec-label">Work &amp; Labor <span class="cnt">3 lines</span></div>
+      <div class="items">
+        <!-- line 1 -->
+        <div class="li">
+          <div class="li-row">
+            <span class="li-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+            <span class="li-ic op"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z"/></svg></span>
+            <div class="li-main">
+              <div class="li-name">PM Service — Level A <span class="li-tag op">Operation</span></div>
+              <div class="li-sub"><span class="mono">1.50 hr</span> labor <span class="d"></span> 4 parts <span class="d"></span> <span style="color:var(--green);font-weight:600;">saves $56.97</span></div>
+            </div>
+            <div class="li-tot">$423.00<small>150 labor · 273 parts</small></div>
+          </div>
+        </div>
+        <!-- line 2 -->
+        <div class="li">
+          <div class="li-row">
+            <span class="li-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+            <span class="li-ic diag"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14 16 9M3.5 18a9 9 0 1 1 17 0"/></svg></span>
+            <div class="li-main">
+              <div class="li-name">Coolant System Diagnostic <span class="li-tag diag">Hourly</span></div>
+              <div class="li-sub"><span class="mono">1.00 hr</span> @ <span class="mono">$100.00/hr</span> <span class="d"></span> shop rate, no flat fee</div>
+            </div>
+            <div class="li-tot">$100.00<small>labor only</small></div>
+          </div>
+        </div>
+        <!-- line 3 -->
+        <div class="li">
+          <div class="li-row">
+            <span class="li-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+            <span class="li-ic op"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z"/></svg></span>
+            <div class="li-main">
+              <div class="li-name">Air Dryer Cartridge R&amp;R <span class="li-tag op">Operation</span></div>
+              <div class="li-sub"><span class="mono">0.80 hr</span> labor <span class="d"></span> 1 part</div>
+            </div>
+            <div class="li-tot">$147.40<small>80 labor · 67 parts</small></div>
+          </div>
+        </div>
+      </div>
+      <!-- unified add bar -->
+      <div class="addbar">
+        <div class="seg"><button class="on">Operation</button><button>Diagnostic</button><button>Part</button><button>Labor</button></div>
+        <div class="search">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input placeholder="Add work — search operations, e.g. brake change, EGR…" />
+        </div>
+      </div>
+      <!-- collapsed context rows -->
+      <div class="crow">
+        <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg></span>
+        <div class="tx"><div class="k">Customer &amp; Vehicle</div><div class="v">Elis Logistica <small>· TPS-118 · 2022 Freightliner Cascadia · VIN …8H4213</small></div></div>
+        <span class="go"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+      </div>
+      <div class="crow">
+        <span class="ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3.5"/></svg></span>
+        <div class="tx"><div class="k">Recommended Services</div><div class="v" style="color:var(--muted);font-weight:500;">None recorded — <span style="color:var(--brand-dk);font-weight:600;">add from inspection</span></div></div>
+        <span class="go"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+      </div>
+      <div style="height:8px;"></div>
+    </div>
+    <!-- sticky footer -->
+    <div class="foot">
+      <div class="foot-break">
+        <span class="bchip blue">Parts <b>$340.03</b></span><span class="dd"></span>
+        <span class="bchip orange">Labor <b>$330.00</b></span><span class="dd"></span>
+        <span class="bchip red">Discounts <b>−$60.00</b></span><span class="dd"></span>
+        <span class="bchip green">Customer saves <b>$56.97</b></span>
+        <button class="disc-btn" style="margin-left:auto;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V8H6a2 2 0 0 1 0-4h12v4M4 6v12a2 2 0 0 0 2 2h14v-4M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>Discounts &amp; pricing</button>
+      </div>
+      <div class="foot-main">
+        <div class="foot-actions">
+          <button class="btn btn-ghost"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v6h6M3.5 9a9 9 0 1 1-1.5 5"/></svg>Recalculate</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:18px;">
+          <div class="total-wrap">
+            <div class="total-lbl">Order total</div>
+            <div class="total-val">$610.03</div>
+          </div>
+          <button class="btn btn-primary">Send quote<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div class="danger">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+      Danger Zone
+      <span class="go"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 2 — EXPANDED ============ -->
+<div class="frame" style="left:860px; top:620px;">
+  <div class="cap">
+    <div class="t"><span class="num">02</span><h2>Operation expanded</h2></div>
+    <p>Click a line to open it in place. Labor rate and parts edit inline — hairline rows, indented under the operation. No nested boxes.</p>
+  </div>
+  <div class="drawer">
+    <div class="dhead">
+      <div class="dhead-top">
+        <div><div class="dhead-eye">Repair Order</div><div class="dhead-ro">#RO-F90D5493-000054</div></div>
+        <div class="dhead-nav">
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <span class="dhead-pg">1 / 50</span>
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="dhead-meta">
+        <span class="pill"><span class="d"></span>Quoted</span>
+        <span class="chip-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>Elis Logistica</span>
+        <span class="chip-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1.5"/><path d="M15 9h4l3 3v5h-7"/><circle cx="7" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>TPS-118 · Freightliner Cascadia</span>
+      </div>
+    </div>
+    <div class="dbody" style="padding-bottom:20px;">
+      <div class="sec-label">Work &amp; Labor <span class="cnt">3 lines</span></div>
+      <div class="items">
+        <!-- expanded line -->
+        <div class="li open">
+          <div class="li-row">
+            <span class="li-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+            <span class="li-ic op"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z"/></svg></span>
+            <div class="li-main">
+              <div class="li-name">PM Service — Level A <span class="li-tag op">Operation</span></div>
+              <div class="li-sub"><span class="mono">1.50 hr</span> labor <span class="d"></span> 4 parts</div>
+            </div>
+            <div class="li-tot">$423.00</div>
+          </div>
+          <div class="li-exp">
+            <!-- labor -->
+            <div class="labor-row">
+              <span class="lbl">Labor</span>
+              <span class="mini">1.50 <span class="u">hr</span></span>
+              <span class="x">×</span>
+              <span class="mini">$100.00 <span class="u">/hr</span></span>
+              <span class="eq">=<span class="eqv">$150.00</span></span>
+            </div>
+            <!-- parts -->
+            <div class="parts-h"><span class="l">Parts included · 4</span></div>
+            <div class="ptable">
+              <div class="pt-head"><span>Part</span><span class="c">Qty</span><span class="r">Unit</span><span class="r">Savings</span><span class="r">Line</span></div>
+              <div class="pt-row">
+                <div><div class="pp-name">Water Separator EleMax FS19765</div><div class="pp-sku">ENG-WAT-SEP-ELE-001</div></div>
+                <div class="pt-qty">1</div>
+                <div class="unit-cell"><button class="unit-btn">$33.00 <span class="car"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></button></div>
+                <div class="pt-save none">—</div>
+                <div class="pt-line">$33.00</div>
+              </div>
+              <div class="pt-row">
+                <div><div class="pp-name">Oil Filter — Cummins ISX</div><div class="pp-sku">OIL-FLT-001</div></div>
+                <div class="pt-qty">2</div>
+                <div class="unit-cell"><button class="unit-btn">$35.00 <span class="car"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></button></div>
+                <div class="pt-save none">—</div>
+                <div class="pt-line">$70.00</div>
+              </div>
+              <div class="pt-row" style="position:relative;">
+                <div><div class="pp-name">Diesel Engine Oil 15W-40 (5 Gal)</div><div class="pp-sku">OIL-15W40-5G</div></div>
+                <div class="pt-qty">9</div>
+                <div class="unit-cell"><button class="unit-btn" style="border-color:var(--brand);box-shadow:0 0 0 3px rgba(239,138,18,.14);">$16.50 <span class="car"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></button></div>
+                <div class="pt-save">−$49.50</div>
+                <div class="pt-line">$148.50</div>
+              </div>
+              <div class="pt-row">
+                <div><div class="pp-name">Oil Filter — FleetGuard LF 3675</div><div class="pp-sku">FIL-OIL-FLE-LF-001</div></div>
+                <div class="pt-qty">1</div>
+                <div class="unit-cell"><button class="unit-btn">$21.53 <span class="car"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></button></div>
+                <div class="pt-save">−$7.47</div>
+                <div class="pt-line">$21.53</div>
+              </div>
+            </div>
+            <button class="addpart"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add part to this operation</button>
+          </div>
+        </div>
+        <!-- collapsed line 2 -->
+        <div class="li">
+          <div class="li-row">
+            <span class="li-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+            <span class="li-ic diag"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14 16 9M3.5 18a9 9 0 1 1 17 0"/></svg></span>
+            <div class="li-main">
+              <div class="li-name">Coolant System Diagnostic <span class="li-tag diag">Hourly</span></div>
+              <div class="li-sub"><span class="mono">1.00 hr</span> @ <span class="mono">$100.00/hr</span></div>
+            </div>
+            <div class="li-tot">$100.00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">
+      <div class="foot-break">
+        <span class="bchip blue">Parts <b>$273.03</b></span><span class="dd"></span>
+        <span class="bchip orange">Labor <b>$150.00</b></span><span class="dd"></span>
+        <span class="bchip green">Customer saves <b>$56.97</b></span>
+        <button class="disc-btn" style="margin-left:auto;">Discounts &amp; pricing</button>
+      </div>
+      <div class="foot-main">
+        <div class="foot-actions"><button class="btn btn-ghost"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v6h6M3.5 9a9 9 0 1 1-1.5 5"/></svg>Recalculate</button></div>
+        <div style="display:flex;align-items:center;gap:18px;">
+          <div class="total-wrap"><div class="total-lbl">Order total</div><div class="total-val">$363.03</div></div>
+          <button class="btn btn-primary">Send quote<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 3 — UNIFIED ADD ============ -->
+<div class="frame" style="left:1640px; top:620px;">
+  <div class="cap">
+    <div class="t"><span class="num">03</span><h2>One smart add bar</h2></div>
+    <p>The three separate add-boxes become a single search. Type once; results group by operations, diagnostics and parts — add any with one click.</p>
+  </div>
+  <div class="drawer">
+    <div class="dhead">
+      <div class="dhead-top">
+        <div><div class="dhead-eye">Repair Order</div><div class="dhead-ro">#RO-F90D5493-000054</div></div>
+        <div class="dhead-nav">
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <span class="dhead-pg">1 / 50</span>
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+          <button class="iconbtn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="dhead-meta">
+        <span class="pill"><span class="d"></span>Quoted</span>
+        <span class="chip-ghost"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="14" height="11" rx="1.5"/><path d="M15 9h4l3 3v5h-7"/><circle cx="7" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/></svg>TPS-118 · Freightliner Cascadia</span>
+      </div>
+    </div>
+    <div class="dbody" style="padding-bottom:24px;">
+      <div class="sec-label">Add work</div>
+      <div class="cmd">
+        <div class="cmd-in">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input value="brake" />
+          <span class="kbd">↵ to add</span>
+        </div>
+        <div class="cmd-grp">
+          <div class="cmd-gl">Repair operations</div>
+          <div class="cmd-opt sel">
+            <span class="cmd-oic op"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z"/></svg></span>
+            <div class="cmd-otx"><div class="cmd-on">Brake Job — Drive Axle (R&amp;R)</div><div class="cmd-om">Standard op <span class="mono">· 3.5 hr book time · 6 parts bundled</span></div></div>
+            <div class="cmd-price">from<b>$780.00</b></div>
+            <span class="cmd-add"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+          </div>
+          <div class="cmd-opt">
+            <span class="cmd-oic op"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z"/></svg></span>
+            <div class="cmd-otx"><div class="cmd-on">Brake Chamber Replacement</div><div class="cmd-om">Standard op <span class="mono">· 1.2 hr · 2 parts</span></div></div>
+            <div class="cmd-price">from<b>$245.00</b></div>
+            <span class="cmd-add"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+          </div>
+        </div>
+        <div class="cmd-grp">
+          <div class="cmd-gl">Diagnostics · hourly</div>
+          <div class="cmd-opt">
+            <span class="cmd-oic diag"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14 16 9M3.5 18a9 9 0 1 1 17 0"/></svg></span>
+            <div class="cmd-otx"><div class="cmd-on">Brake System Inspection</div><div class="cmd-om">Billed at shop rate <span class="mono">· $100.00/hr</span></div></div>
+            <div class="cmd-price">est.<b>0.5 hr</b></div>
+            <span class="cmd-add"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+          </div>
+        </div>
+        <div class="cmd-grp">
+          <div class="cmd-gl">Parts</div>
+          <div class="cmd-opt">
+            <span class="cmd-oic part"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8 12 3l9 5v8l-9 5-9-5Z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg></span>
+            <div class="cmd-otx"><div class="cmd-on">Brake Shoe Kit — Meritor Q+</div><div class="cmd-om"><span class="mono">BRK-SHOE-MER-Q001 · 12 in stock</span></div></div>
+            <div class="cmd-price">cust.<b>$142.00</b></div>
+            <span class="cmd-add"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 2px;display:flex;align-items:center;gap:8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>Operations arrive with book-time labor and their parts pre-bundled — you tune from there.</p>
+    </div>
+    <div class="foot">
+      <div class="foot-main">
+        <div class="foot-actions"><button class="btn btn-ghost">Cancel</button></div>
+        <div style="display:flex;align-items:center;gap:18px;">
+          <div class="total-wrap"><div class="total-lbl">Order total</div><div class="total-val">$363.03</div></div>
+          <button class="btn btn-primary">Send quote</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 4 — DETAIL CALLOUTS ============ -->
+<div class="frame" style="left:2420px; top:620px;">
+  <div class="cap">
+    <div class="t"><span class="num">04</span><h2>Anchored popovers</h2></div>
+    <p>The two fiddliest interactions, done right.</p>
+  </div>
+
+  <!-- price popover -->
+  <div style="margin-bottom:40px;">
+    <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);margin-bottom:12px;">Unit price editor</div>
+    <div class="callout">
+      <div class="callout-h"><span class="t">Diesel Engine Oil 15W-40</span><span class="close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+      <div class="pv-body">
+        <div class="pv-row"><span class="pv-k"><span class="dot-stock"></span>Stock cost</span><span class="pv-v" style="color:var(--muted);">$23.94</span></div>
+        <div class="pv-row"><span class="pv-k">List price</span><span class="pv-v" style="color:var(--muted);">$27.00</span></div>
+        <div class="pv-row"><span class="pv-k">Margin at this price</span><span class="pv-badge">+16.5%</span></div>
+        <div class="pv-row edit"><span class="pv-k"><span class="dot-cust"></span>Customer price</span><input class="pv-input" value="$16.50" /></div>
+      </div>
+      <div class="pv-foot"><button class="btn btn-ghost">Reset to list</button><button class="btn btn-primary">Apply</button></div>
+    </div>
+  </div>
+
+  <!-- discount editor -->
+  <div>
+    <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);margin-bottom:12px;">Discounts &amp; pricing</div>
+    <div class="callout" style="width:360px;">
+      <div class="callout-h"><span class="t">Discounts &amp; pricing</span><span class="close"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+      <div class="pv-body" style="padding:8px 16px 6px;">
+        <div class="de-row"><div class="de-k">Parts pricing<small>Apply a mode to every part</small></div><select class="de-sel"><option>Customer price</option><option>Stock + 20%</option><option>List price</option></select></div>
+        <div class="de-row"><div class="de-k">Labor discount</div><div class="de-money"><span class="cur">$</span><input value="50.00" /></div></div>
+        <div class="de-row"><div class="de-k">Order discount</div><div class="de-money"><span class="cur">$</span><input value="10.00" /></div></div>
+      </div>
+      <div class="pv-foot" style="align-items:center;justify-content:space-between;">
+        <span style="font-size:12.5px;color:var(--muted);">Customer saves <b style="font-family:var(--mono);color:var(--green);">$56.97</b></span>
+        <button class="btn btn-primary" style="flex:none;">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -5,7 +5,7 @@ tenant preload via API endpoints and the preload_catalog.py CLI script.
 from decimal import Decimal
 
 DEFAULT_CATEGORIES = [
-    {"name": "PM Services",    "description": "Preventive maintenance to keep your fleet running", "icon": "🔧", "sort_order": 1},
+    {"name": "PM Services",    "description": "Preventive maintenance to keep your fleet running", "icon": "🔧", "sort_order": 1, "is_pm": True},
     {"name": "Brakes",         "description": "Brake services and repairs",                        "icon": "🛑", "sort_order": 2},
     {"name": "Inspections",    "description": "Safety and compliance inspections",                 "icon": "📋", "sort_order": 3},
     {"name": "Tires",          "description": "Tire services and replacements",                   "icon": "🛞", "sort_order": 4},

@@ -497,7 +497,16 @@ export default function RepairOrdersPage() {
   const showLegacyPriceEditor = false
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
   const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
+  const priceBuilderOwnsShell = showPriceBuilder
   const showLaborBreakdown = detailStatus ? LABOR_BREAKDOWN_STATUSES.includes(detailStatus) : false
+  // Internal fleet work orders (e.g. PMs) carry their parts & labor throughout
+  // the job, not just in draft/quoted. Surface — and keep editable — the line
+  // items for internal orders across active statuses so the owner can see and
+  // adjust the work (oil, filters, labor) while it's in progress. Internal ROs
+  // freeze only once completed/invoiced/paid/cancelled.
+  const isInternalOrder = !!(orderDetail ?? selectedOrder)?.is_internal
+  const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
+  const showInternalLineItems = isInternalOrder && detailStatus != null && !INTERNAL_FROZEN_STATUSES.includes(detailStatus)
   // Internal fleet ROs can be deleted at any status (no customer invoice/payment
   // to protect), so the danger zone stays available for them beyond draft/quoted.
   const showDangerZone = (orderDetail ?? selectedOrder)?.is_internal
@@ -600,7 +609,7 @@ export default function RepairOrdersPage() {
   })
 
   const assignMechanicMutation = useMutation({
-    mutationFn: async ({ orderId, mechanicId, orderStatus: _orderStatus }: { orderId: string; mechanicId: string; orderStatus?: string }) => {
+    mutationFn: async ({ orderId, mechanicId }: { orderId: string; mechanicId: string; orderStatus?: string }) => {
       // Use dedicated endpoint for all assignment/reassignment actions so mechanic notifications are sent.
       if (mechanicId) {
         const response = await api.post(`/repair-orders/${orderId}/assign-mechanic`, { mechanic_id: mechanicId })
@@ -2095,13 +2104,14 @@ export default function RepairOrdersPage() {
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
         width="max-w-[max(400px,_min(90vw,_1100px))]"
-        onPrev={showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
-        onNext={showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
+        hideHeader={priceBuilderOwnsShell}
+        onPrev={!priceBuilderOwnsShell && showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
+        onNext={!priceBuilderOwnsShell && showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
         prevDisabled={!hasPrev}
         nextDisabled={!hasNext}
-        navigationLabel={showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
+        navigationLabel={!priceBuilderOwnsShell && showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
         headerExtra={
-          selectedOrder && (() => {
+          !priceBuilderOwnsShell && selectedOrder && (() => {
             const detailOrder = orderDetail ?? selectedOrder
             const display = resolveOrderDisplayStatus({
               status: detailOrder.status,
@@ -2120,7 +2130,7 @@ export default function RepairOrdersPage() {
           })()
         }
         footer={
-          selectedOrder && showDangerZone && (
+          !priceBuilderOwnsShell && selectedOrder && showDangerZone && (
             <div className="-mx-6 -my-4 space-y-2 bg-red-50 px-6 py-3">
               <button
                 type="button"
@@ -2169,11 +2179,11 @@ export default function RepairOrdersPage() {
         }
       >
         {selectedOrder && (
-          <div className="p-6 space-y-6">
+          <div className={priceBuilderOwnsShell ? 'h-full min-h-0' : 'p-6 space-y-6'}>
 
                 {/* Quote Workflow — the customer quote/approval flow doesn't
                     apply to internal fleet ROs (the fleet manager runs them). */}
-                {!selectedOrder.is_internal && (() => {
+                {!priceBuilderOwnsShell && !selectedOrder.is_internal && (() => {
                   const hasQuote = !!quoteForOrder
                   const isApproved = quoteForOrder?.is_approved
                   const isSent = quoteForOrder?.sent_to_customer || quoteSent
@@ -2526,8 +2536,54 @@ export default function RepairOrdersPage() {
                     orderStatus={(orderDetail ?? selectedOrder).status}
                     services={services}
                     canEdit={canEditPriceBuilderByRole}
+                    isInternalOrder={!!(orderDetail ?? selectedOrder).is_internal}
                     defaultLaborRate={taxFeeSettings?.labor_rate}
                     description={selectedOrder.description}
+                    orderNumber={selectedOrder.order_number}
+                    navigationLabel={showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
+                    customerName={customerDisplayName}
+                    vehicleLabel={paymentVehicleLabel}
+                    vehicleUnit={selectedOrderVehicle?.unit_number}
+                    vehicleVin={selectedOrderVehicle?.vin}
+                    vehicleYear={selectedOrderVehicle?.year}
+                    vehicleMake={selectedOrderVehicle?.make}
+                    vehicleModel={selectedOrderVehicle?.model}
+                    customerEmail={selectedOrderCustomer?.email}
+                    customerPhone={selectedOrderCustomer?.phone}
+                    vehiclePlate={selectedOrderVehicle?.license_plate}
+                    mileageIn={selectedOrder.mileage_in}
+                    mileageOut={selectedOrder.mileage_out}
+                    poNumber={selectedOrder.po_number}
+                    orderTypeLabel={selectedOrder.is_warranty_repair ? 'Warranty' : selectedOrder.parent_repair_order_id ? 'Comeback' : 'Standard'}
+                    quoteNumber={quoteForOrder?.quote_number}
+                    onClose={closeDetail}
+                    onPrev={showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
+                    onNext={showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
+                    prevDisabled={!hasPrev}
+                    nextDisabled={!hasNext}
+                    showDangerActions={showDangerActions}
+                    onToggleDangerActions={() => setShowDangerActions((prev) => !prev)}
+                    onCancelOrder={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
+                    onDeleteOrder={() => setShowDeleteConfirm(true)}
+                    cancelPending={cancelRepairOrderMutation.isPending}
+                    deletePending={deleteRepairOrderMutation.isPending}
+                    cancelDisabled={(orderDetail ?? selectedOrder).status === 'cancelled'}
+                    recommendedServices={recommendedServices}
+                    showAddRecommendedService={showAddRecService}
+                    recommendedServiceForm={recServiceForm}
+                    onToggleAddRecommendedService={() => setShowAddRecService((prev) => !prev)}
+                    onRecommendedServiceFormChange={setRecServiceForm}
+                    onAddRecommendedService={() => addRecServiceMutation.mutate({
+                      description: recServiceForm.description.trim(),
+                      priority: recServiceForm.priority,
+                      estimated_cost: recServiceForm.estimated_cost ? parseFloat(recServiceForm.estimated_cost) : undefined,
+                      notes: recServiceForm.notes || undefined,
+                    })}
+                    onResolveRecommendedService={(serviceId) => resolveRecServiceMutation.mutate(serviceId)}
+                    onDeleteRecommendedService={(serviceId) => deleteRecServiceMutation.mutate(serviceId)}
+                    addRecommendedPending={addRecServiceMutation.isPending}
+                    resolveRecommendedPending={resolveRecServiceMutation.isPending}
+                    deleteRecommendedPending={deleteRecServiceMutation.isPending}
                     onUpdated={() => {
                       refetchOrderDetail()
                       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
@@ -2543,7 +2599,7 @@ export default function RepairOrdersPage() {
                   />
                 )}
 
-                {showPriceBuilder && showLegacyPriceEditor && (
+                {showPriceBuilder && showLegacyPriceEditor && !priceBuilderOwnsShell && (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Estimate</h3>
                   <div className="bg-gray-50 rounded-xl">
@@ -2626,12 +2682,37 @@ export default function RepairOrdersPage() {
                   )
                 })()}
 
-                {/* Parts and labor: use detail when available */}
-                {showPriceBuilder && (() => {
+                {/* PM services: the scope of a fleet PM work order (which
+                    services it covers). The seeded parts & labor appear below. */}
+                {(orderDetail?.pm_services?.length ?? 0) > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">PM Services</h3>
+                    <div className="bg-gray-50 rounded-xl divide-y divide-gray-200">
+                      {orderDetail!.pm_services!.map((s) => (
+                        <div key={s.service_id} className="flex items-center justify-between gap-2 px-4 py-2.5 text-sm">
+                          <span className="font-medium text-gray-800">{s.name}</span>
+                          {s.duration_minutes ? (
+                            <span className="text-xs text-gray-500 shrink-0">{s.duration_minutes} min</span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Parts and labor: use detail when available. Shown for draft/
+                    quoted (price builder) and for internal orders through their
+                    active statuses (e.g. an in-progress PM). */}
+                {(showPriceBuilder || showInternalLineItems) && (() => {
                   const displayOrder = orderDetail ?? selectedOrder
                   const partsUsage = orderDetail?.parts_usage ?? []
                   const laborItems = orderDetail?.labor_items ?? []
-                  const canEditLineItems = displayOrder && ['draft', 'quoted'].includes(displayOrder.status)
+                  // Line items stay editable in draft/quoted, and — for internal
+                  // orders — through their active statuses until they freeze.
+                  const canEditLineItems = !!displayOrder && (
+                    ['draft', 'quoted'].includes(displayOrder.status) ||
+                    (isInternalOrder && showInternalLineItems)
+                  )
                   const hasSelectedServices = !!parseServiceNotes(selectedOrder?.internal_notes)?.length
                   const hasPartsUsage = partsUsage.length > 0
                   const showLaborSection = !hasSelectedServices || laborItems.length > 0
@@ -2893,6 +2974,7 @@ export default function RepairOrdersPage() {
                 </div>
                 )}
 
+                {!priceBuilderOwnsShell && (
                 <div>
                   <button
                     type="button"
@@ -2994,6 +3076,7 @@ export default function RepairOrdersPage() {
                     </div>
                   )}
                 </div>
+                )}
 
 
                 {/* Approve Completion Button for pending_review status */}
@@ -3478,6 +3561,7 @@ export default function RepairOrdersPage() {
                 )}
 
                 {/* Recommended / Deferred Services */}
+                {!priceBuilderOwnsShell && (
                 <div className="rounded-xl border border-gray-200 overflow-hidden">
                   <button
                     type="button"
@@ -3607,6 +3691,7 @@ export default function RepairOrdersPage() {
                     <p className="text-xs text-gray-400 px-3 py-2">No recommended services recorded.</p>
                   )}
                 </div>
+                )}
               </div>
             )}
       </SlidePanel>

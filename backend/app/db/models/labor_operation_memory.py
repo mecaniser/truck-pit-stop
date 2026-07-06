@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -19,6 +19,17 @@ class LaborOperationMemory(BaseModel):
     operation_key = Column(String(255), nullable=False, index=True)
     operation_name = Column(String(255), nullable=False)
     operation_description = Column(Text, nullable=True)
+    vehicle_year = Column(Integer, nullable=True, index=True)
+    vehicle_make = Column(String(100), nullable=True, index=True)
+    vehicle_model = Column(String(100), nullable=True, index=True)
+    vehicle_type = Column(String(100), nullable=True)
+    body_class = Column(String(150), nullable=True)
+    engine = Column(String(150), nullable=True, index=True)
+    fuel_type = Column(String(100), nullable=True)
+    engine_cylinders = Column(Integer, nullable=True)
+    engine_displacement_l = Column(Float, nullable=True)
+    gvwr = Column(String(100), nullable=True)
+    vin_sample = Column(String(17), nullable=True)
     provider_operation_id = Column(String(120), nullable=True, index=True)
     source_provider = Column(String(50), nullable=False, default="internal_memory")
     normalized_hours = Column(Numeric(5, 2), nullable=False)

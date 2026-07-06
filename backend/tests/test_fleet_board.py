@@ -128,11 +128,228 @@ async def test_schedule_pm_and_new_work_order(db_session):
     res = await fleet.schedule_pm(vehicle_id=v.id, body=SchedulePMRequest(create_work_order=True),
                                   db=db_session, current_user=user)
     assert res.work_order is not None
+    # the spawned PM work order is surfaced on its own field, flagged and in draft
+    assert res.pm_work_order is not None
+    assert res.pm_work_order.is_pm is True
+    assert res.pm_work_order.raw_status == "draft"
     # the spawned RO is an internal PM order
     ros = (await db_session.execute(
         __import__("sqlalchemy").select(RepairOrder).where(RepairOrder.vehicle_id == v.id)
     )).scalars().all()
     assert len(ros) == 1 and ros[0].is_internal and ros[0].is_pm
 
+    # A non-PM work order must not populate pm_work_order.
     res2 = await fleet.new_work_order(vehicle_id=v.id, db=db_session, current_user=user)
     assert res2.work_order is not None
+    assert res2.pm_work_order is not None  # the PM WO still exists
+    assert res2.pm_work_order.repair_order_id == res.pm_work_order.repair_order_id
+
+
+@pytest.mark.asyncio
+async def test_pm_services_default_package_and_seeding(db_session):
+    """Setting a truck's default PM package, then scheduling a PM with a work
+    order, copies the services onto the RO, rolls their names into the
+    description, and seeds owner-facing labor + parts cost lines at internal
+    cost."""
+    import sqlalchemy as sa
+    from app.db.models.service import Service, ServicePart
+    from app.db.models.inventory import Inventory, PartsUsage
+    from app.db.models.labor import Labor
+    from app.schemas.fleet import SchedulePMRequest, PMServicesUpdate
+
+    tenant, fc, user = await _seed(db_session)
+    # Internal labor rate drives seeded labor cost.
+    tenant.internal_labor_rate = Decimal("50.00")
+    await db_session.commit()
+
+    v = _vehicle(tenant.id, fc.id, unit_number="SVC", next_pm_miles=120000)
+    part = Inventory(id=uuid4(), tenant_id=tenant.id, sku="OIL-1", name="Oil filter",
+                     stock_quantity=10, cost=Decimal("8.00"), selling_price=Decimal("20.00"))
+    svc = Service(id=uuid4(), tenant_id=tenant.id, name="Oil change", duration_minutes=60)
+    db_session.add_all([v, part, svc])
+    await db_session.commit()
+    db_session.add(ServicePart(id=uuid4(), tenant_id=tenant.id, service_id=svc.id,
+                               inventory_id=part.id, quantity=2))
+    await db_session.commit()
+
+    # Set the truck's default PM package.
+    entries = await fleet.set_truck_pm_services(
+        vehicle_id=v.id, body=PMServicesUpdate(service_ids=[svc.id]),
+        db=db_session, current_user=user)
+    assert [e.name for e in entries] == ["Oil change"]
+
+    # Scheduling a PM + work order (no explicit services) uses the default.
+    res = await fleet.schedule_pm(
+        vehicle_id=v.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+    ro_id = res.pm_work_order.repair_order_id
+
+    ro = (await db_session.execute(sa.select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one()
+    assert "Oil change" in (ro.description or "")
+
+    # Owner-facing labor: 1h × $50 = $50, tagged to the source service.
+    labor = (await db_session.execute(sa.select(Labor).where(Labor.repair_order_id == ro_id))).scalars().all()
+    assert len(labor) == 1
+    assert labor[0].source_service_id == svc.id
+    assert Decimal(str(labor[0].total_cost)) == Decimal("50.00")
+
+    # Owner-facing parts: 2 × cost $8 = $16, at internal cost (not selling price).
+    parts = (await db_session.execute(sa.select(PartsUsage).where(PartsUsage.repair_order_id == ro_id))).scalars().all()
+    assert len(parts) == 1
+    assert parts[0].quantity == 2
+    assert Decimal(str(parts[0].unit_price)) == Decimal("8.00")
+    assert Decimal(str(parts[0].total_price)) == Decimal("16.00")
+
+    # RO totals reflect the seeded lines.
+    ro = (await db_session.execute(sa.select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one()
+    assert Decimal(str(ro.total_cost)) == Decimal("66.00")
+
+
+@pytest.mark.asyncio
+async def test_set_wo_pm_services_on_existing_draft(db_session):
+    """A PM work order created without services (the screenshot case) can have
+    services added afterward via the work-order endpoint, which seeds the cost
+    lines. Re-selecting replaces the previously seeded lines idempotently."""
+    import sqlalchemy as sa
+    from app.db.models.service import Service
+    from app.db.models.labor import Labor
+    from app.schemas.fleet import SchedulePMRequest, PMServicesUpdate
+
+    tenant, fc, user = await _seed(db_session)
+    tenant.internal_labor_rate = Decimal("40.00")
+    await db_session.commit()
+
+    v = _vehicle(tenant.id, fc.id, unit_number="DRF", next_pm_miles=120000)
+    s1 = Service(id=uuid4(), tenant_id=tenant.id, name="Brake check", duration_minutes=30)
+    s2 = Service(id=uuid4(), tenant_id=tenant.id, name="Air filter", duration_minutes=90)
+    db_session.add_all([v, s1, s2])
+    await db_session.commit()
+
+    # PM work order created with NO services (empty default package).
+    res = await fleet.schedule_pm(
+        vehicle_id=v.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+    ro_id = res.pm_work_order.repair_order_id
+    assert res.pm_work_order.raw_status == "draft"
+    labor0 = (await db_session.execute(sa.select(Labor).where(Labor.repair_order_id == ro_id))).scalars().all()
+    assert labor0 == []  # nothing seeded yet
+
+    # Add both services via the work-order endpoint → seeds 0.5h + 1.5h = 2h × $40.
+    entries = await fleet.set_wo_pm_services(
+        ro_id=ro_id, body=PMServicesUpdate(service_ids=[s1.id, s2.id]),
+        db=db_session, current_user=user)
+    assert [e.name for e in entries] == ["Brake check", "Air filter"]
+    ro = (await db_session.execute(sa.select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one()
+    assert Decimal(str(ro.total_labor_cost)) == Decimal("80.00")
+
+    # Re-select just one service → old seeded lines are replaced, not duplicated.
+    await fleet.set_wo_pm_services(
+        ro_id=ro_id, body=PMServicesUpdate(service_ids=[s1.id]),
+        db=db_session, current_user=user)
+    labor = (await db_session.execute(sa.select(Labor).where(Labor.repair_order_id == ro_id))).scalars().all()
+    assert len(labor) == 1  # only Brake check remains
+    ro = (await db_session.execute(sa.select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one()
+    assert Decimal(str(ro.total_labor_cost)) == Decimal("20.00")  # 0.5h × $40
+
+
+@pytest.mark.asyncio
+async def test_pm_service_catalog_only_pm_category(db_session):
+    """The PM catalog endpoint returns only services in a PM-flagged category
+    (is_pm) — not brakes, tires, or uncategorized services. The category name is
+    irrelevant; only the flag matters."""
+    from app.db.models.service import Service, ServiceCategory
+
+    tenant, fc, user = await _seed(db_session)
+    # Deliberately NOT named "PM Services" — the flag is what counts.
+    pm_cat = ServiceCategory(id=uuid4(), tenant_id=tenant.id, name="Scheduled Maintenance", is_pm=True)
+    brake_cat = ServiceCategory(id=uuid4(), tenant_id=tenant.id, name="Brakes", is_pm=False)
+    db_session.add_all([pm_cat, brake_cat])
+    await db_session.commit()
+    db_session.add_all([
+        Service(id=uuid4(), tenant_id=tenant.id, name="PM Level A", category_id=pm_cat.id, duration_minutes=60),
+        Service(id=uuid4(), tenant_id=tenant.id, name="Oil Change Only", category_id=pm_cat.id, duration_minutes=30),
+        Service(id=uuid4(), tenant_id=tenant.id, name="Brake Job", category_id=brake_cat.id, duration_minutes=120),
+        Service(id=uuid4(), tenant_id=tenant.id, name="Uncategorized", category_id=None, duration_minutes=45),
+        # Inactive PM service must be excluded.
+        Service(id=uuid4(), tenant_id=tenant.id, name="Old PM", category_id=pm_cat.id, is_active=False),
+    ])
+    await db_session.commit()
+
+    catalog = await fleet.pm_service_catalog(db=db_session, current_user=user)
+    names = {e.name for e in catalog}
+    assert names == {"PM Level A", "Oil Change Only"}
+
+
+@pytest.mark.asyncio
+async def test_delete_pm_work_order_with_services(db_session):
+    """A PM work order with attached services (and seeded labor/parts) can be
+    deleted — the repair_order_pm_services rows don't block the FK."""
+    import sqlalchemy as sa
+    from app.db.models.service import Service
+    from app.db.models.fleet import RepairOrderPMService
+    from app.api.v1.endpoints.repair_orders import delete_repair_order
+    from app.schemas.fleet import SchedulePMRequest
+
+    tenant, fc, user = await _seed(db_session)
+    v = _vehicle(tenant.id, fc.id, unit_number="DEL", next_pm_miles=120000)
+    svc = Service(id=uuid4(), tenant_id=tenant.id, name="Oil change", duration_minutes=60)
+    db_session.add_all([v, svc])
+    await db_session.commit()
+
+    res = await fleet.schedule_pm(
+        vehicle_id=v.id,
+        body=SchedulePMRequest(create_work_order=True, service_ids=[svc.id]),
+        db=db_session, current_user=user)
+    ro_id = res.pm_work_order.repair_order_id
+    # Sanity: the PM service link row exists (this is what used to block delete).
+    links = (await db_session.execute(
+        sa.select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro_id)
+    )).scalars().all()
+    assert len(links) == 1
+
+    # Delete must succeed and remove the RO + its PM service links.
+    await delete_repair_order(order_id=ro_id, db=db_session, current_user=user)
+
+    assert (await db_session.execute(
+        sa.select(RepairOrder).where(RepairOrder.id == ro_id)
+    )).scalar_one_or_none() is None
+    assert (await db_session.execute(
+        sa.select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro_id)
+    )).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_ro_detail_includes_pm_services(db_session):
+    """The repair-order detail payload surfaces the PM services (scope) and the
+    seeded parts/labor, so the owner's dashboard can display an in-progress PM."""
+    from app.db.models.service import Service, ServicePart
+    from app.db.models.inventory import Inventory
+    from app.api.v1.endpoints.repair_orders import get_repair_order_detail
+    from app.schemas.fleet import SchedulePMRequest
+
+    tenant, fc, user = await _seed(db_session)
+    tenant.internal_labor_rate = Decimal("50.00")
+    await db_session.commit()
+
+    v = _vehicle(tenant.id, fc.id, unit_number="DET", next_pm_miles=120000)
+    part = Inventory(id=uuid4(), tenant_id=tenant.id, sku="OIL", name="Oil filter",
+                     stock_quantity=5, cost=Decimal("8.00"), selling_price=Decimal("20.00"))
+    svc = Service(id=uuid4(), tenant_id=tenant.id, name="PM Level A", duration_minutes=60)
+    db_session.add_all([v, part, svc])
+    await db_session.commit()
+    db_session.add(ServicePart(id=uuid4(), tenant_id=tenant.id, service_id=svc.id,
+                               inventory_id=part.id, quantity=2))
+    await db_session.commit()
+
+    res = await fleet.schedule_pm(
+        vehicle_id=v.id,
+        body=SchedulePMRequest(create_work_order=True, service_ids=[svc.id]),
+        db=db_session, current_user=user)
+    ro_id = res.pm_work_order.repair_order_id
+
+    detail = await get_repair_order_detail(order_id=ro_id, db=db_session, current_user=user)
+    assert detail.is_pm is True
+    assert [s.name for s in detail.pm_services] == ["PM Level A"]
+    # Seeded parts & labor are on the payload for display.
+    assert any(p.inventory_name == "Oil filter" and p.quantity == 2 for p in detail.parts_usage)
+    assert any(Decimal(str(l.total_cost)) == Decimal("50.00") for l in detail.labor_items)

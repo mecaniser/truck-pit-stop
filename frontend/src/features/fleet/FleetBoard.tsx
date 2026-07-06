@@ -1,4 +1,4 @@
-import { Truck, Navigation, Wrench, Gauge, Box, ClipboardList, MapPin, User, Search, ChevronRight, Check } from 'lucide-react'
+import { Truck, Navigation, Wrench, Gauge, Box, ClipboardList, MapPin, User, Search, ChevronRight, Check, AlertTriangle } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, fmt, pmState, rank } from './helpers'
 
@@ -59,6 +59,13 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
         </div>
       ) : (
         <div className="tcard-wo tcard-wo--clear"><Check size={13} /><span>No open work orders</span></div>
+      )}
+      {t.warning_lights && t.warning_lights.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: 'var(--red)', fontSize: 12 }}
+          title={t.warning_lights.join(', ')}>
+          <AlertTriangle size={13} />
+          <span>{t.warning_lights.length === 1 ? t.warning_lights[0] : `${t.warning_lights.length} warning lights`}</span>
+        </div>
       )}
       <span className="tcard-go"><ChevronRight size={16} /></span>
     </button>

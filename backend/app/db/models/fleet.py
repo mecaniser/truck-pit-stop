@@ -9,6 +9,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -25,19 +26,29 @@ INSPECTION_INTERVAL_DAYS = 7
 
 # Default checklist template instantiated for each new inspection. Fixed in code
 # for v1; (category, label) pairs become FleetInspectionItem rows.
-DEFAULT_INSPECTION_CHECKLIST: list[tuple[str, str]] = [
-    ("Brakes", "Brake pads & rotors"),
-    ("Brakes", "Air brake system / lines"),
-    ("Tires", "Tread depth & wear"),
-    ("Tires", "Tire pressure"),
-    ("Lights", "Headlights & turn signals"),
-    ("Lights", "Brake & marker lights"),
-    ("Fluids", "Engine oil level"),
-    ("Fluids", "Coolant level"),
-    ("Fluids", "Leaks under vehicle"),
-    ("Steering", "Steering & suspension play"),
-    ("Safety", "Horn, wipers & mirrors"),
-    ("Safety", "Seatbelts & fire extinguisher"),
+# Checklist items are (category, label, is_warning_light). A warning-light item
+# is a dashboard telltale grouped inline with the related physical checks;
+# marking it FAIL means that light is illuminated and needs attention.
+DEFAULT_INSPECTION_CHECKLIST: list[tuple[str, str, bool]] = [
+    ("Brakes", "Brake pads & rotors", False),
+    ("Brakes", "Air brake system / lines", False),
+    ("Brakes", "ABS", True),
+    ("Brakes", "Brake / low air", True),
+    ("Tires", "Tread depth & wear", False),
+    ("Tires", "Tire pressure", False),
+    ("Tires", "Tire pressure (TPMS)", True),
+    ("Lights", "Headlights & turn signals", False),
+    ("Lights", "Brake & marker lights", False),
+    ("Fluids", "Engine oil level", False),
+    ("Fluids", "Coolant level", False),
+    ("Fluids", "Leaks under vehicle", False),
+    ("Fluids", "Oil pressure", True),
+    ("Fluids", "Coolant temp", True),
+    ("Engine & emissions", "Check engine (MIL)", True),
+    ("Engine & emissions", "DEF low", True),
+    ("Steering", "Steering & suspension play", False),
+    ("Safety", "Horn, wipers & mirrors", False),
+    ("Safety", "Seatbelts & fire extinguisher", False),
 ]
 
 
@@ -95,6 +106,8 @@ class FleetInspection(BaseModel):
     performed_at = Column(DateTime(timezone=True), nullable=True)
     odometer = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
+    # Work order created to fix this inspection's failed items (traceability).
+    repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=True)
 
     vehicle = relationship("Vehicle")
     inspector = relationship("User", foreign_keys=[inspector_id])
@@ -114,6 +127,8 @@ class FleetInspectionItem(BaseModel):
     )
     category = Column(String(80), nullable=False)
     label = Column(String(160), nullable=False)
+    # Dashboard warning/telltale light (vs a physical check). FAIL = illuminated.
+    is_warning_light = Column(Boolean, nullable=False, default=False)
     result = _enum_col(InspectionItemResult, nullable=False, default=InspectionItemResult.PENDING)
     note = Column(Text, nullable=True)
 
@@ -143,3 +158,35 @@ class FleetIncident(BaseModel):
     vehicle = relationship("Vehicle")
     reported_by = relationship("User", foreign_keys=[reported_by_id])
     repair_order = relationship("RepairOrder")
+
+
+class VehiclePMService(BaseModel):
+    """A truck's saved default PM service package. Each row links a truck to a
+    catalog Service that should be part of that truck's preventive maintenance.
+    Scheduling a PM copies these onto the work order (see RepairOrderPMService),
+    where they can then be adjusted per-PM without changing this default."""
+    __tablename__ = "vehicle_pm_services"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=False, index=True)
+    service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=False, index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    vehicle = relationship("Vehicle")
+    service = relationship("Service")
+
+
+class RepairOrderPMService(BaseModel):
+    """The services attached to a specific PM work order. Copied from the truck's
+    default package (VehiclePMService) at creation, then editable per-PM. Drives
+    the manager-facing PM scope (work order description) and the owner-facing
+    seeded labor/parts cost lines."""
+    __tablename__ = "repair_order_pm_services"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=False, index=True)
+    service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=False, index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+
+    repair_order = relationship("RepairOrder")
+    service = relationship("Service")

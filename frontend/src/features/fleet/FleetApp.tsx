@@ -5,15 +5,17 @@ import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, CalendarRange, ClipboardList, Users,
   Bell, LogOut, Plus, Loader2, X, Wrench, ArrowLeft, Settings, UserRound, KeyRound, Eye, EyeOff,
+  Calendar, Play, Flag, ClipboardCheck, ChevronsLeft, ChevronsRight, Pencil,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
-import { STATUS_META, fmt, fmtDate, pmState, initials } from './helpers'
+import { STATUS_META, fmt, pmState, initials } from './helpers'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
+import { SchedulePMModal, WorkOrderPanel } from './FleetModals'
 import './fleet.css'
 
 type View = 'board' | 'map' | 'schedule' | 'orders' | 'drivers' | 'detail'
@@ -37,6 +39,7 @@ export default function FleetApp() {
   const [adding, setAdding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [clock, setClock] = useState(() => new Date())
+  const [railExpanded, setRailExpanded] = useState(() => localStorage.getItem('tps-fleet-rail') === '1')
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 30000)
@@ -55,13 +58,14 @@ export default function FleetApp() {
 
   const openTruck = (id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
+  const toggleRail = () => setRailExpanded((v) => { localStorage.setItem('tps-fleet-rail', v ? '0' : '1'); return !v })
 
-  const railItems: [View, React.ReactNode, string][] = [
-    ['board', <LayoutGrid size={20} />, 'Fleet board'],
-    ['map', <MapIcon size={20} />, 'Live map'],
-    ['schedule', <CalendarRange size={20} />, 'PM schedule'],
-    ['orders', <ClipboardList size={20} />, 'Work orders'],
-    ['drivers', <Users size={20} />, 'Drivers'],
+  const railItems: [View, React.ReactNode, string, string][] = [
+    ['board', <LayoutGrid size={20} />, 'Fleet board', 'FB'],
+    ['map', <MapIcon size={20} />, 'Live map', 'MAP'],
+    ['schedule', <CalendarRange size={20} />, 'PM schedule', 'PM'],
+    ['orders', <ClipboardList size={20} />, 'Work orders', 'WO'],
+    ['drivers', <Users size={20} />, 'Drivers', 'DRV'],
   ]
   const titles: Record<View, string> = {
     board: 'Fleet Board', map: 'Live Map', schedule: 'PM Schedule',
@@ -76,27 +80,33 @@ export default function FleetApp() {
   return (
     <div className="fleet-root">
       <div className="app">
-        <nav className="rail">
+        <nav className={'rail' + (railExpanded ? ' is-expanded' : '')}>
           <div className="rail-mark"><Truck /></div>
           {canReturnToDashboard && (
             <>
               <button className="rail-btn rail-btn-back" onClick={() => navigate('/dashboard')}>
-                <ArrowLeft size={20} /><span className="rail-tip">Back to dashboard</span>
+                <ArrowLeft size={20} /><span className="rail-abbr">Back</span><span className="rail-full">Back to dashboard</span><span className="rail-tip">Back to dashboard</span>
               </button>
               <div className="rail-div" />
             </>
           )}
-          {railItems.map(([v, icon, tip]) => (
+          {railItems.map(([v, icon, tip, abbr]) => (
             <button key={v} className={'rail-btn' + (view === v || (v === 'board' && view === 'detail') ? ' is-on' : '')} onClick={() => goView(v)}>
-              {icon}<span className="rail-tip">{tip}</span>
+              {icon}<span className="rail-abbr">{abbr}</span><span className="rail-full">{tip}</span><span className="rail-tip">{tip}</span>
             </button>
           ))}
           <div className="rail-sp" />
+          <button className="rail-btn rail-btn-toggle" onClick={toggleRail} title={railExpanded ? 'Collapse' : 'Expand'}>
+            {railExpanded ? <ChevronsLeft size={20} /> : <ChevronsRight size={20} />}
+            <span className="rail-abbr">{railExpanded ? '«' : '»'}</span>
+            <span className="rail-full">{railExpanded ? 'Collapse' : 'Expand'}</span>
+            <span className="rail-tip">{railExpanded ? 'Collapse' : 'Expand'}</span>
+          </button>
           <button className="rail-btn" onClick={() => setSettingsOpen(true)}>
-            <Settings size={20} /><span className="rail-tip">Settings</span>
+            <Settings size={20} /><span className="rail-abbr">SET</span><span className="rail-full">Settings</span><span className="rail-tip">Settings</span>
           </button>
           <button className="rail-btn" onClick={async () => { try { await logout() } finally { navigate('/login', { replace: true }) } }}>
-            <LogOut size={20} /><span className="rail-tip">Log out</span>
+            <LogOut size={20} /><span className="rail-abbr">OUT</span><span className="rail-full">Log out</span><span className="rail-tip">Log out</span>
           </button>
           <button
             type="button"
@@ -171,24 +181,150 @@ function MapPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: string
 }
 
 function SchedulePage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: string) => void }) {
-  const list = [...trucks].sort((a, b) => (a.pm_remaining ?? 1e9) - (b.pm_remaining ?? 1e9)).slice(0, 12)
+  // Group by PM status so the trucks needing attention surface first: Overdue,
+  // then Due soon, then the ones that are fine. Each group is sorted by how
+  // close the PM is (fewest miles remaining first).
+  const sorted = [...trucks].sort((a, b) => (a.pm_remaining ?? 1e9) - (b.pm_remaining ?? 1e9))
+  const groups: { key: string; title: string; cls: string; trucks: BoardTruck[] }[] = [
+    { key: 'over', title: 'Overdue', cls: 'u-over', trucks: [] },
+    { key: 'soon', title: 'Due soon', cls: 'u-soon', trucks: [] },
+    { key: 'ok', title: 'On track', cls: 'u-ok', trucks: [] },
+  ]
+  for (const t of sorted) {
+    const cls = pmState(t).cls
+    const g = cls === 'pm-over' ? groups[0] : cls === 'pm-soon' ? groups[1] : groups[2]
+    g.trucks.push(t)
+  }
+
   return (
-    <div className="sgrid">
-      {list.map((t) => {
-        const pm = pmState(t)
-        const ucls = pm.cls === 'pm-over' ? 'u-over' : pm.cls === 'pm-soon' ? 'u-soon' : 'u-ok'
-        return (
-          <button key={t.id} className="scard" onClick={() => onOpen(t.id)}>
-            <div className="tcard-unit" style={{ fontSize: 20 }}>{t.unit_number}</div>
-            <div className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</div>
-            <div className={'scard-urgency ' + ucls}>{pm.label}</div>
-            <div className="tcard-odo" style={{ borderTop: 'none', paddingTop: 0 }}>
-              <span>ODO</span><b>{fmt(t.odometer)}</b>
-              <span>mi · next at {fmt(t.next_pm_miles)}{t.pm_due_date ? ` · by ${fmtDate(t.pm_due_date)}` : ''}</span>
-            </div>
+    <div className="pm-groups">
+      {groups.filter((g) => g.trucks.length > 0).map((g) => (
+        <section key={g.key} className="pm-group">
+          <h3 className="pm-group-h">
+            <span className={'pm-group-dot ' + g.cls} />
+            {g.title}
+            <span className="pm-group-count">{g.trucks.length}</span>
+          </h3>
+          <div className="sgrid">
+            {g.trucks.map((t) => (
+              <PmCard key={t.id} truck={t} onOpen={onOpen} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+// The four PM lifecycle stages a schedule card can be in. The card exposes only
+// the transitions valid from the current stage; the full work order (parts,
+// labor, mechanic) still opens via the WorkOrderPanel.
+type PmStage = 'none' | 'scheduled' | 'ready' | 'progress'
+
+function pmStage(t: BoardTruck): PmStage {
+  const wo = t.pm_work_order
+  if (wo) {
+    return ['in_progress', 'pending_review'].includes(wo.raw_status || '') ? 'progress' : 'ready'
+  }
+  // No PM work order yet: scheduled if a date or target odometer is set.
+  if (t.pm_due_date || t.next_pm_miles != null) return 'scheduled'
+  return 'none'
+}
+
+const STAGE_META: Record<PmStage, { label: string; cls: string }> = {
+  none: { label: 'Not scheduled', cls: 'stg-none' },
+  scheduled: { label: 'Scheduled', cls: '' },
+  ready: { label: 'Work order ready', cls: 'stg-ready' },
+  progress: { label: 'In progress', cls: 'stg-progress' },
+}
+
+function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) => void }) {
+  const qc = useQueryClient()
+  // null = closed; 'reschedule' = adjust schedule only; 'create' = pick services
+  // and create the work order in one step (Schedule PM modal pre-set to create).
+  const [scheduleMode, setScheduleMode] = useState<null | 'reschedule' | 'create'>(null)
+  const [woPanelId, setWoPanelId] = useState<string | null>(null)
+
+  const pm = pmState(t)
+  const ucls = pm.cls === 'pm-over' ? 'u-over' : pm.cls === 'pm-soon' ? 'u-soon' : 'u-ok'
+  const stage = pmStage(t)
+  const stageMeta = STAGE_META[stage]
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['fleet-board'] }); qc.invalidateQueries({ queryKey: ['fleet-truck', t.id] }) }
+
+  const startPM = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/work-orders/${t.pm_work_order!.repair_order_id}/start`)).data,
+    onSuccess: () => { toast.success('PM started'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to start PM'),
+  })
+
+  return (
+    <div className="scard">
+      <button className="scard-hd" onClick={() => onOpen(t.id)}>
+        <div className="tcard-unit" style={{ fontSize: 20 }}>{t.unit_number}</div>
+        <div className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</div>
+        <div className={'scard-urgency ' + ucls}>{pm.label}</div>
+        <div className="tcard-odo" style={{ borderTop: 'none', paddingTop: 0 }}>
+          <span>ODO</span><b>{fmt(t.odometer)}</b><span>mi</span>
+        </div>
+        {t.pm_services && t.pm_services.length > 0 && (
+          <div className="scard-svcs" title={t.pm_services.map((s) => s.name).join(', ')}>
+            {t.pm_services.map((s) => (
+              <span key={s.service_id} className="scard-svc">{s.name}</span>
+            ))}
+          </div>
+        )}
+        <span className={'scard-stage ' + stageMeta.cls}>{stageMeta.label}</span>
+      </button>
+
+      {/* Green trucks with no open work order have no action — don't render an
+          empty action bar for them. */}
+      {(pm.cls !== 'pm-ok' || stage === 'ready' || stage === 'progress') && (
+      <div className="scard-actions">
+        {/* Scheduling actions only matter when the PM is actually approaching:
+            green trucks (plenty of miles/time left) show no call to action.
+            Reschedule = plan a future PM; Create work order = service it now. */}
+        {stage === 'none' && pm.cls !== 'pm-ok' && (
+          <button className="sbtn sbtn-yellow" onClick={() => setScheduleMode('reschedule')}>
+            <Calendar size={14} /> Schedule PM
           </button>
-        )
-      })}
+        )}
+        {stage === 'scheduled' && pm.cls !== 'pm-ok' && (
+          <>
+            <button className="sbtn" onClick={() => setScheduleMode('reschedule')}>
+              <Calendar size={14} /> Reschedule
+            </button>
+            <button className="sbtn sbtn-yellow" onClick={() => setScheduleMode('create')}>
+              <ClipboardCheck size={14} /> Create work order
+            </button>
+          </>
+        )}
+        {stage === 'ready' && (
+          <>
+            <button className="sbtn" onClick={() => setWoPanelId(t.pm_work_order!.repair_order_id)}>
+              <Wrench size={14} /> Open WO
+            </button>
+            <button className="sbtn sbtn-yellow" disabled={startPM.isPending} onClick={() => startPM.mutate()}>
+              {startPM.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Start PM
+            </button>
+          </>
+        )}
+        {stage === 'progress' && (
+          <button className="sbtn sbtn-yellow" onClick={() => setWoPanelId(t.pm_work_order!.repair_order_id)}>
+            <Flag size={14} /> Complete PM
+          </button>
+        )}
+      </div>
+      )}
+
+      {scheduleMode && (
+        <SchedulePMModal
+          truck={t}
+          createMode={scheduleMode === 'create'}
+          onClose={() => setScheduleMode(null)}
+          onDone={refresh}
+        />
+      )}
+      {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
     </div>
   )
 }
@@ -355,66 +491,75 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
   const setP = (k: keyof typeof profile) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setProfile((p) => ({ ...p, [k]: e.target.value }))
   const emailChanged = profile.email.trim() !== (user?.email || '')
-  const [emailPassword, setEmailPassword] = useState('')
-  const [savingProfile, setSavingProfile] = useState(false)
 
   const [pwd, setPwd] = useState({ current_password: '', new_password: '' })
   const [showPwd, setShowPwd] = useState(false)
-  const [savingPwd, setSavingPwd] = useState(false)
+  const [pwdOpen, setPwdOpen] = useState(false)
+  // Close the password sub-panel and clear its fields.
+  const closePwd = () => { setPwdOpen(false); setShowPwd(false); setPwd({ current_password: '', new_password: '' }) }
+  const [saving, setSaving] = useState(false)
 
-  const saveProfile = async () => {
+  const [profileEditing, setProfileEditing] = useState(false)
+  const cancelProfileEdit = () => {
+    setProfileEditing(false)
+    setProfile({
+      first_name: user?.first_name || '',
+      last_name: user?.last_name || '',
+      phone: user?.phone || '',
+      email: user?.email || '',
+    })
+    closePwd()
+  }
+
+  // Current password serves double duty: required to change email, and it's the
+  // "current password" for a password change. Email-change and password-change
+  // both need it, so a single field feeds both.
+  const wantsPasswordChange = pwd.new_password.trim() !== ''
+
+
+  const save = async () => {
     if (!profile.first_name.trim() || !profile.last_name.trim()) {
       toast.error('First and last name are required')
       return
     }
-    if (emailChanged && !emailPassword) {
-      toast.error('Enter your current password to change your email')
+    if ((emailChanged || wantsPasswordChange) && !pwd.current_password) {
+      toast.error('Enter your current password to save these changes')
       return
     }
+    if (wantsPasswordChange) {
+      const err = getPasswordValidationError(pwd.new_password)
+      if (err) { toast.error(err); return }
+    }
     try {
-      setSavingProfile(true)
+      setSaving(true)
       const payload: Record<string, unknown> = {
         first_name: profile.first_name.trim(),
         last_name: profile.last_name.trim(),
         phone: profile.phone.trim() || null,
         email: profile.email.trim(),
       }
-      if (emailChanged) payload.password = emailPassword
+      if (emailChanged) payload.password = pwd.current_password
       const res = await api.put('/auth/me', payload)
       if (res.data?.user) setUser(res.data.user)
+
+      if (wantsPasswordChange) {
+        // Changing the password invalidates all sessions — force a fresh login.
+        await api.post('/auth/change-password', {
+          current_password: pwd.current_password,
+          new_password: pwd.new_password,
+        })
+        toast.success('Profile saved. Password changed — please log in again.')
+        try { await logout() } finally { navigate('/login', { replace: true }) }
+        return
+      }
       // Email changes return a verification message; name/phone return the user.
       toast.success(res.data?.message || 'Profile updated')
-      setEmailPassword('')
+      closePwd()
+      setProfileEditing(false)
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Failed to update profile')
+      toast.error(e.response?.data?.detail || 'Failed to save changes')
     } finally {
-      setSavingProfile(false)
-    }
-  }
-
-  const savePassword = async () => {
-    if (!pwd.current_password) {
-      toast.error('Enter your current password')
-      return
-    }
-    const err = getPasswordValidationError(pwd.new_password)
-    if (err) {
-      toast.error(err)
-      return
-    }
-    try {
-      setSavingPwd(true)
-      await api.post('/auth/change-password', {
-        current_password: pwd.current_password,
-        new_password: pwd.new_password,
-      })
-      // Changing the password invalidates all sessions — force a fresh login.
-      toast.success('Password changed. Please log in again.')
-      try { await logout() } finally { navigate('/login', { replace: true }) }
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || 'Failed to change password')
-    } finally {
-      setSavingPwd(false)
+      setSaving(false)
     }
   }
 
@@ -427,66 +572,94 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
         style={{ width: 520, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', display: 'grid', gap: 14 }}
       >
-        {/* Profile */}
+        {/* Account */}
         <div className="dsec">
           <div className="dsec-head">
             <div className="dsec-title"><UserRound size={17} /><h3>My account</h3></div>
-            <button className="person-call" onClick={onClose}><X size={15} /></button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {!profileEditing && (
+                <button className="person-call" onClick={() => setProfileEditing(true)} aria-label="Edit account">
+                  <Pencil size={15} />
+                </button>
+              )}
+              <button className="person-call" onClick={onClose}><X size={15} /></button>
+            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="First name"><input value={profile.first_name} onChange={setP('first_name')} /></Field>
-            <Field label="Last name"><input value={profile.last_name} onChange={setP('last_name')} /></Field>
-            <Field label="Phone"><input value={profile.phone} onChange={setP('phone')} placeholder="(704) 555-0123" /></Field>
-            <Field label="Email"><input value={profile.email} onChange={setP('email')} type="email" /></Field>
-            {emailChanged && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Current password (required to change email)">
-                  <input value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} type="password" />
-                </Field>
-                <p className="id-k" style={{ marginTop: 6, textTransform: 'none', letterSpacing: 0 }}>
-                  We'll send a verification link to the new address; your email changes once you confirm it.
-                </p>
-              </div>
-            )}
-          </div>
-          <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
-            disabled={savingProfile} onClick={saveProfile}>
-            {savingProfile ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />} Save profile
-          </button>
-        </div>
 
-        {/* Password */}
-        <div className="dsec">
-          <div className="dsec-head">
-            <div className="dsec-title"><KeyRound size={17} /><h3>Password</h3></div>
-          </div>
-          <div style={{ display: 'grid', gap: 12 }}>
-            <Field label="Current password">
-              <input value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" />
-            </Field>
-            <Field label="New password">
-              <div style={{ position: 'relative' }}>
-                <input
-                  value={pwd.new_password}
-                  onChange={(e) => setPwd((p) => ({ ...p, new_password: e.target.value }))}
-                  type={showPwd ? 'text' : 'password'}
-                  style={{ paddingRight: 40 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwd((s) => !s)}
-                  aria-label={showPwd ? 'Hide password' : 'Show password'}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
-                >
-                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+          {!profileEditing ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="First name"><div className="id-v">{profile.first_name || '—'}</div></Field>
+              <Field label="Last name"><div className="id-v">{profile.last_name || '—'}</div></Field>
+              <Field label="Phone"><div className="id-v">{profile.phone || '—'}</div></Field>
+              <Field label="Email"><div className="id-v">{profile.email || '—'}</div></Field>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="First name"><input value={profile.first_name} onChange={setP('first_name')} /></Field>
+                <Field label="Last name"><input value={profile.last_name} onChange={setP('last_name')} /></Field>
+                <Field label="Phone"><input value={profile.phone} onChange={setP('phone')} placeholder="(704) 555-0123" /></Field>
+                <Field label="Email"><input value={profile.email} onChange={setP('email')} type="email" /></Field>
+                {emailChanged && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <Field label="Current password (required to change email)">
+                      <input value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" />
+                    </Field>
+                    <p className="id-k" style={{ marginTop: 6, textTransform: 'none', letterSpacing: 0 }}>
+                      We'll send a verification link to the new address; your email changes once you confirm it.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Password */}
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border, rgba(255,255,255,.08))' }}>
+                <div className="dsec-title" style={{ marginBottom: 12 }}><KeyRound size={17} /><h3>Password</h3></div>
+                {!pwdOpen ? (
+                  <button className="dbtn dbtn-ghost" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setPwdOpen(true)}>
+                    <KeyRound size={15} /> Change password
+                  </button>
+                ) : (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <Field label="Current password">
+                      <input value={pwd.current_password} onChange={(e) => setPwd((p) => ({ ...p, current_password: e.target.value }))} type="password" autoFocus />
+                    </Field>
+                    <Field label="New password">
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          value={pwd.new_password}
+                          onChange={(e) => setPwd((p) => ({ ...p, new_password: e.target.value }))}
+                          type={showPwd ? 'text' : 'password'}
+                          style={{ paddingRight: 40 }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPwd((s) => !s)}
+                          aria-label={showPwd ? 'Hide password' : 'Show password'}
+                          style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+                        >
+                          {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </Field>
+                    <button className="dbtn dbtn-ghost" style={{ justifyContent: 'center' }} disabled={saving} onClick={closePwd}>
+                      Cancel password change
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+                <button className="dbtn dbtn-ghost" style={{ flex: 1, justifyContent: 'center' }} disabled={saving} onClick={cancelProfileEdit}>
+                  Cancel
+                </button>
+                <button className="dbtn dbtn-yellow" style={{ flex: 1, justifyContent: 'center' }}
+                  disabled={saving} onClick={save}>
+                  {saving ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />} Save changes
                 </button>
               </div>
-            </Field>
-          </div>
-          <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
-            disabled={savingPwd} onClick={savePassword}>
-            {savingPwd ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />} Change password
-          </button>
+            </>
+          )}
         </div>
       </div>
     </div>

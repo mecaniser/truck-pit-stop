@@ -4,6 +4,7 @@ Each tenant owns exactly one internal-fleet customer. Vehicles attached to it ar
 the garage's own trucks, and repair orders against it are priced at internal cost
 (see ``app.services.price_build_service``) and never invoiced to a paying customer.
 """
+import math
 from datetime import date, timedelta
 from typing import Optional
 from uuid import UUID
@@ -14,12 +15,44 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.customer import Customer
 
 
+# Assumed average daily mileage for a fleet truck, used to project the PM due
+# date from the remaining miles so the date and odometer triggers stay in sync.
+PM_AVG_MILES_PER_DAY = 600
+
+
+def project_pm_due_date(
+    next_pm_miles: Optional[int],
+    current_odometer: Optional[int],
+    *,
+    from_date: Optional[date] = None,
+) -> Optional[date]:
+    """Estimate the PM due date from the mileage target, so the date and the
+    odometer trigger describe the same event instead of drifting apart.
+
+    date = from_date + ceil(miles_remaining / PM_AVG_MILES_PER_DAY) days.
+    Overdue-on-mileage (remaining <= 0) projects to today (from_date). Returns
+    None when there's no mileage target to project from.
+    """
+    if next_pm_miles is None:
+        return None
+    base_date = from_date or date.today()
+    remaining = next_pm_miles - (current_odometer or 0)
+    if remaining <= 0:
+        return base_date
+    days = math.ceil(remaining / PM_AVG_MILES_PER_DAY)
+    return base_date + timedelta(days=days)
+
+
 def advance_vehicle_pm(vehicle, base_odometer: Optional[int], completed_on: Optional[date] = None) -> None:
-    """Roll the truck's next PM forward after a PM work order completes —
-    both the mileage target and the scheduled date."""
+    """Roll the truck's next PM forward after a PM work order completes — both the
+    mileage target and the scheduled date. The date is projected from the new
+    mileage target (at PM_AVG_MILES_PER_DAY) so the two triggers stay consistent."""
     base = base_odometer or vehicle.mileage or 0
     vehicle.next_pm_miles = base + (vehicle.pm_interval_miles or 25000)
-    vehicle.pm_due_date = (completed_on or date.today()) + timedelta(days=vehicle.pm_interval_days or 70)
+    # Project from the base odometer we just serviced at (miles_remaining = interval).
+    vehicle.pm_due_date = project_pm_due_date(
+        vehicle.next_pm_miles, base, from_date=(completed_on or date.today())
+    )
 
 
 def fleet_display_name(customer, fleet_company_name: Optional[str]) -> str:

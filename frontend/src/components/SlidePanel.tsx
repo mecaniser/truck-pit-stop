@@ -21,6 +21,8 @@ interface SlidePanelProps {
   headerIcon?: ReactNode
   /** Extra content in header (e.g., status badge) */
   headerExtra?: ReactNode
+  /** Hide the built-in header when a child component owns the full shell. */
+  hideHeader?: boolean
   /** Back button config for nested views */
   onBack?: () => void
   backLabel?: string
@@ -49,6 +51,7 @@ export default function SlidePanel({
   headerVariant = 'amber',
   headerIcon,
   headerExtra,
+  hideHeader = false,
   onBack,
   backLabel,
   children,
@@ -81,7 +84,7 @@ export default function SlidePanel({
           className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50`}
         >
           {/* Header */}
-          <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
+          {!hideHeader && <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
             <div className="flex items-center gap-3 min-w-0">
               {onBack && (
                 <button
@@ -135,16 +138,16 @@ export default function SlidePanel({
                 <X className="w-5 h-5" />
               </button>
             </div>
-          </div>
+          </div>}
 
-          {headerExtra && (
+          {!hideHeader && headerExtra && (
             <div className="px-6 py-3 border-b border-zinc-800/50 bg-zinc-900/80">
               {headerExtra}
             </div>
           )}
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto scrollbar-dark">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-dark">{children}</div>
 
           {/* Footer */}
           {footer && (
@@ -171,7 +174,7 @@ export default function SlidePanel({
         className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right`}
       >
         {/* Header */}
-        {isMinimal ? (
+        {!hideHeader && (isMinimal ? (
           <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
             <div>
               {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
@@ -274,10 +277,10 @@ export default function SlidePanel({
               </div>
             </div>
           </div>
-        )}
+        ))}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
 
         {/* Footer */}
         {footer && (

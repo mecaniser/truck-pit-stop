@@ -19,6 +19,7 @@ class InspectionItemResponse(BaseModel):
     id: UUID
     category: str
     label: str
+    is_warning_light: bool = False
     result: InspectionItemResult
     note: Optional[str] = None
 
@@ -59,6 +60,7 @@ class InspectionResponse(BaseModel):
     performed_at: Optional[datetime] = None
     odometer: Optional[int] = None
     notes: Optional[str] = None
+    repair_order_id: Optional[UUID] = None  # work order created to fix failed items
     created_at: datetime
     # Denormalized vehicle summary
     vehicle_make: str = ""
@@ -145,12 +147,25 @@ class FleetSummaryResponse(BaseModel):
 FleetTruckStatus = str  # 'active' | 'shop' | 'pm' | 'parts'
 
 
+class PMServiceEntry(BaseModel):
+    """A service attached to a truck's PM package or a PM work order."""
+    service_id: UUID
+    name: str
+    duration_minutes: int = 0
+    sort_order: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 class BoardWorkOrder(BaseModel):
     id: str                 # order_number
     repair_order_id: UUID   # actual RO id, for opening/editing the work order
     status: str             # shop-floor label (In progress, Awaiting parts, …)
+    raw_status: str = ""    # underlying RO status value (draft, in_progress, …) for lifecycle gating
     summary: Optional[str] = None
     mechanic: Optional[str] = None
+    is_pm: bool = False      # this work order is the truck's preventive-maintenance job
 
 
 class BoardTruck(BaseModel):
@@ -181,9 +196,12 @@ class BoardTruck(BaseModel):
     heading: Optional[str] = None
     assigned_mechanic: Optional[str] = None
     work_order: Optional[BoardWorkOrder] = None  # most-urgent open work order
+    pm_work_order: Optional[BoardWorkOrder] = None  # the truck's open PM work order, if one exists
+    pm_services: List[PMServiceEntry] = []  # the truck's saved default PM service package
     open_work_order_count: int = 0
     open_incident_count: int = 0
     status_override: Optional[str] = None  # operator's manual idle status, if set
+    warning_lights: List[str] = []  # dashboard warning lights currently on
 
 
 class FleetStats(BaseModel):
@@ -290,10 +308,27 @@ class WorkOrderCreate(BaseModel):
     description: Optional[str] = None
 
 
+class PMServicesUpdate(BaseModel):
+    """Replace the full set of PM services (order preserved) for a truck default
+    package or a PM work order."""
+    service_ids: List[UUID] = []
+
+
+class AddServiceRequest(BaseModel):
+    """Add a single catalog service (e.g. Diagnostic) to a non-PM internal work
+    order, seeding an internal-rate labor line plus the service's parts."""
+    service_id: UUID
+
+
 class SchedulePMRequest(BaseModel):
     due_date: Optional[date] = None            # scheduled/next PM date
     next_pm_miles: Optional[int] = None         # odometer at which the next PM is due
     create_work_order: bool = False             # also spawn the PM work order now
+    # Services for this PM. When None, the truck's saved default package is used.
+    # When provided, these override the default for this PM (order preserved).
+    service_ids: Optional[List[UUID]] = None
+    # Also save service_ids as the truck's new default PM package.
+    save_as_default: bool = False
 
 
 class FleetMechanicOption(BaseModel):

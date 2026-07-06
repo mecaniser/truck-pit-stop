@@ -1,10 +1,11 @@
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Settings2, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
+import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, Settings2, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
 import GarageAnalyticsPage from './GarageAnalyticsPage'
+import LaborBookTimePage from './LaborBookTimePage'
 
 type GarageSection = {
   to: string
@@ -16,6 +17,7 @@ type GarageSection = {
 const GARAGE_SECTIONS: GarageSection[] = [
   { to: 'mechanics', label: 'Team', shortLabel: 'Team', icon: Wrench },
   { to: 'services', label: 'Services', shortLabel: 'Services', icon: ClipboardList },
+  { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
   { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: Truck },
   { to: 'analytics', label: 'Analytics', shortLabel: 'Analytics', icon: BarChart3 },
@@ -139,6 +141,7 @@ export default function MyGaragePage() {
         <Routes>
           <Route index element={<Navigate to="mechanics" replace />} />
           <Route path="services" element={<ServicesManagementPage />} />
+          <Route path="labor-book-time" element={<LaborBookTimePage />} />
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="mechanics" element={<MechanicsPage />} />
           <Route path="suppliers" element={<SuppliersPage />} />

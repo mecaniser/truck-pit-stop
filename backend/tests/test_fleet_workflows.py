@@ -607,7 +607,41 @@ async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
 
     await db_session.refresh(vehicle)
     assert vehicle.next_pm_miles == 100000 + 25000
-    assert vehicle.pm_due_date == date.today() + timedelta(days=180)
+    # The due date is now projected from the mileage target (not a flat
+    # pm_interval_days span): 25,000 mi remaining at 600 mi/day = 42 days.
+    import math
+    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
+    expected_days = math.ceil(25000 / PM_AVG_MILES_PER_DAY)
+    assert vehicle.pm_due_date == date.today() + timedelta(days=expected_days)
+
+
+@pytest.mark.asyncio
+async def test_schedule_pm_projects_due_date_from_mileage(db_session):
+    """Rescheduling with a mileage target but no date projects the date from the
+    remaining miles (so date & odometer agree). An explicit date is honored."""
+    import math
+    from datetime import date, timedelta
+    from app.schemas.fleet import SchedulePMRequest
+    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 149075
+    await db_session.commit()
+
+    # No due_date given -> projected from 1,927 mi remaining at 600 mi/day.
+    await fleet.schedule_pm(vehicle_id=vehicle.id,
+                            body=SchedulePMRequest(next_pm_miles=151002),
+                            db=db_session, current_user=user)
+    await db_session.refresh(vehicle)
+    expected = date.today() + timedelta(days=math.ceil((151002 - 149075) / PM_AVG_MILES_PER_DAY))
+    assert vehicle.pm_due_date == expected  # ~4 days out, not months
+
+    # An explicit date wins (manager knows the truck will sit idle).
+    picked = date.today() + timedelta(days=120)
+    await fleet.schedule_pm(vehicle_id=vehicle.id,
+                            body=SchedulePMRequest(next_pm_miles=151002, due_date=picked),
+                            db=db_session, current_user=user)
+    await db_session.refresh(vehicle)
+    assert vehicle.pm_due_date == picked
 
 
 @pytest.mark.asyncio
@@ -740,3 +774,214 @@ async def test_delete_inspection_owner_only(db_session):
     gone = (await db_session.execute(select(FleetInspection).where(FleetInspection.id == insp.id))).scalar_one_or_none()
     items = (await db_session.execute(select(func.count(FleetInspectionItem.id)).where(FleetInspectionItem.inspection_id == insp.id))).scalar()
     assert gone is None and items == 0
+
+
+@pytest.mark.asyncio
+async def test_inspection_flags_and_work_order_clears_warning_lights(db_session):
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 100000
+    await db_session.commit()
+
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user)
+    # Everything OK except the Check Engine warning light is on (FAIL).
+    for item in detail.items:
+        res = InspectionItemResult.PASS
+        if item.is_warning_light and item.label == "Check engine (MIL)":
+            res = InspectionItemResult.FAIL
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=res), db=db_session, current_user=user)
+    await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(odometer=101000),
+        db=db_session, current_user=user)
+
+    await db_session.refresh(vehicle)
+    assert vehicle.active_warning_lights == "Check engine (MIL)"
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    bt = next(t for t in board.trucks if t.id == vehicle.id)
+    assert bt.warning_lights == ["Check engine (MIL)"]
+
+    # Completing a work order clears the warning lights.
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Fix MIL"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalars().first()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await db_session.refresh(vehicle)
+    assert vehicle.active_warning_lights is None
+
+
+@pytest.mark.asyncio
+async def test_delete_inspection_clears_warning_lights(db_session):
+    _, vehicle, owner = await _seed_fleet(db_session, role=UserRole.GARAGE_OWNER)
+    vehicle.mileage = 100000
+    await db_session.commit()
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=owner)
+    for item in detail.items:
+        res = InspectionItemResult.PASS
+        if item.is_warning_light and item.label == "Check engine (MIL)":
+            res = InspectionItemResult.FAIL
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=res), db=db_session, current_user=owner)
+    await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(odometer=101000),
+        db=db_session, current_user=owner)
+    await db_session.refresh(vehicle)
+    assert vehicle.active_warning_lights == "Check engine (MIL)"
+
+    # Deleting the inspection re-derives lights (nothing left -> cleared).
+    await fleet.delete_inspection(inspection_id=detail.id, db=db_session, current_user=owner)
+    await db_session.refresh(vehicle)
+    assert vehicle.active_warning_lights is None
+
+
+async def _complete_with_one_fail(db_session, vehicle, user, fail_label="Check engine (MIL)"):
+    """Create + complete an inspection with a single FAILED item; return detail."""
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user)
+    for item in detail.items:
+        res = InspectionItemResult.FAIL if item.label == fail_label else InspectionItemResult.PASS
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=res), db=db_session, current_user=user)
+    await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(odometer=101000),
+        db=db_session, current_user=user)
+    return detail
+
+
+@pytest.mark.asyncio
+async def test_create_work_order_from_failed_inspection_links_and_describes(db_session):
+    import sqlalchemy
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 100000
+    await db_session.commit()
+    detail = await _complete_with_one_fail(db_session, vehicle, user)
+
+    result = await fleet.create_work_order_for_inspection(
+        inspection_id=detail.id, db=db_session, current_user=user)
+
+    assert result.repair_order_id is not None
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.id == result.repair_order_id)
+    )).scalar_one()
+    assert ro.vehicle_id == vehicle.id
+    assert ro.is_internal is True
+    assert "Check engine (MIL)" in (ro.description or "")
+
+    # A second call is rejected — the work order already exists.
+    with pytest.raises(HTTPException) as exc:
+        await fleet.create_work_order_for_inspection(
+            inspection_id=detail.id, db=db_session, current_user=user)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_work_order_rejects_when_no_failed_items(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 100000
+    await db_session.commit()
+    detail = await fleet.create_inspection(
+        body=InspectionCreate(vehicle_id=vehicle.id), db=db_session, current_user=user)
+    for item in detail.items:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=item.id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS), db=db_session, current_user=user)
+    await fleet.complete_inspection(
+        inspection_id=detail.id, body=InspectionComplete(odometer=101000),
+        db=db_session, current_user=user)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.create_work_order_for_inspection(
+            inspection_id=detail.id, db=db_session, current_user=user)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_add_service_to_internal_work_order_seeds_internal_labor(db_session):
+    from decimal import Decimal
+    from app.db.models.service import Service
+    from app.db.models.labor import Labor
+    from app.schemas.fleet import AddServiceRequest
+    import sqlalchemy
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    tenant.internal_labor_rate = 40
+    diagnostic = Service(
+        id=uuid4(), tenant_id=tenant.id, name="Diagnostic Scan",
+        duration_minutes=30, is_active=True,
+    )
+    db_session.add(diagnostic)
+    await db_session.commit()
+
+    # A non-PM internal work order (as spawned from a failed inspection).
+    truck = await fleet.new_work_order(
+        vehicle_id=vehicle.id, body=WorkOrderCreate(description="Check engine"),
+        db=db_session, current_user=user)
+    ro_id = truck.work_order.repair_order_id
+
+    # Catalog exposes the (non-PM) service.
+    catalog = await fleet.service_catalog(db=db_session, current_user=user)
+    assert any(s.service_id == diagnostic.id for s in catalog)
+
+    await fleet.add_service_to_work_order(
+        ro_id=ro_id, body=AddServiceRequest(service_id=diagnostic.id),
+        db=db_session, current_user=user)
+
+    labor = (await db_session.execute(
+        sqlalchemy.select(Labor).where(Labor.repair_order_id == ro_id)
+    )).scalars().all()
+    assert len(labor) == 1
+    line = labor[0]
+    assert line.description == "Diagnostic Scan"
+    assert line.source_service_id == diagnostic.id
+    assert Decimal(str(line.hours)) == Decimal("0.5")
+    assert Decimal(str(line.hourly_rate)) == Decimal("40")
+    assert Decimal(str(line.total_cost)) == Decimal("20.00")
+
+
+@pytest.mark.asyncio
+async def test_add_service_rejected_on_pm_work_order(db_session):
+    from app.db.models.service import Service
+    from app.schemas.fleet import AddServiceRequest, SchedulePMRequest
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    svc = Service(id=uuid4(), tenant_id=tenant.id, name="Diagnostic", duration_minutes=30, is_active=True)
+    db_session.add(svc)
+    await db_session.commit()
+
+    # Spawn a PM work order and confirm hand-adding a service is rejected — PM
+    # scope is set through the PM picker, not this endpoint.
+    truck = await fleet.schedule_pm(
+        vehicle_id=vehicle.id, body=SchedulePMRequest(create_work_order=True),
+        db=db_session, current_user=user)
+    ro_id = truck.pm_work_order.repair_order_id
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.add_service_to_work_order(
+            ro_id=ro_id, body=AddServiceRequest(service_id=svc.id),
+            db=db_session, current_user=user)
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_completed_inspection_items_are_locked(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 100000
+    await db_session.commit()
+    detail = await _complete_with_one_fail(db_session, vehicle, user)
+
+    # Editing an item on a completed inspection is rejected — the record is a
+    # point-in-time safety document; re-inspect instead.
+    with pytest.raises(HTTPException) as exc:
+        await fleet.update_inspection_item(
+            inspection_id=detail.id, item_id=detail.items[0].id,
+            body=InspectionItemUpdate(result=InspectionItemResult.PASS),
+            db=db_session, current_user=user)
+    assert exc.value.status_code == 400

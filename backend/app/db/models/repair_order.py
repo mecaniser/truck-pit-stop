@@ -54,7 +54,11 @@ class RepairOrder(BaseModel):
     total_parts_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_labor_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_cost = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
-    
+
+    # Manager-applied dollar discounts (owner dashboard price builder).
+    labor_discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)  # $ off labor
+    order_discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)  # $ off total
+
     # Per-job time tracking
     work_started_at = Column(DateTime(timezone=True), nullable=True)
     work_completed_at = Column(DateTime(timezone=True), nullable=True)

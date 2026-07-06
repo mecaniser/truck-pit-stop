@@ -201,6 +201,18 @@ async def test_search_repair_operations_returns_custom_candidate_when_no_match(d
 
 
 @pytest.mark.asyncio
+async def test_custom_operation_preserves_user_entered_acronyms(db_session):
+    _, _, _, order, _ = await _seed_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+
+    candidates, _ = await svc.search_repair_operations(db_session, loaded, "DPF Cleaning")
+
+    assert candidates[0].operation_id == "custom:dpf-cleaning"
+    assert candidates[0].name == "DPF Cleaning"
+
+
+@pytest.mark.asyncio
 async def test_custom_operation_is_not_learned_until_hours_are_entered(db_session):
     tenant, _, _, order, _ = await _seed_context(db_session)
     svc = PriceBuildService()
@@ -297,6 +309,42 @@ async def test_zero_hour_memory_rows_are_ignored_for_known_operations(db_session
     refreshed = await svc.recalculate_order(db_session, result.order)
     refreshed_line = next(li for li in refreshed.order.labor_items if li.provider_operation_id == "brake-change")
     assert Decimal(str(refreshed_line.hours)) == Decimal("2.50")
+
+
+@pytest.mark.asyncio
+async def test_manual_labor_book_time_matches_by_application_signature(db_session):
+    tenant, _, _, order, _ = await _seed_context(db_session)
+    db_session.add(
+        LaborOperationMemory(
+            tenant_id=tenant.id,
+            vehicle_signature="year:2021|make:freightliner|model:cascadia",
+            component_signature="engine:detroit dd15",
+            operation_key="custom:water-pump-replacement:detroit-dd15-freightliner-cascadia-2021",
+            operation_name="Water Pump Replacement",
+            operation_description="Manual book time from motor information system",
+            vehicle_year=2021,
+            vehicle_make="Freightliner",
+            vehicle_model="Cascadia",
+            engine="Detroit DD15",
+            provider_operation_id="custom:water-pump-replacement:detroit-dd15-freightliner-cascadia-2021",
+            source_provider="manual_book_time",
+            normalized_hours=Decimal("8.00"),
+            usage_count=1,
+            last_used_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+
+    candidates, warnings = await svc.search_repair_operations(db_session, loaded, "water pump")
+
+    assert candidates
+    assert candidates[0].name == "Water Pump Replacement"
+    assert candidates[0].provider == "internal_memory"
+    assert candidates[0].estimated_hours == Decimal("8.00")
+    assert warnings and warnings[0].code == "internal_memory_hit"
 
 
 @pytest.mark.asyncio

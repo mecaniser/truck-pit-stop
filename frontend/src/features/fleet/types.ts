@@ -31,6 +31,7 @@ export interface InspectionItem {
   id: string
   category: string
   label: string
+  is_warning_light?: boolean
   result: InspectionItemResult
   note?: string | null
 }
@@ -45,6 +46,7 @@ export interface Inspection {
   performed_at?: string | null
   odometer?: number | null
   notes?: string | null
+  repair_order_id?: string | null  // work order created to fix failed items
   created_at: string
   vehicle_make: string
   vehicle_model: string
@@ -82,8 +84,26 @@ export interface BoardWorkOrder {
   id: string
   repair_order_id: string
   status: string
+  raw_status?: string
   summary?: string | null
   mechanic?: string | null
+  is_pm?: boolean
+}
+
+export interface PMServiceEntry {
+  service_id: string
+  name: string
+  duration_minutes: number
+  sort_order: number
+}
+
+// The garage service-catalog item, as returned by GET /services.
+export interface CatalogService {
+  id: string
+  name: string
+  duration_minutes: number
+  is_active: boolean
+  category?: { id: string; name: string } | null
 }
 
 export interface BoardTruck {
@@ -114,9 +134,12 @@ export interface BoardTruck {
   heading?: string | null
   assigned_mechanic?: string | null
   work_order?: BoardWorkOrder | null
+  pm_work_order?: BoardWorkOrder | null
+  pm_services?: PMServiceEntry[]
   open_work_order_count: number
   open_incident_count: number
   status_override?: string | null
+  warning_lights?: string[]
 }
 
 export interface FleetStats {

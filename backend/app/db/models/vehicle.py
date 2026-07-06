@@ -34,6 +34,11 @@ class Vehicle(BaseModel):
     # always wins over this.
     status_override = Column(String(20), nullable=True)
 
+    # Dashboard warning lights currently illuminated (comma-separated labels),
+    # set from the latest inspection. NULL = none. Cleared by a later inspection
+    # marking them off or a completed work order.
+    active_warning_lights = Column(String(255), nullable=True)
+
     # Mileage-based preventive maintenance. pm_remaining = next_pm_miles - mileage.
     pm_interval_miles = Column(Integer, nullable=False, default=25000)
     next_pm_miles = Column(Integer, nullable=True)  # odometer at which next PM is due
