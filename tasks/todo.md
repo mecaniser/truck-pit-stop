@@ -1,4 +1,614 @@
+# Customer Zelle Panel Price Builder Redesign (2026-07-06)
+
+## Plan
+- [x] Extract the duplicated customer Zelle payment UI into one shared panel.
+- [x] Redesign the panel with Price Builder-style dense sections, status pills, copy rows, and separated sender details.
+- [x] Apply the shared panel to both standalone invoice and embedded portal invoice flows.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User requested a redesign using the Price Builder UI philosophy.
+- [x] Added shared `ZellePaymentPanel` with compact header, status pills, copy-ready payment rows, and a separated sender-details submission section.
+- [x] Replaced duplicated inline Zelle UI in both standalone invoice and embedded portal invoice flows.
+- [x] Correction: remove remaining box-in-box framing, remove duplicate payment amount display, and make copy controls live inline with the values they copy.
+- [x] Hide/avoid the card payment CTA after the customer submits Zelle payment and pending confirmation owns the payment state.
+- [x] Passed focused lint:
+  `npx eslint src/features/customer-portal/CustomerInvoicePage.tsx src/features/customer-portal/CustomerPortalPage.tsx src/features/customer-portal/ZellePaymentPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] After correction, passed focused lint again:
+  `npx eslint src/features/customer-portal/CustomerInvoicePage.tsx src/features/customer-portal/CustomerPortalPage.tsx src/features/customer-portal/ZellePaymentPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] After correction, passed full frontend TypeScript again:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+
+## Review
+- The customer Zelle payment UI now uses one flat payment surface with inline copy actions, no duplicate amount display, edit-gated sender details, and card payment hidden while Zelle is pending confirmation.
+
+---
+
+# Zelle Sender Details Edit Gate (2026-07-06)
+
+## Plan
+- [x] Split Zelle UI into garage payment instructions and customer sender details.
+- [x] Make sender email/phone/note editable only after an Edit action.
+- [x] Apply the pattern to both customer invoice Zelle surfaces.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User clarified sender mobile/account details should be editable, but hidden behind an Edit button, with clear color separation between payment instructions and submitted sender details.
+- [x] Kept garage payment instructions/copy targets in the existing blue section.
+- [x] Added an amber `Your sender details` section with read-only prefilled fields and an `Edit` / `Done` toggle.
+- [x] Applied the pattern to both `CustomerInvoicePage` and the embedded invoice view in `CustomerPortalPage`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/customer-portal/CustomerInvoicePage.tsx src/features/customer-portal/CustomerPortalPage.tsx --max-warnings 0` (from `frontend/`)
+
+## Review
+- Customers now clearly see which values to use for paying the garage versus which sender details will be submitted to staff, and sender fields cannot be changed without explicitly choosing `Edit`.
+
+---
+
+# Customer Invoice Zelle Copy/Prefill (2026-07-06)
+
+## Plan
+- [x] Add copy-ready Zelle amount and invoice memo to customer invoice payment UI.
+- [x] Pre-populate Zelle sender email and phone from known customer/user details.
+- [x] Ensure customer/guest Zelle submissions send sender details to staff even when fields are left unchanged.
+- [x] Run focused frontend/backend verification and document the result.
+
+## Progress Notes
+- [x] Found both invoice Zelle surfaces: standalone `CustomerInvoicePage` and embedded invoice payment UI in `CustomerPortalPage`.
+- [x] Confirmed backend already stores `sender_email` and `sender_phone` and forwards them in pending-Zelle staff alerts, but customer portal submission accepts nulls when the UI fields are blank.
+- [x] Added copy-ready rows for exact Zelle amount and Zelle memo on both customer invoice surfaces.
+- [x] Pre-populated sender email/phone from the logged-in customer user and defaulted the staff note to the invoice memo.
+- [x] Backend customer and guest Zelle submit endpoints now fall back to known customer email/phone when the sender fields are omitted.
+- [x] Pending-Zelle staff alerts now use the no-fee Zelle amount instead of the card total.
+- [x] Passed focused backend verification:
+  `./.venv/bin/python -m pytest backend/tests/test_zelle_websocket_updates.py backend/tests/test_payments_submit_zelle_rate_limit.py -q`
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/customer-portal/CustomerInvoicePage.tsx src/features/customer-portal/CustomerPortalPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Full frontend TypeScript remains blocked by existing unrelated `QuoteApprovalPage.tsx` errors for missing quote-fee variables (`shop_supplies_amount`, `service_fee_amount`, `tax_amount`, `estimated_card_total`, `estimated_zelle_total`, `zelle_savings_amount`).
+
+## Review
+- Zelle instructions now make the exact payment amount and invoice memo copy-ready, and customer sender details are submitted to staff even when the customer does not edit the prefilled fields.
+
+---
+
+# Price Builder Repair Order History Timeline (2026-07-06)
+
+## Plan
+- [x] Inspect available repair-order, quote, invoice, technician, and payment timestamps/actor fields.
+- [x] Add a redesigned action-history section to the Price Builder drawer.
+- [x] Include created date/time and key workflow events such as sent, approved, assigned, started, completed, invoiced, and paid when data exists.
+- [x] Wire parent page data into the panel without reviving legacy blocks.
+- [x] Move the history into the add-bar tab row after `Labor Book Time` and keep it hidden by default.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] User reported the repair order created date is not visible and requested a history of completed actions with dates/times and approver context.
+- [x] Confirmed current data includes repair-order created/assigned/acknowledged/started/completed timestamps, quote created/sent/updated timestamps, and invoice created/paid/Zelle-pending timestamps.
+- [x] Confirmed the quote model does not currently store a dedicated `approved_at` or customer approver id; approval history uses quote `updated_at` when `is_approved` is true and displays the customer/company as actor.
+- [x] Added a `Repair order history` timeline section to `PriceBuilderPanel`.
+- [x] Built and passed history events from `RepairOrdersPage` into the redesigned drawer.
+- [x] User asked to keep history collapsed by default and place it inline with the operation/part/labor book time selector.
+- [x] Removed the always-visible history card from the top of the drawer content.
+- [x] Added `History` as the fourth add-bar tab after `Labor Book Time`; selecting it shows the timeline and hides the search palette.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Repair-order history is now collapsed by default because the drawer opens on `Operation`; selecting the `History` tab displays the timeline inline with the add-bar controls.
+
+---
+
+# Quote Fees And Invoice Drawer Details (2026-07-06)
+
+## Plan
+- [x] Trace current quote totals, invoice totals, and repair-order drawer invoice controls.
+- [x] Add up-front estimated shop supplies, service fee, tax, and payment-option totals to quote surfaces.
+- [x] Show actual invoice details in the redesigned Price Builder drawer for invoiced/paid repair orders.
+- [x] Move invoice controls to the Price Builder drawer footer and remove the standalone invoice action card from the body.
+- [x] Hide recommended services for invoice-state repair orders where they no longer belong in the billing view.
+- [x] Run focused backend/frontend verification.
+
+## Progress Notes
+- [x] Started from the confirmed current behavior: quote total is repair net total only, while invoice creation later adds shop supplies, service fee, and tax.
+- [x] Added shared checkout-fee math using the net repair total, shop supplies, service fee, tax, card total, Zelle total, and Zelle savings.
+- [x] Updated invoice creation and invoice portal Zelle amount to use shared checkout math.
+- [x] Added estimated checkout totals to quote email and quote approval page.
+- [x] Expanded the redesigned Price Builder shell to `invoiced` and `paid`, with invoice detail rows in the panel body.
+- [x] Moved invoice action entry points to the panel footer and added a compact payment-method modal for the redesigned shell.
+- [x] Hid recommended services in invoice-state drawer views.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_pricing.py backend/tests/test_price_locking_rules.py -q`
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/quote-approval/QuoteApprovalPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Quote approvals now show estimated checkout totals up front, and invoice-state repair orders use the redesigned drawer with invoice details and footer actions instead of the old standalone invoice card.
+
+---
+
+# Price Builder Legacy Time Tracking Header Cleanup (2026-07-06)
+
+## Plan
+- [x] Confirm the top `Time Tracking` block is rendered outside the redesigned Price Builder panel.
+- [x] Hide that legacy block when the redesigned panel owns the repair-order shell.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Found the `Time Tracking` block in `RepairOrdersPage.tsx` immediately before `PriceBuilderPanel`, so it is legacy content above the redesigned drawer.
+- [x] Added a `priceBuilderOwnsShell` guard so legacy time tracking does not render above the redesigned drawer.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The redesigned Price Builder shell now starts at its own orange header without the old `Time Tracking` header block above it.
+
+---
+
+# Customer Portal Assigned Repair Visibility (2026-07-06)
+
+## Plan
+- [x] Compare staff customer profile repair-order visibility with customer portal dashboard filters.
+- [x] Include technician-assigned workflow statuses in customer portal active repairs.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed staff `CustomersPage` fetches `/repair-orders?customer_id=...` with no status filter, so assigned repair orders should be returned.
+- [x] Confirmed customer portal dashboard active repair filters excluded `assigned` and `acknowledged`, so an RO disappeared after assignment until work started or moved to pending review.
+- [x] Added shared customer active repair statuses including `approved`, `assigned`, `acknowledged`, `in_progress`, `pending_review`, and `completed`.
+- [x] Added customer portal badge colors for `assigned` and `acknowledged`.
+- [x] Passed focused frontend verification:
+  `npx eslint src/features/customer-portal/CustomerPortalPage.tsx --max-warnings 0 && npx tsc --noEmit -p .` (from `frontend/`)
+
+## Review
+- Assigned and acknowledged repair orders now remain visible in the customer portal dashboard's Active Repairs section and count.
+
+---
+
+# Quote Approval Portal Open 500 (2026-07-06)
+
+## Plan
+- [x] Trace quote approval portal resolve/create flow from the customer email page.
+- [x] Reproduce the `/quotes/portal/create` database error with focused backend coverage.
+- [x] Patch the portal-create account/link handling so approved quote customers can open the portal.
+- [x] Run focused backend verification and document the result.
+
+## Progress Notes
+- [x] User reported `POST /api/v1/quotes/portal/create` returns 500 with generic `Database error` after quote approval.
+- [x] Confirmed frontend calls `/quotes/token/{token}/portal-resolve`, then `/quotes/portal/create` with the returned portal enrollment token.
+- [x] Found backend portal create inserts `UserCustomerLink` for existing customer users without checking whether that link already exists first.
+- [x] Added a regression test for an approved quote customer who already has both a portal `User` and `UserCustomerLink`; it reproduced the backend crash via async SQLAlchemy object expiration after rollback.
+- [x] Added `_ensure_user_customer_link` in the quote endpoint and switched existing-user portal create branches to check for the link before inserting.
+- [x] Passed focused reproduction:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py::test_approved_quote_existing_portal_user_with_link_can_open_portal -q`
+- [x] Passed focused quote-flow tests:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py -q`
+- [x] User later reported approved quotes still did not appear on the customer profile.
+- [x] Reproduced the duplicate-customer case: an existing portal user was linked to an older customer record with the same email, while the approved quote belonged to a newer duplicate customer.
+- [x] Updated quote portal handoff so the active tenant `UserCustomerLink` and `users.customer_id` are retargeted to the approved quote's customer record.
+- [x] Passed duplicate-customer focused test:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py::test_approved_quote_existing_portal_user_relinks_duplicate_customer -q`
+- [x] Re-ran focused quote-flow tests:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py -q`
+
+## Review
+- Existing quote portal users can now click `Open My Portal` after approval without the duplicate-link rollback that caused `/quotes/portal/create` to return a generic 500.
+- New customer portal creation and quote approval API coverage still pass.
+- If a quote was created on a duplicate customer record with the same email, opening the portal from that approved quote now points the customer's portal profile at the quote customer so the approved repair order appears.
+
+---
+
+# Unsent Quote CTA Label (2026-07-06)
+
+## Plan
+- [x] Confirm why an unsent draft quote changes from `Send quote` to `Update quote` after pricing changes.
+- [x] Keep the pre-send CTA customer-action oriented as `Send quote`.
+- [x] Preserve the existing behavior that updates the draft before sending when pricing changed.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed `quoteActionLabel` showed `Update quote` for an existing unsent quote whose total differed from the draft.
+- [x] Changed unsent existing quotes to keep `Send quote` as the primary action, even when pricing changed.
+- [x] Preserved the click behavior: if the unsent draft changed, the handler updates the quote draft first and then sends it.
+- [x] Aligned the older workflow block so it no longer shows a separate `Update` step before the first send.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed TypeScript verification:
+  `npx tsc --noEmit -p .` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Before the quote is sent to the customer, the CTA stays `Send quote`; pricing changes are saved into the quote automatically as part of that send action.
+
+---
+
+# Customer Portal Repair History Savings (2026-07-06)
+
+## Plan
+- [x] Trace customer portal repair history detail payload and UI total calculation.
+- [x] Display pre-savings amount, customer savings, and final total in repair history detail.
+- [x] Include part savings plus labor/order discounts in the customer-facing savings total.
+- [x] Run focused frontend/backend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the customer portal detail view recalculated total from labor + parts before using backend `total_cost`, which hid discounted/net totals.
+- [x] Confirmed `RepairOrderDetail` already includes part-level `savings`; added labor/order discount fields to the shared frontend `RepairOrder` type.
+- [x] Updated customer portal totals to show `Total before savings`, `Best savings`, and `Final total`.
+- [x] Final total now uses backend `total_cost` first, so discounted repair orders display the true customer amount.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/customer-portal/CustomerPortalPage.tsx src/types/index.ts --max-warnings 0` (from `frontend/`)
+- [x] Passed TypeScript verification:
+  `npx tsc --noEmit -p .` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Customer repair details now tell the full pricing story: the undiscounted amount, the customer's savings, and the final amount due/paid.
+
+---
+
+# Price Builder Workflow Status Copy (2026-07-06)
+
+## Plan
+- [x] Trace the quote workflow strip and disabled-edit messaging in the repair order detail panel.
+- [x] Keep workflow behavior unchanged while making the visible statuses reflect quote approval and technician assignment.
+- [x] Replace developer-facing price-lock copy with user-facing disabled-action guidance.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the redesigned `PriceBuilderPanel` workflow strip hard-coded `Send`, `Approved`, and `Technician` instead of using the parent page's quote/assignment state.
+- [x] Passed quote sent/approved state, disabled CTA reason, and assigned technician name from `RepairOrdersPage` into `PriceBuilderPanel`.
+- [x] Updated the workflow strip so sent quotes show `Sent`, customer-approved quotes show `Approved`, and assigned orders show the technician name.
+- [x] Replaced `Pricing locked (reason). Edit is disabled.` with customer-facing lock copy.
+- [x] Added hover guidance to the disabled quote CTA explaining why `Quote approved` / `Awaiting approval` cannot be clicked.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed TypeScript verification:
+  `npx tsc --noEmit -p .` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The quote workflow UI now changes with the real quote/customer/technician state, and locked quote actions explain the customer-facing reason instead of exposing internal lock metadata.
+
+---
+
+# Mechanic Dashboard Repair Scope Visibility (2026-07-06)
+
+## Plan
+- [x] Trace the mechanic dashboard API and UI to confirm why assigned jobs show `0 services`.
+- [x] Surface the actual repair-order work scope from current structured labor/parts/PM data instead of only legacy selected services.
+- [x] Add focused regression coverage for assigned mechanic jobs with structured repair-order lines.
+- [x] Run focused verification and document the result.
+
+## Progress Notes
+- [x] Confirmed `/mechanics/my-jobs`, `/mechanics/my-history`, and `/mechanics/my-jobs/{order_id}` only counted/rendered legacy `internal_notes.selected_services`.
+- [x] Added mechanic-safe scope assembly from structured labor lines, PM service entries, parts fallback, repair-order description fallback, and legacy selected services fallback.
+- [x] Eager-loaded labor and parts rows for mechanic job/history/detail endpoints and loaded PM service entries by repair order.
+- [x] Added `backend/tests/test_mechanic_job_scope.py` covering an assigned mechanic RO with structured labor scope.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_mechanic_job_scope.py backend/tests/test_repair_order_assign_mechanic_notifications.py -q`
+
+## Review
+- Mechanic dashboard cards now count current structured repair-order work scope, and expanded job details show the actual work item names instead of an empty services section for assigned ROs built through Price Builder.
+
+---
+
+# Tenant-Branded Quote Emails (2026-07-06)
+
+## Plan
+- [x] Trace quote email send content, subject, SMS footer, and sender headers.
+- [x] Add tenant garage name to quote email header/title/subject and email From display name.
+- [x] Add regression coverage proving quote emails use the tenant name rather than DieselBridge.
+- [x] Run focused backend verification and document the result.
+
+## Progress Notes
+- [x] Found quote approval and auto-approval emails in `backend/app/api/v1/endpoints/quotes.py` hard-code `DieselBridge Network` in header and subject.
+- [x] Found `send_email` always sends from the global configured email address with no tenant-specific display name.
+- [x] Added optional `sender_name` support to `send_email`, formatting the Resend From header as `"Tenant Name" <configured-sender@example.com>`.
+- [x] Quote approval and auto-approval emails now load the order tenant and use `Tenant.name` for email subject, visible email heading, and sender display name.
+- [x] Quote-send SMS footer also uses the tenant name for consistency with the customer quote notification.
+- [x] Added regression coverage for quote-send email branding and email sender formatting.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py backend/tests/test_email_service.py -q`
+
+## Review
+- Quote emails sent from repair orders now present the Garage Profile tenant name instead of DieselBridge Network in customer-facing quote email branding.
+- The underlying sender email address still comes from `RESEND_FROM_EMAIL`; this change sets the display name to the tenant name for quote emails.
+
+---
+
+# Repair Order Price Builder Send Quote Flow (2026-07-06)
+
+## Plan
+- [x] Trace the redesigned Price Builder side drawer quote controls against the pre-existing parent quote mutations.
+- [x] Restore the customer quote action from the redesigned drawer without changing backend quote semantics.
+- [x] Verify with focused frontend checks and document the result.
+
+## Progress Notes
+- [x] Confirmed `RepairOrdersPage.tsx` still owns working `createQuoteMutation`, `updateQuoteMutation`, and `sendQuoteMutation` handlers.
+- [x] Confirmed the redesigned `PriceBuilderPanel.tsx` footer renders `Send quote` with no click handler or quote workflow props beyond display-only `quoteNumber`.
+- [x] Added quote action props to `PriceBuilderPanel` and wired the footer CTA to the parent's existing create/update/send quote mutations.
+- [x] Updated the redesigned workflow strip so it shows `Create draft` before a quote exists instead of incorrectly showing `Draft ready`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed TypeScript verification:
+  `npx tsc --noEmit -p .` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The redesigned Price Builder side drawer can now create a quote draft, update a changed draft, and send/resend the quote to the customer through the existing backend flow.
+- Backend quote semantics were left unchanged; this restores the frontend event wiring that the redesign dropped.
+
+---
+
 # Branch Merge Audit - Task Plan (2026-07-06)
+
+# Price Builder Approve Completion Action (2026-07-06)
+
+## Plan
+- [x] Confirm the completion approval UI is still coming from the legacy detail panel.
+- [x] Move mileage-out/review-notes inputs into the redesigned Price Builder panel for `pending_review`.
+- [x] Make the panel footer primary action become `Approve Completion` in `pending_review`.
+- [x] Hide the legacy Labor Breakdown/Approve Completion block when the redesigned panel owns the shell.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Confirmed `Labor Breakdown` and `Approve Completion` render outside `PriceBuilderPanel`, so they appear as old-design content under the redesigned drawer.
+- [x] Added a `pending_review` completion review card to `PriceBuilderPanel` using the existing mileage-out and review-notes state.
+- [x] Replaced the footer quote CTA with `Approve Completion` only while the redesigned panel is in completion mode.
+- [x] Hid the legacy labor breakdown and old orange completion block whenever `priceBuilderOwnsShell` is true.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Pending-review repair orders now keep completion review inside the redesigned panel: mileage/review notes live in the panel body and `Approve Completion` uses the footer's primary action slot instead of the old standalone section.
+
+---
+
+# Price Builder Technician Assignment CTA (2026-07-06)
+
+## Plan
+- [x] Confirm why the technician step stopped being engageable after showing the redesigned panel for approved/assigned states.
+- [x] Add assign/reassign technician controls into the redesigned Price Builder panel.
+- [x] Wire the controls to the existing assignment mutation and mechanic workload data.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Confirmed the old assign/reassign UI lives in the legacy workflow block hidden when `priceBuilderOwnsShell` is true.
+- [x] Confirmed the redesigned workflow strip currently renders `Assign technician` as text only.
+- [x] Added a technician picker to the redesigned panel for approved active orders, including reassignment when a technician is already assigned.
+- [x] Wired the picker to existing `assignMechanicMutation` and mechanic workload percentages.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The assigned technician step is engageable again inside the redesigned Price Builder/detail panel.
+
+---
+
+# Approved Assigned RO Detail Visibility (2026-07-06)
+
+## Plan
+- [x] Confirm why approved/assigned repair orders show the sparse legacy detail panel.
+- [x] Keep the redesigned Price Builder/detail panel visible for active post-approval states.
+- [x] Preserve edit restrictions for approved/assigned work while making line details readable.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Confirmed `PRICE_BUILDER_STATUSES` only included `draft` and `quoted`, so approved/assigned orders fell back to the old sparse workflow panel.
+- [x] Expanded the redesigned detail panel to `approved`, `assigned`, `acknowledged`, `in_progress`, and `pending_review`.
+- [x] Confirmed Price Builder mutations remain gated to `draft`/`quoted`, so post-approval orders are readable but not editable from the pricing controls.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Approved and assigned repair orders now keep the redesigned detail/line-item view so staff can see what work is being performed after customer approval.
+
+---
+
+# Quote Approval Portal Login 500 (2026-07-06)
+
+## Plan
+- [x] Trace the approved quote portal-account flow from frontend to backend.
+- [x] Reproduce `/api/v1/quotes/portal/create` through the actual API route.
+- [x] Fix the root cause that can leave the customer approved but not logged in.
+- [x] Add regression coverage and run focused verification.
+
+## Progress Notes
+- [x] Confirmed quote approval calls `/quotes/token/{token}/approve`, then portal access uses `/quotes/token/{token}/portal-resolve` followed by `/quotes/portal/create`.
+- [x] Confirmed the failing request in the screenshot is the portal account creation/login step, not necessarily the quote approval step.
+- [x] Reproduced the 500 in the API sequence test: one-time quote portal token consumption called Redis `eval`, but the active Redis client in this environment did not expose `eval`.
+- [x] Added a non-Lua fallback for one-time token consumption so portal creation returns auth instead of crashing when `eval` is unavailable.
+- [x] Added regression coverage for approve -> portal resolve -> portal create.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py backend/tests/test_quote_access_service.py backend/tests/test_pricing.py backend/tests/test_tenant_branding_surfaces.py -q`
+
+## Review
+- Customer quote approval still moves the repair order to approved, and the following portal account creation step now succeeds instead of returning 500 when Redis Lua `eval` is unavailable.
+
+---
+
+# Quote Email Savings Section (2026-07-06)
+
+## Plan
+- [x] Inspect quote email generation and current savings data available on repair orders.
+- [x] Add a customer savings section to quote emails for part savings, labor discounts, and order discounts.
+- [x] Include tests proving the quote email renders savings details when discounts exist.
+- [x] Run focused backend verification.
+
+## Progress Notes
+- [x] Confirmed quote email currently renders parts, labor, parts total, and quote total, but no savings block.
+- [x] Confirmed part savings can be derived the same way as Price Builder: `(list_price - unit_price) * quantity` when list is greater than actual unit price.
+- [x] Added a quote email `Customer savings` section with part savings rows, labor discount row, order discount row, and total savings.
+- [x] Added regression coverage for quote-send email savings content.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py backend/tests/test_pricing.py backend/tests/test_tenant_branding_surfaces.py -q`
+
+## Review
+- Quote emails now show customer savings when part discounts, labor discounts, or order discounts are present.
+
+---
+
+# Reversible Quote Dirty State (2026-07-06)
+
+## Plan
+- [x] Confirm how the app currently decides that a sent quote needs resend.
+- [x] Make the quote CTA return to `Awaiting approval` when the RO total matches the last quote again.
+- [x] Keep resend enabled when the unapproved RO total differs from the quote.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Confirmed the quote record currently stores `total_amount`, not a full line-item snapshot.
+- [x] Confirmed the current local `quoteNeedsUpdate` flag can stay true even after temporary pricing changes are reverted.
+- [x] Removed the one-way local dirty flag and made the CTA derive resend state from current RO total versus quote total.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- If a temporary price change is reverted so the repair order total matches the last quote again, the quote CTA returns to disabled `Awaiting approval`.
+
+---
+
+# Price Builder Quote Awaiting Approval CTA (2026-07-06)
+
+## Plan
+- [x] Confirm current side-drawer quote CTA labels and dirty-state behavior.
+- [x] Show a disabled `Awaiting approval` state after a quote is sent and unchanged.
+- [x] Re-enable the quote action only when an unapproved sent quote has changed pricing/content.
+- [x] Notify the parent page when Price Builder drawer mutations change the order.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Confirmed the side drawer currently labels sent quotes as `Resend quote` even when nothing changed.
+- [x] Confirmed the parent page already has `quoteNeedsUpdate`, but drawer-internal pricing mutations do not consistently set it.
+- [x] Updated the quote CTA state machine: create quote, send unsent quote, awaiting approval for sent-and-unchanged, resend for sent-and-changed, disabled after approval/non-editable status.
+- [x] Added a quote total mismatch fallback so stale/reloaded pages can still detect that the order differs from the last quote total.
+- [x] Wired Price Builder drawer updates into the parent quote dirty flag.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The quote action now waits after a sent quote unless the unapproved repair order changes. Changed sent quotes update the quote first and then resend it.
+
+---
+
+# Sent Quote Discount Revision Unlock (2026-07-06)
+
+## Plan
+- [x] Confirm why a sent quote disables discount/price edits.
+- [x] Make quote-sent pricing locks non-blocking while the repair order is still quoted and unapproved.
+- [x] Keep approved/finalized orders protected by status/real lock rules.
+- [x] Update tests and run focused verification.
+
+## Progress Notes
+- [x] Confirmed quote send sets `pricing_locked_at` / `pricing_lock_reason="quote_sent"`.
+- [x] Confirmed Price Builder summary and backend edit guards treat any `pricing_locked_at` as non-editable, even for still-quoted orders.
+- [x] Updated repair-order summary/edit guards and `PriceBuildService` so `quote_sent` is not a blocking lock while status is still `quoted`.
+- [x] Updated the hard-lock test to use an approval lock reason and added coverage for quote-sent service and discount revisions.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_price_locking_rules.py backend/tests/test_ro_pricing_discounts.py backend/tests/test_pricing.py backend/tests/test_tenant_branding_surfaces.py -q`
+- [x] Passed frontend lint:
+  `npx eslint src/features/quote-approval/QuoteApprovalPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Sent-but-unapproved quotes can now be revised in Price Builder and resent with discounted pricing. `quote_sent` remains recorded as pricing metadata, but only non-revision lock reasons or finalized statuses block edits.
+
+---
+
+# Quote Resend Discounted Total Fix (2026-07-06)
+
+## Plan
+- [x] Trace quote create/update/send total calculation after price-builder discounts.
+- [x] Add shared pricing helper for net order total after labor/order discounts.
+- [x] Use the discounted net total for quote create/update/send.
+- [x] Expose discount amounts in quote-token details and render discount rows on the customer quote page.
+- [x] Run focused backend/frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed quote create/update/send use `get_order_subtotal(order)`, which returns gross parts + gross labor and ignores `labor_discount_amount` / `order_discount_amount`.
+- [x] Confirmed customer quote page shows labor and parts rows with no discount rows, so a discounted quote total would otherwise look inconsistent.
+- [x] Added `get_order_total(order)` for the customer-facing net total after labor/order discounts.
+- [x] Updated quote create/update/send to use the discounted net total.
+- [x] Added labor/order discount amounts to quote token details and rendered those discount rows on the customer quote approval page.
+- [x] Fixed quote-send `shop_name` lookup in the send path, caught by focused tests.
+- [x] Passed focused backend tests:
+  `./.venv/bin/python -m pytest backend/tests/test_pricing.py backend/tests/test_price_locking_rules.py backend/tests/test_tenant_branding_surfaces.py -q`
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/quote-approval/QuoteApprovalPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Resent quotes now use the discounted repair-order total, and customer-facing quote math shows discount rows so labor + parts minus discounts equals the displayed total.
+
+---
+
+# Price Builder Discounts Draft Savings Preview (2026-07-06)
+
+## Plan
+- [x] Confirm the Discounts & pricing customer-saves amount currently uses persisted totals.
+- [x] Calculate a draft customer-saves preview from staged parts pricing and discount inputs.
+- [x] Keep backend recalculation/write behavior behind the Apply button.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the popover currently displays persisted `customerSavesTotal`, so staged dropdown/input changes do not update the savings preview until Apply/refetch.
+- [x] Added a draft savings calculation for the popover using staged Parts pricing mode plus typed labor/order discount values.
+- [x] Kept footer savings and backend totals tied to persisted values until Apply is clicked.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Discounts & pricing now previews customer savings immediately while still applying the actual pricing changes only from the Apply action.
+
+---
+
+# Price Builder Unified Discounts Apply Flow (2026-07-06)
+
+## Plan
+- [x] Confirm current mixed behavior between Parts pricing and discount fields.
+- [x] Stage Parts pricing dropdown changes until Apply is clicked.
+- [x] Apply parts pricing mode and labor/order discounts together from one action.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed Parts pricing currently applies immediately on select, while labor/order discounts only apply after `Apply`.
+- [x] Added a draft Parts pricing mode so dropdown selection changes only update local popover state.
+- [x] Updated Apply to commit the staged Parts pricing mode and labor/order discount fields together.
+- [x] Reopening the popover resets the dropdown to the currently applied mode, so un-applied selections do not linger.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Discounts & pricing now has one consistent commit point: changing any field stages the value, and `Apply` saves the pricing changes.
+
+---
 
 # Price Builder Order Total Inline Calculating Label (2026-07-06)
 

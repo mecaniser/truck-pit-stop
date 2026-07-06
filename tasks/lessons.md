@@ -1,6 +1,48 @@
 # Lessons
 
 ## 2026-07-06
+- Correction: The first repair-order history implementation made the timeline always visible, but the user wanted it collapsed and colocated with the operation/part/labor book time selector.
+- Rule: Secondary context such as action history should live behind an explicit tab/control when the primary drawer workflow is line-item editing.
+- Prevention: Before adding a new drawer section, decide whether it is primary workflow content or contextual reference and place it accordingly.
+- Correction: The first Zelle invoice redesign still used nested framed sections and repeated the same payment amount in multiple places before offering copy controls.
+- Rule: For customer payment flows, do not use card-in-card framing, and make each displayed copyable value own its copy action inline instead of repeating the value in a separate copy row.
+- Prevention: Before finalizing payment UI, map every displayed money/memo/contact value once and verify there is a single owner for copy, submit, and alternate payment actions.
+- Correction: Adding repair-order history initially used a hook after an early loading return in `RepairOrdersPage`, which violated React hook ordering.
+- Rule: In large route components with early returns, either place new hooks before every return or use plain derived values when the data is only needed after the return.
+- Prevention: After adding any hook to `RepairOrdersPage`, run focused lint before build and check its position relative to loading/error returns.
+- Correction: Quote approval exposed only the repair total while invoice/payment later added shop supplies, service fee, tax, and payment-method differences.
+- Rule: Customer-facing quote approval must show the expected checkout range up front, while keeping payment-method amounts separate from the approved repair total.
+- Prevention: For quote/invoice changes, verify email, approval page, invoice creation, invoice portal, and staff drawer totals against the same fee settings.
+- Correction: Invoiced repair orders still used an old body card for invoice actions and had no actual invoice breakdown in the redesigned drawer.
+- Rule: When a workflow reaches billing, invoice details belong in the main redesigned drawer body and invoice controls belong in the drawer footer action area.
+- Prevention: For each post-repair status added to the redesigned shell, audit body details, footer actions, modals, and irrelevant accordions such as recommended services.
+- Correction: A legacy `Time Tracking` header still rendered above the redesigned Price Builder drawer for pending-review repair orders.
+- Rule: When a redesigned shell owns the page header, audit all sibling blocks before the new shell render, not only blocks below it.
+- Prevention: For shell migrations, check the full render order around the new component: before, inside, and after.
+- Correction: The redesigned Price Builder shell showed `pending_review` orders but left the old `Labor Breakdown` and standalone `Approve Completion` card underneath it.
+- Rule: When a redesigned shell owns a status, completion/review actions must move into that shell's primary action area and the old status-specific blocks must be gated off.
+- Prevention: For each status added to `PRICE_BUILDER_STATUSES`, audit every legacy render condition for that same status before finalizing the workflow.
+- Correction: Moving approved/assigned orders into the redesigned Price Builder shell hid the legacy assign/reassign technician UI, leaving the technician workflow step as non-clickable text.
+- Rule: When a new shell takes over a workflow state, migrate every interactive control from the old shell, not just the read-only status indicators.
+- Prevention: For workflow strip changes, click through each step after every status-gate adjustment: quote, approval, technician assignment, reassignment, and completion.
+- Correction: Approved/assigned repair orders fell back to the sparse legacy detail panel because the redesigned Price Builder view was limited to draft/quoted statuses.
+- Rule: Customer-approved active work states should keep the same readable line-item/detail surface; only mutation controls should be disabled when edits are no longer allowed.
+- Prevention: For workflow-driven panels, verify every status transition keeps the appropriate read view, not just the editable pre-approval states.
+- Correction: Quote approval moved the RO to approved, but customer portal account creation returned 500 because one-time token consumption assumed Redis Lua `eval` support.
+- Rule: One-time token helpers must degrade safely or explicitly handle clients/environments without Lua `eval`, especially on customer-facing login/onboarding flows.
+- Prevention: For approval-to-portal flows, test the full browser sequence: approve quote, resolve portal access, create/login portal account, and verify auth is returned.
+- Correction: Quote emails showed detailed parts/labor and the net total but omitted the customer savings section from the site.
+- Rule: Customer-facing email summaries must carry the same money story as the approval page and Price Builder, including part savings and manager discounts.
+- Prevention: When changing quote pricing UI, verify the email template, approval page, and drawer footer against the same savings examples.
+- Correction: The quote resend dirty state was one-way, so temporary pricing experiments could leave a sent quote stuck in resend mode even after the RO total returned to the quoted amount.
+- Rule: Quote dirty state should be reversible from persisted comparison data, not only from local "something changed" flags.
+- Prevention: For quote/price workflows, test change, resend-eligible, revert-to-original, and awaiting-again states before shipping.
+- Correction: The quote action stayed as `Resend quote` after a quote was sent, even when no repair-order pricing or line content had changed.
+- Rule: Sent-but-unapproved quote actions should default to a disabled waiting state and only re-enable when the repair order differs from the last quote.
+- Prevention: Quote CTA logic needs separate states for create, update draft, send unsent, awaiting approval, resend changed quote, and approved/locked.
+- Correction: Treating `pricing_locked_at` from `quote_sent` as a hard edit lock prevented legitimate discount and price revisions before customer approval.
+- Rule: Quote-send lock metadata should not block revisions while the repair order is still `quoted`; approval/finalization is the hard stop.
+- Prevention: For money workflows, test the full revise-and-resend path after the first customer quote is sent, not only the first-send path.
 - Correction: The Order Total loading animation was tied directly to fast request state, so quick updates looked like flicker rather than intentional motion.
 - Rule: UI loading animations that communicate a state change need a minimum visible duration or independent visual state when backend responses can complete quickly.
 - Prevention: For production-facing animations, test both slow and fast response paths and keep transition timing perceptible without delaying the actual data update.
