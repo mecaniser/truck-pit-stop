@@ -381,7 +381,6 @@ export default function DashboardHome() {
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isExpandedFont = fontSize === 'comfortable' || fontSize === 'large'
-
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
   
