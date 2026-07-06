@@ -17,6 +17,9 @@ class ServiceCategory(BaseModel):
     icon = Column(String(50), nullable=True)  # emoji or icon name
     sort_order = Column(Integer, default=0, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Services in a PM category are the preventive-maintenance jobs offered when
+    # scoping a fleet PM work order (see /fleet/pm-service-catalog).
+    is_pm = Column(Boolean, default=False, nullable=False)
 
     services = relationship("Service", back_populates="category", cascade="all, delete-orphan")
 

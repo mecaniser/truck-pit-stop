@@ -47,6 +47,7 @@ interface ServiceCategory {
   icon: string | null
   sort_order: number
   is_active: boolean
+  is_pm: boolean
 }
 
 interface InventoryOption {
@@ -99,6 +100,7 @@ export default function ServicesManagementPage() {
   const iconOptions = ['🛠️', '🔧', '🧽', '🛢️', '🚗', '🚚', '🔋', '🧰', '⚙️', '✅']
   const [addingCategory, setAddingCategory] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryIsPm, setNewCategoryIsPm] = useState(false)
   const [categoryError, setCategoryError] = useState<string | null>(null)
 
   // Parts picker state (for editing an existing service)
@@ -233,6 +235,7 @@ export default function ServicesManagementPage() {
       const response = await api.post('/services/categories', {
         name: trimmed,
         sort_order: (categories?.length ?? 0) + 1,
+        is_pm: newCategoryIsPm,
       })
       return response.data as ServiceCategory
     },
@@ -240,6 +243,7 @@ export default function ServicesManagementPage() {
       queryClient.invalidateQueries({ queryKey: ['service-categories'] })
       setValue('category_id', cat.id, { shouldValidate: true })
       setNewCategoryName('')
+      setNewCategoryIsPm(false)
       setAddingCategory(false)
       setCategoryError(null)
     },
@@ -750,6 +754,15 @@ export default function ServicesManagementPage() {
                         {categoryError && (
                           <p className="text-xs text-red-600">{categoryError}</p>
                         )}
+                        <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={newCategoryIsPm}
+                            onChange={(e) => setNewCategoryIsPm(e.target.checked)}
+                            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          Preventive maintenance category (services here are offered on fleet PM work orders)
+                        </label>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -764,6 +777,7 @@ export default function ServicesManagementPage() {
                             onClick={() => {
                               setAddingCategory(false)
                               setNewCategoryName('')
+                              setNewCategoryIsPm(false)
                               setCategoryError(null)
                             }}
                             className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-100"

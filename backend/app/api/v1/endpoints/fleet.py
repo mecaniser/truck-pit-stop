@@ -18,11 +18,15 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.labor import Labor, LaborLineType
+from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
     FleetIncident,
+    VehiclePMService,
+    RepairOrderPMService,
     InspectionStatus,
     InspectionResult,
     InspectionItemResult,
@@ -55,12 +59,15 @@ from app.schemas.fleet import (
     WorkOrderCreate,
     WorkOrderComplete,
     SchedulePMRequest,
+    PMServiceEntry,
+    PMServicesUpdate,
+    AddServiceRequest,
     FleetInvoiceEntry,
     FleetManagerOption,
     FleetMechanicOption,
     FleetSettingsResponse,
 )
-from app.services.internal_fleet import ensure_internal_fleet_customer
+from app.services.internal_fleet import ensure_internal_fleet_customer, project_pm_due_date
 
 router = APIRouter()
 
@@ -146,7 +153,7 @@ def _inspection_response(insp: FleetInspection) -> InspectionResponse:
     return InspectionResponse(
         **{k: getattr(insp, k) for k in (
             "id", "vehicle_id", "inspector_id", "status", "result",
-            "scheduled_for", "performed_at", "odometer", "notes", "created_at",
+            "scheduled_for", "performed_at", "odometer", "notes", "repair_order_id", "created_at",
         )},
         **_vehicle_fields(insp.vehicle),
     )
@@ -294,13 +301,14 @@ async def create_inspection(
         scheduled_for=body.scheduled_for or datetime.now(timezone.utc).date(),
     )
     db.add(inspection)
-    for category, label in DEFAULT_INSPECTION_CHECKLIST:
+    for category, label, is_warning in DEFAULT_INSPECTION_CHECKLIST:
         db.add(FleetInspectionItem(
             id=uuid4(),
             tenant_id=current_user.tenant_id,
             inspection_id=inspection.id,
             category=category,
             label=label,
+            is_warning_light=is_warning,
             result=InspectionItemResult.PENDING,
         ))
     await db.commit()
@@ -353,6 +361,16 @@ async def update_inspection_item(
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection item not found")
+    # A completed inspection is a point-in-time record — don't let items change
+    # after the fact. Re-inspect (a new inspection) to record the current state.
+    insp_status = (await db.execute(
+        select(FleetInspection.status).where(FleetInspection.id == inspection_id)
+    )).scalar_one_or_none()
+    if insp_status in (InspectionStatus.COMPLETED, InspectionStatus.CANCELLED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This inspection is closed. Start a new inspection to record the current condition.",
+        )
     if body.result is not None:
         item.result = body.result
     if body.note is not None:
@@ -411,6 +429,14 @@ async def complete_inspection(
     insp.inspector_id = current_user.id
     insp.odometer = body.odometer
     vehicle.mileage = body.odometer  # refresh the truck's odometer so PM-by-miles recomputes
+    # Reconcile the truck's active dashboard warning lights from this inspection
+    # (a FAIL on a "Dashboard warnings" item means that light is illuminated).
+    warning_on = [
+        i.label for i in insp.items
+        if i.is_warning_light and i.result == InspectionItemResult.FAIL
+    ]
+    if any(i.is_warning_light for i in insp.items):
+        vehicle.active_warning_lights = ",".join(warning_on) if warning_on else None
     if body.notes is not None:
         insp.notes = body.notes
     await db.commit()
@@ -438,6 +464,32 @@ async def cancel_inspection(
     return _inspection_response(insp)
 
 
+async def _reconcile_vehicle_warning_lights(db: AsyncSession, tenant_id: UUID, vehicle_id: UUID) -> None:
+    """Recompute a truck's active warning lights from its most recent completed
+    inspection — used after an inspection is deleted so stale lights clear."""
+    result = await db.execute(
+        select(FleetInspection)
+        .where(and_(
+            FleetInspection.vehicle_id == vehicle_id,
+            FleetInspection.tenant_id == tenant_id,
+            FleetInspection.status == InspectionStatus.COMPLETED,
+        ))
+        .options(selectinload(FleetInspection.items))
+        .order_by(FleetInspection.performed_at.desc())
+        .limit(1)
+    )
+    latest = result.scalar_one_or_none()
+    veh_result = await db.execute(select(Vehicle).where(Vehicle.id == vehicle_id))
+    vehicle = veh_result.scalar_one_or_none()
+    if vehicle is None:
+        return
+    if latest is None:
+        vehicle.active_warning_lights = None
+        return
+    warning_on = [i.label for i in latest.items if i.is_warning_light and i.result == InspectionItemResult.FAIL]
+    vehicle.active_warning_lights = ",".join(warning_on) if warning_on else None
+
+
 @router.delete("/inspections/{inspection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_inspection(
     inspection_id: UUID,
@@ -453,9 +505,49 @@ async def delete_inspection(
     insp = result.scalar_one_or_none()
     if not insp:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
+    vehicle_id = insp.vehicle_id
     await db.delete(insp)  # checklist items cascade
+    await db.flush()
+    # Re-derive the truck's warning lights from whatever completed inspection
+    # remains, so lights from the deleted inspection don't linger.
+    await _reconcile_vehicle_warning_lights(db, current_user.tenant_id, vehicle_id)
     await db.commit()
     return None
+
+
+@router.post("/inspections/{inspection_id}/create-work-order", response_model=InspectionDetailResponse)
+async def create_work_order_for_inspection(
+    inspection_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Spawn an internal work order to fix a completed inspection's failed items,
+    and link it back to the inspection for traceability."""
+    result = await db.execute(
+        select(FleetInspection)
+        .where(and_(FleetInspection.id == inspection_id, FleetInspection.tenant_id == current_user.tenant_id))
+        .options(selectinload(FleetInspection.items), selectinload(FleetInspection.vehicle))
+    )
+    insp = result.scalar_one_or_none()
+    if not insp:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
+    if insp.status != InspectionStatus.COMPLETED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Complete the inspection before creating a work order")
+    if insp.repair_order_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A work order already exists for this inspection")
+
+    failed = [i.label for i in insp.items if i.result == InspectionItemResult.FAIL]
+    if not failed:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This inspection has no failed items to fix")
+
+    when = insp.performed_at.date().isoformat() if insp.performed_at else insp.scheduled_for.isoformat()
+    description = f"From {when} inspection: " + ", ".join(failed)
+    ro = await _spawn_internal_ro(
+        db, current_user.tenant_id, insp.vehicle, is_pm=False, description=description[:480],
+    )
+    insp.repair_order_id = ro.id
+    await db.commit()
+    return await _load_inspection_detail(db, current_user.tenant_id, inspection_id)
 
 
 # ---------------------------------------------------------------------------
@@ -679,13 +771,24 @@ def _derive_status(v: Vehicle, open_ro: Optional[RepairOrder]) -> str:
 
 
 def _board_work_order(ro: RepairOrder) -> BoardWorkOrder:
+    raw = ro.status.value if hasattr(ro.status, "value") else str(ro.status)
     return BoardWorkOrder(
         id=ro.order_number,
         repair_order_id=ro.id,
         status=_wo_label(ro),
+        raw_status=raw,
         summary=ro.description,
         mechanic=_mechanic_name(ro.assigned_mechanic),
+        is_pm=bool(ro.is_pm),
     )
+
+
+def _open_pm_ro(ros: list[RepairOrder]) -> Optional[RepairOrder]:
+    """The truck's open PM work order, if one exists. Only one PM should be open
+    at a time (completing it rolls the schedule forward); if several exist we take
+    the most-urgent so the card drives the one furthest along."""
+    pms = [r for r in ros if r.is_pm]
+    return _most_urgent_ro(pms) if pms else None
 
 
 # Lower sort key = more urgent. Parts-hold beats everything, then active work
@@ -713,13 +816,23 @@ def _most_urgent_ro(ros: list[RepairOrder]) -> Optional[RepairOrder]:
     return sorted(ros, key=key)[0]
 
 
-def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_count: int, open_wo_count: int = 0) -> BoardTruck:
+def _build_board_truck(
+    v: Vehicle,
+    open_ro: Optional[RepairOrder],
+    incident_count: int,
+    open_wo_count: int = 0,
+    pm_ro: Optional[RepairOrder] = None,
+    pm_services: Optional[list["PMServiceEntry"]] = None,
+) -> BoardTruck:
     status_str = _derive_status(v, open_ro)
     wo = None
     mechanic = None
     if open_ro is not None:
         mechanic = _mechanic_name(open_ro.assigned_mechanic)
         wo = _board_work_order(open_ro)
+    # The open PM work order (if any) drives the PM Schedule card's Start/Complete
+    # actions. It may or may not be the most-urgent open WO shown above.
+    pm_wo = _board_work_order(pm_ro) if pm_ro is not None else None
     moving = bool(v.last_speed_mph and v.last_speed_mph > 0)
     return BoardTruck(
         id=v.id,
@@ -749,9 +862,12 @@ def _build_board_truck(v: Vehicle, open_ro: Optional[RepairOrder], incident_coun
         heading=v.last_heading,
         assigned_mechanic=mechanic,
         work_order=wo,
+        pm_work_order=pm_wo,
+        pm_services=pm_services or [],
         open_work_order_count=open_wo_count,
         open_incident_count=incident_count,
         status_override=v.status_override if v.status_override in VALID_STATUS_OVERRIDES else None,
+        warning_lights=[s for s in (v.active_warning_lights or "").split(",") if s],
     )
 
 
@@ -821,10 +937,13 @@ async def fleet_board(
     ids = [v.id for v in vehicles]
     open_ros = await _open_ros_by_vehicle(db, ids)
     incidents = await _open_incident_counts(db, ids)
+    pm_svcs = await _pm_services_by_vehicle(db, current_user.tenant_id, ids)
 
     trucks = [
         _build_board_truck(
-            v, _most_urgent_ro(open_ros.get(v.id, [])), incidents.get(v.id, 0), len(open_ros.get(v.id, []))
+            v, _most_urgent_ro(open_ros.get(v.id, [])), incidents.get(v.id, 0), len(open_ros.get(v.id, [])),
+            pm_ro=_open_pm_ro(open_ros.get(v.id, [])),
+            pm_services=pm_svcs.get(v.id, []),
         )
         for v in vehicles
     ]
@@ -872,7 +991,7 @@ async def truck_detail(
     open_ros = [r for r in ros if r.status not in TERMINAL_RO_STATUSES]
     completed = [r for r in ros if r.status in (RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)]
 
-    board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros))
+    board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros), pm_ro=_open_pm_ro(open_ros))
 
     # History: completed internal ROs (PM/Repair) + completed inspections.
     history: list[HistoryEntry] = []
@@ -1060,7 +1179,7 @@ async def update_truck(
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
+    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
 
 
 async def _create_internal_invoice(db: AsyncSession, tenant_id: UUID, ro: RepairOrder) -> None:
@@ -1166,6 +1285,11 @@ async def complete_work_order(
     if ro.is_pm and veh is not None:
         from app.services.internal_fleet import advance_vehicle_pm
         advance_vehicle_pm(veh, ro.mileage_out)
+    # Completing a work order clears the truck's dashboard warning lights —
+    # the issue behind them is assumed resolved (a later inspection re-flags any
+    # that are still on).
+    if veh is not None:
+        veh.active_warning_lights = None
     await db.commit()
     # No external invoice for internal repairs — generate an internal cost record.
     await _create_internal_invoice(db, current_user.tenant_id, ro)
@@ -1201,6 +1325,357 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
     await db.commit()
     record_repair_order_created(str(tenant_id))
     return ro
+
+
+# ---------- PM services (per-truck default package + per-work-order instance) ----------
+
+async def _load_pm_services(db: AsyncSession, tenant_id: UUID, service_ids: list[UUID]) -> list[Service]:
+    """Load the given services (tenant-scoped, active), preserving the caller's
+    order and dropping unknown ids. Parts are eager-loaded for cost seeding."""
+    if not service_ids:
+        return []
+    result = await db.execute(
+        select(Service)
+        .where(and_(
+            Service.id.in_(service_ids),
+            Service.tenant_id == tenant_id,
+            Service.is_active.is_(True),
+        ))
+        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
+    )
+    by_id = {s.id: s for s in result.scalars().all()}
+    # Preserve request order; de-dup.
+    seen: set[UUID] = set()
+    ordered: list[Service] = []
+    for sid in service_ids:
+        if sid in by_id and sid not in seen:
+            ordered.append(by_id[sid])
+            seen.add(sid)
+    return ordered
+
+
+def _pm_service_entries(services: list[Service]) -> list[PMServiceEntry]:
+    return [
+        PMServiceEntry(
+            service_id=s.id, name=s.name,
+            duration_minutes=s.duration_minutes or 0, sort_order=i,
+        )
+        for i, s in enumerate(services)
+    ]
+
+
+async def _vehicle_pm_service_ids(db: AsyncSession, vehicle_id: UUID) -> list[UUID]:
+    result = await db.execute(
+        select(VehiclePMService.service_id)
+        .where(VehiclePMService.vehicle_id == vehicle_id)
+        .order_by(VehiclePMService.sort_order)
+    )
+    return list(result.scalars().all())
+
+
+async def _vehicle_pm_services(db: AsyncSession, tenant_id: UUID, vehicle_id: UUID) -> list[Service]:
+    return await _load_pm_services(db, tenant_id, await _vehicle_pm_service_ids(db, vehicle_id))
+
+
+async def _pm_services_by_vehicle(
+    db: AsyncSession, tenant_id: UUID, vehicle_ids: list[UUID]
+) -> dict[UUID, list[PMServiceEntry]]:
+    """Default PM service packages for many trucks at once (board view). Reads
+    the join rows and service names in two queries, then groups per vehicle."""
+    if not vehicle_ids:
+        return {}
+    rows = await db.execute(
+        select(VehiclePMService.vehicle_id, VehiclePMService.service_id,
+               VehiclePMService.sort_order, Service.name, Service.duration_minutes)
+        .join(Service, Service.id == VehiclePMService.service_id)
+        .where(and_(
+            VehiclePMService.vehicle_id.in_(vehicle_ids),
+            Service.is_active.is_(True),
+        ))
+        .order_by(VehiclePMService.vehicle_id, VehiclePMService.sort_order)
+    )
+    out: dict[UUID, list[PMServiceEntry]] = {}
+    for vid, sid, order, name, duration in rows.all():
+        out.setdefault(vid, []).append(
+            PMServiceEntry(service_id=sid, name=name, duration_minutes=duration or 0, sort_order=order)
+        )
+    return out
+
+
+async def _set_vehicle_pm_services(
+    db: AsyncSession, tenant_id: UUID, vehicle_id: UUID, services: list[Service]
+) -> None:
+    """Replace a truck's default PM package with the given services (order kept)."""
+    existing = await db.execute(
+        select(VehiclePMService).where(VehiclePMService.vehicle_id == vehicle_id)
+    )
+    for row in existing.scalars().all():
+        await db.delete(row)
+    for i, s in enumerate(services):
+        db.add(VehiclePMService(
+            id=uuid4(), tenant_id=tenant_id, vehicle_id=vehicle_id,
+            service_id=s.id, sort_order=i,
+        ))
+
+
+async def _apply_pm_services_to_ro(
+    db: AsyncSession, tenant_id: UUID, ro: RepairOrder, services: list[Service]
+) -> None:
+    """Attach `services` to the PM work order: record the per-PM service list,
+    roll the service names into the description (manager-facing scope), and
+    re-seed the owner-facing labor + parts cost lines from those services.
+
+    Idempotent: prior service-sourced rows are cleared and rebuilt, so this can
+    run again whenever the service selection changes (while the WO is a draft).
+    """
+    from decimal import Decimal
+
+    # 1) Replace the per-PM service rows.
+    existing = await db.execute(
+        select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro.id)
+    )
+    for row in existing.scalars().all():
+        await db.delete(row)
+    for i, s in enumerate(services):
+        db.add(RepairOrderPMService(
+            id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
+            service_id=s.id, sort_order=i,
+        ))
+
+    # 2) Clear previously seeded (service-sourced) labor & parts lines. Manually
+    # added lines (source_service_id IS NULL) are left untouched.
+    old_labor = await db.execute(
+        select(Labor).where(and_(
+            Labor.repair_order_id == ro.id,
+            Labor.source_service_id.isnot(None),
+        ))
+    )
+    for row in old_labor.scalars().all():
+        await db.delete(row)
+    old_parts = await db.execute(
+        select(PartsUsage).where(and_(
+            PartsUsage.repair_order_id == ro.id,
+            PartsUsage.source_service_id.isnot(None),
+        ))
+    )
+    for row in old_parts.scalars().all():
+        await db.delete(row)
+
+    # 3) Manager-facing scope: PM description lists the selected service names.
+    #    When no services are selected, keep whatever description the spawn set.
+    if services:
+        names = ", ".join(s.name for s in services)
+        ro.description = f"Preventive maintenance: {names}"
+
+    # 4) Owner-facing costing: seed labor (duration × internal rate) and parts
+    # (at internal cost) for each service.
+    tenant_res = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    tenant = tenant_res.scalar_one_or_none()
+    internal_rate = Decimal(str(tenant.internal_labor_rate or 0)) if tenant else Decimal("0")
+
+    for s in services:
+        hours = Decimal(str(s.duration_minutes or 0)) / Decimal("60")
+        if hours > 0:
+            db.add(Labor(
+                id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
+                description=s.name, hours=hours, hourly_rate=internal_rate,
+                total_cost=(hours * internal_rate).quantize(Decimal("0.01")),
+                line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id,
+            ))
+        for sp in s.service_parts:
+            inv = sp.inventory_item
+            if inv is None:
+                continue
+            # Internal orders cost parts at inventory cost, not selling price.
+            unit_price = Decimal(str(inv.cost or 0))
+            qty = sp.quantity or 1
+            db.add(PartsUsage(
+                id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
+                inventory_id=inv.id, quantity=qty,
+                unit_price=unit_price, list_price=unit_price,
+                total_price=(unit_price * qty).quantize(Decimal("0.01")),
+                source_service_id=s.id,
+            ))
+
+
+async def _ro_pm_services(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> list[Service]:
+    result = await db.execute(
+        select(RepairOrderPMService.service_id)
+        .where(RepairOrderPMService.repair_order_id == ro_id)
+        .order_by(RepairOrderPMService.sort_order)
+    )
+    return await _load_pm_services(db, tenant_id, list(result.scalars().all()))
+
+
+@router.get("/pm-service-catalog", response_model=List[PMServiceEntry])
+async def pm_service_catalog(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """The services a PM can be scoped with: active services whose catalog
+    category is flagged as preventive maintenance (ServiceCategory.is_pm). The
+    flag (not the category name) defines the PM set, so a PM category can be
+    renamed without breaking the fleet PM picker."""
+    from app.db.models.service import ServiceCategory
+
+    result = await db.execute(
+        select(Service)
+        .join(ServiceCategory, ServiceCategory.id == Service.category_id)
+        .where(and_(
+            Service.tenant_id == current_user.tenant_id,
+            Service.is_active.is_(True),
+            ServiceCategory.is_pm.is_(True),
+        ))
+        .order_by(Service.sort_order, Service.name)
+    )
+    return _pm_service_entries(list(result.scalars().all()))
+
+
+@router.get("/trucks/{vehicle_id}/pm-services", response_model=List[PMServiceEntry])
+async def get_truck_pm_services(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """The truck's saved default PM service package."""
+    await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    return _pm_service_entries(await _vehicle_pm_services(db, current_user.tenant_id, vehicle_id))
+
+
+@router.put("/trucks/{vehicle_id}/pm-services", response_model=List[PMServiceEntry])
+async def set_truck_pm_services(
+    vehicle_id: UUID,
+    body: PMServicesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Replace the truck's default PM service package."""
+    await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+    await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle_id, services)
+    await db.commit()
+    return _pm_service_entries(services)
+
+
+@router.get("/work-orders/{ro_id}/pm-services", response_model=List[PMServiceEntry])
+async def get_wo_pm_services(
+    ro_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """The services attached to a specific PM work order."""
+    await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    return _pm_service_entries(await _ro_pm_services(db, current_user.tenant_id, ro_id))
+
+
+@router.put("/work-orders/{ro_id}/pm-services", response_model=List[PMServiceEntry])
+async def set_wo_pm_services(
+    ro_id: UUID,
+    body: PMServicesUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Adjust a PM work order's services and re-seed its cost lines. Only allowed
+    while the work order is still a draft (before work starts)."""
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    if ro.status != RepairOrderStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="PM services can only be changed while the work order is a draft.",
+        )
+    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+    services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+    await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
+    await db.commit()
+    await _recompute_repair_order_totals(db, ro.id)
+    return _pm_service_entries(services)
+
+
+@router.get("/service-catalog", response_model=List[PMServiceEntry])
+async def service_catalog(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """The full active service catalog (Diagnostic, inspections, repairs, …) for
+    hand-adding a service to a non-PM internal work order. Unlike the PM catalog
+    this is not restricted to PM-flagged categories."""
+    result = await db.execute(
+        select(Service)
+        .where(and_(Service.tenant_id == current_user.tenant_id, Service.is_active.is_(True)))
+        .order_by(Service.sort_order, Service.name)
+    )
+    return _pm_service_entries(list(result.scalars().all()))
+
+
+@router.post("/work-orders/{ro_id}/add-service", response_model=BoardWorkOrder)
+async def add_service_to_work_order(
+    ro_id: UUID,
+    body: AddServiceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Add a single catalog service to a non-PM internal work order. Seeds one
+    labor line (service duration × in-house rate) plus the service's parts at
+    internal cost — the same costing PM services use. PM work orders are scoped
+    through their service picker instead, so this is rejected for them."""
+    from decimal import Decimal
+    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    if ro.is_pm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This is a PM work order — adjust its services with the PM picker.",
+        )
+    if ro.status in TERMINAL_RO_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot add work to a work order in '{ro.status.value}' status.",
+        )
+
+    svc_res = await db.execute(
+        select(Service)
+        .where(and_(
+            Service.id == body.service_id,
+            Service.tenant_id == current_user.tenant_id,
+            Service.is_active.is_(True),
+        ))
+        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
+    )
+    service = svc_res.scalar_one_or_none()
+    if service is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    tenant_res = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_res.scalar_one_or_none()
+    internal_rate = Decimal(str(tenant.internal_labor_rate or 0)) if tenant else Decimal("0")
+
+    hours = Decimal(str(service.duration_minutes or 0)) / Decimal("60")
+    if hours > 0:
+        db.add(Labor(
+            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
+            description=service.name, hours=hours, hourly_rate=internal_rate,
+            total_cost=(hours * internal_rate).quantize(Decimal("0.01")),
+            line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
+        ))
+    for sp in service.service_parts:
+        inv = sp.inventory_item
+        if inv is None:
+            continue
+        unit_price = Decimal(str(inv.cost or 0))
+        qty = sp.quantity or 1
+        db.add(PartsUsage(
+            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
+            inventory_id=inv.id, quantity=qty,
+            unit_price=unit_price, list_price=unit_price,
+            total_price=(unit_price * qty).quantize(Decimal("0.01")),
+            source_service_id=service.id,
+        ))
+
+    await db.commit()
+    await _recompute_repair_order_totals(db, ro.id)
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    return _board_work_order(ro)
 
 
 @router.get("/settings", response_model=FleetSettingsResponse)
@@ -1319,7 +1794,7 @@ async def new_work_order(
     await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description=description)
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
+    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
 
 
 @router.post("/trucks/{vehicle_id}/schedule-pm", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
@@ -1334,20 +1809,44 @@ async def schedule_pm(
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
     body = body or SchedulePMRequest()
 
-    if body.due_date is not None:
-        vehicle.pm_due_date = body.due_date
     if body.next_pm_miles is not None:
         vehicle.next_pm_miles = body.next_pm_miles
+    # Due date: honor a date the manager explicitly picked (they may know the
+    # truck will sit idle and not hit the mileage soon). Otherwise project the
+    # date from the mileage target (today + miles_remaining / 600 mi-day) so the
+    # default never contradicts the odometer trigger.
+    if body.due_date is not None:
+        vehicle.pm_due_date = body.due_date
+    else:
+        projected = project_pm_due_date(vehicle.next_pm_miles, vehicle.mileage)
+        if projected is not None:
+            vehicle.pm_due_date = projected
+
+    # Resolve which services this PM uses: an explicit override if provided,
+    # otherwise the truck's saved default package.
+    if body.service_ids is not None:
+        services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+    else:
+        services = await _vehicle_pm_services(db, current_user.tenant_id, vehicle.id)
+
+    # Optionally persist the selection as the truck's new default package.
+    if body.save_as_default and body.service_ids is not None:
+        await _set_vehicle_pm_services(db, current_user.tenant_id, vehicle.id, services)
 
     if body.create_work_order:
         # _spawn_internal_ro commits (and persists the schedule changes above).
-        await _spawn_internal_ro(
+        ro = await _spawn_internal_ro(
             db, current_user.tenant_id, vehicle, is_pm=True,
             description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
         )
+        if services:
+            from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+            await _apply_pm_services_to_ro(db, current_user.tenant_id, ro, services)
+            await db.commit()
+            await _recompute_repair_order_totals(db, ro.id)
     else:
         await db.commit()
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list))
+    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))

@@ -29,6 +29,7 @@ class ServiceCategoryCreate(BaseModel):
     description: Optional[str] = None
     icon: Optional[str] = None
     sort_order: int = 0
+    is_pm: bool = False
 
 
 class ServiceCategoryResponse(BaseModel):
@@ -38,6 +39,7 @@ class ServiceCategoryResponse(BaseModel):
     icon: Optional[str]
     sort_order: int
     is_active: bool
+    is_pm: bool = False
 
     class Config:
         from_attributes = True
@@ -248,6 +250,7 @@ async def create_category(
         icon=category.icon,
         sort_order=category.sort_order,
         is_active=category.is_active,
+        is_pm=category.is_pm,
     )
 
 
@@ -284,6 +287,7 @@ async def list_categories(
             icon=c.icon,
             sort_order=c.sort_order,
             is_active=c.is_active,
+            is_pm=c.is_pm,
         )
         for c in categories
     ]

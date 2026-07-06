@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
-  Check, Minus, RotateCcw,
+  Check, Minus, RotateCcw, Wrench,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
+  PMServiceEntry,
 } from './types'
 import { fmtDate, money, fmt } from './helpers'
 
@@ -229,28 +230,61 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
 
 /* ---------- Schedule PM (date + mileage) ---------- */
 
-export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck; onClose: () => void; onDone: () => void }) {
+export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: { truck: BoardTruck; onClose: () => void; onDone: () => void; createMode?: boolean }) {
   const qc = useQueryClient()
-  // Default cadence when the truck has no configured interval: 10 weeks (70 days).
-  const intervalDays = truck.pm_interval_days || 70
   const intervalMiles = truck.pm_interval_miles || 25000
-  const defaultDate = () => {
-    const base = truck.pm_due_date ? new Date(truck.pm_due_date) : new Date(Date.now() + intervalDays * 86400000)
-    return base.toISOString().slice(0, 10)
+  // Assumed average daily mileage — keeps the projected due date in step with
+  // the odometer target so they don't contradict each other.
+  const AVG_MILES_PER_DAY = 600
+  // Project the due date from a target odometer: today + miles_remaining / 600.
+  const projectDate = (targetMiles: number) => {
+    const remaining = targetMiles - (truck.odometer || 0)
+    const days = remaining > 0 ? Math.ceil(remaining / AVG_MILES_PER_DAY) : 0
+    return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
   }
-  const [dueDate, setDueDate] = useState(defaultDate())
-  const [nextMiles, setNextMiles] = useState(String(truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)))
-  const [createWO, setCreateWO] = useState(false)
+  const initialMiles = truck.next_pm_miles ?? ((truck.odometer || 0) + intervalMiles)
+  // Pre-fill the date from mileage (not the stale stored date), so the manager
+  // sees a date that agrees with the odometer. They can still override it.
+  const [dueDate, setDueDate] = useState(projectDate(initialMiles))
+  const [dateEdited, setDateEdited] = useState(false)
+  const [nextMiles, setNextMiles] = useState(String(initialMiles))
+  // When opened from the card's "Create work order" action, default to creating
+  // the work order now so the manager picks services first, in one step.
+  const [createWO, setCreateWO] = useState(createMode)
   const rescheduling = !!truck.pm_due_date
+
+  // Services for this PM, seeded from the truck's saved default package. The
+  // manager can adjust them here and (optionally) save the new set as default.
+  const [selected, setSelected] = useState<string[]>(() => (truck.pm_services || []).map((s) => s.service_id))
+  const [saveAsDefault, setSaveAsDefault] = useState(false)
+  const defaultIds = (truck.pm_services || []).map((s) => s.service_id)
+  const changedFromDefault =
+    selected.length !== defaultIds.length || selected.some((id) => !defaultIds.includes(id))
+
+  // Only the PM-category services are offered when scoping a PM.
+  const { data: services } = useQuery<PMServiceEntry[]>({
+    queryKey: ['fleet-pm-catalog'],
+    queryFn: async () => (await api.get('/fleet/pm-service-catalog')).data,
+  })
+  const activeServices = services || []
+  const toggle = (id: string) =>
+    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
 
   const save = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/schedule-pm`, {
-      due_date: dueDate || null,
-      next_pm_miles: nextMiles.trim() ? Number(nextMiles) : null,
+      // Create mode services the truck now: it must not touch the PM schedule —
+      // the date/odometer roll forward when the work order completes (from the
+      // real mileage-out). Only reschedule/schedule mode sets those fields.
+      // Send an explicit due_date only when the manager overrode it; otherwise
+      // leave it null so the backend projects it from the mileage target.
+      due_date: createMode ? null : (dateEdited ? (dueDate || null) : null),
+      next_pm_miles: createMode ? null : (nextMiles.trim() ? Number(nextMiles) : null),
       create_work_order: createWO,
+      service_ids: selected,
+      save_as_default: saveAsDefault,
     })).data,
     onSuccess: () => {
-      toast.success(createWO ? 'PM rescheduled and work order created' : (rescheduling ? 'PM rescheduled' : 'PM scheduled'))
+      toast.success(createMode ? 'PM work order created' : (rescheduling ? 'PM rescheduled' : 'PM scheduled'))
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
       qc.invalidateQueries({ queryKey: ['fleet-board'] })
       onDone(); onClose()
@@ -258,25 +292,90 @@ export function SchedulePMModal({ truck, onClose, onDone }: { truck: BoardTruck;
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to schedule PM'),
   })
 
+  const modalTitle = createMode
+    ? `Create PM work order${truck.unit_number ? ` · ${truck.unit_number}` : ''}`
+    : `${rescheduling ? 'Reschedule' : 'Schedule'} PM${truck.unit_number ? ` · ${truck.unit_number}` : ''}`
   return (
-    <Modal title={`${rescheduling ? 'Reschedule' : 'Schedule'} PM${truck.unit_number ? ` · ${truck.unit_number}` : ''}`} icon={<Calendar size={17} />} onClose={onClose} width={440}>
+    <Modal title={modalTitle} icon={createMode ? <ClipboardCheck size={17} /> : <Calendar size={17} />} onClose={onClose} width={460}>
       <div style={{ display: 'grid', gap: 12 }}>
-        <Field label="Next PM due date">
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        {/* Schedule fields belong to planning (reschedule), not to servicing the
+            truck now. In create mode they're hidden: the next PM rolls forward
+            automatically when this work order completes. */}
+        {!createMode && (
+          <>
+            <Field label="Next PM at odometer (mi)">
+              <input
+                value={nextMiles}
+                onChange={(e) => {
+                  setNextMiles(e.target.value)
+                  // Keep the date in step with the odometer target unless the
+                  // manager has explicitly overridden it.
+                  const n = Number(e.target.value)
+                  if (!dateEdited && e.target.value.trim() && !Number.isNaN(n)) {
+                    setDueDate(projectDate(n))
+                  }
+                }}
+                inputMode="numeric"
+                placeholder={`${intervalMiles} mi interval`}
+              />
+            </Field>
+            <Field label="Next PM due date">
+              <input type="date" value={dueDate} onChange={(e) => { setDueDate(e.target.value); setDateEdited(true) }} />
+              <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+                {dateEdited
+                  ? 'Custom date — overrides the mileage estimate.'
+                  : `Estimated from mileage (~${AVG_MILES_PER_DAY} mi/day). Edit to override.`}
+              </p>
+            </Field>
+          </>
+        )}
+
+        <Field label={`PM services${selected.length ? ` · ${selected.length} selected` : ''}`}>
+          <div className="pm-svc-list">
+            {activeServices.length === 0 ? (
+              <div className="pm-svc-empty">No PM services in the catalog yet.</div>
+            ) : (
+              activeServices.map((s) => {
+                const on = selected.includes(s.service_id)
+                return (
+                  <button
+                    type="button"
+                    key={s.service_id}
+                    className={'pm-svc-row' + (on ? ' on' : '')}
+                    onClick={() => toggle(s.service_id)}
+                  >
+                    <span className="pm-svc-check">{on && <Check size={13} />}</span>
+                    <span className="pm-svc-name">{s.name}</span>
+                    {s.duration_minutes ? <span className="pm-svc-dur">{s.duration_minutes}m</span> : null}
+                  </button>
+                )
+              })
+            )}
+          </div>
         </Field>
-        <Field label="Next PM at odometer (mi)">
-          <input value={nextMiles} onChange={(e) => setNextMiles(e.target.value)} inputMode="numeric" placeholder={`${intervalMiles} mi interval`} />
-        </Field>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={createWO} onChange={(e) => setCreateWO(e.target.checked)} style={{ width: 'auto' }} />
-          Create the PM work order now
-        </label>
+
+        {changedFromDefault && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} style={{ width: 'auto' }} />
+            Save these services as this truck's default PM package
+          </label>
+        )}
+        {/* In create mode the work order is always created — no need to offer it
+            as a toggle. */}
+        {!createMode && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={createWO} onChange={(e) => setCreateWO(e.target.checked)} style={{ width: 'auto' }} />
+            Create the PM work order now
+          </label>
+        )}
       </div>
       <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 10 }}>
-        PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval.
+        {createMode
+          ? "Creates the maintenance work order now. The next PM rolls forward automatically when this work order is completed."
+          : "PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval."}
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Calendar size={15} />} {createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create work order` : 'Save schedule'}
+        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create work order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create work order` : 'Save schedule')}
       </button>
     </Modal>
   )
@@ -342,7 +441,7 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
   )
 }
 
-function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onChanged: () => void }) {
+function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOLabor; onChanged: () => void; showPrices?: boolean }) {
   const [hours, setHours] = useState(String(toNum(line.hours)))
   const dirty = Number(hours) !== toNum(line.hours)
   const save = useMutation({
@@ -359,7 +458,9 @@ function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onCh
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
       <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" />
-      <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
+      {showPrices
+        ? <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
+        : <span style={{ width: 72, textAlign: 'right', color: 'var(--muted-2)' }}>hrs</span>}
       {dirty && (
         <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
@@ -367,6 +468,34 @@ function LaborRow({ roId, line, onChanged }: { roId: string; line: WOLabor; onCh
       )}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <XCircle size={15} color="var(--red)" />
+      </button>
+    </div>
+  )
+}
+
+function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => void }) {
+  const [serviceId, setServiceId] = useState('')
+  const { data: services } = useQuery<PMServiceEntry[]>({
+    queryKey: ['fleet-service-catalog'],
+    queryFn: async () => (await api.get('/fleet/service-catalog')).data,
+  })
+  const add = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/work-orders/${roId}/add-service`, { service_id: serviceId })).data,
+    onSuccess: () => { toast.success('Service added'); setServiceId(''); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add service'),
+  })
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <select style={{ ...costInput, flex: 1, height: 34 }} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+        <option value="">Add service from catalog…</option>
+        {(services || []).map((s) => (
+          <option key={s.service_id} value={s.service_id}>
+            {s.name}{s.duration_minutes ? ` · ${s.duration_minutes}m` : ''}
+          </option>
+        ))}
+      </select>
+      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
       </button>
     </div>
   )
@@ -396,7 +525,7 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   )
 }
 
-function PartRow({ roId, line, onChanged }: { roId: string; line: WOPart; onChanged: () => void }) {
+function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOPart; onChanged: () => void; showPrices?: boolean }) {
   const [qty, setQty] = useState(String(line.quantity))
   const dirty = Number(qty) !== line.quantity
   const save = useMutation({
@@ -411,9 +540,9 @@ function PartRow({ roId, line, onChanged }: { roId: string; line: WOPart; onChan
   })
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
-      <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name} · {money(toNum(line.unit_price))}</span>
+      <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
       <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" />
-      <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>
+      {showPrices && <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
       {dirty && (
         <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
           {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
@@ -423,6 +552,67 @@ function PartRow({ roId, line, onChanged }: { roId: string; line: WOPart; onChan
         <XCircle size={15} color="var(--red)" />
       </button>
     </div>
+  )
+}
+
+/* ---------- PM services picker (draft PM work orders only) ----------
+   The services drive the PM: saving re-seeds the labor + parts cost lines, so a
+   PM work order is scoped by picking services, not by hand-adding parts. */
+function PMServicesSection({ roId, onChanged }: { roId: string; onChanged: () => void }) {
+  // Only PM-category services are offered.
+  const { data: services } = useQuery<PMServiceEntry[]>({
+    queryKey: ['fleet-pm-catalog'],
+    queryFn: async () => (await api.get('/fleet/pm-service-catalog')).data,
+  })
+  const { data: current } = useQuery<{ service_id: string }[]>({
+    queryKey: ['fleet-wo-pm-services', roId],
+    queryFn: async () => (await api.get(`/fleet/work-orders/${roId}/pm-services`)).data,
+  })
+  const [selected, setSelected] = useState<string[] | null>(null)
+  // Seed the selection from the saved set once it loads.
+  const sel = selected ?? (current ? current.map((s) => s.service_id) : [])
+  const savedIds = (current || []).map((s) => s.service_id)
+  const dirty = selected != null && (
+    sel.length !== savedIds.length || sel.some((id) => !savedIds.includes(id))
+  )
+  const toggle = (id: string) =>
+    setSelected(() => (sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]))
+
+  const save = useMutation({
+    mutationFn: async () => (await api.put(`/fleet/work-orders/${roId}/pm-services`, { service_ids: sel })).data,
+    onSuccess: () => { toast.success('PM services updated'); setSelected(null); onChanged() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update PM services'),
+  })
+
+  const active = services || []
+  return (
+    <Field label={`PM services${sel.length ? ` · ${sel.length} selected` : ''}`}>
+      <div className="pm-svc-list">
+        {active.length === 0 ? (
+          <div className="pm-svc-empty">No PM services in the catalog yet.</div>
+        ) : (
+          active.map((s) => {
+            const on = sel.includes(s.service_id)
+            return (
+              <button type="button" key={s.service_id} className={'pm-svc-row' + (on ? ' on' : '')} onClick={() => toggle(s.service_id)}>
+                <span className="pm-svc-check">{on && <Check size={13} />}</span>
+                <span className="pm-svc-name">{s.name}</span>
+                {s.duration_minutes ? <span className="pm-svc-dur">{s.duration_minutes}m</span> : null}
+              </button>
+            )
+          })
+        )}
+      </div>
+      <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+        Selected services seed the labor &amp; parts below at in-house cost.
+      </p>
+      {dirty && (
+        <button className={yellowBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
+          disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending ? <Loader2 size={13} className="animate-spin" /> : <ClipboardCheck size={14} />} Save PM services
+        </button>
+      )}
+    </Field>
   )
 }
 
@@ -461,6 +651,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['fleet-wo', repairOrderId] })
+    qc.invalidateQueries({ queryKey: ['fleet-wo-pm-services', repairOrderId] })
     qc.invalidateQueries({ queryKey: ['fleet-board'] })
     onChanged()
   }
@@ -497,6 +688,11 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   // warns when work has already started, since deleting discards that progress.
   const workStarted = wo ? !['draft', 'quoted'].includes(wo.status) : false
   const title = wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Work order'
+
+  // Internal cost is owner/admin territory. Fleet managers see the parts &
+  // labor that make up the PM (names + quantities) but not the prices.
+  const { user } = useAuthStore()
+  const showPrices = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   return (
     <Modal title={title} icon={<ClipboardList size={17} />} onClose={onClose} width={560}>
@@ -590,30 +786,45 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
             </p>
           </Field>
 
+          {/* PM work orders are scoped by picking services (which seed the cost
+              lines), so the manual add rows are hidden for them. The picker is
+              only editable while the PM is still a draft. */}
+          {wo.is_pm && wo.status === 'draft' && (
+            <PMServicesSection roId={repairOrderId} onChanged={refresh} />
+          )}
+
           <div>
             <div className="dmap-side-h" style={{ marginBottom: 8 }}>Labor ({wo.labor_items.length})</div>
             <div style={{ display: 'grid', gap: 6 }}>
-              {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} />)}
+              {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} showPrices={showPrices} />)}
             </div>
-            <LaborAddRow roId={repairOrderId} internalRate={internalRate} onChanged={refresh} />
+            {!wo.is_pm && (
+              <>
+                <ServiceAddRow roId={repairOrderId} onChanged={refresh} />
+                <LaborAddRow roId={repairOrderId} internalRate={internalRate} onChanged={refresh} />
+              </>
+            )}
           </div>
 
           <div>
             <div className="dmap-side-h" style={{ marginBottom: 8 }}>Parts ({wo.parts_usage.length})</div>
             <div style={{ display: 'grid', gap: 6 }}>
-              {wo.parts_usage.map((p) => <PartRow key={p.id} roId={repairOrderId} line={p} onChanged={refresh} />)}
+              {wo.parts_usage.map((p) => <PartRow key={p.id} roId={repairOrderId} line={p} onChanged={refresh} showPrices={showPrices} />)}
             </div>
-            <PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} />
+            {!wo.is_pm && <PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} />}
           </div>
 
-          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
-            <Row k="Labor" v={money(num(wo.total_labor_cost))} />
-            <Row k="Parts" v={money(num(wo.total_parts_cost))} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4 }}>
-              <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
-              <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
+          {/* Cost breakdown is owner/admin only — fleet managers don't see prices. */}
+          {showPrices && (
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
+              <Row k="Labor" v={money(num(wo.total_labor_cost))} />
+              <Row k="Parts" v={money(num(wo.total_parts_cost))} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4 }}>
+                <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
+                <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             <InlineConfirm
@@ -900,6 +1111,11 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
                 <span className="lrow-r">
                   {i.odometer != null && <span className="lrow-tx" style={{ color: 'var(--muted)' }}>{fmt(i.odometer)} mi</span>}
                   <span className="lrow-st" style={{ textTransform: 'capitalize', color: labelColor }}>{label}</span>
+                  {i.repair_order_id && (
+                    <span title="Work order created to fix flagged items" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--st-active)' }}>
+                      <Wrench size={13} />
+                    </span>
+                  )}
                   {isOwner && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setConfirmDelete(i) }}
@@ -973,6 +1189,11 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     mutationFn: async () => (await api.post(`/fleet/inspections/${inspectionId}/complete`, { odometer: Number(odometer) })).data,
     onSuccess: () => { toast.success('Inspection completed'); refreshLists(); qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }); onClose() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Could not complete'),
+  })
+  const createWO = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/inspections/${inspectionId}/create-work-order`)).data,
+    onSuccess: () => { toast.success('Work order created'); refreshLists(); qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }) },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Could not create work order'),
   })
 
   const items = insp?.items || []
@@ -1121,7 +1342,11 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                           return (
                             <div key={item.id} className={'ip-item' + (itemErr ? ' err' : '')}
                               ref={item.id === firstPendingId ? firstErrorRef : undefined}>
-                              <div className="ip-item-label">{item.label}
+                              <div className="ip-item-label">
+                                {item.is_warning_light && (
+                                  <span title="Dashboard warning light" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--yellow)', background: 'rgba(245,179,1,.14)', border: '1px solid rgba(245,179,1,.35)', borderRadius: 999, padding: '1px 7px', marginRight: 8, verticalAlign: 'middle' }}>⚠ Light</span>
+                                )}
+                                {item.label}
                                 {itemErr && <span style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11, marginLeft: 8, letterSpacing: '.04em' }}>· NOT SET</span>}
                               </div>
                               {done ? (
@@ -1132,12 +1357,16 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                                 </div>
                               ) : (
                                 <>
-                                  <div className="ip-btns">
-                                    <button className={'ip-pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')}>
-                                      <Check size={16} strokeWidth={3} /> PASS
+                                  <div className={'ip-btns sel-' + item.result}>
+                                    <button className={'ip-choice pass' + (item.result === 'pass' ? ' is-on' : '')} onClick={() => setStatus(item, 'pass')} title="Pass">
+                                      <Check size={16} strokeWidth={3} /> <span className="ip-choice-tx">PASS</span>
                                     </button>
-                                    <button className={'ip-sm fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail"><X size={18} /></button>
-                                    <button className={'ip-sm na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A"><Minus size={18} /></button>
+                                    <button className={'ip-choice fail' + (item.result === 'fail' ? ' is-on' : '')} onClick={() => setStatus(item, 'fail')} title="Fail">
+                                      <X size={18} /> <span className="ip-choice-tx">FAIL</span>
+                                    </button>
+                                    <button className={'ip-choice na' + (item.result === 'na' ? ' is-on' : '')} onClick={() => setStatus(item, 'na')} title="N/A">
+                                      <Minus size={18} /> <span className="ip-choice-tx">N/A</span>
+                                    </button>
                                   </div>
                                   {item.result === 'fail' && (
                                     <div className="ip-flag">
@@ -1182,7 +1411,18 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
 
             <div className="ip-foot">
               {done ? (
-                <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {insp.repair_order_id ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--st-active)' }}>
+                      <Wrench size={15} /> Work order created
+                    </span>
+                  ) : failCount > 0 ? (
+                    <button className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
+                      {createWO.isPending ? <Loader2 size={15} className="animate-spin" /> : <Wrench size={15} />} Create work order · {failCount} item{failCount === 1 ? '' : 's'}
+                    </button>
+                  ) : null}
+                  <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
+                </div>
               ) : confirming ? (
                 <>
                   <div style={{
