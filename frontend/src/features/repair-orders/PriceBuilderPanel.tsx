@@ -6,10 +6,15 @@ import {
   AlertTriangle,
   Box,
   Building2,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
+  CreditCard,
+  FileText,
   Gauge,
+  History,
   Loader2,
+  Mail,
   Pencil,
   Plane,
   Plus,
@@ -29,11 +34,27 @@ import {
   PartSuggestionsResponse,
   PriceBuildSummary,
   InventoryItem,
+  Invoice,
   RecommendedService,
   RecommendedServicePriority,
   RepairOperationCandidate,
   RepairOrderStatus,
 } from '@/types'
+
+type TechnicianOption = {
+  mechanic_id: string
+  mechanic_name: string
+  assigned_count?: number
+  in_progress_count?: number
+}
+
+export type PriceBuilderHistoryEvent = {
+  id: string
+  label: string
+  at: string
+  detail?: string
+  actor?: string
+}
 
 type Props = {
   orderId: string
@@ -59,6 +80,33 @@ type Props = {
   poNumber?: string | null
   orderTypeLabel?: string
   quoteNumber?: string | null
+  quoteIsSent?: boolean
+  quoteIsApproved?: boolean
+  quoteActionLabel?: string
+  quoteActionPending?: boolean
+  quoteActionDisabled?: boolean
+  quoteDisabledReason?: string
+  onQuoteAction?: () => void
+  assignedTechnicianName?: string | null
+  assignedTechnicianId?: string | null
+  technicianOptions?: TechnicianOption[]
+  technicianAssignmentPending?: boolean
+  onAssignTechnician?: (mechanicId: string) => void
+  completionMode?: boolean
+  completionPending?: boolean
+  mileageOutValue?: string
+  onMileageOutChange?: (value: string) => void
+  reviewNotesValue?: string
+  onReviewNotesChange?: (value: string) => void
+  showReviewNotes?: boolean
+  onToggleReviewNotes?: () => void
+  onApproveCompletion?: () => void
+  invoice?: Invoice | null
+  invoiceActionPending?: boolean
+  onResendInvoice?: () => void
+  onRecordPayment?: () => void
+  onDeleteInvoice?: () => void
+  historyEvents?: PriceBuilderHistoryEvent[]
   onClose?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -479,6 +527,33 @@ export default function PriceBuilderPanel({
   poNumber,
   orderTypeLabel,
   quoteNumber,
+  quoteIsSent = false,
+  quoteIsApproved = false,
+  quoteActionLabel = 'Send quote',
+  quoteActionPending = false,
+  quoteActionDisabled = false,
+  quoteDisabledReason,
+  onQuoteAction,
+  assignedTechnicianName,
+  assignedTechnicianId,
+  technicianOptions = [],
+  technicianAssignmentPending = false,
+  onAssignTechnician,
+  completionMode = false,
+  completionPending = false,
+  mileageOutValue = '',
+  onMileageOutChange,
+  reviewNotesValue = '',
+  onReviewNotesChange,
+  showReviewNotes = false,
+  onToggleReviewNotes,
+  onApproveCompletion,
+  invoice,
+  invoiceActionPending = false,
+  onResendInvoice,
+  onRecordPayment,
+  onDeleteInvoice,
+  historyEvents = [],
   onClose,
   onPrev,
   onNext,
@@ -508,7 +583,7 @@ export default function PriceBuilderPanel({
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
-  const [addType, setAddType] = useState<'operation' | 'saved_labor' | 'part'>('operation')
+  const [addType, setAddType] = useState<'operation' | 'saved_labor' | 'part' | 'history'>('operation')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const [discountsOpen, setDiscountsOpen] = useState(false)
@@ -634,6 +709,39 @@ export default function PriceBuilderPanel({
 
   const isLocked = !!summary?.pricing_locked
   const canMutate = canEdit && !isLocked && ['draft', 'quoted'].includes(orderStatus)
+  const hasQuoteDraft = !!quoteNumber
+  const hasAssignedTechnician = !!assignedTechnicianName
+  const canManageTechnician = !isInternalOrder && quoteIsApproved && !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
+  const availableTechnicians = technicianOptions
+    .filter((tech) => tech.mechanic_id !== assignedTechnicianId)
+    .map((tech) => {
+      const assigned = tech.assigned_count ?? 0
+      const inProgress = tech.in_progress_count ?? 0
+      const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+      return { ...tech, assigned, inProgress, load }
+    })
+    .sort((a, b) => a.load - b.load)
+  const priceLockMessage = quoteIsApproved
+    ? 'The customer has approved this quote, so pricing and quote edits are locked.'
+    : 'This repair order is locked, so pricing and quote edits are no longer available.'
+  const quoteButtonDisabledReason = quoteDisabledReason || (
+    quoteIsApproved
+      ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
+      : !canMutate
+        ? 'Quote changes are only available before the customer approves the work.'
+        : undefined
+  )
+  const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
+  const formatHistoryDate = (value: string) => {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  const formatHistoryTime = (value: string) => {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  }
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
@@ -650,8 +758,8 @@ export default function PriceBuilderPanel({
   const [laborDiscount, setLaborDiscount] = useState('')
   const [orderDiscount, setOrderDiscount] = useState('')
   const [discountsSaving, setDiscountsSaving] = useState(false)
-  const [pricingBusy, setPricingBusy] = useState(false)
   const [partsPricingMode, setPartsPricingMode] = useState<'stock' | 'list'>('list')
+  const [draftPartsPricingMode, setDraftPartsPricingMode] = useState<'stock' | 'list'>('list')
   const discountsButtonRef = useRef<HTMLButtonElement>(null)
   const discountsPopoverRef = useRef<HTMLDivElement>(null)
   const footerDetailsRef = useRef<HTMLDivElement>(null)
@@ -723,39 +831,29 @@ export default function PriceBuilderPanel({
     )
     if (parts.every((part) => isSameMoney(part.unit_price, part.list_price ?? part.unit_price))) {
       setPartsPricingMode('list')
+      setDraftPartsPricingMode('list')
       return
     }
     if (parts.every((part) => part.unit_cost != null && isSameMoney(part.unit_price, part.unit_cost))) {
       setPartsPricingMode('stock')
+      setDraftPartsPricingMode('stock')
     }
   }, [partsUsed])
 
-  const applyPricingMode = async (mode: 'stock' | 'list') => {
-    const previousMode = partsPricingMode
-    setPartsPricingMode(mode)
-    setPricingBusy(true)
-    try {
-      await api.post(`/repair-orders/${orderId}/parts/pricing-mode`, { mode })
-      await invalidate()
-      toast.success(mode === 'stock' ? 'Parts set to stock (cost) price' : 'Parts set to list price')
-    } catch (err: unknown) {
-      setPartsPricingMode(previousMode)
-      toast.error(errorDetail(err, 'Failed to update pricing'))
-    } finally {
-      setPricingBusy(false)
-    }
-  }
-
-  const saveDiscounts = async () => {
+  const savePricingAdjustments = async () => {
     setDiscountsSaving(true)
     try {
+      if (draftPartsPricingMode !== partsPricingMode) {
+        await api.post(`/repair-orders/${orderId}/parts/pricing-mode`, { mode: draftPartsPricingMode })
+        setPartsPricingMode(draftPartsPricingMode)
+      }
       await api.patch(`/repair-orders/${orderId}/discounts`, {
         labor_discount_amount: laborDiscount.trim() === '' ? '0' : laborDiscount,
         order_discount_amount: orderDiscount.trim() === '' ? '0' : orderDiscount,
       })
       await invalidate()
     } catch (err: unknown) {
-      toast.error(errorDetail(err, 'Failed to apply discount'))
+      toast.error(errorDetail(err, 'Failed to apply pricing adjustments'))
     } finally {
       setDiscountsSaving(false)
     }
@@ -1038,10 +1136,24 @@ export default function PriceBuilderPanel({
   const footerParts = partsUsed || []
   const laborDiscountAmount = parseFloat(summary?.labor_discount_amount || '0') || 0
   const orderDiscountAmount = parseFloat(summary?.order_discount_amount || '0') || 0
+  const draftPartsSavingsTotal = footerParts.reduce((sum, part) => {
+    const quantity = parseFloat(part.quantity || '0') || 0
+    const listPrice = part.list_price != null ? parseFloat(part.list_price) : parseFloat(part.unit_price || '0')
+    const stockCost = part.unit_cost != null ? parseFloat(part.unit_cost) : null
+    if (draftPartsPricingMode === 'stock' && stockCost != null && Number.isFinite(listPrice)) {
+      return sum + Math.max(0, (listPrice - stockCost) * quantity)
+    }
+    if (draftPartsPricingMode === 'list') return sum
+    return sum + (parseFloat(part.savings || '0') || 0)
+  }, 0)
+  const draftDiscountTotal = (
+    (parseFloat(laborDiscount || '0') || 0) +
+    (parseFloat(orderDiscount || '0') || 0)
+  )
+  const draftCustomerSavesTotal = draftPartsSavingsTotal + draftDiscountTotal
   const priceUpdating = (
     summaryFetching ||
     partsFetching ||
-    pricingBusy ||
     discountsSaving ||
     editingPartsSaving ||
     !!priceSavingId ||
@@ -1237,20 +1349,88 @@ export default function PriceBuilderPanel({
       </div>
 
       {!isInternalOrder && (
+        <>
         <div className="flex items-center justify-between gap-3 border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 text-xs">
           <div className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
-            <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">✓ Draft ready</span>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${
+              hasQuoteDraft ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-500 text-white'
+            }`}>
+              {hasQuoteDraft ? '✓ Draft ready' : 'Create draft'}
+            </span>
             <span className="text-gray-300">→</span>
-            <span className="rounded-full bg-orange-500 px-2.5 py-1 font-semibold text-white">Send</span>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${
+              quoteIsSent || quoteIsApproved
+                ? 'bg-emerald-100 text-emerald-700'
+                : hasQuoteDraft
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-gray-200 text-gray-400'
+            }`}>
+              {quoteIsSent || quoteIsApproved ? '✓ Sent' : 'Send'}
+            </span>
             <span className="text-gray-300">→</span>
-            <span className="font-semibold text-gray-400">Approved</span>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${
+              quoteIsApproved
+                ? 'bg-emerald-100 text-emerald-700'
+                : quoteIsSent
+                  ? 'bg-white text-amber-700 ring-1 ring-amber-200'
+                  : 'bg-transparent text-gray-400'
+            }`}>
+              {quoteIsApproved ? '✓ Approved' : quoteIsSent ? 'Awaiting approval' : 'Approved'}
+            </span>
             <span className="text-gray-300">→</span>
-            <span className="font-semibold text-gray-400">Technician</span>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${
+              hasAssignedTechnician
+                ? 'bg-emerald-100 text-emerald-700'
+                : quoteIsApproved
+                  ? 'bg-white text-amber-700 ring-1 ring-amber-200'
+                  : 'bg-transparent text-gray-400'
+            }`}>
+              {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : quoteIsApproved ? 'Assign technician' : 'Technician'}
+            </span>
           </div>
           <span className="shrink-0 font-['JetBrains_Mono',monospace] text-[11px] font-semibold text-gray-500">
             {quoteNumber || 'Q-pending'}
           </span>
         </div>
+        {canManageTechnician && onAssignTechnician && availableTechnicians.length > 0 && (
+          <div className="border-t border-orange-100 bg-white px-5 py-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
+                {hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
+              </p>
+              {hasAssignedTechnician && assignedTechnicianName && (
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                  Current: {assignedTechnicianName}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {availableTechnicians.map((tech) => (
+                <button
+                  key={tech.mechanic_id}
+                  type="button"
+                  onClick={() => onAssignTechnician(tech.mechanic_id)}
+                  disabled={technicianAssignmentPending}
+                  className="rounded-lg border border-gray-200 bg-white p-2.5 text-left transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-semibold text-gray-900">{tech.mechanic_name}</span>
+                    <span className={`text-xs font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
+                      {tech.load.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className={`h-full rounded-full ${tech.load < 50 ? 'bg-emerald-500' : tech.load < 80 ? 'bg-orange-500' : 'bg-red-500'}`}
+                      style={{ width: `${tech.load}%` }}
+                    />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5 pb-4">
@@ -1266,7 +1446,7 @@ export default function PriceBuilderPanel({
 
       {isLocked && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Pricing locked{summary?.pricing_lock_reason ? ` (${summary.pricing_lock_reason})` : ''}. Edit is disabled.
+          {priceLockMessage}
         </div>
       )}
 
@@ -1290,20 +1470,129 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
+      {hasInvoice && invoice && (
+        <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-4">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-purple-950">Invoice {invoice.invoice_number}</p>
+                <p className="text-sm text-purple-700">
+                  {orderStatus === 'paid' ? 'Paid' : invoice.pending_zelle_confirmation ? 'Pending Zelle confirmation' : 'Awaiting payment'}
+                </p>
+              </div>
+            </div>
+            {invoice.due_date && (
+              <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-100">
+                Due {new Date(invoice.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            )}
+          </div>
+
+          {invoice.pending_zelle_confirmation && (
+            <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
+              Customer marked this invoice as paid via Zelle. Confirm receipt from the footer payment action.
+            </div>
+          )}
+
+          <div className="space-y-2 rounded-xl bg-white p-3 text-sm ring-1 ring-purple-100">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-500">Repair subtotal</span>
+              <span className="font-semibold text-gray-900">{money(invoice.subtotal)}</span>
+            </div>
+            {parseFloat(invoice.shop_supplies_amount || '0') > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Shop supplies</span>
+                <span className="font-semibold text-gray-900">{money(invoice.shop_supplies_amount)}</span>
+              </div>
+            )}
+            {parseFloat(invoice.service_fee_amount || '0') > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Service fee</span>
+                <span className="font-semibold text-gray-900">{money(invoice.service_fee_amount)}</span>
+              </div>
+            )}
+            {parseFloat(invoice.tax_amount || '0') > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Tax</span>
+                <span className="font-semibold text-gray-900">{money(invoice.tax_amount)}</span>
+              </div>
+            )}
+            {parseFloat(invoice.discount_amount || '0') > 0 && (
+              <div className="flex items-center justify-between text-emerald-700">
+                <span>Invoice discount</span>
+                <span className="font-semibold">-{money(invoice.discount_amount)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between border-t border-purple-100 pt-2">
+              <span className="font-semibold text-purple-950">Invoice total</span>
+              <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold text-purple-950">{money(invoice.total_amount)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {completionMode && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+              <CheckCircle className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="font-semibold text-orange-950">Technician completed work</p>
+              <p className="text-sm text-orange-700">Review and approve to notify customer.</p>
+            </div>
+          </div>
+
+          <label className="mb-3 block text-sm">
+            <span className="mb-1 block font-semibold text-orange-800">Mileage out</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={mileageOutValue}
+              onChange={(e) => onMileageOutChange?.(e.target.value)}
+              placeholder={mileageIn != null ? `Odometer at return (in: ${mileageIn.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
+              className="h-10 w-full rounded-lg border border-orange-200 bg-white px-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={onToggleReviewNotes}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-800 hover:text-orange-900"
+          >
+            <ChevronRight className={`h-4 w-4 transition-transform ${showReviewNotes ? 'rotate-90' : ''}`} />
+            Add review notes <span className="font-normal text-orange-500">(optional)</span>
+          </button>
+          {showReviewNotes && (
+            <textarea
+              value={reviewNotesValue}
+              onChange={(e) => onReviewNotesChange?.(e.target.value)}
+              placeholder="Add any notes about the review, additional work needed, quality observations..."
+              rows={3}
+              className="mt-2 w-full resize-none rounded-lg border border-orange-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
+            />
+          )}
+        </div>
+      )}
+
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="grid grid-cols-3 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
+          <div className="grid grid-cols-4 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
             {([
               ['operation', Wrench, 'Operation'],
               ['part', Box, 'Part'],
               ['saved_labor', Tag, 'Labor Book Time'],
+              ['history', History, 'History'],
             ] as const).map(([key, Icon, label]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => {
                   setAddType(key)
-                  setPaletteOpen(true)
+                  setPaletteOpen(key !== 'history')
                 }}
                 className={`inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-2 ${
                   addType === key ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
@@ -1314,6 +1603,7 @@ export default function PriceBuilderPanel({
               </button>
             ))}
           </div>
+          {addType !== 'history' && (
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
@@ -1332,9 +1622,51 @@ export default function PriceBuilderPanel({
               className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
             />
           </div>
+          )}
         </div>
 
-        {paletteOpen && (
+        {addType === 'history' && (
+          <div className="mt-3 rounded-[14px] border border-gray-200 bg-white p-3">
+            <div className="mb-3 flex items-center justify-between border-b border-gray-100 pb-2">
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
+                Repair order history
+              </span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">
+                {historyEvents.length} events
+              </span>
+            </div>
+            {historyEvents.length ? (
+              <ol className="space-y-3">
+                {historyEvents.map((event, index) => (
+                  <li key={event.id} className="grid grid-cols-[88px_1fr] gap-3">
+                    <div className="pt-0.5 text-right">
+                      <p className="text-xs font-bold text-gray-700">{formatHistoryDate(event.at)}</p>
+                      <p className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-400">{formatHistoryTime(event.at)}</p>
+                    </div>
+                    <div className="relative min-w-0 pb-1 pl-4">
+                      {index < historyEvents.length - 1 && (
+                        <span className="absolute left-[5px] top-4 h-[calc(100%+0.75rem)] w-px bg-gray-200" />
+                      )}
+                      <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-4 ring-orange-50" />
+                      <p className="text-sm font-semibold text-gray-900">{event.label}</p>
+                      {(event.actor || event.detail) && (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {event.actor && <span className="font-semibold text-gray-700">{event.actor}</span>}
+                          {event.actor && event.detail ? ' · ' : ''}
+                          {event.detail}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="px-2 py-3 text-sm text-gray-500">No repair order history has been recorded yet.</p>
+            )}
+          </div>
+        )}
+
+        {paletteOpen && addType !== 'history' && (
           <div className="mt-3 rounded-[14px] border border-gray-200 bg-white p-2 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
             <div className="mb-2 flex items-center justify-between border-b border-gray-100 px-2 pb-2">
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
@@ -2169,26 +2501,28 @@ export default function PriceBuilderPanel({
             </div>
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setRecommendedOpen((open) => !open)}
-          className="flex w-full items-center justify-between rounded-xl border-t border-gray-100 px-2 py-3 text-left hover:bg-gray-50"
-        >
-          <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
-            <Wrench className="h-4 w-4 text-gray-400" />
-            Recommended Services
-            {!!recommendedServices?.filter((svc) => !svc.is_resolved).length && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700">
-                {recommendedServices.filter((svc) => !svc.is_resolved).length}
-              </span>
-            )}
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span className="px-3 text-xs font-semibold text-orange-700">add from inspection</span>
-            <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${recommendedOpen ? 'rotate-90' : ''}`} />
-          </span>
-        </button>
-        {recommendedOpen && (
+        {!hasInvoice && (
+          <button
+            type="button"
+            onClick={() => setRecommendedOpen((open) => !open)}
+            className="flex w-full items-center justify-between rounded-xl border-t border-gray-100 px-2 py-3 text-left hover:bg-gray-50"
+          >
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
+              <Wrench className="h-4 w-4 text-gray-400" />
+              Recommended Services
+              {!!recommendedServices?.filter((svc) => !svc.is_resolved).length && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700">
+                  {recommendedServices.filter((svc) => !svc.is_resolved).length}
+                </span>
+              )}
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="px-3 text-xs font-semibold text-orange-700">add from inspection</span>
+              <ChevronRight className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${recommendedOpen ? 'rotate-90' : ''}`} />
+            </span>
+          </button>
+        )}
+        {!hasInvoice && recommendedOpen && (
           <div className="rounded-xl bg-gray-50 p-3">
             <button
               type="button"
@@ -2325,7 +2659,14 @@ export default function PriceBuilderPanel({
           <button
             ref={discountsButtonRef}
             type="button"
-            onClick={() => { setDiscountsOpen((open) => !open); setFooterDetailsOpen(null) }}
+            onClick={() => {
+              setDiscountsOpen((open) => {
+                const next = !open
+                if (next) setDraftPartsPricingMode(partsPricingMode)
+                return next
+              })
+              setFooterDetailsOpen(null)
+            }}
             disabled={!canMutate}
             className="ml-auto rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
@@ -2345,9 +2686,12 @@ export default function PriceBuilderPanel({
               <label className="mb-3 block text-sm">
                 <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-400">Parts pricing</span>
                 <select
-                  value={partsPricingMode}
-                  disabled={pricingBusy}
-                  onChange={(e) => { const v = e.target.value; if (v === 'stock' || v === 'list') applyPricingMode(v) }}
+                  value={draftPartsPricingMode}
+                  disabled={discountsSaving}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (v === 'stock' || v === 'list') setDraftPartsPricingMode(v)
+                  }}
                   className="h-10 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm disabled:opacity-60"
                 >
                   <option value="stock">Stock price</option>
@@ -2397,12 +2741,12 @@ export default function PriceBuilderPanel({
                 </span>
               </div>
               <div className="flex items-center justify-between border-t border-gray-100 pt-3">
-                <span className="text-xs font-semibold text-emerald-700">Customer saves {money(customerSavesTotal)}</span>
+                <span className="text-xs font-semibold text-emerald-700">Customer saves {money(draftCustomerSavesTotal)}</span>
                 <button
                   type="button"
                   disabled={discountsSaving}
                   onClick={async () => {
-                    await saveDiscounts()
+                    await savePricingAdjustments()
                     setDiscountsOpen(false)
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
@@ -2434,14 +2778,66 @@ export default function PriceBuilderPanel({
               </p>
             </div>
             {!isInternalOrder && (
-              <button
-                type="button"
-                disabled={!canMutate}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:bg-gray-300"
-              >
-                <Plane className="h-4 w-4" />
-                Send quote
-              </button>
+              hasInvoice && invoice ? (
+                <div className="flex flex-wrap justify-end gap-2">
+                  {orderStatus !== 'paid' && (
+                    <button
+                      type="button"
+                      onClick={onRecordPayment}
+                      disabled={invoiceActionPending || !onRecordPayment}
+                      className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
+                    >
+                      <CreditCard className="h-4 w-4" />
+                      Record payment
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onResendInvoice}
+                    disabled={invoiceActionPending || !onResendInvoice}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-purple-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(147,51,234,.24)] hover:bg-purple-700 disabled:bg-gray-300"
+                  >
+                    <Mail className="h-4 w-4" />
+                    {orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                  </button>
+                  {orderStatus !== 'paid' && onDeleteInvoice && (
+                    <button
+                      type="button"
+                      onClick={onDeleteInvoice}
+                      disabled={invoiceActionPending}
+                      className="inline-flex h-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 text-red-700 hover:bg-red-100 disabled:opacity-50"
+                      aria-label="Delete invoice"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              ) : completionMode ? (
+                <button
+                  type="button"
+                  onClick={onApproveCompletion}
+                  disabled={completionPending || !onApproveCompletion}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
+                >
+                  {completionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  {completionPending ? 'Approving...' : 'Approve Completion'}
+                </button>
+              ) : (
+                <span
+                  className="inline-flex"
+                  title={quoteActionDisabled || !canMutate ? quoteButtonDisabledReason : undefined}
+                >
+                  <button
+                    type="button"
+                    onClick={onQuoteAction}
+                    disabled={!canMutate || quoteActionDisabled || quoteActionPending || !onQuoteAction}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:bg-gray-300"
+                  >
+                    {quoteActionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plane className="h-4 w-4" />}
+                    {quoteActionPending ? 'Working...' : quoteActionLabel}
+                  </button>
+                </span>
+              )
             )}
           </div>
         </div>

@@ -78,7 +78,17 @@ const truncateWithEllipsis = (value: string, maxLength = 36): string => {
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`
 }
 
-const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = ['draft', 'quoted']
+const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = [
+  'draft',
+  'quoted',
+  'approved',
+  'assigned',
+  'acknowledged',
+  'in_progress',
+  'pending_review',
+  'invoiced',
+  'paid',
+]
 const LABOR_BREAKDOWN_STATUSES: RepairOrderStatus[] = ['pending_review', 'completed']
 const DANGER_ZONE_STATUSES: RepairOrderStatus[] = ['draft', 'quoted']
 
@@ -800,7 +810,6 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
-      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -814,7 +823,6 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
-      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -827,7 +835,6 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
-      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -846,7 +853,6 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
-      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -859,7 +865,6 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', vars.orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchOrderDetail()
-      setQuoteNeedsUpdate(true)
     },
   })
 
@@ -897,7 +902,6 @@ export default function RepairOrdersPage() {
         refetchQuote()
         refetchOrderDetail()
       }
-      setQuoteNeedsUpdate(false)
       toast.success(`Quote ${quote.quote_number} updated — $${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
     },
     onError: (error: unknown) => {
@@ -917,6 +921,7 @@ export default function RepairOrdersPage() {
         queryClient.invalidateQueries({ queryKey: ['quote', selectedOrder.id] })
         refetchQuote()
       }
+      setQuoteSent(true)
       toast.success('Quote sent — Awaiting customer approval')
     },
     onError: (error: unknown) => {
@@ -925,7 +930,6 @@ export default function RepairOrdersPage() {
   })
 
   const [quoteSent, setQuoteSent] = useState(false)
-  const [quoteNeedsUpdate, setQuoteNeedsUpdate] = useState(false)
 
   const filteredOrders = useMemo(() => {
     if (!orders) return orders
@@ -966,7 +970,6 @@ export default function RepairOrdersPage() {
         setShowReassignMechanic(false)
         setReviewNotes('')
         setShowReviewNotes(false)
-        setQuoteNeedsUpdate(false)
         setShowDangerActions(false)
         setShowPartComposer(false)
         setAddPartInventoryId('')
@@ -989,6 +992,140 @@ export default function RepairOrdersPage() {
   const showNavigation = navigationOrders.length > 1 && currentNavIndex >= 0
   const hasPrev = currentNavIndex > 0
   const hasNext = currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1
+  const quoteActionPending = createQuoteMutation.isPending || updateQuoteMutation.isPending || sendQuoteMutation.isPending
+  const quoteOrder = orderDetail ?? selectedOrder
+  const quoteOrderStatus = quoteOrder?.status
+  const quoteIsApproved = !!quoteForOrder?.is_approved
+  const quoteIsSent = !!(quoteForOrder?.sent_to_customer || quoteSent)
+  const quoteCanChange = !!quoteOrderStatus && ['draft', 'quoted'].includes(quoteOrderStatus)
+  const quoteTotalMismatch = !!quoteForOrder && !!quoteOrder && !quoteIsApproved && (
+    Math.abs((parseFloat(quoteForOrder.total_amount || '0') || 0) - (parseFloat(quoteOrder.total_cost || '0') || 0)) > 0.005
+  )
+  const effectiveQuoteNeedsUpdate = !!quoteForOrder && !quoteIsApproved && quoteTotalMismatch
+  const quoteActionLabel = quoteIsApproved
+    ? 'Quote approved'
+    : quoteForOrder
+      ? quoteIsSent
+        ? (effectiveQuoteNeedsUpdate ? 'Resend quote' : 'Awaiting approval')
+        : 'Send quote'
+        : 'Create quote'
+  const quoteActionDisabled = quoteIsApproved || !quoteCanChange || (quoteIsSent && !effectiveQuoteNeedsUpdate)
+  const quoteDisabledReason = quoteIsApproved
+    ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
+    : !quoteCanChange
+      ? 'Quote changes are only available before the customer approves the work.'
+      : quoteIsSent && !effectiveQuoteNeedsUpdate
+        ? 'The quote has been sent to the customer. The button will re-enable if pricing changes require a resend.'
+        : undefined
+  const priceBuilderHistoryEvents = (() => {
+    const order = orderDetail ?? selectedOrder
+    if (!order) return []
+    const events: Array<{ id: string; label: string; at: string; detail?: string; actor?: string }> = []
+    const push = (event: { id: string; label: string; at?: string | null; detail?: string; actor?: string }) => {
+      if (!event.at) return
+      events.push({ id: event.id, label: event.label, at: event.at, detail: event.detail, actor: event.actor })
+    }
+    const customerActor = customerDisplayName || selectedOrderCustomer?.company_name || selectedOrderCustomer?.email || undefined
+    const assignedTechnician = order.assigned_mechanic_id
+      ? mechanicLookup.get(order.assigned_mechanic_id) || 'Assigned technician'
+      : undefined
+
+    push({
+      id: 'created',
+      label: 'Repair order created',
+      at: order.created_at,
+      detail: order.order_number,
+      actor: customerActor,
+    })
+    push({
+      id: 'quote-created',
+      label: 'Quote draft created',
+      at: quoteForOrder?.created_at,
+      detail: quoteForOrder?.quote_number,
+    })
+    push({
+      id: 'quote-sent',
+      label: 'Quote sent to customer',
+      at: quoteForOrder?.sent_at,
+      detail: quoteForOrder?.quote_number,
+      actor: customerActor,
+    })
+    push({
+      id: 'quote-approved',
+      label: 'Quote approved',
+      at: quoteForOrder?.is_approved ? quoteForOrder.updated_at : null,
+      detail: quoteForOrder?.quote_number,
+      actor: customerActor,
+    })
+    push({
+      id: 'assigned',
+      label: 'Technician assigned',
+      at: order.assigned_at,
+      actor: assignedTechnician,
+    })
+    push({
+      id: 'acknowledged',
+      label: 'Technician acknowledged work',
+      at: order.acknowledged_at,
+      actor: assignedTechnician,
+    })
+    push({
+      id: 'started',
+      label: 'Work started',
+      at: order.work_started_at,
+      actor: assignedTechnician,
+    })
+    push({
+      id: 'completed',
+      label: 'Technician completed work',
+      at: order.work_completed_at,
+      actor: assignedTechnician,
+    })
+    push({
+      id: 'invoiced',
+      label: 'Invoice created',
+      at: invoiceForOrder?.created_at,
+      detail: invoiceForOrder?.invoice_number,
+    })
+    push({
+      id: 'zelle-pending',
+      label: 'Customer marked Zelle payment sent',
+      at: invoiceForOrder?.zelle_pending_submitted_at,
+      detail: invoiceForOrder?.invoice_number,
+      actor: customerActor,
+    })
+    push({
+      id: 'paid',
+      label: 'Payment recorded',
+      at: invoiceForOrder?.paid_at,
+      detail: invoiceForOrder?.invoice_number,
+    })
+
+    return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+  })()
+  const handlePriceBuilderQuoteAction = async () => {
+    if (!selectedOrder?.id || quoteActionPending || quoteActionDisabled) return
+    if (!quoteForOrder) {
+      createQuoteMutation.mutate(selectedOrder.id)
+      return
+    }
+    try {
+      if (effectiveQuoteNeedsUpdate) {
+        const updatedQuote = await updateQuoteMutation.mutateAsync(quoteForOrder.id)
+        if (quoteIsSent) {
+          await sendQuoteMutation.mutateAsync(updatedQuote.id)
+        } else {
+          await sendQuoteMutation.mutateAsync(updatedQuote.id)
+          setQuoteSent(true)
+        }
+        return
+      }
+      sendQuoteMutation.mutate(quoteForOrder.id)
+      setQuoteSent(true)
+    } catch {
+      // Mutation handlers surface the error toast; keep the click handler from throwing.
+    }
+  }
 
   const getStatusStyle = (status: string) => {
     const styles: Record<string, { bg: string; text: string; dot: string }> = {
@@ -1103,7 +1240,6 @@ export default function RepairOrdersPage() {
     setShowReassignMechanic(false)
     setReviewNotes('')
     setShowReviewNotes(false)
-    setQuoteNeedsUpdate(false)
     setShowDangerActions(false)
     setShowPartComposer(false)
     setAddPartInventoryId('')
@@ -1114,7 +1250,6 @@ export default function RepairOrdersPage() {
     setSelectedOrder(null)
     setIsDetailOpen(false)
     setQuoteSent(false)
-    setQuoteNeedsUpdate(false)
     setShowDangerActions(false)
     setShowPartComposer(false)
     setAddPartInventoryId('')
@@ -2207,7 +2342,7 @@ export default function RepairOrdersPage() {
                         {/* Workflow steps */}
                         <div className="flex items-center gap-0.5 overflow-x-auto pb-0.5 -mb-0.5">
                           {/* Step 1: Create/Update Quote Draft */}
-                          {quoteNeedsUpdate && hasQuote ? (
+                          {effectiveQuoteNeedsUpdate && hasQuote && isSent ? (
                             <button
                               type="button"
                               onClick={() => quoteForOrder && updateQuoteMutation.mutate(quoteForOrder.id)}
@@ -2237,32 +2372,38 @@ export default function RepairOrdersPage() {
                             </span>
                           )}
 
-                          <ArrowRight className={`w-3 h-3 shrink-0 ${hasQuote && !quoteNeedsUpdate ? 'text-amber-500' : 'text-gray-300'}`} />
+                          <ArrowRight className={`w-3 h-3 shrink-0 ${hasQuote ? 'text-amber-500' : 'text-gray-300'}`} />
 
                           {/* Step 2: Send to Customer */}
-                          {hasQuote && !isApproved && !quoteNeedsUpdate ? (
+                          {hasQuote && !isApproved && (!isSent || effectiveQuoteNeedsUpdate) ? (
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={async () => {
                                 if (quoteForOrder) {
-                                  sendQuoteMutation.mutate(quoteForOrder.id)
-                                  setQuoteSent(true)
+                                  try {
+                                    const quoteToSend = effectiveQuoteNeedsUpdate
+                                      ? await updateQuoteMutation.mutateAsync(quoteForOrder.id)
+                                      : quoteForOrder
+                                    await sendQuoteMutation.mutateAsync(quoteToSend.id)
+                                  } catch {
+                                    // Mutation handlers surface the error toast; keep the click handler from throwing.
+                                  }
                                 }
                               }}
-                              disabled={sendQuoteMutation.isPending}
+                              disabled={sendQuoteMutation.isPending || updateQuoteMutation.isPending}
                               className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
                                 isSent
                                   ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
                                   : 'bg-amber-500 hover:bg-amber-600 text-white'
                               }`}
                             >
-                              {sendQuoteMutation.isPending ? 'Sending...' : (isSent ? '⏳ Resend' : 'Send')}
+                              {quoteActionPending ? 'Working...' : (isSent ? '⏳ Resend' : 'Send')}
                             </button>
                           ) : (
                             <span className={`shrink-0 px-2 py-1 text-xs font-medium rounded-md ${
                               isApproved ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-400'
                             }`}>
-                              {isApproved ? '✓ Sent' : 'Send'}
+                              {isApproved ? '✓ Sent' : isSent ? 'Awaiting approval' : 'Send'}
                             </span>
                           )}
 
@@ -2294,12 +2435,12 @@ export default function RepairOrdersPage() {
                         </div>
 
                         {/* Status messages */}
-                        {quoteNeedsUpdate && hasQuote && (
+                        {effectiveQuoteNeedsUpdate && hasQuote && (
                           <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                            Quote needs to be updated before sending.
+                            Quote changed. Resend it before waiting on customer approval.
                           </p>
                         )}
-                        {isSent && !isApproved && !quoteNeedsUpdate && (orderDetail ?? selectedOrder).status !== 'declined' && (
+                        {isSent && !isApproved && !effectiveQuoteNeedsUpdate && (orderDetail ?? selectedOrder).status !== 'declined' && (
                           <p className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                             Waiting for customer approval...
                           </p>
@@ -2440,6 +2581,7 @@ export default function RepairOrdersPage() {
                 {/* Time Metrics & Transition Timeline (V1.4) — only for completed+ ROs */}
                 {(() => {
                   const o = orderDetail ?? selectedOrder
+                  if (priceBuilderOwnsShell) return null
                   const showStatuses = ['pending_review', 'completed', 'invoiced', 'paid']
                   if (!showStatuses.includes(o.status)) return null
                   const fmtMin = (m: number | null | undefined) => {
@@ -2555,6 +2697,71 @@ export default function RepairOrdersPage() {
                     poNumber={selectedOrder.po_number}
                     orderTypeLabel={selectedOrder.is_warranty_repair ? 'Warranty' : selectedOrder.parent_repair_order_id ? 'Comeback' : 'Standard'}
                     quoteNumber={quoteForOrder?.quote_number}
+                    quoteIsSent={quoteIsSent}
+                    quoteIsApproved={quoteIsApproved}
+                    quoteActionLabel={quoteActionLabel}
+                    quoteActionPending={quoteActionPending}
+                    quoteActionDisabled={quoteActionDisabled}
+                    quoteDisabledReason={quoteDisabledReason}
+                    onQuoteAction={handlePriceBuilderQuoteAction}
+                    assignedTechnicianName={
+                      selectedOrder.assigned_mechanic_id
+                        ? mechanicLookup.get(selectedOrder.assigned_mechanic_id) || 'Assigned technician'
+                        : null
+                    }
+                    assignedTechnicianId={selectedOrder.assigned_mechanic_id}
+                    technicianOptions={mechanics || []}
+                    technicianAssignmentPending={assignMechanicMutation.isPending}
+                    onAssignTechnician={(mechanicId) =>
+                      selectedOrder.id &&
+                      assignMechanicMutation.mutate({
+                        orderId: selectedOrder.id,
+                        mechanicId,
+                        orderStatus: (orderDetail ?? selectedOrder).status,
+                      })
+                    }
+                    completionMode={(orderDetail ?? selectedOrder).status === 'pending_review'}
+                    completionPending={approveCompletionMutation.isPending}
+                    mileageOutValue={mileageOut}
+                    onMileageOutChange={(value) => {
+                      if (value === '' || /^\d+$/.test(value)) setMileageOut(value)
+                    }}
+                    reviewNotesValue={reviewNotes}
+                    onReviewNotesChange={setReviewNotes}
+                    showReviewNotes={showReviewNotes}
+                    onToggleReviewNotes={() => setShowReviewNotes((prev) => !prev)}
+                    onApproveCompletion={() => {
+                      if (selectedOrder.id) {
+                        approveCompletionMutation.mutate({
+                          orderId: selectedOrder.id,
+                          reviewNotes: reviewNotes || undefined,
+                          mileageOut: mileageOut.trim() === '' ? null : Number(mileageOut),
+                        })
+                        setReviewNotes('')
+                        setMileageOut('')
+                      }
+                    }}
+                    invoice={invoiceForOrder ?? null}
+                    invoiceActionPending={
+                      resendInvoiceMutation.isPending ||
+                      deleteInvoiceMutation.isPending ||
+                      recordManualPaymentMutation.isPending ||
+                      clearPendingZelleMutation.isPending
+                    }
+                    onResendInvoice={() => {
+                      if (invoiceForOrder) {
+                        resendInvoiceMutation.mutate({ invoiceId: invoiceForOrder.id })
+                      }
+                    }}
+                    onRecordPayment={() => {
+                      if (invoiceForOrder?.pending_zelle_confirmation) {
+                        openZellePaymentModal('confirm_pending')
+                      } else {
+                        setShowInvoicePaymentOptions(true)
+                      }
+                    }}
+                    onDeleteInvoice={() => setShowDeleteInvoiceConfirm(true)}
+                    historyEvents={priceBuilderHistoryEvents}
                     onClose={closeDetail}
                     onPrev={showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
                     onNext={showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
@@ -2567,7 +2774,7 @@ export default function RepairOrdersPage() {
                     cancelPending={cancelRepairOrderMutation.isPending}
                     deletePending={deleteRepairOrderMutation.isPending}
                     cancelDisabled={(orderDetail ?? selectedOrder).status === 'cancelled'}
-                    recommendedServices={recommendedServices}
+                    recommendedServices={['invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
                     showAddRecommendedService={showAddRecService}
                     recommendedServiceForm={recServiceForm}
                     onToggleAddRecommendedService={() => setShowAddRecService((prev) => !prev)}
@@ -2590,7 +2797,7 @@ export default function RepairOrdersPage() {
                   />
                 )}
 
-                {showLaborBreakdown && (
+                {showLaborBreakdown && !priceBuilderOwnsShell && (
                   <RepairOrderLaborBreakdown
                     laborItems={orderDetail?.labor_items ?? []}
                     laborTotal={(orderDetail ?? selectedOrder)?.total_labor_cost ?? '0'}
@@ -3079,7 +3286,7 @@ export default function RepairOrdersPage() {
 
 
                 {/* Approve Completion Button for pending_review status */}
-                {(orderDetail ?? selectedOrder).status === 'pending_review' && (
+                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'pending_review' && (
                   <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center shrink-0">
@@ -3272,7 +3479,7 @@ export default function RepairOrdersPage() {
                 )}
 
                 {/* Invoice section for invoiced orders */}
-                {(orderDetail ?? selectedOrder).status === 'invoiced' && invoiceForOrder && (
+                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'invoiced' && invoiceForOrder && (
                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
@@ -3477,7 +3684,7 @@ export default function RepairOrdersPage() {
                 )}
 
                 {/* Paid confirmation for paid orders */}
-                {(orderDetail ?? selectedOrder).status === 'paid' && invoiceForOrder && (
+                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'paid' && invoiceForOrder && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -3771,6 +3978,71 @@ export default function RepairOrdersPage() {
       )}
 
       {/* Delete Invoice Confirmation Modal */}
+      {showInvoicePaymentOptions && priceBuilderOwnsShell && invoiceForOrder && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="mb-4">
+              <p className="text-lg font-semibold text-gray-900">Record payment</p>
+              <p className="text-sm text-gray-500">
+                Invoice {invoiceForOrder.invoice_number} · {formatMoney(invoiceForOrder.total_amount)}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: 'cash', label: 'Cash' },
+                { value: 'zelle', label: 'Zelle' },
+                { value: 'check', label: 'Check' },
+                { value: 'ach', label: 'ACH' },
+              ].map((method) => (
+                <button
+                  key={method.value}
+                  type="button"
+                  onClick={() => setSelectedPaymentMethod(method.value)}
+                  className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                    selectedPaymentMethod === method.value
+                      ? 'border-green-500 bg-green-50 text-green-800'
+                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {method.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowInvoicePaymentOptions(false)
+                  setSelectedPaymentMethod('')
+                }}
+                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedPaymentMethod || recordManualPaymentMutation.isPending}
+                onClick={() => {
+                  if (!selectedPaymentMethod) return
+                  if (selectedPaymentMethod === 'zelle') {
+                    setShowInvoicePaymentOptions(false)
+                    openZellePaymentModal()
+                    return
+                  }
+                  recordManualPaymentMutation.mutate({
+                    invoiceId: invoiceForOrder.id,
+                    method: selectedPaymentMethod,
+                  })
+                }}
+                className="flex-1 rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
+              >
+                {recordManualPaymentMutation.isPending ? 'Recording...' : selectedPaymentMethod === 'zelle' ? 'Continue' : 'Mark paid'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showDeleteInvoiceConfirm && invoiceForOrder && (
         <div className="fixed inset-0 z-[60] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
