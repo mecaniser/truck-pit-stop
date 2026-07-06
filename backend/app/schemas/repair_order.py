@@ -17,6 +17,7 @@ class PartsUsageCreate(BaseModel):
     # amounts, e.g. 1.25 gallons.
     quantity: Decimal
     unit_price: Optional[Decimal] = None  # override; else use inventory selling_price
+    source_service_id: Optional[UUID] = None
 
 
 class PartsUsageUpdate(BaseModel):

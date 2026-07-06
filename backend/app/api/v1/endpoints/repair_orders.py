@@ -2147,6 +2147,7 @@ async def add_parts_to_repair_order(
         unit_price=unit_price,
         list_price=list_price,
         total_price=total_price,
+        source_service_id=body.source_service_id,
     )
     db.add(pu)
     inv.stock_quantity -= packages_needed

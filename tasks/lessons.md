@@ -1,5 +1,19 @@
 # Lessons
 
+## 2026-07-06
+- Correction: The Order Total loading animation was tied directly to fast request state, so quick updates looked like flicker rather than intentional motion.
+- Rule: UI loading animations that communicate a state change need a minimum visible duration or independent visual state when backend responses can complete quickly.
+- Prevention: For production-facing animations, test both slow and fast response paths and keep transition timing perceptible without delaying the actual data update.
+- Correction: The Discounts & pricing popover allowed clearing discounts only by manually deleting the value and applying, which hid the reset path for money-affecting fields.
+- Rule: Money-affecting optional fields need explicit clear/reset controls when zero is a meaningful persisted state.
+- Prevention: For pricing popovers, verify create, edit, apply, and reset-to-zero paths are visible in the UI before shipping.
+- Correction: The part price popover's margin preview stayed tied to the saved unit price even while the user edited or reset the Customer price draft.
+- Rule: In edit popovers, derived preview values must be calculated from draft state, not persisted state, until the user applies the change.
+- Prevention: When adding or adjusting popover fields, test each derived display by changing the draft value and using reset/cancel/apply paths before shipping.
+- Correction: The redesigned Price Builder showed an `Add part to this operation` control inside each service labor row, but it was left disabled even though operation-level part attachment is core workflow behavior.
+- Rule: When implementing a redesigned workflow panel, treat visible action controls as functional requirements unless the design explicitly marks them as future/disabled.
+- Prevention: For each redesigned interactive row, map every action button to its persisted backend field in `tasks/todo.md` before final verification.
+
 ## 2026-04-12
 - Correction: After fixing the owner account email overflow on the founding garage review step, I left the same long-email overflow pattern in the garage information card's business email field.
 - Rule: When fixing an overflow or wrapping bug in one review-summary field, audit every analogous field in the same surface before shipping instead of treating the visible instance as isolated.

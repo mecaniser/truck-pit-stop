@@ -169,6 +169,67 @@ html::-webkit-scrollbar-thumb:hover {
   animation: attention-exit 0.2s ease-in forwards;
 }
 
+/* Price Builder order-total motion */
+@keyframes price-total-recirculate {
+  0%, 100% {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    opacity: 0.68;
+    filter: blur(0.7px) brightness(1.08);
+    transform: translateY(-1px) scale(0.992);
+  }
+  70% {
+    opacity: 0.9;
+    filter: blur(0) brightness(1.03);
+    transform: translateY(1px) scale(1.004);
+  }
+}
+
+@keyframes price-total-settle {
+  0% {
+    color: #ea580c;
+    text-shadow: 0 0 0 rgba(249, 115, 22, 0);
+    transform: translateY(4px) scale(0.985);
+    opacity: 0.72;
+  }
+  45% {
+    color: #111827;
+    text-shadow: 0 12px 26px rgba(249, 115, 22, 0.22);
+    transform: translateY(-1px) scale(1.018);
+    opacity: 1;
+  }
+  100% {
+    color: #030712;
+    text-shadow: 0 0 0 rgba(249, 115, 22, 0);
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.price-total-amount {
+  display: inline-block;
+  transform-origin: right center;
+  will-change: transform, opacity, filter;
+}
+
+.price-total-amount--updating {
+  animation: price-total-recirculate 0.95s ease-in-out infinite;
+}
+
+.price-total-amount--changed {
+  animation: price-total-settle 0.52s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .price-total-amount--updating,
+  .price-total-amount--changed {
+    animation: none;
+  }
+}
+
 /* Order card attention pulse animations */
 @keyframes order-alert-amber {
   0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }

@@ -9,10 +9,10 @@ import {
   ChevronDown,
   ChevronRight,
   Gauge,
+  Loader2,
   Pencil,
   Plane,
   Plus,
-  RefreshCcw,
   Search,
   Tag,
   Trash2,
@@ -298,18 +298,27 @@ function PartPricePopover({
   const unit = parseFloat(part.unit_price || '0')
   const stock = part.unit_cost != null ? parseFloat(part.unit_cost) : null
   const list = part.list_price != null ? parseFloat(part.list_price) : unit
-  const margin = stock != null && unit > 0 ? ((unit - stock) / unit) * 100 : null
+  const draftPrice = parseFloat(draft || String(unit))
+  const marginPrice = Number.isFinite(draftPrice) ? draftPrice : unit
+  const margin = stock != null && marginPrice > 0 ? ((marginPrice - stock) / marginPrice) * 100 : null
+  const isSameMoney = (a: number | null, b: number | null) => (
+    a != null && b != null && Math.abs(a - b) < 0.005
+  )
+  const resetToStock = stock != null && isSameMoney(marginPrice, list)
+  const resetLabel = resetToStock ? 'Reset to stock' : 'Reset to list'
+  const resetValue = resetToStock ? stock : list
   const isCustom = Number.isFinite(list) && Math.abs(unit - list) >= 0.005
 
   const computePosition = () => {
     if (!buttonRef.current) return
     const rect = buttonRef.current.getBoundingClientRect()
     const estimatedMenuHeight = 250
+    const estimatedMenuWidth = Math.min(320, window.innerWidth - 32)
     const spaceBelow = window.innerHeight - rect.bottom
     const openUp = spaceBelow < estimatedMenuHeight && rect.top > estimatedMenuHeight
     setMenuPos({
       top: openUp ? rect.top - 4 : rect.bottom + 4,
-      left: rect.right,
+      left: Math.min(window.innerWidth - 16, Math.max(16 + estimatedMenuWidth, rect.right)),
       openUp,
     })
   }
@@ -371,7 +380,7 @@ function PartPricePopover({
             left: menuPos.left,
             transform: 'translateX(-100%)',
           }}
-          className="z-[70] w-[280px] rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)]"
+          className="z-[70] w-[min(320px,calc(100vw-32px))] rounded-[14px] border border-gray-200 bg-white p-3 text-sm shadow-[0_10px_30px_rgba(20,25,35,.10)]"
         >
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
@@ -401,15 +410,15 @@ function PartPricePopover({
                 {margin == null ? '—' : `${margin >= 0 ? '+' : ''}${margin.toFixed(1)}%`}
               </span>
             </div>
-            <label className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50/70 px-2.5 py-2">
-              <span className="whitespace-nowrap font-medium text-gray-900">
+            <label className="grid grid-cols-[minmax(0,1fr)_104px] items-center gap-3 rounded-xl border border-orange-200 bg-orange-50/70 px-2.5 py-2">
+              <span className="min-w-0 whitespace-nowrap font-medium text-gray-900">
                 <span className="mr-2 inline-block h-2 w-2 rounded-full bg-orange-500" />Customer price
               </span>
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value.replace(/[^0-9.]/g, ''))}
                 inputMode="decimal"
-                className="h-9 w-24 rounded-lg border border-orange-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm outline-none focus:ring-2 focus:ring-orange-300"
+                className="h-9 min-w-0 rounded-lg border border-orange-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm outline-none focus:ring-2 focus:ring-orange-300"
               />
             </label>
           </div>
@@ -417,10 +426,10 @@ function PartPricePopover({
             <button
               type="button"
               disabled={saving || disabled}
-              onClick={() => setDraft(list.toFixed(2))}
+              onClick={() => setDraft(resetValue.toFixed(2))}
               className="rounded-lg px-2 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-60"
             >
-              Reset to list
+              {resetLabel}
             </button>
             <button
               type="button"
@@ -503,9 +512,16 @@ export default function PriceBuilderPanel({
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const [discountsOpen, setDiscountsOpen] = useState(false)
+  const [footerDetailsOpen, setFooterDetailsOpen] = useState<'parts' | 'labor' | 'discounts' | 'savings' | null>(null)
+  const [totalJustChanged, setTotalJustChanged] = useState(false)
+  const [totalMotionActive, setTotalMotionActive] = useState(false)
+  const previousTotalRef = useRef<string | null>(null)
+  const totalMotionTimerRef = useRef<number | null>(null)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
+  const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
+  const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
   const initialLaborBookTimeForm = (): LaborBookTimeForm => ({
     operation_name: searchTerm.trim(),
@@ -525,7 +541,7 @@ export default function PriceBuilderPanel({
   })
   const [laborBookTimeForm, setLaborBookTimeForm] = useState<LaborBookTimeForm>(() => initialLaborBookTimeForm())
   const [showLaborBookTimeForm, setShowLaborBookTimeForm] = useState(false)
-  const { data: summary, refetch, isLoading } = useQuery<PriceBuildSummary>({
+  const { data: summary, refetch, isLoading, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${orderId}/price-build`)
@@ -534,7 +550,7 @@ export default function PriceBuilderPanel({
     enabled: !!orderId,
   })
 
-  const { data: partsUsed, refetch: refetchParts } = useQuery<PartsUsage[]>({
+  const { data: partsUsed, refetch: refetchParts, isFetching: partsFetching } = useQuery<PartsUsage[]>({
     queryKey: ['price-build-parts', orderId],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${orderId}/parts`)
@@ -543,7 +559,7 @@ export default function PriceBuilderPanel({
     enabled: !!orderId,
   })
 
-  const { data: inventory } = useQuery<InventoryItem[]>({
+  const { data: inventory, isFetching: inventoryFetching } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
     queryFn: async () => {
       const response = await api.get('/inventory')
@@ -551,7 +567,7 @@ export default function PriceBuilderPanel({
     },
   })
 
-  const { data: partSuggestions } = useQuery<PartSuggestionsResponse>({
+  const { data: partSuggestions, isFetching: partSuggestionsFetching } = useQuery<PartSuggestionsResponse>({
     queryKey: ['price-build-part-suggestions', orderId],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${orderId}/parts/suggestions`)
@@ -633,14 +649,71 @@ export default function PriceBuilderPanel({
   // --- Bulk parts pricing (Stock ⇄ List) + manager discounts ---
   const [laborDiscount, setLaborDiscount] = useState('')
   const [orderDiscount, setOrderDiscount] = useState('')
+  const [discountsSaving, setDiscountsSaving] = useState(false)
   const [pricingBusy, setPricingBusy] = useState(false)
   const [partsPricingMode, setPartsPricingMode] = useState<'stock' | 'list'>('list')
+  const discountsButtonRef = useRef<HTMLButtonElement>(null)
+  const discountsPopoverRef = useRef<HTMLDivElement>(null)
+  const footerDetailsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const l = parseFloat(summary?.labor_discount_amount || '0')
     const o = parseFloat(summary?.order_discount_amount || '0')
     setLaborDiscount(l > 0 ? l.toFixed(2) : '')
     setOrderDiscount(o > 0 ? o.toFixed(2) : '')
   }, [summary?.labor_discount_amount, summary?.order_discount_amount])
+
+  useEffect(() => {
+    if (!discountsOpen) return
+    const isInsideDiscountsPopover = (target: EventTarget | null) => {
+      const node = target as Node | null
+      return !!node && (
+        discountsButtonRef.current?.contains(node) ||
+        discountsPopoverRef.current?.contains(node)
+      )
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!isInsideDiscountsPopover(event.target)) setDiscountsOpen(false)
+    }
+    const handleFocusIn = (event: FocusEvent) => {
+      if (!isInsideDiscountsPopover(event.target)) setDiscountsOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDiscountsOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('focusin', handleFocusIn)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('focusin', handleFocusIn)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [discountsOpen])
+
+  useEffect(() => {
+    if (!footerDetailsOpen) return
+    const isInsideFooterDetails = (target: EventTarget | null) => {
+      const node = target as Node | null
+      return !!node && footerDetailsRef.current?.contains(node)
+    }
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!isInsideFooterDetails(event.target)) setFooterDetailsOpen(null)
+    }
+    const handleFocusIn = (event: FocusEvent) => {
+      if (!isInsideFooterDetails(event.target)) setFooterDetailsOpen(null)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFooterDetailsOpen(null)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('focusin', handleFocusIn)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('focusin', handleFocusIn)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [footerDetailsOpen])
 
   useEffect(() => {
     const parts = partsUsed || []
@@ -674,6 +747,7 @@ export default function PriceBuilderPanel({
   }
 
   const saveDiscounts = async () => {
+    setDiscountsSaving(true)
     try {
       await api.patch(`/repair-orders/${orderId}/discounts`, {
         labor_discount_amount: laborDiscount.trim() === '' ? '0' : laborDiscount,
@@ -682,24 +756,47 @@ export default function PriceBuilderPanel({
       await invalidate()
     } catch (err: unknown) {
       toast.error(errorDetail(err, 'Failed to apply discount'))
+    } finally {
+      setDiscountsSaving(false)
     }
   }
 
   const addPart = useMutation({
-    mutationFn: async ({ inventoryId, quantity }: { inventoryId: string; quantity: number }) => {
-      await api.post(`/repair-orders/${orderId}/parts`, {
+    mutationFn: async ({
+      inventoryId,
+      quantity,
+      sourceServiceId,
+    }: {
+      inventoryId: string
+      quantity: number
+      sourceServiceId?: string | null
+      quantityKey?: string
+    }) => {
+      const inventoryItem = inventory?.find((item) => item.id === inventoryId)
+      const body: {
+        inventory_id: string
+        quantity: number
+        source_service_id: string | null
+        unit_price?: string
+      } = {
         inventory_id: inventoryId,
         quantity,
-      })
+        source_service_id: sourceServiceId || null,
+      }
+      if (partsPricingMode === 'stock' && inventoryItem?.cost != null) {
+        body.unit_price = inventoryItem.cost
+      }
+      await api.post(`/repair-orders/${orderId}/parts`, body)
     },
     onSuccess: async (_data, variables) => {
       setSearchTerm('')
       setPartQuantitiesByItemId((current) => {
         const next = { ...current }
-        delete next[variables.inventoryId]
+        delete next[variables.quantityKey || variables.inventoryId]
         return next
       })
       setPaletteOpen(false)
+      setOperationPartPickerLineId(null)
       await invalidate()
       toast.success('Part added')
     },
@@ -914,17 +1011,6 @@ export default function PriceBuilderPanel({
     onError: () => toast.error('Unable to remove line'),
   })
 
-  const recalc = useMutation({
-    mutationFn: async () => {
-      await api.post(`/repair-orders/${orderId}/price-build/recalculate`)
-    },
-    onSuccess: async () => {
-      await invalidate()
-      toast.success('Price recalculated')
-    },
-    onError: () => toast.error('Recalculation failed'),
-  })
-
   const lineTypeLabel = (line: { line_type: string; source_service_id?: string | null }) => {
     if (line.source_service_id) return 'service labor'
     return line.line_type.replace('_', ' ')
@@ -948,6 +1034,139 @@ export default function PriceBuilderPanel({
     0,
   )
   const customerSavesTotal = partsSavingsTotal + discountTotal
+  const laborLines = summary?.lines || []
+  const footerParts = partsUsed || []
+  const laborDiscountAmount = parseFloat(summary?.labor_discount_amount || '0') || 0
+  const orderDiscountAmount = parseFloat(summary?.order_discount_amount || '0') || 0
+  const priceUpdating = (
+    summaryFetching ||
+    partsFetching ||
+    pricingBusy ||
+    discountsSaving ||
+    editingPartsSaving ||
+    !!priceSavingId ||
+    editingLaborSaving ||
+    addPart.isPending ||
+    applyRepairOp.isPending ||
+    applyLaborBookEntry.isPending ||
+    createAndApplyLaborBookTime.isPending ||
+    updateLine.isPending ||
+    removeLine.isPending
+  )
+  const orderTotalValue = summary?.total_cost ?? '0'
+
+  useEffect(() => {
+    if (!priceUpdating) return
+    setTotalMotionActive(true)
+    if (totalMotionTimerRef.current) window.clearTimeout(totalMotionTimerRef.current)
+    totalMotionTimerRef.current = window.setTimeout(() => {
+      setTotalMotionActive(false)
+      totalMotionTimerRef.current = null
+    }, 720)
+  }, [priceUpdating])
+
+  useEffect(() => () => {
+    if (totalMotionTimerRef.current) window.clearTimeout(totalMotionTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (!summary?.total_cost) return
+    if (previousTotalRef.current == null) {
+      previousTotalRef.current = summary.total_cost
+      return
+    }
+    if (previousTotalRef.current === summary.total_cost) return
+    previousTotalRef.current = summary.total_cost
+    setTotalJustChanged(true)
+    setTotalMotionActive(true)
+    if (totalMotionTimerRef.current) window.clearTimeout(totalMotionTimerRef.current)
+    totalMotionTimerRef.current = window.setTimeout(() => {
+      setTotalMotionActive(false)
+      totalMotionTimerRef.current = null
+    }, 720)
+    const timer = window.setTimeout(() => setTotalJustChanged(false), 1250)
+    return () => window.clearTimeout(timer)
+  }, [summary?.total_cost])
+
+  const renderFooterDetailRows = (rows: Array<{ label: string; meta?: string; value: string; valueClassName?: string }>, emptyText: string) => (
+    rows.length ? (
+      <div className="max-h-72 overflow-y-auto pr-1">
+        {rows.map((row, index) => (
+          <div key={`${row.label}-${index}`} className="flex items-start justify-between gap-3 border-b border-gray-100 py-2 last:border-0">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-gray-800">{row.label}</p>
+              {row.meta && <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">{row.meta}</p>}
+            </div>
+            <span className={`shrink-0 font-['JetBrains_Mono',monospace] text-sm font-semibold ${row.valueClassName || 'text-gray-900'}`}>
+              {row.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-500">{emptyText}</p>
+    )
+  )
+
+  const renderFooterDetails = (metric: typeof footerDetailsOpen) => {
+    if (!metric) return null
+    if (metric === 'parts') {
+      const rows = footerParts.map((part) => ({
+        label: part.inventory_name,
+        meta: `${part.quantity} ${UNIT_ABBR[part.unit_type] || part.unit_type} × ${money(part.unit_price)}`,
+        value: money(part.total_price),
+      }))
+      return (
+        <>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-blue-500">Parts total</p>
+          {renderFooterDetailRows(rows, 'No parts added yet.')}
+        </>
+      )
+    }
+    if (metric === 'labor') {
+      const rows = laborLines.map((line) => ({
+        label: line.description || lineTypeLabel(line),
+        meta: `${parseFloat(line.hours).toFixed(2)} hr × ${money(line.hourly_rate)}/hr`,
+        value: money(line.total_cost),
+      }))
+      return (
+        <>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-orange-500">Labor total</p>
+          {renderFooterDetailRows(rows, 'No labor lines added yet.')}
+        </>
+      )
+    }
+    if (metric === 'discounts') {
+      const rows = [
+        ...(laborDiscountAmount > 0 ? [{ label: 'Labor discount', meta: 'Applied against labor subtotal', value: `-${money(laborDiscountAmount)}`, valueClassName: 'text-red-600' }] : []),
+        ...(orderDiscountAmount > 0 ? [{ label: 'Order discount', meta: 'Applied against final order total', value: `-${money(orderDiscountAmount)}`, valueClassName: 'text-red-600' }] : []),
+      ]
+      return (
+        <>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-red-500">Discounts</p>
+          {renderFooterDetailRows(rows, 'No labor or order discounts applied.')}
+        </>
+      )
+    }
+    const partSavingsRows = footerParts
+      .filter((part) => (parseFloat(part.savings || '0') || 0) > 0)
+      .map((part) => ({
+        label: part.inventory_name,
+        meta: `${part.quantity} ${UNIT_ABBR[part.unit_type] || part.unit_type} saved from list price`,
+        value: money(part.savings),
+        valueClassName: 'text-emerald-700',
+      }))
+    const discountRows = [
+      ...(laborDiscountAmount > 0 ? [{ label: 'Labor discount', meta: 'Direct labor savings', value: money(laborDiscountAmount), valueClassName: 'text-emerald-700' }] : []),
+      ...(orderDiscountAmount > 0 ? [{ label: 'Order discount', meta: 'Direct order savings', value: money(orderDiscountAmount), valueClassName: 'text-emerald-700' }] : []),
+    ]
+    return (
+      <>
+        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-emerald-600">Customer saves</p>
+        {renderFooterDetailRows([...partSavingsRows, ...discountRows], 'No savings applied yet.')}
+      </>
+    )
+  }
 
   useEffect(() => {
     if (!defaultLaborRate || !canMutate) return
@@ -1125,7 +1344,12 @@ export default function PriceBuilderPanel({
             </div>
             {addType === 'operation' ? (
               <>
-                {searchOps.isPending && <p className="px-2 py-3 text-xs text-gray-500">Searching…</p>}
+                {searchOps.isPending && (
+                  <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                    Searching operations…
+                  </p>
+                )}
                 {!searchOps.isPending && !candidates.length && (
                   <p className="px-2 py-3 text-sm text-gray-500">
                     Start by typing an operation name. Saved operations reuse learned labor hours when available.
@@ -1193,7 +1417,12 @@ export default function PriceBuilderPanel({
               </>
             ) : addType === 'saved_labor' ? (
               <>
-                {laborBookEntriesFetching && <p className="px-2 py-3 text-xs text-gray-500">Searching labor book time…</p>}
+                {laborBookEntriesFetching && (
+                  <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                    Searching labor book time…
+                  </p>
+                )}
                 {!laborBookEntriesFetching && laborBookEntries.length > 0 && laborBookEntries.slice(0, 8).map((entry, index) => {
                   const scope = laborBookTimeScope(entry)
                   return (
@@ -1357,6 +1586,12 @@ export default function PriceBuilderPanel({
               </>
             ) : addType === 'part' ? (
               <>
+                {(inventoryFetching || partSuggestionsFetching) && (
+                  <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                    Loading parts…
+                  </p>
+                )}
                 {(() => {
                   const term = searchTerm.trim().toLowerCase()
 
@@ -1582,6 +1817,95 @@ export default function PriceBuilderPanel({
           </div>
         )
 
+        const renderOperationPartPicker = (line: typeof lines[number], groupedParts: typeof allParts) => {
+          if (!line.source_service_id || operationPartPickerLineId !== line.id) return null
+          const term = (operationPartSearchByLineId[line.id] || '').trim().toLowerCase()
+          const groupedInventoryIds = new Set(groupedParts.map((part) => part.inventory_id))
+          const matches = (inventory || [])
+            .filter((item) => item.stock_quantity > 0)
+            .filter((item) => !groupedInventoryIds.has(item.id))
+            .filter((item) => !term || item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
+            .slice(0, 6)
+
+          return (
+            <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/50 p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-orange-500">Add part to operation</span>
+                <button
+                  type="button"
+                  onClick={() => setOperationPartPickerLineId(null)}
+                  className="rounded-md p-1 text-gray-400 hover:bg-white hover:text-gray-700"
+                  aria-label="Close part picker"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="relative mb-2">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={operationPartSearchByLineId[line.id] || ''}
+                  onChange={(e) => setOperationPartSearchByLineId((current) => ({ ...current, [line.id]: e.target.value }))}
+                  placeholder="Search inventory for this operation..."
+                  className="h-10 w-full rounded-lg border border-orange-200 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                />
+              </div>
+              {!matches.length ? (
+                <p className="px-1 py-2 text-sm text-gray-500">No available parts match this operation search.</p>
+              ) : (
+                <div className="space-y-1">
+                  {matches.map((item) => {
+                    const isFluid = item.unit_type && item.unit_type !== 'each'
+                    const step = isFluid ? 0.25 : 1
+                    const unitAbbr = UNIT_ABBR[item.unit_type] || ''
+                    const quantityKey = `${line.id}:${item.id}`
+                    const rowQuantity = Math.max(step, partQuantitiesByItemId[quantityKey] ?? 1)
+                    return (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                          <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
+                            {item.sku} · {item.stock_quantity} in stock ({unitAbbr}) · list {money(item.selling_price)}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <QuantityStepper
+                            value={rowQuantity}
+                            min={step}
+                            step={step}
+                            unitLabel={unitAbbr}
+                            disabled={!canMutate || addPart.isPending}
+                            ariaLabel={`Quantity for ${item.name}`}
+                            onChange={(next) => {
+                              setPartQuantitiesByItemId((current) => ({
+                                ...current,
+                                [quantityKey]: next,
+                              }))
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addPart.mutate({
+                              inventoryId: item.id,
+                              quantity: rowQuantity,
+                              sourceServiceId: line.source_service_id,
+                              quantityKey,
+                            })}
+                            disabled={!canMutate || addPart.isPending}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                            aria-label={`Add ${item.name} to ${line.description}`}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        }
+
         const renderLaborEditor = (line: typeof lines[number]) => {
           const editingHours = editingLabor?.lineId === line.id && editingLabor.field === 'hours'
           const editingRate = editingLabor?.lineId === line.id && editingLabor.field === 'rate'
@@ -1777,11 +2101,13 @@ export default function PriceBuilderPanel({
                         {groupedParts.length > 0 && renderPartsRows(groupedParts)}
                         <button
                           type="button"
-                          disabled
-                          className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-gray-400"
+                          disabled={!canMutate || !line.source_service_id}
+                          onClick={() => setOperationPartPickerLineId((current) => current === line.id ? null : line.id)}
+                          className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-gray-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:hover:border-gray-300 disabled:hover:bg-transparent disabled:hover:text-gray-400 disabled:opacity-60"
                         >
                           <Plus className="h-4 w-4" /> Add part to this operation
                         </button>
+                        {renderOperationPartPicker(line, groupedParts)}
                       </div>
                     )}
                   </div>
@@ -1962,21 +2288,54 @@ export default function PriceBuilderPanel({
       </div>
 
       <div className="z-10 border-t border-gray-200 bg-white/95 px-5 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur">
-        <div className="relative mb-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Parts {money(summary?.parts_total)}</span>
-          <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">Labor {money(summary?.labor_total)}</span>
-          <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700">Discounts -{money(discountTotal)}</span>
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">Customer saves {money(customerSavesTotal)}</span>
+        <div ref={footerDetailsRef} className="relative mb-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setDiscountsOpen((open) => !open)}
+            onClick={() => { setFooterDetailsOpen((open) => open === 'parts' ? null : 'parts'); setDiscountsOpen(false) }}
+            className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
+          >
+            Parts {money(summary?.parts_total)}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
+            className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
+          >
+            Labor {money(summary?.labor_total)}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
+            className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
+          >
+            Discounts -{money(discountTotal)}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
+            className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+          >
+            Customer saves {money(customerSavesTotal)}
+          </button>
+          {footerDetailsOpen && (
+            <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(380px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
+              {renderFooterDetails(footerDetailsOpen)}
+            </div>
+          )}
+          <button
+            ref={discountsButtonRef}
+            type="button"
+            onClick={() => { setDiscountsOpen((open) => !open); setFooterDetailsOpen(null) }}
             disabled={!canMutate}
             className="ml-auto rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           >
             Discounts & pricing
           </button>
           {discountsOpen && (
-            <div className="absolute bottom-full right-0 mb-2 w-[320px] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
+            <div
+              ref={discountsPopoverRef}
+              className="absolute bottom-full right-0 mb-2 w-[320px] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]"
+            >
               <div className="mb-3 flex items-center justify-between">
                 <p className="font-semibold text-gray-900">Discounts & pricing</p>
                 <button type="button" onClick={() => setDiscountsOpen(false)} className="rounded-md p-1 text-gray-400 hover:bg-gray-100">
@@ -1995,56 +2354,84 @@ export default function PriceBuilderPanel({
                   <option value="list">List price</option>
                 </select>
               </label>
-              <label className="mb-3 flex items-center justify-between gap-3 text-sm">
+              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium text-gray-700">Labor discount</span>
-                <input
-                  value={laborDiscount}
-                  onChange={(e) => setLaborDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm"
-                />
-              </label>
-              <label className="mb-3 flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-1.5">
+                  <input
+                    aria-label="Labor discount"
+                    value={laborDiscount}
+                    onChange={(e) => setLaborDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLaborDiscount('')}
+                    disabled={!laborDiscount}
+                    className="h-9 rounded-lg px-2 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40"
+                  >
+                    Reset
+                  </button>
+                </span>
+              </div>
+              <div className="mb-3 flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium text-gray-700">Order discount</span>
-                <input
-                  value={orderDiscount}
-                  onChange={(e) => setOrderDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm"
-                />
-              </label>
+                <span className="flex items-center gap-1.5">
+                  <input
+                    aria-label="Order discount"
+                    value={orderDiscount}
+                    onChange={(e) => setOrderDiscount(e.target.value.replace(/[^0-9.]/g, ''))}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    className="h-9 w-28 rounded-lg border border-gray-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setOrderDiscount('')}
+                    disabled={!orderDiscount}
+                    className="h-9 rounded-lg px-2 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40"
+                  >
+                    Reset
+                  </button>
+                </span>
+              </div>
               <div className="flex items-center justify-between border-t border-gray-100 pt-3">
                 <span className="text-xs font-semibold text-emerald-700">Customer saves {money(customerSavesTotal)}</span>
                 <button
                   type="button"
+                  disabled={discountsSaving}
                   onClick={async () => {
                     await saveDiscounts()
                     setDiscountsOpen(false)
                   }}
-                  className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
                 >
-                  Apply
+                  {discountsSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {discountsSaving ? 'Applying…' : 'Apply'}
                 </button>
               </div>
             </div>
           )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => recalc.mutate()}
-            disabled={!canMutate || recalc.isPending}
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-gray-200 px-3 text-sm font-bold text-gray-700 disabled:opacity-50"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            Recalculate
-          </button>
           <div className="ml-auto flex items-center gap-3">
             <div className="text-right">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400">Order Total</p>
-              <p className="font-['Barlow_Condensed',sans-serif] text-[34px] font-extrabold leading-none text-gray-950">{money(summary?.total_cost)}</p>
+              <div className="flex items-center justify-end gap-2">
+                <p className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${
+                  totalMotionActive ? 'text-orange-700' : 'text-gray-400'
+                }`}>
+                  {totalMotionActive && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {totalMotionActive ? 'Calculating' : 'Order Total'}
+                </p>
+              </div>
+              <p
+                className={`price-total-amount font-['Barlow_Condensed',sans-serif] text-[34px] font-extrabold leading-none text-gray-950 ${
+                  totalJustChanged ? 'price-total-amount--changed' : totalMotionActive ? 'price-total-amount--updating' : ''
+                }`}
+              >
+                {money(orderTotalValue)}
+              </p>
             </div>
             {!isInternalOrder && (
               <button

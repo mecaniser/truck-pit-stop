@@ -1,5 +1,295 @@
 # Branch Merge Audit - Task Plan (2026-07-06)
 
+# Price Builder Order Total Inline Calculating Label (2026-07-06)
+
+## Plan
+- [x] Replace the extra calculating badge with an inline Order Total label state.
+- [x] Preserve the total digit animation without adding footer width/height clutter.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User clarified the calculating component should replace the `Order Total` verbiage rather than taking extra space beside it.
+- [x] Removed the separate calculating badge and made the label switch between `Order Total` and `Calculating` with the spinner inline.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The total animation now uses the existing label slot instead of adding visual clutter.
+
+---
+
+# Price Builder Order Total Minimum Motion Window (2026-07-06)
+
+## Plan
+- [x] Confirm why the Order Total animation reads as flicker on fast updates.
+- [x] Add a minimum visible calculating/settle window so fast updates still feel intentional.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User confirmed production updates can complete so quickly that the animation appears as flicker.
+- [x] Added a separate visual motion state so the total animation is not tied directly to very short backend pending windows.
+- [x] Kept the calculating animation visible briefly and gave the settle animation priority when the total changes.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Fast total updates should now read as a deliberate calculate-and-settle motion instead of a quick flicker.
+
+---
+
+# Price Builder Order Total Motion Feedback (2026-07-06)
+
+## Plan
+- [x] Choose an animation pattern appropriate for money totals.
+- [x] Animate the Order Total while pricing is updating and when the new total lands.
+- [x] Avoid adding a motion dependency for a localized effect.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Chose recirculating/calculating motion over flicker because flicker can make a money total feel unstable.
+- [x] Confirmed the app does not currently include Motion/framer-motion, so this should be CSS-only.
+- [x] Added an updating animation to the total digits while pricing work is in flight.
+- [x] Added a short settle animation when the new total value arrives.
+- [x] Added a subtle glow to the `Calculating` status pill and respected `prefers-reduced-motion`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Order Total now uses a calm recalculating motion rather than a harsh flicker, keeping the value feeling reliable while still visibly updating.
+
+---
+
+# Price Builder Loading Indicators (2026-07-06)
+
+## Plan
+- [x] Identify price-affecting mutations and query refetches that should show near Order Total.
+- [x] Add a compact updating indicator beside Order Total while pricing data is saving/refetching.
+- [x] Add visible loading indicators for backend-backed operation, part, and Labor Book Time search states.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed operation and Labor Book Time search had plain text loading states, while part inventory/suggestion loading had no visible state.
+- [x] Confirmed the Order Total area does not currently show when mutations or summary/parts refetches are in flight.
+- [x] Added an `Updating` spinner beside Order Total while summary/parts are refetching or price-affecting mutations are pending.
+- [x] Added spinner-backed loading rows for operation search, Labor Book Time search, and Part inventory/suggestion loading.
+- [x] Added an applying state to the Discounts & pricing Apply button.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Production-slower price-builder actions now provide visible feedback both at the search surface and at the Order Total focus point.
+
+---
+
+# Price Builder Footer Metric Detail Popovers (2026-07-06)
+
+## Plan
+- [x] Confirm available line-level data for Parts, Labor, Discounts, and Customer saves.
+- [x] Convert the footer metric pills into interactive detail popovers.
+- [x] Include discount source details and customer-savings breakdown.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed footer data is already available from `partsUsed`, `summary.lines`, `summary.labor_discount_amount`, `summary.order_discount_amount`, and each part's `savings`.
+- [x] Converted Parts, Labor, Discounts, and Customer saves pills into clickable buttons.
+- [x] Parts popover lists part name, quantity/unit, unit price, and line total.
+- [x] Labor popover lists labor line, hours, hourly rate, and line total.
+- [x] Discounts popover lists labor discount and order discount separately when applied.
+- [x] Customer saves popover combines per-part list-price savings with labor/order discounts.
+- [x] Added outside click/focus and Escape handling for the footer detail popovers.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Footer metric pills now expose useful accounting detail without adding more permanent footer clutter.
+
+---
+
+# Price Builder Discount Reset Controls (2026-07-06)
+
+## Plan
+- [x] Confirm how labor/order discounts are currently cleared.
+- [x] Add explicit reset controls for labor discount and order discount in the Discounts & pricing popover.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed blank discount fields are already submitted as `0`, but the UI does not expose a clear reset action.
+- [x] Added per-field Reset buttons for labor discount and order discount that clear the field before Apply persists the reset.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Labor and order discounts can now be explicitly reset from the Discounts & pricing popover without requiring users to know that blank means zero.
+
+---
+
+# Price Builder Remove Recalculate Footer Action (2026-07-06)
+
+## Plan
+- [x] Confirm whether the visible Recalculate button still has a clear role in the redesigned drawer.
+- [x] Remove the obsolete footer button and unused frontend mutation/import while keeping backend recalculation support intact.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the button calls `/price-build/recalculate`, which recomputes labor/service-derived lines and totals but does not apply parts pricing modes.
+- [x] Confirmed current add/update/discount/pricing flows already invalidate and refresh totals after mutations.
+- [x] Removed the footer Recalculate button, its frontend mutation, and the unused `RefreshCcw` icon import.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The redesigned Price Builder footer now focuses on totals, discounts/pricing, send quote, and danger actions without exposing a misleading manual refresh control.
+- The backend recalculation endpoint remains available for API/internal use.
+
+---
+
+# Price Builder Part Price Reset Toggle (2026-07-06)
+
+## Plan
+- [x] Confirm current part price reset behavior.
+- [x] Make the reset action toggle between list price and stock cost where stock cost is available.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the item price popover reset action always sets the draft price to list price.
+- [x] Updated the reset action so when the draft price matches list price and stock cost exists, it shows `Reset to stock`; otherwise it shows `Reset to list`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The part price popover reset control now toggles between stock cost and list price from the editable draft price.
+
+---
+
+# Price Builder Part Price Margin Draft Sync (2026-07-06)
+
+## Plan
+- [x] Confirm why the item price popover margin does not change when Customer price changes.
+- [x] Update margin calculation to follow the editable draft price, including Reset to list.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the popover computes margin from saved `unit_price`, while the input and Reset button only change local `draft` until Apply.
+- [x] Changed margin calculation to use the editable draft price first, falling back to saved `unit_price` only when the draft is not numeric.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The margin preview now updates when the Customer price field changes and when Reset to list changes the draft back to list price.
+
+---
+
+# Price Builder Drawer Viewport Width (2026-07-06)
+
+## Plan
+- [x] Confirm whether `90vw` is relative to viewport or a parent container.
+- [x] Confirm why the current drawer does not visually occupy 90% of a wide screen.
+- [x] Update the repair-order drawer width to use actual desktop 90vw without the 1100px cap.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] `vw` is browser viewport-relative.
+- [x] Confirmed `SlidePanel` renders an absolute panel inside a fixed full-screen overlay with `w-full ${width}`, so width classes resolve against the viewport-sized overlay.
+- [x] Confirmed the repair-order drawer currently uses `max-w-[max(400px,_min(90vw,_1100px))]`, which caps wide screens at 1100px instead of actual 90vw.
+- [x] User confirmed actual 90vw is too wide on desktop.
+- [x] Updated the repair-order drawer width to `max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]`, keeping mobile/smaller screens roomy while bounding large desktop layouts.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/RepairOrdersPage.tsx src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The drawer no longer stops at the old 1100px cap, but it also no longer expands to full 90vw on large desktop screens.
+
+---
+
+# Price Builder Discounts Popover Focus Close (2026-07-06)
+
+## Plan
+- [x] Confirm current Discounts & pricing popover close behavior.
+- [x] Add outside focus/click handling without breaking interactions inside the popover.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed the popover only closes from the close button or Apply action; moving focus/click outside does not close it.
+- [x] Added trigger/popover refs and document-level `mousedown`, `focusin`, and Escape handling that closes only when the event target is outside both elements.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Discounts & pricing now stays open while interacting with its select/inputs/buttons, and closes when focus or click moves outside the popover.
+
+---
+
+# Price Builder Sticky Parts Pricing Mode (2026-07-06)
+
+## Plan
+- [x] Confirm whether Recalculate applies the selected parts pricing mode.
+- [x] Confirm how new parts are priced after the user selects Stock price.
+- [x] Ensure new part additions respect the active Stock/List pricing mode during the price-builder session.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed Recalculate calls `/price-build/recalculate`, which recomputes labor/service-derived lines and totals but does not rewrite part unit prices.
+- [x] Confirmed `/parts/pricing-mode` bulk-updates existing parts only.
+- [x] Confirmed new part additions currently omit `unit_price`, so customer repair orders default new parts back to inventory selling/list price.
+- [x] Updated the shared add-part mutation so when the active mode is `stock`, newly added standalone and operation-level parts post inventory `cost` as `unit_price`.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Recalculate remains a totals/labor refresh action, not a pricing-policy apply button.
+- Parts pricing mode now applies to future part additions while the panel is open, matching the visible dropdown state.
+- Longer-term improvement: persist an explicit order-level parts pricing mode if the rule must survive closing/reopening an order before any parts exist.
+
+---
+
+# Price Builder Price Popover Width Check (2026-07-06)
+
+## Plan
+- [x] Confirm current price adjustment popover layout and identify why the custom price field overflows.
+- [x] Confirm current Price Builder drawer width after branch/rebase work.
+- [x] Patch the popover so the customer-price row fits inside the card at narrow widths.
+- [x] Run focused frontend verification and document results.
+
+## Progress Notes
+- [x] Current source still passes `width="max-w-[max(400px,_min(90vw,_1100px))]"` to the repair-order `SlidePanel`, so the drawer keeps the intended max 90vw behavior with an 1100px cap.
+- [x] Found the popover uses a fixed `w-[280px]` card with a single-line label plus a fixed `w-24` input inside a padded label row; that can exceed the available inner width in production rendering/zoom.
+- [x] Changed the popover to a responsive `min(320px, calc(100vw - 32px))` width and clamped its fixed-position right edge inside the viewport.
+- [x] Reworked the customer-price row from flex sizing to a two-column grid with a bounded input column so the field cannot overflow the card.
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The production overflow was a popover internal sizing issue, not evidence that the Price Builder drawer width change was lost.
+- Price Builder drawer width is still configured to fill up to 90vw with an 1100px maximum.
+
+---
+
 ## Follow-up: Stale Branch Ancestry Closeout
 - [x] Confirm GitHub's `feat/fleet-multi-wo-lifecycle` comparison is stale ancestry, not missing code.
 - [x] Record an ancestry-only merge for `origin/feat/fleet-multi-wo-lifecycle` into `main` without changing files.
@@ -1701,6 +1991,34 @@
 
 ## Review
 - Each Part search result row now owns its displayed quantity, so changing one stepper no longer updates every row in the list.
+
+---
+
+# Price Builder Add Parts To Service Operation (2026-07-06)
+
+## Plan
+- [x] Confirm how parts are currently grouped under service labor operations.
+- [x] Allow manual part adds to carry the service-operation grouping id.
+- [x] Replace the disabled `Add part to this operation` placeholder with a per-operation part picker.
+- [x] Run backend/frontend verification and document result.
+
+## Progress Notes
+- [x] Confirmed existing bundled parts are grouped by `PartsUsage.source_service_id` matching the service labor line's `source_service_id`.
+- [x] Confirmed manual part creation currently accepts only standalone `inventory_id`, `quantity`, and optional `unit_price`, so operation grouping is not persisted yet.
+- [x] Added `source_service_id` to manual part creation and persisted it in `PartsUsage`.
+- [x] Replaced the disabled operation-row placeholder with an inline inventory picker that searches available stock, excludes parts already on that operation, supports the reusable quantity stepper, and attaches the selected part to the service operation.
+- [x] Added regression coverage for manual part creation with `source_service_id`.
+- [x] Passed focused backend verification:
+  `./.venv/bin/python -m pytest backend/tests/test_fractional_part_quantity.py -q`
+- [x] Passed focused frontend lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/components/QuantityStepper.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- `Add part to this operation` is now active for service-backed operation rows and saves parts under that operation instead of adding them as standalone parts.
+- Existing standalone Part tab behavior remains unchanged.
+- Residual risk: custom labor rows without `source_service_id` still cannot own grouped parts until the data model gains a separate labor-line grouping key such as `source_labor_id`.
 
 ---
 

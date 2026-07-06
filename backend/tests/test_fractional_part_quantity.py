@@ -122,6 +122,32 @@ async def test_add_part_accepts_fractional_gallon_quantity(db_session):
 
 
 @pytest.mark.asyncio
+async def test_add_part_can_attach_to_service_operation(db_session):
+    user, order, inv = await _seed(db_session, stock_quantity=10)
+    service = Service(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        name="Battery Test & Replacement",
+        duration_minutes=60,
+        base_price=Decimal("0.00"),
+        is_active=True,
+        requires_vehicle=True,
+    )
+    db_session.add(service)
+    await db_session.commit()
+
+    body = PartsUsageCreate(
+        inventory_id=inv.id,
+        quantity=Decimal("1.00"),
+        source_service_id=service.id,
+    )
+    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+
+    assert resp.source_service_id == service.id
+    assert order.parts_usage[0].source_service_id == service.id
+
+
+@pytest.mark.asyncio
 async def test_add_part_rejects_zero_or_negative_quantity(db_session):
     user, order, inv = await _seed(db_session)
 

@@ -2103,7 +2103,7 @@ export default function RepairOrdersPage() {
         onClose={closeDetail}
         title={selectedOrder ? `#${selectedOrder.order_number}` : ''}
         subtitle="Repair Order"
-        width="max-w-[max(400px,_min(90vw,_1100px))]"
+        width="max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]"
         hideHeader={priceBuilderOwnsShell}
         onPrev={!priceBuilderOwnsShell && showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
         onNext={!priceBuilderOwnsShell && showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
