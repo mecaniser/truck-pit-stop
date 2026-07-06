@@ -17,7 +17,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
-from app.services.pricing import get_order_labor_total, get_order_parts_total
+from app.services.pricing import get_order_checkout_breakdown, get_order_labor_total, get_order_parts_total
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
@@ -387,20 +387,12 @@ async def auto_create_invoice_for_order(
     customer = order.customer
     vehicle = order.vehicle
 
-    parts_total = get_order_parts_total(order)
-    labor_total = get_order_labor_total(order)
-    subtotal = parts_total + labor_total
-
-    shop_supplies_rate = Decimal(str(tenant.shop_supplies_rate or 0)) / 100
-    service_fee_rate = Decimal(str(tenant.service_fee_rate or 0)) / 100
-    sales_tax_rate = Decimal(str(tenant.sales_tax_rate or 0)) / 100
-
-    shop_supplies_amount = (labor_total * shop_supplies_rate).quantize(Decimal("0.01"))
-    subtotal_with_supplies = subtotal + shop_supplies_amount
-    service_fee_amount = (subtotal_with_supplies * service_fee_rate).quantize(Decimal("0.01"))
-    taxable_amount = subtotal_with_supplies + service_fee_amount
-    tax_amount = (taxable_amount * sales_tax_rate).quantize(Decimal("0.01"))
-    total_amount = (taxable_amount + tax_amount).quantize(Decimal("0.01"))
+    checkout = get_order_checkout_breakdown(order, tenant)
+    subtotal = checkout["repair_total"]
+    shop_supplies_amount = checkout["shop_supplies_amount"]
+    service_fee_amount = checkout["service_fee_amount"]
+    tax_amount = checkout["tax_amount"]
+    total_amount = checkout["estimated_card_total"]
 
     from app.core.unique_id import create_with_retry
 
@@ -548,30 +540,11 @@ async def create_invoice(
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
     
-    # Subtotal uses service/labor charges plus parts sell price.
-    parts_total = get_order_parts_total(order)
-    labor_total = get_order_labor_total(order)
-    subtotal = parts_total + labor_total
-    
-    # Calculate fees based on tenant settings
-    shop_supplies_rate = Decimal(str(tenant.shop_supplies_rate or 0)) / 100 if tenant else Decimal("0")
-    service_fee_rate = Decimal(str(tenant.service_fee_rate or 0)) / 100 if tenant else Decimal("0")
-    sales_tax_rate = Decimal(str(tenant.sales_tax_rate or 0)) / 100 if tenant else Decimal("0")
-    
-    # Shop supplies: percentage of labor
-    shop_supplies_amount = (labor_total * shop_supplies_rate).quantize(Decimal("0.01"))
-    
-    # Subtotal after shop supplies
-    subtotal_with_supplies = subtotal + shop_supplies_amount
-    
-    # Service fee: percentage of subtotal (after shop supplies)
-    service_fee_amount = (subtotal_with_supplies * service_fee_rate).quantize(Decimal("0.01"))
-    
-    # Taxable amount (subtotal + shop supplies + service fee)
-    taxable_amount = subtotal_with_supplies + service_fee_amount
-    
-    # Sales tax
-    tax_amount = (taxable_amount * sales_tax_rate).quantize(Decimal("0.01"))
+    checkout = get_order_checkout_breakdown(order, tenant)
+    subtotal = checkout["repair_total"]
+    shop_supplies_amount = checkout["shop_supplies_amount"]
+    service_fee_amount = checkout["service_fee_amount"]
+    tax_amount = checkout["tax_amount"]
 
     requested_discount = (body.discount_amount or Decimal("0.00")).quantize(Decimal("0.01"))
     if requested_discount < 0:
@@ -580,7 +553,7 @@ async def create_invoice(
             detail="discount_amount must be greater than or equal to 0.00",
         )
 
-    pre_discount_total = taxable_amount + tax_amount
+    pre_discount_total = checkout["estimated_card_total"]
     if requested_discount > pre_discount_total:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

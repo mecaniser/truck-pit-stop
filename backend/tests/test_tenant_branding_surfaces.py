@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from starlette.requests import Request
 
 from app.api.v1.endpoints import invoice_access, quotes
 from app.db.models.invoice import InvoiceStatus
@@ -34,6 +35,16 @@ class _FakeAsyncSession:
         if entity is User:
             return _ScalarResult(self._user)
         raise AssertionError(f"Unexpected query entity: {entity}")
+
+
+def _fake_request() -> Request:
+    return Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": [],
+        "client": ("testclient", 50000),
+    })
 
 
 @pytest.mark.asyncio
@@ -73,7 +84,9 @@ async def test_quote_token_response_includes_shop_branding(monkeypatch):
         internal_notes='{"selected_services":[{"name":"Brake Service","base_price":"95.00"}]}',
         total_labor_cost=Decimal("95.00"),
         total_parts_cost=Decimal("30.00"),
-        total_cost=Decimal("125.00"),
+        labor_discount_amount=Decimal("10.00"),
+        order_discount_amount=Decimal("5.00"),
+        total_cost=Decimal("110.00"),
         customer=customer,
         vehicle=vehicle,
         parts_usage=[],
@@ -86,13 +99,15 @@ async def test_quote_token_response_includes_shop_branding(monkeypatch):
     monkeypatch.setattr(quotes, "_load_quote_context_by_token_or_400", _fake_load_quote_context)
 
     response = await quotes.get_quote_by_token(
-        request=None,
+        request=_fake_request(),
         token="quote-token",
         db=_FakeAsyncSession(tenant=tenant, user=object()),
     )
 
     assert response.shop_name == "Truck Pit Stop"
     assert response.shop_logo_url == "https://cdn.example.com/tenant-logo.png"
+    assert response.labor_discount_amount == Decimal("10.00")
+    assert response.order_discount_amount == Decimal("5.00")
 
 
 @pytest.mark.asyncio
@@ -139,7 +154,7 @@ async def test_invoice_access_resolve_includes_shop_branding(monkeypatch):
     monkeypatch.setattr(invoice_access, "_validate_invoice_link_subject", lambda *_args, **_kwargs: None)
 
     response = await invoice_access.resolve_invoice_link(
-        request=None,
+        request=_fake_request(),
         body=invoice_access.TokenRequest(token="invoice-token"),
         db=_FakeAsyncSession(tenant=tenant, user=object()),
     )

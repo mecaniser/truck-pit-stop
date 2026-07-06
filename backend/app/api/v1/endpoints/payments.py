@@ -841,9 +841,10 @@ async def submit_customer_zelle_payment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
 
     was_pending = invoice.pending_zelle_confirmation
-    sender_email = _normalize_email(str(body.sender_email) if body.sender_email else None)
-    sender_phone = _normalize_phone(body.sender_phone)
+    sender_email = _normalize_email(str(body.sender_email) if body.sender_email else current_user.email)
+    sender_phone = _normalize_phone(body.sender_phone or current_user.phone)
     notes = body.notes.strip() if body.notes else None
+    zelle_amount = invoice.total_amount - (invoice.service_fee_amount or 0)
 
     invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
     invoice.zelle_pending_sender_email = sender_email
@@ -869,7 +870,7 @@ async def submit_customer_zelle_payment(
                 order_number=invoice.repair_order.order_number,
                 invoice_number=invoice.invoice_number,
                 customer_name=customer_name,
-                amount=invoice.total_amount,
+                amount=zelle_amount,
                 source_label="customer portal",
                 sender_email=sender_email,
                 sender_phone=sender_phone,

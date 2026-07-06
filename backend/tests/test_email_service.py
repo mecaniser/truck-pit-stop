@@ -6,6 +6,12 @@ import resend
 import app.services.email_service as email_svc
 
 
+def test_format_sender_uses_tenant_display_name(monkeypatch):
+    monkeypatch.setattr(email_svc.settings, "RESEND_FROM_EMAIL", "quotes@example.com")
+
+    assert email_svc._format_sender("Big Rig Repairs") == '"Big Rig Repairs" <quotes@example.com>'
+
+
 @pytest.mark.asyncio
 async def test_send_password_reset_email_calls_resend(monkeypatch):
     sent = {}

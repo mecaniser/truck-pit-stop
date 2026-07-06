@@ -5,8 +5,10 @@ from decimal import Decimal
 from uuid import uuid4
 import os
 
+from fastapi import Response
 import pytest
 from sqlalchemy import select
+from starlette.requests import Request
 
 # Twilio client is initialized at import time in app.services.twilio_service.
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
@@ -14,14 +16,28 @@ os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
 os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import quotes as quotes_endpoint
+from app.api.v1.endpoints import repair_orders as repair_orders_endpoint
 from app.db.models.customer import Customer
+from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
+from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.vehicle import Vehicle
+from app.schemas.repair_order import DiscountUpdate
 from app.services.price_build_service import PriceBuildLockedError, PriceBuildService
+
+
+def _fake_request() -> Request:
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/quotes/portal/create",
+        "headers": [],
+        "client": ("testclient", 50000),
+    })
 
 
 async def _seed_quote_context(db_session):
@@ -102,11 +118,52 @@ async def test_locked_order_rejects_price_build_edits(db_session):
     _, order, service, _ = await _seed_quote_context(db_session)
     svc = PriceBuildService()
     loaded = await svc.load_order(db_session, order.id)
-    await svc.lock_order_pricing(db_session, loaded.id, reason="quote_sent")
+    await svc.lock_order_pricing(db_session, loaded.id, reason="approved")
     locked = await svc.load_order(db_session, order.id)
 
     with pytest.raises(PriceBuildLockedError):
         await svc.add_flat_service_line(db_session, locked, service.id, quantity=1)
+
+
+@pytest.mark.asyncio
+async def test_quote_sent_lock_allows_quoted_revisions(db_session):
+    staff_user, order, service, _ = await _seed_quote_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.lock_order_pricing(db_session, loaded.id, reason="quote_sent")
+    locked = await svc.load_order(db_session, order.id)
+
+    summary_before = await repair_orders_endpoint.get_price_build_summary(
+        order_id=order.id,
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    result = await svc.add_flat_service_line(db_session, locked, service.id, quantity=1)
+
+    assert summary_before.pricing_locked is False
+    assert summary_before.pricing_lock_reason == "quote_sent"
+    assert result.order.total_labor_cost == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_quote_sent_lock_allows_discount_revisions(db_session):
+    staff_user, order, service, _ = await _seed_quote_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    await svc.lock_order_pricing(db_session, loaded.id, reason="quote_sent")
+
+    summary = await repair_orders_endpoint.update_repair_order_discounts(
+        order_id=order.id,
+        body=DiscountUpdate(labor_discount_amount=Decimal("25.00")),
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    assert summary.pricing_locked is False
+    assert summary.labor_discount_amount == Decimal("25.00")
+    assert summary.total_cost == Decimal("75.00")
 
 
 @pytest.mark.asyncio
@@ -140,6 +197,374 @@ async def test_quote_send_locks_order_pricing(db_session, monkeypatch):
     assert response.sent_to_customer is True
     assert response.sent_at is not None
 
-    refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    order_id = order.id
+    db_session.expire_all()
+    refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order_id))).scalar_one()
     assert refreshed_order.pricing_locked_at is not None
     assert refreshed_order.pricing_lock_reason == "quote_sent"
+
+
+@pytest.mark.asyncio
+async def test_quote_send_uses_discounted_order_total(db_session, monkeypatch):
+    staff_user, order, service, quote = await _seed_quote_context(db_session)
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+    refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    refreshed_order.labor_discount_amount = Decimal("20.00")
+    await db_session.commit()
+
+    async def _noop_email(**_kwargs):
+        return None
+
+    async def _noop_sms(*_args, **_kwargs):
+        return None
+
+    async def _noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
+    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
+
+    response = await quotes_endpoint.send_quote_to_customer(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    assert response.total_amount == Decimal("80.00")
+
+
+@pytest.mark.asyncio
+async def test_quote_send_email_uses_tenant_branding(db_session, monkeypatch):
+    staff_user, order, service, quote = await _seed_quote_context(db_session)
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+
+    sent_email = {}
+
+    async def _capture_email(**kwargs):
+        sent_email.update(kwargs)
+        return None
+
+    async def _noop_sms(*_args, **_kwargs):
+        return None
+
+    async def _noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(quotes_endpoint, "send_email", _capture_email)
+    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
+
+    await quotes_endpoint.send_quote_to_customer(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    assert sent_email["sender_name"] == "Lock Test Garage"
+    assert sent_email["subject"].endswith(" - Lock Test Garage")
+    assert "Lock Test Garage" in sent_email["body"]
+    assert "DieselBridge Network" not in sent_email["subject"]
+    assert "DieselBridge Network" not in sent_email["body"]
+
+
+@pytest.mark.asyncio
+async def test_quote_send_email_includes_customer_savings(db_session, monkeypatch):
+    staff_user, order, service, quote = await _seed_quote_context(db_session)
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+
+    inventory = Inventory(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        sku="DISC-PART-001",
+        name="Discounted Brake Rotor",
+        stock_quantity=4,
+        on_order_quantity=0,
+        reorder_level=0,
+        cost=Decimal("60.00"),
+        selling_price=Decimal("100.00"),
+    )
+    part = PartsUsage(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        repair_order_id=order.id,
+        inventory_id=inventory.id,
+        quantity=Decimal("2.00"),
+        unit_cost=Decimal("60.00"),
+        unit_price=Decimal("80.00"),
+        list_price=Decimal("100.00"),
+        total_price=Decimal("160.00"),
+    )
+    refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    refreshed_order.labor_discount_amount = Decimal("20.00")
+    refreshed_order.order_discount_amount = Decimal("10.00")
+    db_session.add_all([inventory, part])
+    await db_session.commit()
+
+    sent_email = {}
+
+    async def _capture_email(**kwargs):
+        sent_email.update(kwargs)
+        return None
+
+    async def _noop_sms(*_args, **_kwargs):
+        return None
+
+    async def _noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(quotes_endpoint, "send_email", _capture_email)
+    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
+
+    await quotes_endpoint.send_quote_to_customer(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    body = sent_email["body"]
+    assert "Customer savings" in body
+    assert "Discounted Brake Rotor" in body
+    assert "-$40.00" in body
+    assert "Labor discount" in body
+    assert "-$20.00" in body
+    assert "Order discount" in body
+    assert "-$10.00" in body
+    assert "Total customer savings" in body
+    assert "$70.00" in body
+
+
+@pytest.mark.asyncio
+async def test_approved_quote_can_create_customer_portal_account(db_session, monkeypatch):
+    _, order, _, quote = await _seed_quote_context(db_session)
+    quote.is_approved = True
+    quote.approval_token = "approved-token"
+    order.status = RepairOrderStatus.APPROVED
+    await db_session.commit()
+
+    enrollment_token = "quote-portal-enrollment-token"
+    payload = {
+        "quote_id": str(quote.id),
+        "repair_order_id": str(order.id),
+        "customer_id": str(order.customer_id),
+        "tenant_id": str(order.tenant_id),
+        "email": "taylor@example.com",
+        "purpose": "quote_portal_enrollment",
+    }
+
+    async def _get_payload(token: str):
+        assert token == enrollment_token
+        return payload
+
+    async def _is_consumed(_token: str):
+        return False
+
+    async def _consume(token: str):
+        assert token == enrollment_token
+        return payload
+
+    async def _get_token_version(_user_id: str):
+        return 0
+
+    monkeypatch.setattr(quotes_endpoint, "get_quote_portal_enrollment_payload", _get_payload)
+    monkeypatch.setattr(quotes_endpoint, "is_quote_portal_enrollment_token_consumed", _is_consumed)
+    monkeypatch.setattr(quotes_endpoint, "consume_quote_portal_enrollment_token", _consume)
+    monkeypatch.setattr(quotes_endpoint, "get_token_version", _get_token_version)
+
+    response = Response()
+    result = await quotes_endpoint.create_portal_from_quote_link(
+        request=_fake_request(),
+        response=response,
+        body=quotes_endpoint.QuotePortalCreateRequest(
+            token=enrollment_token,
+            new_password="StrongPass1!",
+        ),
+        db=db_session,
+    )
+
+    assert result.redirect_to == "/portal"
+    assert result.user_exists is False
+    assert result.access_token
+    assert "access_token=" in response.headers["set-cookie"]
+
+    user = (await db_session.execute(select(User).where(User.customer_id == order.customer_id))).scalar_one()
+    assert user.role == UserRole.CUSTOMER
+    assert user.email.startswith("taylor-")
+
+
+@pytest.mark.asyncio
+async def test_approved_quote_existing_portal_user_with_link_can_open_portal(db_session, monkeypatch):
+    _, order, _, quote = await _seed_quote_context(db_session)
+    quote.is_approved = True
+    order.status = RepairOrderStatus.APPROVED
+    customer = (await db_session.execute(select(Customer).where(Customer.id == order.customer_id))).scalar_one()
+    user = User(
+        id=uuid4(),
+        tenant_id=customer.tenant_id,
+        customer_id=customer.id,
+        email=customer.email,
+        hashed_password="hashed-password",
+        first_name=customer.first_name,
+        last_name=customer.last_name,
+        role=UserRole.CUSTOMER,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(UserCustomerLink(user_id=user.id, customer_id=customer.id, tenant_id=customer.tenant_id))
+    await db_session.commit()
+
+    enrollment_token = "existing-user-quote-portal-token"
+    payload = {
+        "quote_id": str(quote.id),
+        "repair_order_id": str(order.id),
+        "customer_id": str(order.customer_id),
+        "tenant_id": str(order.tenant_id),
+        "email": customer.email,
+        "purpose": "quote_portal_enrollment",
+    }
+
+    async def _get_payload(token: str):
+        assert token == enrollment_token
+        return payload
+
+    async def _is_consumed(_token: str):
+        return False
+
+    async def _get_token_version(_user_id: str):
+        return 0
+
+    monkeypatch.setattr(quotes_endpoint, "get_quote_portal_enrollment_payload", _get_payload)
+    monkeypatch.setattr(quotes_endpoint, "is_quote_portal_enrollment_token_consumed", _is_consumed)
+    monkeypatch.setattr(quotes_endpoint, "get_token_version", _get_token_version)
+
+    response = Response()
+    result = await quotes_endpoint.create_portal_from_quote_link(
+        request=_fake_request(),
+        response=response,
+        body=quotes_endpoint.QuotePortalCreateRequest(token=enrollment_token),
+        db=db_session,
+    )
+
+    assert result.redirect_to == "/portal"
+    assert result.user_exists is True
+    assert result.access_token
+    assert "access_token=" in response.headers["set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_approved_quote_existing_portal_user_relinks_duplicate_customer(db_session, monkeypatch):
+    _, order, _, quote = await _seed_quote_context(db_session)
+    quote.is_approved = True
+    order.status = RepairOrderStatus.APPROVED
+    quote_customer = (await db_session.execute(select(Customer).where(Customer.id == order.customer_id))).scalar_one()
+    older_customer = Customer(
+        id=uuid4(),
+        tenant_id=quote_customer.tenant_id,
+        first_name=quote_customer.first_name,
+        last_name=quote_customer.last_name,
+        email=quote_customer.email,
+    )
+    db_session.add(older_customer)
+    await db_session.flush()
+    user = User(
+        id=uuid4(),
+        tenant_id=quote_customer.tenant_id,
+        customer_id=older_customer.id,
+        email=quote_customer.email,
+        hashed_password="hashed-password",
+        first_name=quote_customer.first_name,
+        last_name=quote_customer.last_name,
+        role=UserRole.CUSTOMER,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(UserCustomerLink(user_id=user.id, customer_id=older_customer.id, tenant_id=quote_customer.tenant_id))
+    await db_session.commit()
+
+    enrollment_token = "duplicate-customer-quote-portal-token"
+    payload = {
+        "quote_id": str(quote.id),
+        "repair_order_id": str(order.id),
+        "customer_id": str(order.customer_id),
+        "tenant_id": str(order.tenant_id),
+        "email": quote_customer.email,
+        "purpose": "quote_portal_enrollment",
+    }
+
+    async def _get_payload(token: str):
+        assert token == enrollment_token
+        return payload
+
+    async def _is_consumed(_token: str):
+        return False
+
+    async def _get_token_version(_user_id: str):
+        return 0
+
+    monkeypatch.setattr(quotes_endpoint, "get_quote_portal_enrollment_payload", _get_payload)
+    monkeypatch.setattr(quotes_endpoint, "is_quote_portal_enrollment_token_consumed", _is_consumed)
+    monkeypatch.setattr(quotes_endpoint, "get_token_version", _get_token_version)
+
+    response = Response()
+    result = await quotes_endpoint.create_portal_from_quote_link(
+        request=_fake_request(),
+        response=response,
+        body=quotes_endpoint.QuotePortalCreateRequest(token=enrollment_token),
+        db=db_session,
+    )
+
+    assert result.user_exists is True
+    refreshed_link = (
+        await db_session.execute(
+            select(UserCustomerLink).where(
+                UserCustomerLink.user_id == user.id,
+                UserCustomerLink.tenant_id == quote_customer.tenant_id,
+            )
+        )
+    ).scalar_one()
+    assert refreshed_link.customer_id == quote_customer.id
+
+
+@pytest.mark.asyncio
+async def test_quote_approval_api_creates_portal_account(client, db_session):
+    _, order, _, quote = await _seed_quote_context(db_session)
+    quote.approval_token = "quote-approval-token"
+    await db_session.commit()
+
+    approve_response = await client.post("/api/v1/quotes/token/quote-approval-token/approve")
+    assert approve_response.status_code == 200
+
+    resolve_response = await client.post("/api/v1/quotes/token/quote-approval-token/portal-resolve")
+    assert resolve_response.status_code == 200
+    enrollment_token = resolve_response.json()["portal_enrollment_token"]
+
+    create_response = await client.post(
+        "/api/v1/quotes/portal/create",
+        json={
+            "token": enrollment_token,
+            "new_password": "StrongPass1!",
+        },
+    )
+
+    assert create_response.status_code == 200
+    body = create_response.json()
+    assert body["redirect_to"] == "/portal"
+    assert body["access_token"]
+    assert approve_response.json()["is_approved"] is True

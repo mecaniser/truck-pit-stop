@@ -8,6 +8,7 @@ from app.services.pricing import (
     get_order_labor_total,
     get_order_parts_total,
     get_order_subtotal,
+    get_order_total,
     get_selected_services_total,
 )
 
@@ -73,3 +74,23 @@ class TestGetOrderSubtotal:
             total_labor_cost=200,
         )
         assert get_order_subtotal(order) == Decimal("300")
+
+
+class TestGetOrderTotal:
+    def test_applies_labor_and_order_discounts(self):
+        order = SimpleNamespace(
+            total_parts_cost=100,
+            total_labor_cost=200,
+            labor_discount_amount=50,
+            order_discount_amount=30,
+        )
+        assert get_order_total(order) == Decimal("220")
+
+    def test_total_cannot_go_below_zero(self):
+        order = SimpleNamespace(
+            total_parts_cost=25,
+            total_labor_cost=50,
+            labor_discount_amount=100,
+            order_discount_amount=100,
+        )
+        assert get_order_total(order) == Decimal("0.00")

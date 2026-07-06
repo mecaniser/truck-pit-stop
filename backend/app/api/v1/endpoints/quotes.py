@@ -1,5 +1,6 @@
 import json
 import secrets
+from html import escape
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -34,9 +35,10 @@ from app.db.models.inventory import PartsUsage
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.services.pricing import (
+    get_order_checkout_breakdown,
     get_order_labor_total,
     get_order_parts_total,
-    get_order_subtotal,
+    get_order_total,
 )
 from app.services.price_build_service import (
     PriceBuildLockedError,
@@ -51,6 +53,125 @@ from app.services.quote_access_service import (
 
 router = APIRouter()
 price_build_service = PriceBuildService()
+
+
+def _money(value: object) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+
+
+def _format_money(value: object) -> str:
+    return f"${_money(value):,.2f}"
+
+
+def _build_quote_savings_html(order: RepairOrder) -> str:
+    savings_rows: list[str] = []
+    total_savings = Decimal("0.00")
+
+    for pu in order.parts_usage or []:
+        list_price = _money(pu.list_price if pu.list_price is not None else pu.unit_price)
+        unit_price = _money(pu.unit_price)
+        quantity = Decimal(str(pu.quantity or 0))
+        part_savings = _money((list_price - unit_price) * quantity) if list_price > unit_price else Decimal("0.00")
+        if part_savings <= 0:
+            continue
+        total_savings += part_savings
+        part_name = pu.inventory_item.name if pu.inventory_item else "Part"
+        savings_rows.append(
+            f"""
+            <tr>
+                <td style="padding: 6px 0; color: #374151;">{escape(part_name)}</td>
+                <td style="padding: 6px 0; color: #059669; font-weight: 700; text-align: right;">-{_format_money(part_savings)}</td>
+            </tr>
+            """
+        )
+
+    labor_discount = _money(order.labor_discount_amount)
+    if labor_discount > 0:
+        total_savings += labor_discount
+        savings_rows.append(
+            f"""
+            <tr>
+                <td style="padding: 6px 0; color: #374151;">Labor discount</td>
+                <td style="padding: 6px 0; color: #059669; font-weight: 700; text-align: right;">-{_format_money(labor_discount)}</td>
+            </tr>
+            """
+        )
+
+    order_discount = _money(order.order_discount_amount)
+    if order_discount > 0:
+        total_savings += order_discount
+        savings_rows.append(
+            f"""
+            <tr>
+                <td style="padding: 6px 0; color: #374151;">Order discount</td>
+                <td style="padding: 6px 0; color: #059669; font-weight: 700; text-align: right;">-{_format_money(order_discount)}</td>
+            </tr>
+            """
+        )
+
+    if total_savings <= 0:
+        return ""
+
+    rows_html = "".join(savings_rows)
+    return f"""
+    <div style="margin: 18px 0; padding: 14px 16px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px;">
+        <p style="margin: 0 0 8px 0; color: #047857; font-size: 14px; font-weight: 700;">Customer savings</p>
+        <table role="presentation" cellspacing="0" cellpadding="0" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            {rows_html}
+            <tr>
+                <td style="padding: 8px 0 0 0; border-top: 1px solid #a7f3d0; color: #047857; font-weight: 800;">Total customer savings</td>
+                <td style="padding: 8px 0 0 0; border-top: 1px solid #a7f3d0; color: #047857; font-weight: 800; text-align: right;">{_format_money(total_savings)}</td>
+            </tr>
+        </table>
+    </div>
+    """
+
+
+def _build_quote_checkout_html(order: RepairOrder, tenant: Tenant) -> str:
+    breakdown = get_order_checkout_breakdown(order, tenant)
+    fee_rows: list[str] = []
+    for label, key in (
+        ("Repair total", "repair_total"),
+        ("Shop supplies", "shop_supplies_amount"),
+        ("Service fee", "service_fee_amount"),
+        ("Estimated tax", "tax_amount"),
+    ):
+        amount = breakdown[key]
+        if key != "repair_total" and amount <= 0:
+            continue
+        fee_rows.append(
+            f"""
+            <tr>
+                <td style="padding: 5px 0; color: #4b5563;">{label}</td>
+                <td style="padding: 5px 0; color: #111827; font-weight: 700; text-align: right;">{_format_money(amount)}</td>
+            </tr>
+            """
+        )
+
+    zelle_savings = breakdown["zelle_savings_amount"]
+    zelle_note = (
+        f'<p style="margin: 8px 0 0 0; color: #047857; font-size: 13px;"><strong>Zelle saves {_format_money(zelle_savings)}</strong> compared with card checkout.</p>'
+        if zelle_savings > 0
+        else ""
+    )
+    return f"""
+    <div style="margin: 14px 0 0 0; padding: 12px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px;">
+        <p style="margin: 0 0 8px 0; color: #9a3412; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;">Estimated checkout total</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; font-size: 14px;">
+            {''.join(fee_rows)}
+            <tr>
+                <td style="padding: 8px 0 0 0; border-top: 1px solid #fed7aa; color: #111827; font-weight: 800;">Pay by card</td>
+                <td style="padding: 8px 0 0 0; border-top: 1px solid #fed7aa; color: #111827; font-weight: 800; text-align: right;">{_format_money(breakdown['estimated_card_total'])}</td>
+            </tr>
+            <tr>
+                <td style="padding: 5px 0 0 0; color: #047857; font-weight: 800;">Pay by Zelle</td>
+                <td style="padding: 5px 0 0 0; color: #047857; font-weight: 800; text-align: right;">{_format_money(breakdown['estimated_zelle_total'])}</td>
+            </tr>
+        </table>
+        {zelle_note}
+        <p style="margin: 8px 0 0 0; color: #6b7280; font-size: 12px;">Final payment total may vary if the invoice changes before checkout.</p>
+    </div>
+    """
 
 
 class QuoteCreate(BaseModel):
@@ -97,6 +218,14 @@ class QuoteDetailResponse(BaseModel):
     parts: list[dict] = []
     labor_total: Decimal = Decimal("0.00")
     parts_total: Decimal = Decimal("0.00")
+    labor_discount_amount: Decimal = Decimal("0.00")
+    order_discount_amount: Decimal = Decimal("0.00")
+    shop_supplies_amount: Decimal = Decimal("0.00")
+    service_fee_amount: Decimal = Decimal("0.00")
+    tax_amount: Decimal = Decimal("0.00")
+    estimated_card_total: Decimal = Decimal("0.00")
+    estimated_zelle_total: Decimal = Decimal("0.00")
+    zelle_savings_amount: Decimal = Decimal("0.00")
     shop_name: Optional[str] = None
     shop_logo_url: Optional[str] = None
     has_portal_account: bool = False
@@ -294,6 +423,30 @@ async def _resolve_customer_user_after_conflict(db: AsyncSession, customer: Cust
     return email_user
 
 
+async def _ensure_user_customer_link(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    customer_id: UUID,
+    tenant_id: UUID,
+) -> bool:
+    result = await db.execute(
+        select(UserCustomerLink).where(
+            UserCustomerLink.user_id == user_id,
+            UserCustomerLink.tenant_id == tenant_id,
+        )
+    )
+    link = result.scalar_one_or_none()
+    if link:
+        if link.customer_id != customer_id:
+            link.customer_id = customer_id
+            return True
+        return False
+
+    db.add(UserCustomerLink(user_id=user_id, customer_id=customer_id, tenant_id=tenant_id))
+    return True
+
+
 async def generate_quote_number(db: AsyncSession, tenant_id: UUID) -> str:
     """Generate unique quote number using MAX approach."""
     from app.core.unique_id import generate_unique_number
@@ -352,8 +505,8 @@ async def create_quote(
             detail="A quote already exists for this repair order",
         )
     
-    # Quote subtotal is labor/services + parts.
-    total_amount = get_order_subtotal(order)
+    # Quote total is the customer-facing net total after manager discounts.
+    total_amount = get_order_total(order)
     
     # Use retry wrapper to handle rare race conditions on quote number
     from app.core.unique_id import create_with_retry
@@ -453,15 +606,15 @@ async def update_quote(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    
+
     if quote.is_approved:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot update an approved quote",
         )
     
-    # Recalculate total using the same pricing logic as create.
-    quote.total_amount = get_order_subtotal(order)
+    # Recalculate total using the same customer-facing pricing logic as create.
+    quote.total_amount = get_order_total(order)
     await db.commit()
     await db.refresh(quote)
     return QuoteResponse.model_validate(quote)
@@ -566,6 +719,10 @@ async def send_quote_to_customer(
             detail="Access denied",
         )
 
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    shop_name = tenant.name if tenant and tenant.name else "Your repair shop"
+
     # Force customer-facing send to use current totals from the price builder,
     # even if the quote draft was created before later edits.
     try:
@@ -590,7 +747,7 @@ async def send_quote_to_customer(
             order = refreshed_order
     except Exception:
         pass
-    latest_total = get_order_subtotal(order)
+    latest_total = get_order_total(order)
     if quote.total_amount != latest_total:
         quote.total_amount = latest_total
     
@@ -633,6 +790,8 @@ async def send_quote_to_customer(
 
     labor_total = get_order_labor_total(order)
     parts_total = get_order_parts_total(order)
+    savings_html = _build_quote_savings_html(order)
+    checkout_html = _build_quote_checkout_html(order, tenant) if tenant else ""
     
     # Build vehicle info
     vehicle = order.vehicle
@@ -649,7 +808,7 @@ async def send_quote_to_customer(
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
+            <h1 style="color: #d97706; margin: 0;">🔧 {shop_name}</h1>
         </div>
         
         <h2 style="color: #333;">Quote Ready for Your Approval</h2>
@@ -664,8 +823,10 @@ async def send_quote_to_customer(
             {parts_html}
             <p style="margin: 8px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Labor / Services:</strong> ${labor_total:,.2f}</p>
             <p style="margin: 4px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Parts:</strong> ${parts_total:,.2f}</p>
+            {savings_html}
+            {checkout_html}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 15px 0;">
-            <p style="margin: 0; font-size: 28px; color: #d97706; text-align: center;"><strong>Total: ${quote.total_amount:,.2f}</strong></p>
+            <p style="margin: 0; font-size: 28px; color: #d97706; text-align: center;"><strong>Repair total: ${quote.total_amount:,.2f}</strong></p>
         </div>
         
         <p style="text-align: center; margin: 30px 0;">
@@ -722,10 +883,10 @@ async def send_quote_to_customer(
             db=db,
             tenant_id=str(current_user.tenant_id),
             to=customer.email,
-            subject=f"Quote {quote.quote_number} Auto-Approved - DieselBridge Network",
+            subject=f"Quote {quote.quote_number} Auto-Approved - {shop_name}",
             body=f"""
             <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h1 style="color: #d97706;">DieselBridge Network</h1>
+                <h1 style="color: #d97706;">{shop_name}</h1>
                 <h2 style="color: #16a34a;">Quote Auto-Approved</h2>
                 <p>Hi {customer.first_name},</p>
                 <p>Your repair quote <strong>{quote.quote_number}</strong> for <strong>${quote.total_amount:,.2f}</strong> 
@@ -740,24 +901,26 @@ async def send_quote_to_customer(
             </body></html>
             """,
             template_name="quote_auto_approved",
+            sender_name=shop_name,
         )
     else:
         await send_email(
             db=db,
             tenant_id=str(current_user.tenant_id),
             to=customer.email,
-            subject=f"Quote {quote.quote_number} Ready for Approval - DieselBridge Network",
+            subject=f"Quote {quote.quote_number} Ready for Approval - {shop_name}",
             body=html_body,
             template_name="quote_approval",
+            sender_name=shop_name,
         )
     
     # SMS notification for quote with approval link
     if customer.phone:
         vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
         if auto_approved:
-            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - DieselBridge Network"
+            sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - {shop_name}"
         else:
-            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - DieselBridge Network"
+            sms_body = f"Repair estimate for {vi}: ${quote.total_amount:,.2f}. Tap to approve: {approval_url} - {shop_name}"
         try:
             await send_sms(
                 db,
@@ -1007,6 +1170,14 @@ async def get_quote_by_token(
         existing_user = user_result.scalar_one_or_none()
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
+    checkout = get_order_checkout_breakdown(order, tenant) if tenant else {
+        "shop_supplies_amount": Decimal("0.00"),
+        "service_fee_amount": Decimal("0.00"),
+        "tax_amount": Decimal("0.00"),
+        "estimated_card_total": quote.total_amount,
+        "estimated_zelle_total": quote.total_amount,
+        "zelle_savings_amount": Decimal("0.00"),
+    }
 
     return QuoteDetailResponse(
         quote=QuoteResponse.model_validate(quote),
@@ -1021,6 +1192,14 @@ async def get_quote_by_token(
         parts=parts,
         labor_total=get_order_labor_total(order),
         parts_total=get_order_parts_total(order),
+        labor_discount_amount=Decimal(str(order.labor_discount_amount or 0)),
+        order_discount_amount=Decimal(str(order.order_discount_amount or 0)),
+        shop_supplies_amount=checkout["shop_supplies_amount"],
+        service_fee_amount=checkout["service_fee_amount"],
+        tax_amount=checkout["tax_amount"],
+        estimated_card_total=checkout["estimated_card_total"],
+        estimated_zelle_total=checkout["estimated_zelle_total"],
+        zelle_savings_amount=checkout["zelle_savings_amount"],
         shop_name=tenant.name if tenant else None,
         shop_logo_url=tenant.logo_url if tenant else None,
         has_portal_account=existing_user is not None,
@@ -1158,11 +1337,16 @@ async def create_portal_from_quote_link(
 
     if user:
         # Ensure UserCustomerLink exists — may be missing for users created before migration 043
-        db.add(UserCustomerLink(user_id=user.id, customer_id=customer.id, tenant_id=customer.tenant_id))
-        try:
+        if user.customer_id != customer.id:
+            user.customer_id = customer.id
+        if await _ensure_user_customer_link(
+            db,
+            user_id=user.id,
+            customer_id=customer.id,
+            tenant_id=customer.tenant_id,
+        ):
             await db.commit()
-        except IntegrityError:
-            await db.rollback()
+            await db.refresh(user)
 
     if not user:
         result = await db.execute(select(User).where(User.email == customer.email))
@@ -1170,16 +1354,16 @@ async def create_portal_from_quote_link(
         if email_user:
             _validate_existing_customer_user(email_user)
             user = email_user
-            db.add(UserCustomerLink(
+            if user.customer_id != customer.id:
+                user.customer_id = customer.id
+            link_added = await _ensure_user_customer_link(
+                db,
                 user_id=user.id,
                 customer_id=customer.id,
                 tenant_id=customer.tenant_id,
-            ))
-            try:
+            )
+            if link_added:
                 await db.commit()
-                await db.refresh(user)
-            except IntegrityError:
-                await db.rollback()  # Link already exists — proceed
                 await db.refresh(user)
             user_exists = True
         else:

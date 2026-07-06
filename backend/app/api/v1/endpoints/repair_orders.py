@@ -119,6 +119,7 @@ def _to_price_build_summary(
     warnings: Optional[list[PriceBuildWarning]] = None,
 ) -> PriceBuildSummaryResponse:
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    pricing_locked = _is_pricing_locked_for_edits(order)
     return PriceBuildSummaryResponse(
         order_id=order.id,
         labor_total=order.total_labor_cost,
@@ -126,12 +127,20 @@ def _to_price_build_summary(
         labor_discount_amount=order.labor_discount_amount or Decimal("0.00"),
         order_discount_amount=order.order_discount_amount or Decimal("0.00"),
         total_cost=order.total_cost,
-        pricing_locked=order.pricing_locked_at is not None,
+        pricing_locked=pricing_locked,
         pricing_locked_at=order.pricing_locked_at,
         pricing_lock_reason=order.pricing_lock_reason,
         lines=labor_resp,
         warnings=warnings or [],
     )
+
+
+def _is_pricing_locked_for_edits(order: RepairOrder) -> bool:
+    if order.pricing_locked_at is None:
+        return False
+    if order.pricing_lock_reason == "quote_sent" and order.status == RepairOrderStatus.QUOTED:
+        return False
+    return True
 
 
 def _packages_consumed(quantity: Decimal) -> int:
@@ -1848,7 +1857,7 @@ def _require_deletable_ro(order: RepairOrder) -> None:
 
 
 def _require_editable_ro(order: RepairOrder) -> None:
-    if order.pricing_locked_at is not None:
+    if _is_pricing_locked_for_edits(order):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Pricing is locked for this repair order",

@@ -142,6 +142,21 @@ async def _consume_one_time_token(prefix: str, consumed_prefix: str, token: str)
     key = f"{prefix}{token}"
     consumed_key = f"{consumed_prefix}{token}"
 
+    if not hasattr(r, "eval"):
+        if await r.exists(consumed_key):
+            return None
+        raw = await r.get(key)
+        if not raw:
+            return None
+        deleted = await r.delete(key)
+        if not deleted:
+            return None
+        await r.setex(consumed_key, 3600, raw)
+        try:
+            return json.loads(raw)
+        except Exception:
+            return None
+
     # Atomic check+consume to avoid concurrent double-use.
     raw = await r.eval(
         """

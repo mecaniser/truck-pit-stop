@@ -43,6 +43,7 @@ from app.services.invoice_access_service import (
     generate_portal_enrollment_token,
 )
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
+from app.services.pricing import get_order_checkout_breakdown
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.payment_number_service import allocate_next_payment_number
 
@@ -329,8 +330,9 @@ async def resolve_invoice_link(
         existing_user = user_result.scalar_one_or_none()
 
     vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
-    _service_fee = Decimal(str(invoice.service_fee_amount or 0))
-    _zelle_amount = (Decimal(str(invoice.total_amount)) - _service_fee).quantize(Decimal("0.01"))
+    _zelle_amount = get_order_checkout_breakdown(order, tenant)["estimated_zelle_total"] if tenant else (
+        Decimal(str(invoice.total_amount)) - Decimal(str(invoice.service_fee_amount or 0))
+    ).quantize(Decimal("0.01"))
     return ResolveInvoiceLinkResponse(
         invoice_id=str(invoice.id),
         invoice_number=invoice.invoice_number,
@@ -376,9 +378,10 @@ async def submit_guest_zelle_payment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid.")
 
     was_pending = invoice.pending_zelle_confirmation
-    sender_email = str(body.sender_email).strip().lower() if body.sender_email else None
-    sender_phone = normalize_phone(body.sender_phone)
+    sender_email = str(body.sender_email).strip().lower() if body.sender_email else (customer.email.strip().lower() if customer and customer.email else None)
+    sender_phone = normalize_phone(body.sender_phone or (customer.phone if customer else None))
     notes = body.notes.strip() if body.notes else None
+    zelle_amount = invoice.total_amount - (invoice.service_fee_amount or 0)
 
     invoice.zelle_pending_submitted_at = datetime.now(timezone.utc)
     invoice.zelle_pending_sender_email = sender_email
@@ -404,7 +407,7 @@ async def submit_guest_zelle_payment(
                 order_number=invoice.repair_order.order_number,
                 invoice_number=invoice.invoice_number,
                 customer_name=customer_name,
-                amount=invoice.total_amount,
+                amount=zelle_amount,
                 source_label="guest invoice link",
                 sender_email=sender_email,
                 sender_phone=sender_phone,

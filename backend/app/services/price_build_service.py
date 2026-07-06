@@ -95,7 +95,11 @@ def _has_reusable_hours(value: Decimal) -> bool:
 
 
 def _is_locked(order: RepairOrder) -> bool:
-    return order.pricing_locked_at is not None
+    if order.pricing_locked_at is None:
+        return False
+    if order.pricing_lock_reason == "quote_sent" and order.status == RepairOrderStatus.QUOTED:
+        return False
+    return True
 
 
 def _vehicle_signature(order: RepairOrder) -> str:

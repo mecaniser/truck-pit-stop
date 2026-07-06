@@ -8,6 +8,15 @@ import resend
 resend.api_key = settings.RESEND_API_KEY
 
 
+def _format_sender(sender_name: Optional[str] = None) -> str:
+    sender_email = settings.RESEND_FROM_EMAIL
+    display_name = (sender_name or "").strip()
+    if not display_name:
+        return sender_email
+    safe_name = display_name.replace('"', "'")
+    return f'"{safe_name}" <{sender_email}>'
+
+
 async def send_email(
     db: AsyncSession,
     tenant_id: str,
@@ -16,6 +25,7 @@ async def send_email(
     body: str,
     template_name: Optional[str] = None,
     attachments: Optional[List[dict]] = None,
+    sender_name: Optional[str] = None,
 ) -> Notification:
     """Send email via Resend and create notification record.
 
@@ -36,7 +46,7 @@ async def send_email(
 
     try:
         params = {
-            "from": settings.RESEND_FROM_EMAIL,
+            "from": _format_sender(sender_name),
             "to": to,
             "subject": subject,
             "html": body,
@@ -421,4 +431,3 @@ async def send_new_enrollment_notification(admin_emails: list, garage_name: str,
             resend.Emails.send(params)
         except Exception as e:
             print(f"Error sending enrollment notification to {email}: {e}")
-
