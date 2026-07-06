@@ -1,10 +1,10 @@
 # Branch Merge Audit - Task Plan (2026-07-06)
 
 ## Follow-up: Stale Branch Ancestry Closeout
-- [ ] Confirm GitHub's `feat/fleet-multi-wo-lifecycle` comparison is stale ancestry, not missing code.
-- [ ] Record an ancestry-only merge for `origin/feat/fleet-multi-wo-lifecycle` into `main` without changing files.
-- [ ] Record an ancestry-only merge for the related stale `origin/feat/fleet-work-order-cost-lines` branch if still needed.
-- [ ] Verify `main` tree is unchanged except this task note and confirm stale branches are now ancestors of `origin/main`.
+- [x] Confirm GitHub's `feat/fleet-multi-wo-lifecycle` comparison is stale ancestry, not missing code.
+- [x] Record an ancestry-only merge for `origin/feat/fleet-multi-wo-lifecycle` into `main` without changing files.
+- [x] Record an ancestry-only merge for the related stale `origin/feat/fleet-work-order-cost-lines` branch.
+- [x] Verify `main` tree is unchanged except this task note and confirm stale branches are now ancestors locally.
 - [ ] Push the closeout merge to `main`.
 
 ## Plan
