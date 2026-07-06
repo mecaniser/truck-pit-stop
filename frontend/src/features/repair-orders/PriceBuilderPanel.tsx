@@ -56,6 +56,8 @@ export type PriceBuilderHistoryEvent = {
   actor?: string
 }
 
+type AddBarType = 'operation' | 'saved_labor' | 'part' | 'history'
+
 type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
@@ -101,6 +103,12 @@ type Props = {
   showReviewNotes?: boolean
   onToggleReviewNotes?: () => void
   onApproveCompletion?: () => void
+  invoiceCreatePending?: boolean
+  invoiceDueDateValue?: string
+  showInvoiceCreateOptions?: boolean
+  onToggleInvoiceCreateOptions?: () => void
+  onInvoiceDueDateChange?: (value: string) => void
+  onCreateInvoice?: (dueDate?: string | null) => void
   invoice?: Invoice | null
   invoiceActionPending?: boolean
   onResendInvoice?: () => void
@@ -548,6 +556,12 @@ export default function PriceBuilderPanel({
   showReviewNotes = false,
   onToggleReviewNotes,
   onApproveCompletion,
+  invoiceCreatePending = false,
+  invoiceDueDateValue = '',
+  showInvoiceCreateOptions = false,
+  onToggleInvoiceCreateOptions,
+  onInvoiceDueDateChange,
+  onCreateInvoice,
   invoice,
   invoiceActionPending = false,
   onResendInvoice,
@@ -583,8 +597,13 @@ export default function PriceBuilderPanel({
   const [searchTerm, setSearchTerm] = useState('')
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
-  const [addType, setAddType] = useState<'operation' | 'saved_labor' | 'part' | 'history'>('operation')
+  const [addType, setAddType] = useState<AddBarType>(() => (
+    ['draft', 'quoted'].includes(orderStatus) ? 'operation' : 'history'
+  ))
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [invoiceDetailsOpen, setInvoiceDetailsOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(5)
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const [discountsOpen, setDiscountsOpen] = useState(false)
   const [footerDetailsOpen, setFooterDetailsOpen] = useState<'parts' | 'labor' | 'discounts' | 'savings' | null>(null)
@@ -708,7 +727,11 @@ export default function PriceBuilderPanel({
   }
 
   const isLocked = !!summary?.pricing_locked
+  const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
+  const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
+  const showRecommendedServicesPanel = !['completed', 'invoiced', 'paid'].includes(orderStatus)
   const canMutate = canEdit && !isLocked && ['draft', 'quoted'].includes(orderStatus)
+  const addBarReadOnly = !canEdit || isLocked || !['draft', 'quoted'].includes(orderStatus) || completionMode || hasInvoice || orderStatus === 'completed'
   const hasQuoteDraft = !!quoteNumber
   const hasAssignedTechnician = !!assignedTechnicianName
   const canManageTechnician = !isInternalOrder && quoteIsApproved && !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
@@ -721,9 +744,6 @@ export default function PriceBuilderPanel({
       return { ...tech, assigned, inProgress, load }
     })
     .sort((a, b) => a.load - b.load)
-  const priceLockMessage = quoteIsApproved
-    ? 'The customer has approved this quote, so pricing and quote edits are locked.'
-    : 'This repair order is locked, so pricing and quote edits are no longer available.'
   const quoteButtonDisabledReason = quoteDisabledReason || (
     quoteIsApproved
       ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
@@ -731,7 +751,11 @@ export default function PriceBuilderPanel({
         ? 'Quote changes are only available before the customer approves the work.'
         : undefined
   )
-  const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
+  const lockContextMessage = quoteButtonDisabledReason || (
+    quoteIsApproved
+      ? 'The customer has already approved this quote. Continue through technician, completion, and invoice steps.'
+      : 'Pricing and quote edits are locked for this repair order.'
+  )
   const formatHistoryDate = (value: string) => {
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return value
@@ -742,6 +766,11 @@ export default function PriceBuilderPanel({
     if (Number.isNaN(date.getTime())) return ''
     return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
   }
+  const sortedHistoryEvents = [...historyEvents].sort((a, b) => {
+    return new Date(b.at).getTime() - new Date(a.at).getTime()
+  })
+  const visibleHistoryEvents = sortedHistoryEvents.slice(0, historyVisibleCount)
+  const hiddenHistoryCount = Math.max(0, sortedHistoryEvents.length - visibleHistoryEvents.length)
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
@@ -753,6 +782,23 @@ export default function PriceBuilderPanel({
     await refetchParts()
     onUpdated?.()
   }
+
+  useEffect(() => {
+    setAddType((current) => {
+      if (addBarReadOnly) return 'history'
+      return current === 'history' ? 'operation' : current
+    })
+    if (addBarReadOnly) {
+      setPaletteOpen(false)
+      setSearchTerm('')
+      setSearchWarnings([])
+    }
+  }, [addBarReadOnly, orderId])
+
+  useEffect(() => {
+    setHistoryOpen(false)
+    setHistoryVisibleCount(5)
+  }, [orderId])
 
   // --- Bulk parts pricing (Stock ⇄ List) + manager discounts ---
   const [laborDiscount, setLaborDiscount] = useState('')
@@ -1444,12 +1490,6 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      {isLocked && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {priceLockMessage}
-        </div>
-      )}
-
       {!!summary?.warnings?.length && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           {summary.warnings.map((w) => (
@@ -1471,8 +1511,13 @@ export default function PriceBuilderPanel({
       )}
 
       {hasInvoice && invoice && (
-        <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-4">
-          <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="rounded-2xl border border-purple-200 bg-purple-50/70 p-3">
+          <button
+            type="button"
+            onClick={() => setInvoiceDetailsOpen((open) => !open)}
+            className="flex w-full items-center justify-between gap-3 text-left"
+            aria-expanded={invoiceDetailsOpen}
+          >
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700">
                 <FileText className="h-5 w-5" />
@@ -1484,20 +1529,29 @@ export default function PriceBuilderPanel({
                 </p>
               </div>
             </div>
-            {invoice.due_date && (
-              <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-purple-700 ring-1 ring-purple-100">
-                Due {new Date(invoice.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+            <span className="flex shrink-0 items-center gap-3">
+              <span className="text-right">
+                {invoice.due_date && (
+                  <span className="block text-[11px] font-semibold uppercase tracking-wide text-purple-500">
+                    Due {new Date(invoice.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
+                <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold leading-none text-purple-950">
+                  {money(invoice.total_amount)}
+                </span>
               </span>
-            )}
-          </div>
+              <ChevronRight className={`h-4 w-4 text-purple-500 transition-transform ${invoiceDetailsOpen ? 'rotate-90' : ''}`} />
+            </span>
+          </button>
 
           {invoice.pending_zelle_confirmation && (
-            <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
+            <div className="mt-3 rounded-xl border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
               Customer marked this invoice as paid via Zelle. Confirm receipt from the footer payment action.
             </div>
           )}
 
-          <div className="space-y-2 rounded-xl bg-white p-3 text-sm ring-1 ring-purple-100">
+          {invoiceDetailsOpen && (
+          <div className="mt-3 space-y-2 rounded-xl bg-white p-3 text-sm ring-1 ring-purple-100">
             <div className="flex items-center justify-between">
               <span className="text-gray-500">Repair subtotal</span>
               <span className="font-semibold text-gray-900">{money(invoice.subtotal)}</span>
@@ -1531,6 +1585,7 @@ export default function PriceBuilderPanel({
               <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold text-purple-950">{money(invoice.total_amount)}</span>
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -1580,13 +1635,15 @@ export default function PriceBuilderPanel({
 
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="grid grid-cols-4 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
-            {([
+          <div className={`${addBarReadOnly ? 'grid grid-cols-1' : 'grid grid-cols-4'} rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200`}>
+            {(addBarReadOnly ? ([
+              ['history', History, 'History'],
+            ] as const) : ([
               ['operation', Wrench, 'Operation'],
               ['part', Box, 'Part'],
               ['saved_labor', Tag, 'Labor Book Time'],
               ['history', History, 'History'],
-            ] as const).map(([key, Icon, label]) => (
+            ] as const)).map(([key, Icon, label]) => (
               <button
                 key={key}
                 type="button"
@@ -1626,42 +1683,91 @@ export default function PriceBuilderPanel({
         </div>
 
         {addType === 'history' && (
-          <div className="mt-3 rounded-[14px] border border-gray-200 bg-white p-3">
-            <div className="mb-3 flex items-center justify-between border-b border-gray-100 pb-2">
-              <span className="text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
-                Repair order history
+          <div className="mt-3 rounded-[14px] border border-gray-200 bg-white">
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryOpen((open) => !open)
+                setHistoryVisibleCount(5)
+              }}
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+              aria-expanded={historyOpen}
+            >
+              <span>
+                <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
+                  Repair order history
+                </span>
+                <span className="mt-0.5 block text-sm font-semibold text-gray-800">
+                  {historyEvents.length ? `${historyEvents.length} recorded events` : 'No recorded events'}
+                </span>
               </span>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">
-                {historyEvents.length} events
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">
+                  {historyEvents.length} events
+                </span>
+                <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${historyOpen ? 'rotate-90' : ''}`} />
               </span>
-            </div>
-            {historyEvents.length ? (
-              <ol className="space-y-3">
-                {historyEvents.map((event, index) => (
-                  <li key={event.id} className="grid grid-cols-[88px_1fr] gap-3">
-                    <div className="pt-0.5 text-right">
-                      <p className="text-xs font-bold text-gray-700">{formatHistoryDate(event.at)}</p>
-                      <p className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-400">{formatHistoryTime(event.at)}</p>
+            </button>
+            {historyOpen && (
+              <div className="border-t border-gray-100 p-3">
+                {sortedHistoryEvents.length ? (
+                  <>
+                  <ol className="space-y-3">
+                    {visibleHistoryEvents.map((event, index) => (
+                      <li key={event.id} className="grid grid-cols-[88px_1fr] gap-3">
+                        <div className="pt-0.5 text-right">
+                          <p className="text-xs font-bold text-gray-700">{formatHistoryDate(event.at)}</p>
+                          <p className="font-['JetBrains_Mono',monospace] text-[11px] text-gray-400">{formatHistoryTime(event.at)}</p>
+                        </div>
+                        <div className="relative min-w-0 pb-1 pl-4">
+                          {index < visibleHistoryEvents.length - 1 && (
+                            <span className="absolute left-[5px] top-4 h-[calc(100%+0.75rem)] w-px bg-gray-200" />
+                          )}
+                          <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-4 ring-orange-50" />
+                          <p className="text-sm font-semibold text-gray-900">{event.label}</p>
+                          {(event.actor || event.detail) && (
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              {event.actor && <span className="font-semibold text-gray-700">{event.actor}</span>}
+                              {event.actor && event.detail ? ' · ' : ''}
+                              {event.detail}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  {(hiddenHistoryCount > 0 || historyVisibleCount > 5) && (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+                      <p className="text-xs font-medium text-gray-500">
+                        Showing {visibleHistoryEvents.length} of {sortedHistoryEvents.length} events
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {historyVisibleCount > 5 && (
+                          <button
+                            type="button"
+                            onClick={() => setHistoryVisibleCount(5)}
+                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-600 hover:bg-gray-50"
+                          >
+                            Show less
+                          </button>
+                        )}
+                        {hiddenHistoryCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setHistoryVisibleCount((count) => Math.min(count + 5, sortedHistoryEvents.length))}
+                            className="rounded-lg bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-100"
+                          >
+                            Show {Math.min(5, hiddenHistoryCount)} older events
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="relative min-w-0 pb-1 pl-4">
-                      {index < historyEvents.length - 1 && (
-                        <span className="absolute left-[5px] top-4 h-[calc(100%+0.75rem)] w-px bg-gray-200" />
-                      )}
-                      <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-4 ring-orange-50" />
-                      <p className="text-sm font-semibold text-gray-900">{event.label}</p>
-                      {(event.actor || event.detail) && (
-                        <p className="mt-0.5 text-xs text-gray-500">
-                          {event.actor && <span className="font-semibold text-gray-700">{event.actor}</span>}
-                          {event.actor && event.detail ? ' · ' : ''}
-                          {event.detail}
-                        </p>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="px-2 py-3 text-sm text-gray-500">No repair order history has been recorded yet.</p>
+                  )}
+                  </>
+                ) : (
+                  <p className="px-2 py-3 text-sm text-gray-500">No repair order history has been recorded yet.</p>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -2501,7 +2607,7 @@ export default function PriceBuilderPanel({
             </div>
           </div>
         )}
-        {!hasInvoice && (
+        {showRecommendedServicesPanel && (
           <button
             type="button"
             onClick={() => setRecommendedOpen((open) => !open)}
@@ -2522,7 +2628,7 @@ export default function PriceBuilderPanel({
             </span>
           </button>
         )}
-        {!hasInvoice && recommendedOpen && (
+        {showRecommendedServicesPanel && recommendedOpen && (
           <div className="rounded-xl bg-gray-50 p-3">
             <button
               type="button"
@@ -2656,22 +2762,24 @@ export default function PriceBuilderPanel({
               {renderFooterDetails(footerDetailsOpen)}
             </div>
           )}
-          <button
-            ref={discountsButtonRef}
-            type="button"
-            onClick={() => {
-              setDiscountsOpen((open) => {
-                const next = !open
-                if (next) setDraftPartsPricingMode(partsPricingMode)
-                return next
-              })
-              setFooterDetailsOpen(null)
-            }}
-            disabled={!canMutate}
-            className="ml-auto rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            Discounts & pricing
-          </button>
+          <span className="ml-auto inline-flex" title={!canMutate ? lockContextMessage : undefined}>
+            <button
+              ref={discountsButtonRef}
+              type="button"
+              onClick={() => {
+                setDiscountsOpen((open) => {
+                  const next = !open
+                  if (next) setDraftPartsPricingMode(partsPricingMode)
+                  return next
+                })
+                setFooterDetailsOpen(null)
+              }}
+              disabled={!canMutate}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Discounts & pricing
+            </button>
+          </span>
           {discountsOpen && (
             <div
               ref={discountsPopoverRef}
@@ -2778,7 +2886,72 @@ export default function PriceBuilderPanel({
               </p>
             </div>
             {!isInternalOrder && (
-              hasInvoice && invoice ? (
+              canCreateInvoice ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={onToggleInvoiceCreateOptions}
+                    disabled={invoiceCreatePending}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(79,70,229,.26)] hover:bg-indigo-700 disabled:bg-gray-300"
+                  >
+                    {invoiceCreatePending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    {invoiceCreatePending ? 'Creating...' : 'Create Invoice'}
+                  </button>
+                  {showInvoiceCreateOptions && (
+                    <div className="absolute bottom-full right-0 z-30 mb-2 w-[min(340px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 text-left shadow-[0_10px_30px_rgba(20,25,35,.14)]">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-gray-950">Invoice due date</p>
+                          <p className="text-xs text-gray-500">Create the invoice now, with the due date customers should see.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={onToggleInvoiceCreateOptions}
+                          className="rounded-md p-1 text-gray-400 hover:bg-gray-100"
+                          aria-label="Close invoice due date options"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => onCreateInvoice?.(null)}
+                          disabled={invoiceCreatePending}
+                          className="flex w-full items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-left hover:border-indigo-200 hover:bg-indigo-100 disabled:opacity-60"
+                        >
+                          <span>
+                            <span className="block text-sm font-bold text-indigo-950">Due today</span>
+                            <span className="block text-xs text-indigo-700">Create invoice immediately with today's due date.</span>
+                          </span>
+                          <FileText className="h-4 w-4 text-indigo-600" />
+                        </button>
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-semibold text-gray-700">Choose due date</span>
+                            <input
+                              type="date"
+                              value={invoiceDueDateValue}
+                              onChange={(e) => onInvoiceDueDateChange?.(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => onCreateInvoice?.(invoiceDueDateValue || null)}
+                            disabled={invoiceCreatePending || !invoiceDueDateValue}
+                            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:bg-gray-300"
+                          >
+                            {invoiceCreatePending && <Loader2 className="h-4 w-4 animate-spin" />}
+                            Create invoice with due date
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : hasInvoice && invoice ? (
                 <div className="flex flex-wrap justify-end gap-2">
                   {orderStatus !== 'paid' && (
                     <button

@@ -86,6 +86,7 @@ const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = [
   'acknowledged',
   'in_progress',
   'pending_review',
+  'completed',
   'invoiced',
   'paid',
 ]
@@ -209,7 +210,6 @@ export default function RepairOrdersPage() {
   const [mileageOut, setMileageOut] = useState('')
   const [showReviewNotes, setShowReviewNotes] = useState(false)
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
-  const [invoiceDiscountAmount, setInvoiceDiscountAmount] = useState('')
   const [showInvoiceCreateOptions, setShowInvoiceCreateOptions] = useState(false)
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
@@ -419,7 +419,6 @@ export default function RepairOrdersPage() {
 
   useEffect(() => {
     setInvoiceDueDate('')
-    setInvoiceDiscountAmount('')
     setShowInvoiceCreateOptions(false)
   }, [selectedOrder?.id])
 
@@ -523,19 +522,12 @@ export default function RepairOrdersPage() {
     ? true
     : (detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false)
   const invoiceOptionSummary = useMemo(() => {
-    const summary: string[] = []
     if (invoiceDueDate) {
       const parsed = new Date(`${invoiceDueDate}T00:00:00`)
-      summary.push(Number.isNaN(parsed.getTime()) ? `Due ${invoiceDueDate}` : `Due ${format(parsed, 'MMM d, yyyy')}`)
+      return Number.isNaN(parsed.getTime()) ? `Due ${invoiceDueDate}` : `Due ${format(parsed, 'MMM d, yyyy')}`
     }
-    if (invoiceDiscountAmount.trim() !== '') {
-      const discountValue = parseFloat(invoiceDiscountAmount)
-      if (!Number.isNaN(discountValue) && discountValue > 0) {
-        summary.push(`Discount $${discountValue.toFixed(2)}`)
-      }
-    }
-    return summary.length > 0 ? summary.join(' · ') : 'Defaults: due today with no discount.'
-  }, [invoiceDueDate, invoiceDiscountAmount])
+    return 'Defaults: due today.'
+  }, [invoiceDueDate])
 
   const createCustomerMutation = useMutation({
     mutationFn: async (payload: CreateCustomerPayload) => {
@@ -665,16 +657,13 @@ export default function RepairOrdersPage() {
     mutationFn: async ({
       repairOrderId,
       dueDate,
-      discountAmount,
     }: {
       repairOrderId: string
       dueDate?: string
-      discountAmount?: string
     }) => {
       const response = await api.post('/invoices', { 
         repair_order_id: repairOrderId,
         due_date: dueDate || null,
-        discount_amount: discountAmount && discountAmount.trim() !== '' ? discountAmount : '0.00',
       })
       return response.data
     },
@@ -688,7 +677,6 @@ export default function RepairOrdersPage() {
         setSelectedOrder(prev => prev ? { ...prev, status: 'invoiced' } : null)
       }
       setInvoiceDueDate('')
-      setInvoiceDiscountAmount('')
       setShowInvoiceCreateOptions(false)
       toast.success('Invoice created and sent to customer')
     },
@@ -1255,7 +1243,6 @@ export default function RepairOrdersPage() {
     setAddPartInventoryId('')
     setAddPartQuantity(1)
     setInvoiceDueDate('')
-    setInvoiceDiscountAmount('')
     setShowInvoiceCreateOptions(false)
   }
 
@@ -2741,6 +2728,15 @@ export default function RepairOrdersPage() {
                         setMileageOut('')
                       }
                     }}
+                    invoiceCreatePending={createInvoiceMutation.isPending}
+                    invoiceDueDateValue={invoiceDueDate}
+                    showInvoiceCreateOptions={showInvoiceCreateOptions}
+                    onToggleInvoiceCreateOptions={() => setShowInvoiceCreateOptions((prev) => !prev)}
+                    onInvoiceDueDateChange={setInvoiceDueDate}
+                    onCreateInvoice={(dueDate) => selectedOrder.id && createInvoiceMutation.mutate({
+                      repairOrderId: selectedOrder.id,
+                      dueDate: dueDate || undefined,
+                    })}
                     invoice={invoiceForOrder ?? null}
                     invoiceActionPending={
                       resendInvoiceMutation.isPending ||
@@ -2774,7 +2770,7 @@ export default function RepairOrdersPage() {
                     cancelPending={cancelRepairOrderMutation.isPending}
                     deletePending={deleteRepairOrderMutation.isPending}
                     cancelDisabled={(orderDetail ?? selectedOrder).status === 'cancelled'}
-                    recommendedServices={['invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
+                    recommendedServices={['completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
                     showAddRecommendedService={showAddRecService}
                     recommendedServiceForm={recServiceForm}
                     onToggleAddRecommendedService={() => setShowAddRecService((prev) => !prev)}
@@ -3372,7 +3368,7 @@ export default function RepairOrdersPage() {
 
                 {/* Internal fleet cost summary — internal ROs are not invoiced to
                     a customer; completing one records an internal cost only. */}
-                {(orderDetail ?? selectedOrder).status === 'completed' && selectedOrder.is_internal && (() => {
+                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'completed' && selectedOrder.is_internal && (() => {
                   const o = orderDetail ?? selectedOrder
                   const labor = parseFloat(o.total_labor_cost ?? '0') || 0
                   const parts = parseFloat(o.total_parts_cost ?? '0') || 0
@@ -3398,7 +3394,7 @@ export default function RepairOrdersPage() {
                 })()}
 
                 {/* Create Invoice Button for completed customer orders */}
-                {(orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && (
+                {!priceBuilderOwnsShell && (orderDetail ?? selectedOrder).status === 'completed' && !selectedOrder.is_internal && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
@@ -3426,30 +3422,15 @@ export default function RepairOrdersPage() {
                         </div>
                       </button>
                       {showInvoiceCreateOptions && (
-                        <div className="space-y-3 border-t border-indigo-200 px-3 py-3">
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-indigo-700">Due Date (optional)</label>
-                            <input
-                              type="date"
-                              value={invoiceDueDate}
-                              onChange={(e) => setInvoiceDueDate(e.target.value)}
-                              min={new Date().toISOString().split('T')[0]}
-                              className="w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-indigo-700">Discount Amount (optional)</label>
-                            <input
-                              type="number"
-                              value={invoiceDiscountAmount}
-                              onChange={(e) => setInvoiceDiscountAmount(e.target.value)}
-                              min="0"
-                              step="0.01"
-                              placeholder="0.00"
-                              className="w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
-                            />
-                            <p className="mt-1 text-xs text-indigo-600">Applies to this invoice only.</p>
-                          </div>
+                        <div className="border-t border-indigo-200 px-3 py-3">
+                          <label className="mb-1 block text-sm font-medium text-indigo-700">Due Date (optional)</label>
+                          <input
+                            type="date"
+                            value={invoiceDueDate}
+                            onChange={(e) => setInvoiceDueDate(e.target.value)}
+                            min={new Date().toISOString().split('T')[0]}
+                            className="w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+                          />
                         </div>
                       )}
                     </div>
@@ -3458,7 +3439,6 @@ export default function RepairOrdersPage() {
                       onClick={() => selectedOrder.id && createInvoiceMutation.mutate({ 
                         repairOrderId: selectedOrder.id,
                         dueDate: invoiceDueDate || undefined,
-                        discountAmount: invoiceDiscountAmount || undefined,
                       })}
                       disabled={createInvoiceMutation.isPending}
                       className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
