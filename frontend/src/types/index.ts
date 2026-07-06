@@ -249,6 +249,8 @@ export interface RepairOrder {
   assigned_mechanic_id: string | null
   total_parts_cost: string
   total_labor_cost: string
+  labor_discount_amount?: string
+  order_discount_amount?: string
   total_cost: string
   created_at: string
   updated_at: string

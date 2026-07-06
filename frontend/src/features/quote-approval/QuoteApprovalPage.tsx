@@ -31,6 +31,14 @@ interface QuoteDetail {
   parts: Array<{ name: string; quantity: number; unit_price: string; total_price: string }>
   labor_total: string
   parts_total: string
+  labor_discount_amount: string
+  order_discount_amount: string
+  shop_supplies_amount: string
+  service_fee_amount: string
+  tax_amount: string
+  estimated_card_total: string
+  estimated_zelle_total: string
+  zelle_savings_amount: string
   shop_name: string | null
   shop_logo_url: string | null
   has_portal_account: boolean
@@ -184,6 +192,14 @@ export default function QuoteApprovalPage() {
     parts,
     labor_total,
     parts_total,
+    labor_discount_amount,
+    order_discount_amount,
+    shop_supplies_amount,
+    service_fee_amount,
+    tax_amount,
+    estimated_card_total,
+    estimated_zelle_total,
+    zelle_savings_amount,
   } = data
   const vehicleInfo = vehicle_year && vehicle_make && vehicle_model
     ? `${vehicle_year} ${vehicle_make} ${vehicle_model}`
@@ -489,14 +505,75 @@ export default function QuoteApprovalPage() {
                 <span className="text-gray-400">Parts</span>
                 <span className="text-white">${parseFloat(parts_total || '0').toFixed(2)}</span>
               </div>
+              {parseFloat(labor_discount_amount || '0') > 0 && (
+                <div className="flex justify-between text-sm mt-1">
+                  <span className="text-emerald-300">Labor discount</span>
+                  <span className="text-emerald-300">-${parseFloat(labor_discount_amount || '0').toFixed(2)}</span>
+                </div>
+              )}
+              {parseFloat(order_discount_amount || '0') > 0 && (
+                <div className="flex justify-between text-sm mt-1">
+                  <span className="text-emerald-300">Order discount</span>
+                  <span className="text-emerald-300">-${parseFloat(order_discount_amount || '0').toFixed(2)}</span>
+                </div>
+              )}
             </div>
 
             {/* Total */}
             <div className="bg-amber-500/10 rounded-xl p-6 text-center border border-amber-500/30">
-              <p className="text-sm text-amber-400 mb-1">Total Amount</p>
+              <p className="text-sm text-amber-400 mb-1">Repair total</p>
               <p className="text-4xl font-bold text-white">
                 ${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-amber-300">Estimated checkout total</p>
+                  <p className="text-xs text-gray-400">Includes estimated shop supplies, service fee, and tax.</p>
+                </div>
+              </div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Repair total</span>
+                  <span className="text-white">${parseFloat(quote.total_amount || '0').toFixed(2)}</span>
+                </div>
+                {parseFloat(shop_supplies_amount || '0') > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Shop supplies</span>
+                    <span className="text-white">${parseFloat(shop_supplies_amount || '0').toFixed(2)}</span>
+                  </div>
+                )}
+                {parseFloat(service_fee_amount || '0') > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Service fee</span>
+                    <span className="text-white">${parseFloat(service_fee_amount || '0').toFixed(2)}</span>
+                  </div>
+                )}
+                {parseFloat(tax_amount || '0') > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Estimated tax</span>
+                    <span className="text-white">${parseFloat(tax_amount || '0').toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-black/20 p-3">
+                  <p className="text-xs uppercase tracking-wide text-gray-400">Pay by card</p>
+                  <p className="text-xl font-bold text-white">${parseFloat(estimated_card_total || quote.total_amount || '0').toFixed(2)}</p>
+                </div>
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
+                  <p className="text-xs uppercase tracking-wide text-emerald-300">Pay by Zelle</p>
+                  <p className="text-xl font-bold text-emerald-200">${parseFloat(estimated_zelle_total || quote.total_amount || '0').toFixed(2)}</p>
+                  {parseFloat(zelle_savings_amount || '0') > 0 && (
+                    <p className="mt-1 text-xs font-semibold text-emerald-300">
+                      Save ${parseFloat(zelle_savings_amount || '0').toFixed(2)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-gray-500">Final payment total may vary if the invoice changes before checkout.</p>
             </div>
           </div>
 

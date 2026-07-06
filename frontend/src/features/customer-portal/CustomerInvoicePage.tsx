@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { CreditCard, FileText, Copy, ChevronDown, ChevronUp, Download, Printer } from 'lucide-react'
+import { CreditCard, FileText, Download, Printer } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { AxiosError } from 'axios'
@@ -12,6 +12,8 @@ import { getStripeForAccount } from '../../lib/stripe'
 import type { InvoiceDetail } from '../../types'
 import { formatUSPhone } from '../../utils/phone'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
+import { useAuthStore } from '../../stores/authStore'
+import ZellePaymentPanel from './ZellePaymentPanel'
 
 const getErrorDetail = (error: unknown, fallback: string): string => {
   if (error instanceof AxiosError) {
@@ -139,6 +141,7 @@ interface ZelleInfoResponse {
 
 export default function CustomerInvoicePage() {
   const { invoiceId } = useParams<{ invoiceId: string }>()
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
   const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
@@ -146,6 +149,7 @@ export default function CustomerInvoicePage() {
   const [zelleSenderEmail, setZelleSenderEmail] = useState('')
   const [zelleSenderPhone, setZelleSenderPhone] = useState('')
   const [zelleNotes, setZelleNotes] = useState('')
+  const [isZelleSenderEditing, setIsZelleSenderEditing] = useState(false)
   const [showZelleDetails, setShowZelleDetails] = useState(false)
 
   const { data: invoice, isLoading, error } = useQuery<InvoiceDetail>({
@@ -165,6 +169,23 @@ export default function CustomerInvoicePage() {
     },
     enabled: !!invoice && invoice.status !== 'paid',
   })
+
+  const zelleAmount = invoice
+    ? (parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)
+    : '0.00'
+  const zelleMemo = invoice ? `Invoice #${invoice.invoice_number}` : ''
+
+  useEffect(() => {
+    if (!user) return
+    setZelleSenderEmail((current) => current || user.email || '')
+    setZelleSenderPhone((current) => current || (user.phone ? formatUSPhone(user.phone) : ''))
+  }, [user])
+
+  useEffect(() => {
+    if (!zelleMemo) return
+    setZelleNotes(zelleMemo)
+    setIsZelleSenderEditing(false)
+  }, [invoice?.id, zelleMemo])
 
   const createIntentMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -215,6 +236,7 @@ export default function CustomerInvoicePage() {
       toast.success(data.message || 'Zelle payment submitted')
       queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
       setZelleNotes('')
+      setIsZelleSenderEditing(false)
     },
     onError: (e: unknown) => {
       toast.error(getErrorDetail(e, 'Unable to submit Zelle payment'))
@@ -317,120 +339,33 @@ export default function CustomerInvoicePage() {
           </div>
         ) : (
           <div className="space-y-4">
+            <ZellePaymentPanel
+              garageName={zelleInfo?.garage_name}
+              serviceFeeAmount={invoice.service_fee_amount}
+              zelleAmount={zelleAmount}
+              zelleMemo={zelleMemo}
+              zelleEmail={zelleInfo?.zelle_email}
+              zellePhone={zelleInfo?.zelle_phone}
+              zelleQrImage={zelleInfo?.zelle_qr_image}
+              pendingConfirmation={Boolean(invoice.pending_zelle_confirmation)}
+              isOpen={showZelleDetails}
+              isSenderEditing={isZelleSenderEditing}
+              senderEmail={zelleSenderEmail}
+              senderPhone={zelleSenderPhone}
+              senderNotes={zelleNotes}
+              isSubmitting={submitZelleMutation.isPending}
+              onToggleOpen={() => setShowZelleDetails(prev => !prev)}
+              onCopy={copyText}
+              onToggleSenderEditing={() => setIsZelleSenderEditing(editing => !editing)}
+              onSenderEmailChange={setZelleSenderEmail}
+              onSenderPhoneChange={value => setZelleSenderPhone(formatUSPhone(value))}
+              onSenderNotesChange={setZelleNotes}
+              onSubmit={() => submitZelleMutation.mutate()}
+            />
+
+            {!invoice.pending_zelle_confirmation && (
             <div>
-              <button
-                type="button"
-                onClick={() => setShowZelleDetails(prev => !prev)}
-                className="w-full bg-blue-500/10 rounded-lg border border-blue-500/30 p-3 flex items-center justify-between gap-3 text-left"
-              >
-                <div>
-                  <p className="font-medium text-blue-100">Pay with Zelle</p>
-                  <p className="text-xs text-blue-200">
-                    {parseFloat(invoice.service_fee_amount || '0') > 0
-                      ? `Save $${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee`
-                      : 'Tap to view payment details and copy email'}
-                  </p>
-                  {invoice.pending_zelle_confirmation && (
-                    <p className="text-xs text-yellow-300 mt-1">Pending staff confirmation</p>
-                  )}
-                </div>
-                {showZelleDetails ? <ChevronUp className="w-4 h-4 text-blue-100" /> : <ChevronDown className="w-4 h-4 text-blue-100" />}
-              </button>
-
-              {showZelleDetails && (
-                <div className="bg-blue-500/10 rounded-lg border border-blue-500/30 p-4 mt-2">
-                  <p className="text-sm text-blue-200 mb-3">
-                    Send exactly <strong>${(parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)}</strong> to {zelleInfo?.garage_name || 'the garage'} and include invoice{' '}
-                    <strong>#{invoice.invoice_number}</strong> in the memo.
-                  </p>
-
-                  {zelleInfo?.zelle_email && (
-                    <div className="bg-blue-950/40 border border-blue-300/30 rounded-lg p-3 mb-2">
-                      <p className="text-xs uppercase tracking-wide text-blue-200 mb-1">Zelle Email</p>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-white font-semibold break-all">{zelleInfo.zelle_email}</p>
-                        <button
-                          type="button"
-                          onClick={() => copyText(zelleInfo.zelle_email, 'Zelle email')}
-                          className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md flex items-center gap-1"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {zelleInfo?.zelle_phone && (
-                    <div className="bg-white/5 border border-blue-300/20 rounded-lg p-3 mb-2">
-                      <p className="text-xs uppercase tracking-wide text-blue-200 mb-1">Zelle Phone</p>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-white break-all">{zelleInfo.zelle_phone}</p>
-                        <button
-                          type="button"
-                          onClick={() => copyText(zelleInfo.zelle_phone, 'Zelle phone')}
-                          className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md flex items-center gap-1"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {zelleInfo?.zelle_qr_image && (
-                    <>
-                      <div className="hidden sm:flex bg-white rounded-lg p-3 mb-2 justify-center">
-                        <img src={zelleInfo.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
-                      </div>
-                      <p className="sm:hidden text-xs text-blue-200 mb-2">
-                        On mobile, use the copy button above to open Zelle and paste the payment email/phone.
-                      </p>
-                    </>
-                  )}
-
-                  {invoice.pending_zelle_confirmation ? (
-                    <div className="bg-yellow-500/15 border border-yellow-500/40 rounded-lg p-3 text-sm text-yellow-100">
-                      Payment is marked as submitted via Zelle and pending staff confirmation.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <input
-                        type="email"
-                        value={zelleSenderEmail}
-                        onChange={(e) => setZelleSenderEmail(e.target.value)}
-                        placeholder="Your Zelle sender email (optional)"
-                        className="w-full px-3 py-2 bg-white/10 border border-blue-400/40 rounded-lg text-white placeholder-gray-400"
-                      />
-                      <input
-                        type="tel"
-                        value={zelleSenderPhone}
-                        onChange={(e) => setZelleSenderPhone(formatUSPhone(e.target.value))}
-                        placeholder="Your Zelle sender phone (optional)"
-                        className="w-full px-3 py-2 bg-white/10 border border-blue-400/40 rounded-lg text-white placeholder-gray-400"
-                      />
-                      <textarea
-                        value={zelleNotes}
-                        onChange={(e) => setZelleNotes(e.target.value)}
-                        rows={2}
-                        placeholder="Optional note for garage staff"
-                        className="w-full px-3 py-2 bg-white/10 border border-blue-400/40 rounded-lg text-white placeholder-gray-400 resize-none"
-                      />
-                      <button
-                        onClick={() => submitZelleMutation.mutate()}
-                        disabled={submitZelleMutation.isPending}
-                        className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-semibold rounded-lg"
-                      >
-                        {submitZelleMutation.isPending ? 'Submitting...' : 'I Sent Payment via Zelle'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Or pay instantly by card</p>
+              <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Pay instantly by card</p>
               {!showPayment ? (
                 <button
                   onClick={() => createIntentMutation.mutate(invoice.id)}
@@ -459,6 +394,7 @@ export default function CustomerInvoicePage() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
       </div>

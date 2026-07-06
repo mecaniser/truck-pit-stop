@@ -10,7 +10,7 @@ import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
-import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Copy, ChevronDown, ChevronUp, Download } from 'lucide-react'
+import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Download } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -23,12 +23,15 @@ import TenantBrandLogo from '../../components/brand/TenantBrandLogo'
 import { getStripeForAccount } from '../../lib/stripe'
 import { formatUSPhone } from '../../utils/phone'
 import useTenantBranding from '@/hooks/useTenantBranding'
+import CustomerZellePaymentPanel from './ZellePaymentPanel'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
   quoted: 'bg-blue-100 text-blue-700',
   declined: 'bg-red-100 text-red-700',
   approved: 'bg-cyan-100 text-cyan-700',
+  assigned: 'bg-amber-100 text-amber-700',
+  acknowledged: 'bg-amber-100 text-amber-700',
   in_progress: 'bg-amber-100 text-amber-700',
   pending_review: 'bg-orange-100 text-orange-700',
   completed: 'bg-green-100 text-green-700',
@@ -36,6 +39,15 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
   paid: 'bg-emerald-100 text-emerald-700',
   cancelled: 'bg-red-100 text-red-700',
 }
+
+const CUSTOMER_ACTIVE_REPAIR_STATUSES = [
+  'approved',
+  'assigned',
+  'acknowledged',
+  'in_progress',
+  'pending_review',
+  'completed',
+]
 
 interface ZelleInfoResponse {
   zelle_email: string | null
@@ -60,13 +72,22 @@ const getSelectedServicesTotal = (order: RepairOrder | RepairOrderDetail): numbe
 
 // Customer-facing total is labor/services + parts.
 const getOrderTotal = (order: RepairOrder | RepairOrderDetail): number => {
+  const backendTotal = parseFloat(order.total_cost || '0') || 0
+  if (backendTotal > 0) return backendTotal
   const selectedServicesTotal = getSelectedServicesTotal(order)
   const backendLabor = parseFloat(order.total_labor_cost || '0') || 0
   const backendParts = parseFloat(order.total_parts_cost || '0') || 0
   const labor = selectedServicesTotal > 0 ? selectedServicesTotal : backendLabor
-  const combined = labor + backendParts
-  const backendTotal = parseFloat(order.total_cost || '0') || 0
-  return combined > 0 ? combined : backendTotal
+  return labor + backendParts
+}
+
+const getOrderSavings = (order: RepairOrder | RepairOrderDetail): number => {
+  const partSavings = 'parts_usage' in order
+    ? order.parts_usage.reduce((sum, part) => sum + (parseFloat(part.savings || '0') || 0), 0)
+    : 0
+  const laborDiscount = parseFloat(order.labor_discount_amount || '0') || 0
+  const orderDiscount = parseFloat(order.order_discount_amount || '0') || 0
+  return partSavings + laborDiscount + orderDiscount
 }
 
 const getVehicleLabel = (order: { vehicle_year?: number | null; vehicle_make?: string; vehicle_model?: string; vehicle_unit_number?: string | null }): string => {
@@ -117,7 +138,7 @@ function CustomerDashboard() {
   })
 
   const activeRepairs = repairOrders?.filter(o =>
-    ['in_progress', 'approved', 'pending_review', 'completed'].includes(o.status) ||
+    CUSTOMER_ACTIVE_REPAIR_STATUSES.includes(o.status) ||
     (o.status === 'quoted' && o.quote_sent === true)
   ).length || 0
 
@@ -297,14 +318,14 @@ function CustomerDashboard() {
           )}
         </div>
 
-        {/* Active Repairs - approved, in_progress, pending_review, completed */}
+        {/* Active Repairs - approved through completion, plus assigned technician workflow */}
         <div className="bg-white/5 rounded-xl p-4 sm:p-6 border border-white/10 overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">Active Repairs</h2>
           </div>
           {(() => {
             const activeOrders = repairOrders?.filter(o => 
-              ['approved', 'in_progress', 'pending_review', 'completed'].includes(o.status)
+              CUSTOMER_ACTIVE_REPAIR_STATUSES.includes(o.status)
             ) || []
             
             return activeOrders.length > 0 ? (
@@ -561,6 +582,7 @@ function PaymentForm({
 }
 
 function CustomerRepairs() {
+  const { user } = useAuthStore()
   const queryClient = useQueryClient()
   const location = useLocation()
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
@@ -573,6 +595,7 @@ function CustomerRepairs() {
   const [zelleSenderEmail, setZelleSenderEmail] = useState('')
   const [zelleSenderPhone, setZelleSenderPhone] = useState('')
   const [zelleNotes, setZelleNotes] = useState('')
+  const [isZelleSenderEditing, setIsZelleSenderEditing] = useState(false)
   const [showZelleDetails, setShowZelleDetails] = useState(false)
   
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
@@ -626,6 +649,23 @@ function CustomerRepairs() {
     },
     enabled: !!invoice && selectedOrder?.status === 'invoiced',
   })
+
+  const zelleAmount = invoice
+    ? (parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)
+    : '0.00'
+  const zelleMemo = invoice ? `Invoice #${invoice.invoice_number}` : ''
+
+  useEffect(() => {
+    if (!user) return
+    setZelleSenderEmail((current) => current || user.email || '')
+    setZelleSenderPhone((current) => current || (user.phone ? formatUSPhone(user.phone) : ''))
+  }, [user])
+
+  useEffect(() => {
+    if (!zelleMemo) return
+    setZelleNotes(zelleMemo)
+    setIsZelleSenderEditing(false)
+  }, [invoice?.id, zelleMemo])
 
   const handleDownloadPdf = async () => {
     if (!invoice) return
@@ -755,6 +795,7 @@ function CustomerRepairs() {
       queryClient.invalidateQueries({ queryKey: ['invoice', selectedOrder?.id] })
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       setZelleNotes('')
+      setIsZelleSenderEditing(false)
     },
     onError: (err: unknown) => {
       const error = err as { response?: { data?: { detail?: string } } }
@@ -786,6 +827,9 @@ function CustomerRepairs() {
     const backendLaborTotal = parseFloat(displayOrder.total_labor_cost || '0') || 0
     const laborTotal = laborFromServices > 0 ? laborFromServices : backendLaborTotal
     const partsTotal = parseFloat(displayOrder.total_parts_cost || '0') || 0
+    const finalTotal = getOrderTotal(displayOrder)
+    const customerSavings = getOrderSavings(displayOrder)
+    const preSavingsTotal = finalTotal + customerSavings
 
     return (
       <div className="space-y-6">
@@ -886,11 +930,23 @@ function CustomerRepairs() {
                 <span className="text-white">${partsTotal.toFixed(2)}</span>
               </div>
             </div>
-            <div className="flex justify-between items-center text-lg border-t border-white/10 pt-3">
-              <span className="font-medium text-white">
-                {invoice ? 'Subtotal' : 'Total'}
-              </span>
-              <span className="font-bold text-white">${getOrderTotal(displayOrder).toFixed(2)}</span>
+            <div className="space-y-2 border-t border-white/10 pt-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-400">Total before savings</span>
+                <span className="text-gray-200">${preSavingsTotal.toFixed(2)}</span>
+              </div>
+              {customerSavings > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-emerald-300">Best savings</span>
+                  <span className="font-semibold text-emerald-300">-${customerSavings.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-lg border-t border-white/10 pt-3">
+                <span className="font-medium text-white">
+                  {invoice ? 'Subtotal' : 'Final total'}
+                </span>
+                <span className="font-bold text-white">${finalTotal.toFixed(2)}</span>
+              </div>
             </div>
             {invoice && (
               <p className="text-xs text-gray-500 mt-1">Taxes & fees included in invoice below</p>
@@ -1028,119 +1084,34 @@ function CustomerRepairs() {
             </div>
 
             <div className="mb-4">
-              <button
-                type="button"
-                onClick={() => setShowZelleDetails(prev => !prev)}
-                className="w-full bg-blue-500/10 rounded-lg border border-blue-500/30 p-3 flex items-center justify-between gap-3 text-left"
-              >
-                <div>
-                  <p className="font-medium text-blue-100">Pay with Zelle</p>
-                  <p className="text-xs text-blue-200">
-                    {parseFloat(invoice.service_fee_amount || '0') > 0
-                      ? `Save $${parseFloat(invoice.service_fee_amount).toFixed(2)} — no processing fee`
-                      : 'Tap to view payment details and copy email'}
-                  </p>
-                  {invoice.pending_zelle_confirmation && (
-                    <p className="text-xs text-yellow-300 mt-1">Pending staff confirmation</p>
-                  )}
-                </div>
-                {showZelleDetails ? <ChevronUp className="w-4 h-4 text-blue-100" /> : <ChevronDown className="w-4 h-4 text-blue-100" />}
-              </button>
-
-              {showZelleDetails && (
-                <div className="bg-blue-500/10 rounded-lg border border-blue-500/30 p-4 mt-2">
-                  <p className="text-sm text-blue-200 mb-3">
-                    Send exactly <strong>${(parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)}</strong> to {zelleInfo?.garage_name || 'the garage'} and include invoice{' '}
-                    <strong>#{invoice.invoice_number}</strong> in the memo.
-                  </p>
-
-                  {zelleInfo?.zelle_email && (
-                    <div className="bg-blue-950/40 border border-blue-300/30 rounded-lg p-3 mb-2">
-                      <p className="text-xs uppercase tracking-wide text-blue-200 mb-1">Zelle Email</p>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-white font-semibold break-all">{zelleInfo.zelle_email}</p>
-                        <button
-                          type="button"
-                          onClick={() => copyText(zelleInfo.zelle_email, 'Zelle email')}
-                          className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md flex items-center gap-1"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {zelleInfo?.zelle_phone && (
-                    <div className="bg-white/5 border border-blue-300/20 rounded-lg p-3 mb-2">
-                      <p className="text-xs uppercase tracking-wide text-blue-200 mb-1">Zelle Phone</p>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-white break-all">{zelleInfo.zelle_phone}</p>
-                        <button
-                          type="button"
-                          onClick={() => copyText(zelleInfo.zelle_phone, 'Zelle phone')}
-                          className="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md flex items-center gap-1"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {zelleInfo?.zelle_qr_image && (
-                    <>
-                      <div className="hidden sm:flex bg-white rounded-lg p-3 mb-2 justify-center">
-                        <img src={zelleInfo.zelle_qr_image} alt="Zelle QR" className="w-44 h-44 object-contain" />
-                      </div>
-                      <p className="sm:hidden text-xs text-blue-200 mb-2">
-                        On mobile, use the copy button above to open Zelle and paste the payment email/phone.
-                      </p>
-                    </>
-                  )}
-
-                  {invoice.pending_zelle_confirmation ? (
-                    <div className="bg-yellow-500/15 border border-yellow-500/40 rounded-lg p-3 text-sm text-yellow-100">
-                      Payment is marked as submitted via Zelle and pending staff confirmation.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <input
-                        type="email"
-                        value={zelleSenderEmail}
-                        onChange={(e) => setZelleSenderEmail(e.target.value)}
-                        placeholder="Your Zelle sender email (optional)"
-                        className="w-full px-3 py-2 bg-white/10 border border-blue-400/40 rounded-lg text-white placeholder-gray-400"
-                      />
-                      <input
-                        type="tel"
-                        value={zelleSenderPhone}
-                        onChange={(e) => setZelleSenderPhone(formatUSPhone(e.target.value))}
-                        placeholder="Your Zelle sender phone (optional)"
-                        className="w-full px-3 py-2 bg-white/10 border border-blue-400/40 rounded-lg text-white placeholder-gray-400"
-                      />
-                      <textarea
-                        value={zelleNotes}
-                        onChange={(e) => setZelleNotes(e.target.value)}
-                        rows={2}
-                        placeholder="Optional note for garage staff"
-                        className="w-full px-3 py-2 bg-white/10 border border-blue-400/40 rounded-lg text-white placeholder-gray-400 resize-none"
-                      />
-                      <button
-                        onClick={() => submitZelleMutation.mutate()}
-                        disabled={submitZelleMutation.isPending}
-                        className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-semibold rounded-lg"
-                      >
-                        {submitZelleMutation.isPending ? 'Submitting...' : 'I Sent Payment via Zelle'}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+              <CustomerZellePaymentPanel
+                garageName={zelleInfo?.garage_name}
+                serviceFeeAmount={invoice.service_fee_amount}
+                zelleAmount={zelleAmount}
+                zelleMemo={zelleMemo}
+                zelleEmail={zelleInfo?.zelle_email}
+                zellePhone={zelleInfo?.zelle_phone}
+                zelleQrImage={zelleInfo?.zelle_qr_image}
+                pendingConfirmation={Boolean(invoice.pending_zelle_confirmation)}
+                isOpen={showZelleDetails}
+                isSenderEditing={isZelleSenderEditing}
+                senderEmail={zelleSenderEmail}
+                senderPhone={zelleSenderPhone}
+                senderNotes={zelleNotes}
+                isSubmitting={submitZelleMutation.isPending}
+                onToggleOpen={() => setShowZelleDetails(prev => !prev)}
+                onCopy={copyText}
+                onToggleSenderEditing={() => setIsZelleSenderEditing(editing => !editing)}
+                onSenderEmailChange={setZelleSenderEmail}
+                onSenderPhoneChange={(value: string) => setZelleSenderPhone(formatUSPhone(value))}
+                onSenderNotesChange={setZelleNotes}
+                onSubmit={() => submitZelleMutation.mutate()}
+              />
             </div>
 
+            {!invoice.pending_zelle_confirmation && (
             <div className="pt-1">
-              <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Or pay instantly by card</p>
+              <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Pay instantly by card</p>
               {!showPayment ? (
                 <button
                   onClick={handlePayClick}
@@ -1159,6 +1130,7 @@ function CustomerRepairs() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
 
