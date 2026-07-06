@@ -391,7 +391,7 @@ const WO_STATUS_LABEL: Record<string, string> = {
 
 interface WOMechanic { id: string; name: string }
 interface WOLabor { id: string; description: string; hours: number | string; hourly_rate: number | string; total_cost: number | string }
-interface WOPart { id: string; inventory_name: string; quantity: number; unit_price: number | string; total_price: number | string }
+interface WOPart { id: string; inventory_name: string; quantity: number | string; unit_price: number | string; total_price: number | string }
 interface WODetail {
   id: string; order_number: string; status: string; description?: string | null
   assigned_mechanic_id?: string | null
@@ -527,7 +527,7 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
 
 function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOPart; onChanged: () => void; showPrices?: boolean }) {
   const [qty, setQty] = useState(String(line.quantity))
-  const dirty = Number(qty) !== line.quantity
+  const dirty = Number(qty) !== Number(line.quantity)
   const save = useMutation({
     mutationFn: async () => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity: Number(qty) })).data,
     onSuccess: () => { toast.success('Part updated'); onChanged() },

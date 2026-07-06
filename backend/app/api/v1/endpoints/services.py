@@ -71,11 +71,13 @@ class ServiceUpdate(BaseModel):
 
 class ServicePartCreate(BaseModel):
     inventory_id: UUID
-    quantity: int = 1
+    # Decimal so a bundled fluid part (e.g. 5 gal of oil in an "Oil Change"
+    # service) can be entered fractionally.
+    quantity: Decimal = Decimal("1")
 
 
 class ServicePartUpdate(BaseModel):
-    quantity: int
+    quantity: Decimal
 
 
 class ServicePartResponse(BaseModel):
@@ -83,7 +85,8 @@ class ServicePartResponse(BaseModel):
     inventory_id: str
     sku: str
     name: str
-    quantity: int
+    quantity: Decimal
+    unit_type: str = "each"
     unit_price: str
     line_total: str
     stock_quantity: int
@@ -157,6 +160,7 @@ def _build_parts_response(service: Service) -> List[ServicePartResponse]:
                 sku=inv.sku,
                 name=inv.name,
                 quantity=sp.quantity,
+                unit_type=inv.unit_type,
                 unit_price=str(_money(unit_price)),
                 line_total=str(line_total),
                 stock_quantity=int(inv.stock_quantity or 0),
@@ -553,8 +557,8 @@ async def add_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
-    if data.quantity < 1:
-        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
+    if data.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
 
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
@@ -616,8 +620,8 @@ async def update_service_part(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
-    if data.quantity < 1:
-        raise HTTPException(status_code=400, detail="Quantity must be at least 1")
+    if data.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
 

@@ -28,6 +28,9 @@ class InventoryResponse(BaseModel):
     reorder_level: int
     cost: Decimal
     selling_price: Decimal
+    # "each" (default) for discrete parts, or a fluid unit ("gallon", "quart",
+    # "liter") so the Price Builder can offer 0.25-increment quantities.
+    unit_type: str
     supplier_name: Optional[str]
     supplier_contact: Optional[str]
     created_at: str
@@ -47,6 +50,7 @@ class InventoryCreate(BaseModel):
     reorder_level: int = 0
     cost: Decimal
     selling_price: Decimal
+    unit_type: str = "each"
     supplier_name: Optional[str] = None
     supplier_contact: Optional[str] = None
 
@@ -61,6 +65,7 @@ class InventoryUpdate(BaseModel):
     reorder_level: Optional[int] = None
     cost: Optional[Decimal] = None
     selling_price: Optional[Decimal] = None
+    unit_type: Optional[str] = None
     supplier_name: Optional[str] = None
     supplier_contact: Optional[str] = None
 
@@ -126,6 +131,7 @@ async def list_inventory(
             reorder_level=item.reorder_level,
             cost=item.cost,
             selling_price=item.selling_price,
+            unit_type=item.unit_type,
             supplier_name=item.supplier_name,
             supplier_contact=item.supplier_contact,
             created_at=item.created_at.isoformat(),
@@ -165,6 +171,7 @@ async def create_inventory_item(
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
+        unit_type=item.unit_type,
         supplier_name=item.supplier_name,
         supplier_contact=item.supplier_contact,
         created_at=item.created_at.isoformat(),
@@ -268,6 +275,7 @@ async def get_inventory_item(
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
+        unit_type=item.unit_type,
         supplier_name=item.supplier_name,
         supplier_contact=item.supplier_contact,
         created_at=item.created_at.isoformat(),
@@ -315,6 +323,7 @@ async def update_inventory_item(
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
+        unit_type=item.unit_type,
         supplier_name=item.supplier_name,
         supplier_contact=item.supplier_contact,
         created_at=item.created_at.isoformat(),
@@ -362,6 +371,7 @@ async def receive_shipment(
         reorder_level=item.reorder_level,
         cost=item.cost,
         selling_price=item.selling_price,
+        unit_type=item.unit_type,
         supplier_name=item.supplier_name,
         supplier_contact=item.supplier_contact,
         created_at=item.created_at.isoformat(),

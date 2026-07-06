@@ -21,6 +21,12 @@ class Inventory(BaseModel):
     reorder_level = Column(Integer, default=0, nullable=False)
     cost = Column(Numeric(10, 2), nullable=False)
     selling_price = Column(Numeric(10, 2), nullable=False)
+
+    # Unit this part is dispensed in. "each" parts (filters, belts) use whole-number
+    # quantities; fluids (oil, coolant, DEF) are dispensed in fractional amounts of
+    # their unit, so quantity on PartsUsage/ServicePart is decimal. stock_quantity
+    # above still tracks whole packages/jugs on hand regardless of unit_type.
+    unit_type = Column(String(20), default="each", nullable=False)
     
     supplier_name = Column(String(255), nullable=True)
     supplier_contact = Column(String(255), nullable=True)
@@ -40,7 +46,9 @@ class PartsUsage(BaseModel):
     inventory_id = Column(UUID(as_uuid=True), ForeignKey("inventory.id"), nullable=False, index=True)
     inventory_item = relationship("Inventory", back_populates="parts_usage")
     
-    quantity = Column(Integer, nullable=False)
+    # Numeric so fluids (oil, coolant, DEF) can be entered in fractional amounts
+    # (e.g. 1.25 gallons), not just whole units.
+    quantity = Column(Numeric(6, 2), nullable=False)
     unit_cost = Column(Numeric(10, 2), nullable=True)  # inventory cost snapshot at time of use
     unit_price = Column(Numeric(10, 2), nullable=False)
     # Original selling_price at attach time — preserved for savings audit trail when

@@ -1930,13 +1930,13 @@ export default function RepairOrdersPage() {
                         .filter((svc) => selectedServiceIds.includes(svc.id))
                         .flatMap((svc) =>
                           (svc.parts || [])
-                            .filter((p) => (p.stock_quantity ?? 0) < p.quantity)
+                            .filter((p) => (p.stock_quantity ?? 0) < (parseFloat(p.quantity) || 0))
                             .map((p) => ({
                               serviceName: svc.name,
                               partName: p.name,
                               inventoryId: p.inventory_id,
                               have: p.stock_quantity ?? 0,
-                              need: p.quantity,
+                              need: parseFloat(p.quantity) || 0,
                             }))
                         )
                       if (shortages.length === 0) return null

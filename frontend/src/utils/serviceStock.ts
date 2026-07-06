@@ -25,7 +25,7 @@ export function getServiceStockStatus(service: Pick<Service, 'parts'>): ServiceS
   const problems: string[] = []
   for (const p of parts) {
     const have = p.stock_quantity ?? 0
-    const need = p.quantity
+    const need = parseFloat(p.quantity) || 0
     if (have === 0) {
       worst = 'out'
       problems.push(`${p.name}: out of stock (need ${need})`)

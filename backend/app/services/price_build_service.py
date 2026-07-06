@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -60,6 +61,18 @@ class PriceBuildResult:
 
 def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"))
+
+
+def _packages_consumed(quantity: Decimal) -> int:
+    """Whole packages/jugs a (possibly fractional) part quantity draws from stock.
+
+    stock_quantity tracks whole packages on hand, not fractional volume, so any
+    quantity > 0 rounds up to at least 1 package. See the identical helper in
+    app/api/v1/endpoints/repair_orders.py for the same rationale.
+    """
+    if quantity <= 0:
+        return 0
+    return max(1, math.ceil(quantity))
 
 
 def _labor_rate_for(order: RepairOrder, tenant: Tenant) -> Decimal:
@@ -282,9 +295,10 @@ class PriceBuildService:
             if not inv or inv.deleted_at is not None:
                 continue
             required_qty = sp.quantity * quantity
-            if (inv.stock_quantity or 0) < required_qty:
+            packages_needed = _packages_consumed(required_qty)
+            if (inv.stock_quantity or 0) < packages_needed:
                 raise PriceBuildValidationError(
-                    f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {required_qty}"
+                    f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {required_qty} ({packages_needed} package(s))"
                 )
             unit_price = _part_unit_price_for(order, inv)
             line_total = _money(unit_price * Decimal(required_qty))
@@ -301,7 +315,7 @@ class PriceBuildService:
                     source_service_id=service.id,
                 )
             )
-            inv.stock_quantity = (inv.stock_quantity or 0) - required_qty
+            inv.stock_quantity = (inv.stock_quantity or 0) - packages_needed
 
         await db.commit()
         order = await self.load_order(db, order.id)
@@ -507,7 +521,7 @@ class PriceBuildService:
             )
             inv = inv_result.scalar_one_or_none()
             if inv:
-                inv.stock_quantity = (inv.stock_quantity or 0) + pu.quantity
+                inv.stock_quantity = (inv.stock_quantity or 0) + _packages_consumed(pu.quantity)
             await db.delete(pu)
 
     async def recalculate_order(self, db: AsyncSession, order: RepairOrder) -> PriceBuildResult:

@@ -1,3 +1,4 @@
+import math
 import traceback
 from decimal import Decimal
 from typing import List, Optional
@@ -131,6 +132,18 @@ def _to_price_build_summary(
     )
 
 
+def _packages_consumed(quantity: Decimal) -> int:
+    """Whole packages/jugs a part quantity draws down from stock.
+
+    stock_quantity tracks whole packages on hand (e.g. 5-gal jugs), not
+    fractional volume. A fluid quantity of 1.25 gal still opens (and is
+    billed against) one jug, so any quantity > 0 rounds up to at least 1
+    package; a delta of 0.25 more on an existing line also rounds up to 1
+    additional package. We deliberately don't track partial-jug remainders.
+    """
+    return max(1, math.ceil(quantity)) if quantity > 0 else 0
+
+
 def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageResponse":
     inv = inv if inv is not None else pu.inventory_item
     list_price = pu.list_price if pu.list_price is not None else pu.unit_price
@@ -142,6 +155,7 @@ def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageRespon
         inventory_sku=inv.sku if inv else "",
         inventory_name=inv.name if inv else "",
         quantity=pu.quantity,
+        unit_type=inv.unit_type if inv else "each",
         unit_price=pu.unit_price,
         unit_cost=pu.unit_cost,
         list_price=list_price,
@@ -2108,10 +2122,13 @@ async def add_parts_to_repair_order(
     inv = result.scalar_one_or_none()
     if not inv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")
-    if inv.stock_quantity < body.quantity:
+    if body.quantity <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
+    packages_needed = _packages_consumed(body.quantity)
+    if inv.stock_quantity < packages_needed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient stock: have {inv.stock_quantity}, requested {body.quantity}",
+            detail=f"Insufficient stock: have {inv.stock_quantity}, requested {body.quantity} ({packages_needed} package(s))",
         )
     # Internal fleet repairs price parts at cost (no markup, no customer-facing list price);
     # customer repairs default to the selling price.
@@ -2130,7 +2147,7 @@ async def add_parts_to_repair_order(
         total_price=total_price,
     )
     db.add(pu)
-    inv.stock_quantity -= body.quantity
+    inv.stock_quantity -= packages_needed
     await db.commit()
     await db.refresh(pu)
     await _recompute_repair_order_totals(db, order_id)
@@ -2189,8 +2206,8 @@ async def update_parts_quantity(
 ):
     if body.quantity is None and body.unit_price is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nothing to update")
-    if body.quantity is not None and body.quantity < 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be at least 1")
+    if body.quantity is not None and body.quantity <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
@@ -2215,15 +2232,19 @@ async def update_parts_quantity(
     inv = pu.inventory_item
 
     if body.quantity is not None:
-        # Delta > 0 means we need MORE parts (check stock); delta < 0 means we're returning parts to stock.
-        delta = body.quantity - pu.quantity
-        if inv is not None and delta > 0 and (inv.stock_quantity or 0) < delta:
+        # Stock tracks whole packages, so compare packages consumed at the old vs.
+        # new quantity rather than the raw fractional delta (e.g. going from 1.0
+        # to 1.25 gal still draws from the same already-opened jug).
+        old_packages = _packages_consumed(pu.quantity)
+        new_packages = _packages_consumed(body.quantity)
+        package_delta = new_packages - old_packages
+        if inv is not None and package_delta > 0 and (inv.stock_quantity or 0) < package_delta:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {delta} more",
+                detail=f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {package_delta} more package(s)",
             )
         if inv is not None:
-            inv.stock_quantity = (inv.stock_quantity or 0) - delta
+            inv.stock_quantity = (inv.stock_quantity or 0) - package_delta
         pu.quantity = body.quantity
 
     if body.unit_price is not None:
@@ -2368,7 +2389,7 @@ async def remove_parts_from_repair_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parts usage not found")
     inv = pu.inventory_item
     if inv is not None:
-        inv.stock_quantity += pu.quantity
+        inv.stock_quantity += _packages_consumed(pu.quantity)
     await db.delete(pu)
     await db.commit()
     await _recompute_repair_order_totals(db, order_id)

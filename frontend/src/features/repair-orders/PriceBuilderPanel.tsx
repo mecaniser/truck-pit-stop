@@ -207,12 +207,18 @@ function laborBookTimeScope(entry: LaborBookTimeEntry) {
   }
 }
 
+const UNIT_ABBR: Record<string, string> = { each: '', gallon: 'gal', quart: 'qt', liter: 'L' }
+
 /**
  * Amazon-style quantity stepper for a part line. `[−] N [+]` increments/
  * decrements optimistically and debounce-saves the new quantity. When the
- * quantity is 1, the decrement button becomes a delete (trash) that removes the
- * part from the order — so stepping down past 1 removes the line rather than
- * setting an invalid qty of 0.
+ * quantity is at the step floor, the decrement button becomes a delete (trash)
+ * that removes the part from the order — so stepping down past the floor
+ * removes the line rather than setting an invalid qty of 0.
+ *
+ * Fluid parts (unit_type != "each", e.g. oil/coolant/DEF) step by quarter
+ * increments (0.25) since they're dispensed in fractional gallons/quarts/liters,
+ * not whole units like a filter or belt.
  */
 function PartQtyStepper({
   part, disabled, onChangeQty, onDelete,
@@ -222,21 +228,30 @@ function PartQtyStepper({
   onChangeQty: (next: number) => Promise<void>
   onDelete: () => Promise<void>
 }) {
+  const isFluid = part.unit_type && part.unit_type !== 'each'
+  const step = isFluid ? 0.25 : 1
+  const unitAbbr = UNIT_ABBR[part.unit_type] || ''
+
+  // part.quantity is a Decimal on the backend (fluids use fractional amounts),
+  // so it arrives over the wire as a string — parse it once here so all local
+  // state/arithmetic below works with real numbers.
+  const currentQuantity = parseFloat(part.quantity) || 0
+
   // Optimistic local quantity so the number reacts instantly; the debounced
   // save reconciles with the server, and props re-sync it when data refetches.
-  const [qty, setQty] = useState(part.quantity)
+  const [qty, setQty] = useState(currentQuantity)
   const [busy, setBusy] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastSaved = useRef(part.quantity)
+  const lastSaved = useRef(currentQuantity)
 
   // Re-sync from server after a refetch (unless a save is mid-flight).
   useEffect(() => {
     if (saveTimer.current == null && !busy) {
-      setQty(part.quantity)
-      lastSaved.current = part.quantity
+      setQty(currentQuantity)
+      lastSaved.current = currentQuantity
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [part.quantity])
+  }, [currentQuantity])
 
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
 
@@ -255,40 +270,95 @@ function PartQtyStepper({
     }, 500)
   }
 
-  const bump = (delta: number) => {
-    const next = qty + delta
-    if (next < 1) return
-    setQty(next)
-    scheduleSave(next)
+  const commit = (next: number) => {
+    if (next < step) return
+    const rounded = Math.round(next / step) * step
+    setQty(rounded)
+    setDraft(isFluid ? rounded.toFixed(2) : String(rounded))
+    scheduleSave(rounded)
   }
 
-  const atMin = qty <= 1
+  const bump = (delta: number) => commit(qty + delta)
+
+  // Free-typed value while the input is focused; reconciled to a valid
+  // stepped number on blur/Enter so partial input (e.g. "1.") isn't clobbered
+  // by the formatted display on every keystroke.
+  const [draft, setDraft] = useState(isFluid ? qty.toFixed(2) : String(qty))
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(isFluid ? qty.toFixed(2) : String(qty))
+  }, [qty, isFluid, editing])
+
+  const commitDraft = () => {
+    setEditing(false)
+    const parsed = parseFloat(draft)
+    if (!Number.isFinite(parsed) || parsed < step) {
+      setDraft(isFluid ? qty.toFixed(2) : String(qty))
+      return
+    }
+    commit(parsed)
+  }
+
+  // Ctrl/Cmd+= and Ctrl/Cmd+- step the quantity even while the field has focus,
+  // rather than triggering the browser's page zoom.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) {
+      e.preventDefault()
+      commit(qty + (e.key === '-' || e.key === '_' ? -step : step))
+      return
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commitDraft()
+      e.currentTarget.blur()
+    } else if (e.key === 'Escape') {
+      setEditing(false)
+      setDraft(isFluid ? qty.toFixed(2) : String(qty))
+      e.currentTarget.blur()
+    }
+  }
+
+  const atMin = qty <= step
 
   return (
-    <span className="inline-flex items-center rounded-lg border border-gray-200 bg-white shadow-sm">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={atMin ? onDelete : () => bump(-1)}
-        aria-label={atMin ? `Remove ${part.inventory_name}` : `Decrease quantity of ${part.inventory_name}`}
-        className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
-          atMin ? 'text-red-500 hover:bg-red-50' : 'text-gray-500 hover:bg-gray-50'
-        }`}
-      >
-        {atMin ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
-      </button>
-      <span className="w-8 text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums text-gray-900">
-        {qty}
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center rounded-lg border border-gray-200 bg-white shadow-sm">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={atMin ? onDelete : () => bump(-step)}
+          aria-label={atMin ? `Remove ${part.inventory_name}` : `Decrease quantity of ${part.inventory_name}`}
+          className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
+            atMin ? 'text-red-500 hover:bg-red-50' : 'text-gray-500 hover:bg-gray-50'
+          }`}
+        >
+          {atMin ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
+        </button>
+        <input
+          type="text"
+          inputMode="decimal"
+          disabled={disabled}
+          value={draft}
+          onFocus={() => setEditing(true)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={handleKeyDown}
+          aria-label={`Quantity for ${part.inventory_name}`}
+          title="Type a value, or use Ctrl/Cmd + and Ctrl/Cmd − to step"
+          className={`h-8 border-x border-gray-200 bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums text-gray-900 outline-none focus:bg-gray-50 disabled:opacity-50 ${isFluid ? 'w-14' : 'w-10'}`}
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => bump(step)}
+          aria-label={`Increase quantity of ${part.inventory_name}`}
+          className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
       </span>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => bump(1)}
-        aria-label={`Increase quantity of ${part.inventory_name}`}
-        className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </button>
+      {unitAbbr && <span className="text-xs text-gray-500">{unitAbbr}</span>}
     </span>
   )
 }
@@ -1414,7 +1484,11 @@ export default function PriceBuilderPanel({
                   if (!matches.length) {
                     return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts match this search.</p>
                   }
-                  return matches.map((item, index) => (
+                  return matches.map((item, index) => {
+                    const isFluid = item.unit_type && item.unit_type !== 'each'
+                    const step = isFluid ? 0.25 : 1
+                    const unitAbbr = UNIT_ABBR[item.unit_type] || ''
+                    return (
                     <div
                       key={item.id}
                       className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
@@ -1424,22 +1498,22 @@ export default function PriceBuilderPanel({
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
                         <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                          {item.sku} · {item.stock_quantity} in stock · list {money(item.selling_price)}
+                          {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <input
                           type="number"
-                          min={1}
-                          max={item.stock_quantity}
+                          min={step}
+                          step={step}
                           value={partQuantity}
-                          onChange={(e) => setPartQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                          onChange={(e) => setPartQuantity(Math.max(step, parseFloat(e.target.value) || step))}
                           className="h-8 w-16 rounded-lg border border-gray-200 px-2 text-sm"
                           aria-label={`Quantity for ${item.name}`}
                         />
                         <button
                           type="button"
-                          onClick={() => addPart.mutate({ inventoryId: item.id, quantity: Math.min(partQuantity, item.stock_quantity) })}
+                          onClick={() => addPart.mutate({ inventoryId: item.id, quantity: partQuantity })}
                           disabled={!canMutate || addPart.isPending}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
                           aria-label={`Add ${item.name}`}
@@ -1448,7 +1522,8 @@ export default function PriceBuilderPanel({
                         </button>
                       </div>
                     </div>
-                  ))
+                    )
+                  })
                 })()}
               </>
             ) : null}
@@ -1521,7 +1596,12 @@ export default function PriceBuilderPanel({
                             />
                           </span>
                         ) : (
-                          pu.quantity
+                          (() => {
+                            const isFluid = pu.unit_type && pu.unit_type !== 'each'
+                            const unitAbbr = UNIT_ABBR[pu.unit_type] || ''
+                            const qtyNum = parseFloat(pu.quantity) || 0
+                            return `${isFluid ? qtyNum.toFixed(2) : qtyNum}${unitAbbr ? ` ${unitAbbr}` : ''}`
+                          })()
                         )}
                       </td>
                       <td className="py-1.5 px-2.5 text-right text-gray-600">
