@@ -86,3 +86,6 @@
 - Correction: The user clarified that on mobile the dashboard should preserve the same priority model as desktop: Work Queue owns the remaining viewport space, while Team Capacity stays anchored below it and transient sections only borrow from the queue’s space.
 - Rule: When a dashboard section is declared the priority viewport owner, make the page shell explicitly allocate remaining height to that section rather than relying on normal document flow.
 - Prevention: For mobile dashboard changes, identify the single viewport-priority section in `tasks/todo.md` before patching, then verify in-browser that dismissing top sections increases that section’s measured height without moving the bottom sibling.
+- Correction: User clarified Labor Book Time entries should have their own My Garage management tab instead of being treated as Services or hidden inside the price-builder add bar.
+- Rule: When a workflow persists reusable shop knowledge separately from the customer-facing service catalog, expose that data through a dedicated management surface rather than overloading the nearest existing list.
+- Prevention: Before adding reusable catalog UI, identify the backing table/model and record whether it is an operational library, customer service, inventory item, or repair-order line in `tasks/todo.md`.
