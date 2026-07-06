@@ -182,6 +182,18 @@ export default function TruckDetail({
         </div>
       </div>
 
+      {t.warning_lights && t.warning_lights.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', padding: '10px 14px', borderRadius: 12, background: 'rgba(230,57,70,.12)', border: '1px solid rgba(230,57,70,.35)' }}>
+          <AlertTriangle size={16} style={{ color: 'var(--red)', flexShrink: 0 }} />
+          <strong style={{ fontSize: 13, color: 'var(--red)' }}>
+            Dashboard warning{t.warning_lights.length > 1 ? 's' : ''} on:
+          </strong>
+          {t.warning_lights.map((w) => (
+            <span key={w} style={{ fontSize: 12.5, background: 'rgba(230,57,70,.15)', border: '1px solid rgba(230,57,70,.3)', borderRadius: 999, padding: '2px 10px', color: 'var(--text)' }}>{w}</span>
+          ))}
+        </div>
+      )}
+
       <div className="dcol">
           <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} />
 
