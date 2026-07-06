@@ -18,6 +18,8 @@ from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
+from app.db.models.inventory import PartsUsage
+from app.db.models.fleet import RepairOrderPMService
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.pto_request import PTORequest, PTORequestStatus, PTORequestType
 from app.db.models.work_photo import WorkPhoto
@@ -295,6 +297,61 @@ class MechanicJobSummary(BaseModel):
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
     ro_today_tracked_minutes: int = 0
+
+
+def _service_item_key(name: str, description: Optional[str]) -> tuple[str, str]:
+    return (name.strip().lower(), (description or "").strip().lower())
+
+
+def _build_mechanic_scope_items(
+    order: RepairOrder,
+    pm_entries: Optional[List[RepairOrderPMService]] = None,
+) -> List[ServiceItem]:
+    """Build a mechanic-safe work scope from current RO line sources."""
+    items: List[ServiceItem] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_item(name: Optional[str], description: Optional[str] = None, base_price: Optional[object] = None) -> None:
+        normalized_name = (name or "").strip()
+        if not normalized_name:
+            return
+        normalized_description = description.strip() if description else None
+        key = _service_item_key(normalized_name, normalized_description)
+        if key in seen:
+            return
+        seen.add(key)
+        items.append(ServiceItem(
+            name=normalized_name,
+            description=normalized_description,
+            base_price=str(base_price) if base_price is not None else None,
+        ))
+
+    for labor in sorted(order.labor_items or [], key=lambda line: (line.created_at, line.id)):
+        add_item(labor.description, base_price=labor.total_cost)
+
+    for entry in sorted(pm_entries or [], key=lambda item: (item.sort_order, item.created_at, item.id)):
+        service = getattr(entry, "service", None)
+        if service:
+            add_item(service.name, service.description, service.base_price)
+
+    if not items:
+        for part in sorted(order.parts_usage or [], key=lambda row: (row.created_at, row.id)):
+            inventory_item = getattr(part, "inventory_item", None)
+            part_name = inventory_item.name if inventory_item else "Part"
+            add_item(f"Install {part_name}")
+
+    if not items:
+        add_item(order.description)
+
+    if not items and order.internal_notes:
+        try:
+            notes = json.loads(order.internal_notes)
+            for svc in notes.get("selected_services", []):
+                add_item(svc.get("name") or "Service", svc.get("description"), svc.get("base_price"))
+        except (TypeError, ValueError):
+            pass
+
+    return items
 
 
 class MechanicHistoryItem(BaseModel):
@@ -934,12 +991,26 @@ async def get_my_jobs(
 
     result = await db.execute(
         base_query
-        .options(selectinload(RepairOrder.vehicle))
+        .options(
+            selectinload(RepairOrder.vehicle),
+            selectinload(RepairOrder.labor_items),
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
         .order_by(RepairOrder.updated_at.desc())
         .offset(skip)
         .limit(limit)
     )
     orders = result.scalars().all()
+    order_ids = [order.id for order in orders]
+    pm_entries_by_order: dict[UUID, list[RepairOrderPMService]] = {order_id: [] for order_id in order_ids}
+    if order_ids:
+        pm_result = await db.execute(
+            select(RepairOrderPMService)
+            .where(RepairOrderPMService.repair_order_id.in_(order_ids))
+            .options(selectinload(RepairOrderPMService.service))
+        )
+        for entry in pm_result.scalars().all():
+            pm_entries_by_order.setdefault(entry.repair_order_id, []).append(entry)
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
     if not tenant:
@@ -948,7 +1019,7 @@ async def get_my_jobs(
         db,
         tenant=tenant,
         mechanic_id=current_user.id,
-        order_ids=[order.id for order in orders],
+        order_ids=order_ids,
     )
     
     jobs = []
@@ -956,14 +1027,7 @@ async def get_my_jobs(
         vehicle = order.vehicle
         vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Unknown"
         
-        # Count services
-        services_count = 0
-        if order.internal_notes:
-            try:
-                notes = json.loads(order.internal_notes)
-                services_count = len(notes.get("selected_services", []))
-            except:
-                pass
+        services = _build_mechanic_scope_items(order, pm_entries_by_order.get(order.id, []))
         
         jobs.append(MechanicJobSummary(
             id=str(order.id),
@@ -971,7 +1035,7 @@ async def get_my_jobs(
             status=order.status.value,
             vehicle_info=vehicle_info,
             description=order.description,
-            services_count=services_count,
+            services_count=len(services),
             created_at=order.created_at,
             updated_at=order.updated_at,
             work_started_at=getattr(order, 'work_started_at', None),
@@ -1021,15 +1085,28 @@ async def get_my_history(
 
     result = await db.execute(
         base_query
-        .options(selectinload(RepairOrder.vehicle))
+        .options(
+            selectinload(RepairOrder.vehicle),
+            selectinload(RepairOrder.labor_items),
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
         .order_by(RepairOrder.updated_at.desc())
         .offset(skip)
         .limit(limit)
     )
     orders = result.scalars().all()
+    order_ids = [order.id for order in orders]
+    pm_entries_by_order: dict[UUID, list[RepairOrderPMService]] = {order_id: [] for order_id in order_ids}
+    if order_ids:
+        pm_result = await db.execute(
+            select(RepairOrderPMService)
+            .where(RepairOrderPMService.repair_order_id.in_(order_ids))
+            .options(selectinload(RepairOrderPMService.service))
+        )
+        for entry in pm_result.scalars().all():
+            pm_entries_by_order.setdefault(entry.repair_order_id, []).append(entry)
     
     # Get points earned for each order
-    order_ids = [order.id for order in orders]
     points_result = await db.execute(
         select(MechanicPoints.repair_order_id, MechanicPoints.points)
         .where(
@@ -1047,13 +1124,7 @@ async def get_my_history(
         vehicle = order.vehicle
         vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Unknown"
         
-        services_count = 0
-        if order.internal_notes:
-            try:
-                notes = json.loads(order.internal_notes)
-                services_count = len(notes.get("selected_services", []))
-            except:
-                pass
+        services_count = len(_build_mechanic_scope_items(order, pm_entries_by_order.get(order.id, [])))
         
         ws = getattr(order, 'work_started_at', None)
         wc = getattr(order, 'work_completed_at', None)
@@ -1087,7 +1158,11 @@ async def get_my_job_detail(
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id)
-        .options(selectinload(RepairOrder.vehicle))
+        .options(
+            selectinload(RepairOrder.vehicle),
+            selectinload(RepairOrder.labor_items),
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
     )
     order = result.scalar_one_or_none()
     
@@ -1108,20 +1183,12 @@ async def get_my_job_detail(
     )
     
     vehicle = order.vehicle
-    
-    # Parse services
-    services = []
-    if order.internal_notes:
-        try:
-            notes = json.loads(order.internal_notes)
-            for svc in notes.get("selected_services", []):
-                services.append(ServiceItem(
-                    name=svc.get("name", "Service"),
-                    description=svc.get("description"),
-                    base_price=svc.get("base_price"),
-                ))
-        except:
-            pass
+    pm_result = await db.execute(
+        select(RepairOrderPMService)
+        .where(RepairOrderPMService.repair_order_id == order.id)
+        .options(selectinload(RepairOrderPMService.service))
+    )
+    services = _build_mechanic_scope_items(order, pm_result.scalars().all())
     
     return MechanicJobDetail(
         id=str(order.id),
