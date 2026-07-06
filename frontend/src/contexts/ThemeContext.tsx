@@ -2,13 +2,15 @@ import { createContext, useContext, useState, useEffect, ReactNode, useCallback 
 
 // ============ TYPES ============
 export type AccentColor = 'cyan' | 'indigo' | 'emerald' | 'rose' | 'amber'
-export type FontFamily = 'geist' | 'dm-sans' | 'jakarta'
+export type FontFamily = 'geist' | 'dm-sans' | 'jakarta' | 'inter'
 export type FontSize = 'compact' | 'default' | 'comfortable' | 'large'
+export type NotificationPosition = 'top' | 'bottom' | 'center-top'
 
 export interface ThemeConfig {
   accent: AccentColor
   fontFamily: FontFamily
   fontSize: FontSize
+  notificationPosition: NotificationPosition
 }
 
 // ============ OPTIONS ============
@@ -24,6 +26,7 @@ export const FONT_FAMILY_OPTIONS: { id: FontFamily; label: string; stack: string
   { id: 'geist', label: 'Geist', stack: "'Geist', ui-sans-serif, system-ui, sans-serif" },
   { id: 'dm-sans', label: 'DM Sans', stack: "'DM Sans', ui-sans-serif, sans-serif" },
   { id: 'jakarta', label: 'Jakarta', stack: "'Plus Jakarta Sans', ui-sans-serif, sans-serif" },
+  { id: 'inter', label: 'Inter', stack: "'Inter', ui-sans-serif, system-ui, sans-serif" },
 ]
 
 export const FONT_SIZE_OPTIONS: { id: FontSize; label: string; scale: number; previewPx: number }[] = [
@@ -33,11 +36,18 @@ export const FONT_SIZE_OPTIONS: { id: FontSize; label: string; scale: number; pr
   { id: 'large', label: 'Large', scale: 1.2, previewPx: 19 },
 ]
 
+export const NOTIFICATION_POSITION_OPTIONS: { id: NotificationPosition; label: string; description: string }[] = [
+  { id: 'top', label: 'Top', description: 'Show notifications at the top-right of the screen.' },
+  { id: 'bottom', label: 'Bottom', description: 'Show notifications at the bottom-right of the screen.' },
+  { id: 'center-top', label: 'Center Top', description: 'Show notifications centered near the top of the screen.' },
+]
+
 // ============ DEFAULTS ============
 const DEFAULT_THEME: ThemeConfig = {
   accent: 'cyan',
   fontFamily: 'geist',
   fontSize: 'default',
+  notificationPosition: 'bottom',
 }
 
 // ============ STORAGE KEYS ============
@@ -45,6 +55,7 @@ const STORAGE_KEYS = {
   accent: 'theme-accent',
   fontFamily: 'theme-font-family',
   fontSize: 'theme-font-size',
+  notificationPosition: 'theme-notification-position',
 }
 
 // ============ CONTEXT ============
@@ -53,11 +64,13 @@ interface ThemeContextType {
   accent: AccentColor
   fontFamily: FontFamily
   fontSize: FontSize
+  notificationPosition: NotificationPosition
   
   // Setters
   setAccent: (color: AccentColor) => void
   setFontFamily: (font: FontFamily) => void
   setFontSize: (size: FontSize) => void
+  setNotificationPosition: (position: NotificationPosition) => void
   
   // Helpers
   accentColors: { 400: string; 500: string; 600: string }
@@ -89,6 +102,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       typeof window !== 'undefined' && window.innerWidth < 1024 ? 'compact' : 'default'
     return loadFromStorage(STORAGE_KEYS.fontSize, FONT_SIZE_OPTIONS, viewportDefault)
   })
+  const [notificationPosition, setNotificationPositionState] = useState<NotificationPosition>(() =>
+    loadFromStorage(STORAGE_KEYS.notificationPosition, NOTIFICATION_POSITION_OPTIONS, DEFAULT_THEME.notificationPosition)
+  )
 
   // Inject CSS variables whenever theme changes
   useEffect(() => {
@@ -133,6 +149,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setFontSizeState(e.newValue as FontSize)
         }
       }
+      if (e.key === STORAGE_KEYS.notificationPosition && e.newValue) {
+        if (NOTIFICATION_POSITION_OPTIONS.some(opt => opt.id === e.newValue)) {
+          setNotificationPositionState(e.newValue as NotificationPosition)
+        }
+      }
     }
     window.addEventListener('storage', handleStorage)
     return () => window.removeEventListener('storage', handleStorage)
@@ -153,11 +174,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEYS.fontSize, size)
   }, [])
 
+  const setNotificationPosition = useCallback((position: NotificationPosition) => {
+    setNotificationPositionState(position)
+    localStorage.setItem(STORAGE_KEYS.notificationPosition, position)
+  }, [])
+
   const resetToDefaults = useCallback(() => {
     setAccent(DEFAULT_THEME.accent)
     setFontFamily(DEFAULT_THEME.fontFamily)
     setFontSize(DEFAULT_THEME.fontSize)
-  }, [setAccent, setFontFamily, setFontSize])
+    setNotificationPosition(DEFAULT_THEME.notificationPosition)
+  }, [setAccent, setFontFamily, setFontSize, setNotificationPosition])
 
   const accentColors = ACCENT_OPTIONS.find(opt => opt.id === accent)?.colors || ACCENT_OPTIONS[0].colors
 
@@ -166,9 +193,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       accent,
       fontFamily,
       fontSize,
+      notificationPosition,
       setAccent,
       setFontFamily,
       setFontSize,
+      setNotificationPosition,
       accentColors,
       resetToDefaults,
     }}>

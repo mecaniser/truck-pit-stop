@@ -14,7 +14,7 @@ import {
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
   ChevronRight, Zap, Shield, Settings2, Truck
 } from 'lucide-react'
-import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
+import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 
 // ============ HYBRID DESIGN SYSTEM (Industrial + Organic) ============
 const industrialStyles = {
@@ -2359,7 +2359,31 @@ function WorkforceSection() {
 }
 
 function AppearanceSection() {
-  const { accent, setAccent, fontFamily, setFontFamily, fontSize, setFontSize, accentColors, resetToDefaults } = useTheme()
+  const {
+    accent,
+    setAccent,
+    fontFamily,
+    setFontFamily,
+    fontSize,
+    setFontSize,
+    notificationPosition,
+    setNotificationPosition,
+    accentColors,
+    resetToDefaults,
+  } = useTheme()
+  const previewNotificationPosition = (position: typeof notificationPosition) => {
+    setNotificationPosition(position)
+    const toastPosition =
+      position === 'center-top' ? 'top-center' :
+      position === 'top' ? 'top-right' :
+      'bottom-right'
+    const label = NOTIFICATION_POSITION_OPTIONS.find(option => option.id === position)?.label || 'selected'
+
+    toast.success(`Notification preview: ${label}`, {
+      id: 'notification-position-preview',
+      position: toastPosition,
+    })
+  }
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
@@ -2511,6 +2535,38 @@ function AppearanceSection() {
         <p className="mt-4 text-xs text-zinc-600">
           Extra-wide screens automatically compact dashboard spacing.
         </p>
+      </IndustrialCard>
+
+      {/* Notification Location */}
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Bell className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Notification Location</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {NOTIFICATION_POSITION_OPTIONS.map((option, i) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => previewNotificationPosition(option.id)}
+              style={staggeredReveal(i)}
+              className={`p-4 text-left rounded-xl border transition-all animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                notificationPosition === option.id
+                  ? 'border-white/50 bg-zinc-800/80'
+                  : 'border-zinc-700/50 hover:border-zinc-600 bg-zinc-800/40'
+              }`}
+            >
+              <span className={`flex items-center gap-2 text-sm font-semibold ${notificationPosition === option.id ? 'text-white' : 'text-zinc-400'}`}>
+                {notificationPosition === option.id && <Check className="w-4 h-4 text-[var(--accent-400)]" />}
+                {option.label}
+              </span>
+              <span className="block text-xs text-zinc-600 mt-2 leading-relaxed">
+                {option.description}
+              </span>
+            </button>
+          ))}
+        </div>
       </IndustrialCard>
 
       <p className="text-xs text-zinc-600">
