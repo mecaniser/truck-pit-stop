@@ -50,9 +50,22 @@ def slugify_operation(value: str) -> str:
     return normalized.strip("-") or "custom-operation"
 
 
+def _display_name_from_user_text(value: str) -> str:
+    words = re.split(r"(\s+)", (value or "").strip())
+    formatted: list[str] = []
+    for word in words:
+        if not word or word.isspace():
+            formatted.append(word)
+        elif any(ch.isupper() for ch in word[1:]) or word.isupper():
+            formatted.append(word)
+        else:
+            formatted.append(word[:1].upper() + word[1:].lower())
+    return "".join(formatted).strip()
+
+
 def build_custom_candidate(query: str) -> RepairOperationCandidate:
     clean_query = (query or "").strip()
-    name = clean_query.title() or "Custom Operation"
+    name = _display_name_from_user_text(clean_query) or "Custom Operation"
     return RepairOperationCandidate(
         operation_id=f"custom:{slugify_operation(clean_query)}",
         name=name,
@@ -63,7 +76,7 @@ def build_custom_candidate(query: str) -> RepairOperationCandidate:
 
 
 def build_custom_estimate(operation_id: str, name: Optional[str] = None) -> OperationEstimate:
-    fallback_name = (name or operation_id or "Custom Operation").replace("custom:", "").replace("-", " ").title()
+    fallback_name = _display_name_from_user_text((name or operation_id or "Custom Operation").replace("custom:", "").replace("-", " "))
     return OperationEstimate(
         operation_id=operation_id,
         name=fallback_name,

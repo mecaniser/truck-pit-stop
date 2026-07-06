@@ -271,9 +271,17 @@ export interface RepairOrder {
   is_internal?: boolean
 }
 
+export interface RepairOrderPMService {
+  service_id: string
+  name: string
+  duration_minutes: number
+}
+
 export interface RepairOrderDetail extends RepairOrder {
   parts_usage: PartsUsage[]
   labor_items: Labor[]
+  is_pm?: boolean
+  pm_services?: RepairOrderPMService[]
 }
 
 export interface PriceBuildWarning {
@@ -295,6 +303,8 @@ export interface PriceBuildSummary {
   order_id: string
   labor_total: string
   parts_total: string
+  labor_discount_amount?: string
+  order_discount_amount?: string
   total_cost: string
   pricing_locked: boolean
   pricing_locked_at?: string | null

@@ -117,9 +117,26 @@ def _legacy_vehicle_signature(order: RepairOrder) -> str:
     return f"{v.year or 'na'}:{(v.make or '').lower()}:{(v.model or '').lower()}"
 
 
+def _application_vehicle_signature(order: RepairOrder) -> str:
+    v = order.vehicle
+    if not v:
+        return "unknown"
+    parts: list[str] = []
+
+    def add(label: str, value: Optional[object]) -> None:
+        normalized = _normalize_lookup(None if value is None else str(value))
+        if normalized:
+            parts.append(f"{label}:{normalized}")
+
+    add("year", getattr(v, "nhtsa_model_year", None) or v.year)
+    add("make", getattr(v, "nhtsa_make", None) or v.make)
+    add("model", getattr(v, "nhtsa_model", None) or v.model)
+    return "|".join(parts) if parts else "unknown"
+
+
 def _vehicle_signatures(order: RepairOrder) -> list[str]:
     signatures: list[str] = []
-    for candidate in (_vehicle_signature(order), _legacy_vehicle_signature(order)):
+    for candidate in (_vehicle_signature(order), _application_vehicle_signature(order), _legacy_vehicle_signature(order)):
         if candidate and candidate not in signatures:
             signatures.append(candidate)
     return signatures or ["unknown"]
@@ -597,11 +614,15 @@ class PriceBuildService:
     def _compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:
         parts_total = _money(sum(Decimal(str(p.total_price)) for p in order.parts_usage))
         labor_total = _money(sum(Decimal(str(l.total_cost)) for l in order.labor_items))
-        total_cost = _money(parts_total + labor_total)
+        # Manager discounts: labor discount reduces labor, order discount reduces the total.
+        labor_discount = _money(Decimal(str(order.labor_discount_amount or 0)))
+        order_discount = _money(Decimal(str(order.order_discount_amount or 0)))
+        labor_net = max(Decimal("0.00"), labor_total - labor_discount)
+        total_cost = max(Decimal("0.00"), _money(parts_total + labor_net - order_discount))
         return {
-            "parts_total": parts_total,
-            "labor_total": labor_total,
-            "total_cost": total_cost,
+            "parts_total": parts_total,   # gross parts
+            "labor_total": labor_total,   # gross labor (before discount)
+            "total_cost": total_cost,     # net of both discounts
         }
 
     async def _get_tenant(self, db: AsyncSession, tenant_id: UUID) -> Tenant:
@@ -818,11 +839,23 @@ class PriceBuildService:
         row = next((item for item in rows if item.vehicle_signature == preferred_signature), rows[0] if rows else None)
         operation_name = (name or description or operation_id or "Operation").strip()
         operation_description = description.strip() if description else None
+        vehicle = order.vehicle
         if row:
             row.vehicle_signature = preferred_signature
             row.component_signature = comp_sig
             row.operation_name = operation_name
             row.operation_description = operation_description
+            if vehicle:
+                row.vehicle_year = getattr(vehicle, "nhtsa_model_year", None) or vehicle.year
+                row.vehicle_make = getattr(vehicle, "nhtsa_make", None) or vehicle.make
+                row.vehicle_model = getattr(vehicle, "nhtsa_model", None) or vehicle.model
+                row.vehicle_type = getattr(vehicle, "nhtsa_vehicle_type", None)
+                row.body_class = getattr(vehicle, "nhtsa_body_class", None)
+                row.fuel_type = getattr(vehicle, "nhtsa_fuel_type", None)
+                row.engine_cylinders = getattr(vehicle, "nhtsa_engine_cylinders", None)
+                row.engine_displacement_l = getattr(vehicle, "nhtsa_engine_displacement_l", None)
+                row.gvwr = getattr(vehicle, "nhtsa_gvwr", None)
+                row.vin_sample = vehicle.vin
             row.provider_operation_id = operation_id
             row.source_provider = source_provider or row.source_provider or "internal_memory"
             row.normalized_hours = Decimal(str(hours))
@@ -838,6 +871,16 @@ class PriceBuildService:
                 operation_key=operation_key,
                 operation_name=operation_name,
                 operation_description=operation_description,
+                vehicle_year=(getattr(vehicle, "nhtsa_model_year", None) or vehicle.year) if vehicle else None,
+                vehicle_make=(getattr(vehicle, "nhtsa_make", None) or vehicle.make) if vehicle else None,
+                vehicle_model=(getattr(vehicle, "nhtsa_model", None) or vehicle.model) if vehicle else None,
+                vehicle_type=getattr(vehicle, "nhtsa_vehicle_type", None) if vehicle else None,
+                body_class=getattr(vehicle, "nhtsa_body_class", None) if vehicle else None,
+                fuel_type=getattr(vehicle, "nhtsa_fuel_type", None) if vehicle else None,
+                engine_cylinders=getattr(vehicle, "nhtsa_engine_cylinders", None) if vehicle else None,
+                engine_displacement_l=getattr(vehicle, "nhtsa_engine_displacement_l", None) if vehicle else None,
+                gvwr=getattr(vehicle, "nhtsa_gvwr", None) if vehicle else None,
+                vin_sample=vehicle.vin if vehicle else None,
                 provider_operation_id=operation_id,
                 source_provider=source_provider or "internal_memory",
                 normalized_hours=Decimal(str(hours)),

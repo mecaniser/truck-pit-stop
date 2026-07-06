@@ -22,6 +22,15 @@ class PartsUsageUpdate(BaseModel):
     unit_price: Optional[Decimal] = None
 
 
+class PartsPricingModeRequest(BaseModel):
+    mode: str  # 'stock' (all parts at garage cost) | 'list' (all parts at list price)
+
+
+class DiscountUpdate(BaseModel):
+    labor_discount_amount: Optional[Decimal] = None   # $ off the labor subtotal
+    order_discount_amount: Optional[Decimal] = None   # $ off the order total
+
+
 class PartsUsageResponse(BaseModel):
     id: UUID
     repair_order_id: UUID
@@ -153,6 +162,7 @@ class RepairOrderResponse(RepairOrderBase):
     parent_repair_order_id: Optional[UUID] = None
     is_warranty_repair: bool = False
     is_internal: bool = False
+    is_pm: bool = False
     # Vehicle summary fields (denormalized for display)
     vehicle_make: str = ""
     vehicle_model: str = ""
@@ -164,9 +174,20 @@ class RepairOrderResponse(RepairOrderBase):
         from_attributes = True
 
 
+class RepairOrderPMServiceEntry(BaseModel):
+    service_id: UUID
+    name: str
+    duration_minutes: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 class RepairOrderDetailResponse(RepairOrderResponse):
     parts_usage: List[PartsUsageResponse] = []
     labor_items: List[LaborResponse] = []
+    # Selected PM services (fleet PM work orders only); empty for other orders.
+    pm_services: List[RepairOrderPMServiceEntry] = []
 
 
 class RepairOrderStartWorkResponse(RepairOrderResponse):
@@ -213,9 +234,11 @@ class PriceBuildLineUpdateRequest(BaseModel):
 
 class PriceBuildSummaryResponse(BaseModel):
     order_id: UUID
-    labor_total: Decimal
-    parts_total: Decimal
-    total_cost: Decimal
+    labor_total: Decimal                          # gross labor (before discount)
+    parts_total: Decimal                          # gross parts
+    labor_discount_amount: Decimal = Decimal("0.00")
+    order_discount_amount: Decimal = Decimal("0.00")
+    total_cost: Decimal                           # net of both discounts
     pricing_locked: bool
     pricing_locked_at: Optional[datetime] = None
     pricing_lock_reason: Optional[str] = None

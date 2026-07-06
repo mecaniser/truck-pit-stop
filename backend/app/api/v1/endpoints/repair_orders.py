@@ -45,6 +45,8 @@ from app.schemas.repair_order import (
     RepairOrderDetailResponse,
     PartsUsageCreate,
     PartsUsageUpdate,
+    PartsPricingModeRequest,
+    DiscountUpdate,
     PartsUsageResponse,
     LaborCreate,
     LaborUpdate,
@@ -118,6 +120,8 @@ def _to_price_build_summary(
         order_id=order.id,
         labor_total=order.total_labor_cost,
         parts_total=order.total_parts_cost,
+        labor_discount_amount=order.labor_discount_amount or Decimal("0.00"),
+        order_discount_amount=order.order_discount_amount or Decimal("0.00"),
         total_cost=order.total_cost,
         pricing_locked=order.pricing_locked_at is not None,
         pricing_locked_at=order.pricing_locked_at,
@@ -509,6 +513,21 @@ async def get_repair_order_detail(
     parts_resp = [_build_parts_usage_response(pu) for pu in order.parts_usage]
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
 
+    # Selected PM services (fleet PM work orders). Ordered as chosen.
+    from app.db.models.fleet import RepairOrderPMService
+    from app.db.models.service import Service as ServiceModel
+    from app.schemas.repair_order import RepairOrderPMServiceEntry
+    pm_svc_rows = await db.execute(
+        select(RepairOrderPMService.service_id, ServiceModel.name, ServiceModel.duration_minutes)
+        .join(ServiceModel, ServiceModel.id == RepairOrderPMService.service_id)
+        .where(RepairOrderPMService.repair_order_id == order.id)
+        .order_by(RepairOrderPMService.sort_order)
+    )
+    pm_services_resp = [
+        RepairOrderPMServiceEntry(service_id=sid, name=name, duration_minutes=dur or 0)
+        for sid, name, dur in pm_svc_rows.all()
+    ]
+
     invoice_result = await db.execute(
         select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
     )
@@ -528,6 +547,7 @@ async def get_repair_order_detail(
         pending_zelle_confirmation=pending_zelle_confirmation,
         parts_usage=parts_resp,
         labor_items=labor_resp,
+        pm_services=pm_services_resp,
     )
 
 
@@ -1700,6 +1720,56 @@ async def delete_repair_order(
     for labor in labor_result.scalars().all():
         await db.delete(labor)
 
+    # Delete PM service links (fleet PM work orders). Without this the
+    # repair_order_pm_services FK blocks deleting a PM work order that has
+    # services attached.
+    from app.db.models.fleet import RepairOrderPMService, FleetIncident
+    pm_svc_result = await db.execute(
+        select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == order_id)
+    )
+    for pm_svc in pm_svc_result.scalars().all():
+        await db.delete(pm_svc)
+
+    # Delete work-in-progress child records that also FK to the repair order.
+    # A PM work order accrues these once work starts (timer, photos) or when it
+    # originated from an incident / carried recommended services.
+    from app.db.models.mechanic_points import MechanicPoints
+    from app.db.models.work_photo import WorkPhoto
+    for model in (MechanicTimeSession, MechanicPoints, WorkPhoto, RecommendedService):
+        rows = await db.execute(select(model).where(model.repair_order_id == order_id))
+        for row in rows.scalars().all():
+            await db.delete(row)
+
+    # A recommended service on another RO may point here via
+    # resolved_by_repair_order_id; unlink so that RO isn't affected.
+    resolved_by_result = await db.execute(
+        select(RecommendedService).where(RecommendedService.resolved_by_repair_order_id == order_id)
+    )
+    for rec in resolved_by_result.scalars().all():
+        rec.resolved_by_repair_order_id = None
+
+    # An incident outlives the repair spawned to fix it: unlink rather than delete
+    # so the incident record (and its history) survives the work order.
+    incident_result = await db.execute(
+        select(FleetIncident).where(FleetIncident.repair_order_id == order_id)
+    )
+    for incident in incident_result.scalars().all():
+        incident.repair_order_id = None
+
+    # Unlink any appointment or child (split) repair order pointing at this RO,
+    # so those FKs don't block the delete. The linked records themselves survive.
+    from app.db.models.appointment import Appointment
+    appt_result = await db.execute(
+        select(Appointment).where(Appointment.repair_order_id == order_id)
+    )
+    for appt in appt_result.scalars().all():
+        appt.repair_order_id = None
+    child_result = await db.execute(
+        select(RepairOrder).where(RepairOrder.parent_repair_order_id == order_id)
+    )
+    for child in child_result.scalars().all():
+        child.parent_repair_order_id = None
+
     # Delete any invoice (and its payments) tied to this RO. Internal fleet ROs
     # generate an internal cost invoice on completion; without this, the
     # Invoice.repair_order_id FK blocks deleting a completed RO.
@@ -1799,7 +1869,11 @@ async def _recompute_repair_order_totals(db: AsyncSession, order_id: UUID) -> No
     total_labor = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
     order.total_parts_cost = total_parts
     order.total_labor_cost = total_labor
-    order.total_cost = total_parts + total_labor
+    # Apply manager discounts: labor discount off labor, order discount off total.
+    labor_disc = Decimal(str(order.labor_discount_amount or 0))
+    order_disc = Decimal(str(order.order_discount_amount or 0))
+    labor_net = max(Decimal("0.00"), total_labor - labor_disc)
+    order.total_cost = max(Decimal("0.00"), total_parts + labor_net - order_disc)
     await db.commit()
 
 
@@ -2169,6 +2243,100 @@ async def update_parts_quantity(
     await _recompute_repair_order_totals(db, order_id)
     await db.refresh(pu)
     return _build_parts_usage_response(pu, inv)
+
+
+async def _load_order_for_summary(db: AsyncSession, order_id: UUID) -> RepairOrder:
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id).options(selectinload(RepairOrder.labor_items))
+    )
+    return result.scalar_one()
+
+
+@router.post("/{order_id}/parts/pricing-mode", response_model=PriceBuildSummaryResponse)
+async def set_parts_pricing_mode(
+    order_id: UUID,
+    body: PartsPricingModeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    """Bulk-set every part on the order to garage cost ('stock') or list price ('list')."""
+    if body.mode not in ("stock", "list"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="mode must be 'stock' or 'list'")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id).options(
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item)
+        )
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    _require_editable_ro(order)
+
+    for pu in order.parts_usage:
+        inv = pu.inventory_item
+        if body.mode == "stock":
+            price = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else pu.unit_price)
+        else:
+            price = pu.list_price if pu.list_price is not None else (inv.selling_price if inv else pu.unit_price)
+        # Never below cost.
+        floor = pu.unit_cost if pu.unit_cost is not None else (inv.cost if inv else None)
+        if floor is not None and price < floor:
+            price = floor
+        pu.unit_price = price
+        pu.total_price = price * pu.quantity
+    await db.commit()
+    await _recompute_repair_order_totals(db, order_id)
+    return _to_price_build_summary(await _load_order_for_summary(db, order_id))
+
+
+@router.patch("/{order_id}/discounts", response_model=PriceBuildSummaryResponse)
+async def update_repair_order_discounts(
+    order_id: UUID,
+    body: DiscountUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    """Set a dollar discount on labor and/or the order total (owner dashboard)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id).options(
+            selectinload(RepairOrder.parts_usage), selectinload(RepairOrder.labor_items)
+        )
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    _require_editable_ro(order)
+
+    parts_total = sum(Decimal(str(pu.total_price)) for pu in order.parts_usage)
+    labor_total = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
+
+    if body.labor_discount_amount is not None:
+        d = Decimal(str(body.labor_discount_amount)).quantize(Decimal("0.01"))
+        if d < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Labor discount cannot be negative")
+        if d > labor_total:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Labor discount cannot exceed the labor total (${labor_total})")
+        order.labor_discount_amount = d
+
+    if body.order_discount_amount is not None:
+        d = Decimal(str(body.order_discount_amount)).quantize(Decimal("0.01"))
+        if d < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order discount cannot be negative")
+        labor_net = max(Decimal("0.00"), labor_total - Decimal(str(order.labor_discount_amount or 0)))
+        subtotal = parts_total + labor_net
+        if d > subtotal:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Order discount cannot exceed the order subtotal (${subtotal})")
+        order.order_discount_amount = d
+
+    await db.commit()
+    await _recompute_repair_order_totals(db, order_id)
+    return _to_price_build_summary(await _load_order_for_summary(db, order_id))
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)
