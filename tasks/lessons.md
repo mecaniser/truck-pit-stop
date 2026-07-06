@@ -1,6 +1,21 @@
 # Lessons
 
 ## 2026-07-06
+- Correction: Even with bounded internal scroll, the repair-order history design felt like a double-scroll pattern inside the drawer.
+- Rule: For secondary drawer content such as history, prefer progressive disclosure over nested scroll regions unless the user explicitly wants a fixed scroll pane.
+- Prevention: When a drawer already has a primary scroll owner, use latest-first summaries with `show more` controls for long contextual lists.
+- Correction: Invoice creation exposed an invoice-only discount even though it did not change the Price Builder repair-order total.
+- Rule: Money controls in the repair-order drawer should affect the same total the user is looking at, or be removed/renamed so they cannot imply a different pricing model.
+- Prevention: Before adding any discount field, identify whether it mutates repair-order pricing, invoice-only pricing, or payment-method fees, then place it only on the matching surface.
+- Correction: The history event list had a scrollbar, but the expanded history section could still add too much vertical content to the drawer body.
+- Rule: When a component needs its own scrollbar, bound the component content area and make one inner element the explicit scroll owner.
+- Prevention: For drawer accordions and timelines, verify the expanded state does not grow the parent workflow surface beyond the intended layout.
+- Correction: Completed repair orders were left out of the redesigned Price Builder shell status list, so the old Labor Breakdown, Work Completed invoice card, and Recommended Services blocks still rendered.
+- Rule: When migrating a workflow shell, include every contiguous status in the lifecycle or explicitly document why a status stays legacy.
+- Prevention: Before finalizing a shell migration, compare the status enum against the shell-owned status list and every legacy render condition for those statuses.
+- Correction: The redesigned Price Builder kept a persistent approved-quote lock warning and editable add tabs visible in completion/invoice states.
+- Rule: Once a drawer workflow moves past price building, keep lock explanations contextual to disabled actions and replace edit-entry controls with read-only context such as history.
+- Prevention: For each repair-order status in the redesigned shell, map the primary user intent before rendering shared build controls: build price, assign technician, review completion, invoice, collect payment, or read history.
 - Correction: The first repair-order history implementation made the timeline always visible, but the user wanted it collapsed and colocated with the operation/part/labor book time selector.
 - Rule: Secondary context such as action history should live behind an explicit tab/control when the primary drawer workflow is line-item editing.
 - Prevention: Before adding a new drawer section, decide whether it is primary workflow content or contextual reference and place it accordingly.

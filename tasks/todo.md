@@ -2654,3 +2654,164 @@
 ## Review
 - Repair Operation search is now the single place to find any billable work — library estimates, learned hours, and the shop's own Service catalog — instead of a separate, partially-broken Diagnostic tab.
 - Part-add UX no longer leaves a stale full-inventory list open after adding; Part tab's empty state now surfaces relevant suggestions instead of nothing.
+
+---
+
+# Price Builder Post-Approval Drawer Cleanup (2026-07-06)
+
+## Plan
+- [x] Remove the persistent approved-quote lock warning from the redesigned drawer body.
+- [x] Keep lock/next-step rationale available only where the disabled action appears, preferably as hover/title context.
+- [x] Default the add-bar to `History` for post-approval, completion, invoice, and paid states, and hide editing tabs where edits no longer make sense.
+- [x] Collapse the invoice awaiting payment section into a compact summary row and leave invoice actions in the footer.
+- [x] Run focused frontend lint/build verification and document the result.
+
+## Progress Notes
+- [x] User reported the approved-quote lock message is unnecessary as persistent body content and should be dismissible/contextual at its workflow step.
+- [x] User also clarified that completion/invoice stages should prioritize history over operation/part/labor-book editing, and the invoice awaiting payment block should not expand by default.
+- [x] Removed the body-level `pricing_locked` warning and kept lock context on disabled quote/pricing controls.
+- [x] Post-build states now force the add-bar into `History` and suppress operation/part/labor-book tabs.
+- [x] Invoice-state drawer now shows a compact invoice row by default with optional expanded invoice breakdown; invoice actions remain in the footer.
+- [x] Passed focused lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- The post-approval drawer no longer competes with persistent warning or edit-entry UI; history becomes the default contextual section once price building is no longer the active workflow.
+
+---
+
+# Price Builder Completed-State Shell Migration (2026-07-06)
+
+## Plan
+- [x] Confirm why completed repair orders still render legacy Labor Breakdown, Work Completed invoice card, and Recommended Services blocks.
+- [x] Add `completed` to the redesigned Price Builder shell status ownership.
+- [x] Move the completed-state Create Invoice control into the redesigned drawer footer.
+- [x] Keep completed-state add-bar read-only/history-first and hide irrelevant recommended services.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] Confirmed `completed` was omitted from `PRICE_BUILDER_STATUSES`, so the old completed body rendered after work approval.
+- [x] Added `completed` to the redesigned shell status list.
+- [x] Passed existing invoice due-date and discount settings into `PriceBuilderPanel`.
+- [x] Added completed-state invoice settings and `Create Invoice` action to the redesigned drawer footer.
+- [x] Guarded the legacy completed internal-cost and create-invoice body cards behind `!priceBuilderOwnsShell`.
+- [x] Hid recommended services for completed/invoiced/paid drawer states.
+- [x] Passed focused lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Completed repair orders now stay inside the redesigned Price Builder drawer. The old completed body step was legacy UI, and invoice creation is now handled from the drawer footer.
+
+---
+
+# Price Builder History Collapse (2026-07-06)
+
+## Plan
+- [x] Make the drawer History section collapsed by default.
+- [x] Expand/collapse history from its section header.
+- [x] Limit the expanded event list to roughly 10 visible events and scroll the rest.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User clarified history should not show every event open by default and should become scrollable when long.
+- [x] Added `historyOpen` state that resets closed when switching repair orders.
+- [x] Replaced the always-open timeline with a compact summary row and explicit expand/collapse control.
+- [x] Capped the expanded timeline with an internal scroll area.
+- [x] Correction: bounded the expanded history panel itself so the event list owns the scrollbar instead of letting history stretch the drawer content.
+- [x] Passed focused lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- History remains available in the read-only drawer states but opens collapsed by default and scrolls independently when expanded.
+
+---
+
+# Remove Invoice Creation Discount (2026-07-06)
+
+## Plan
+- [x] Remove invoice discount input from the completed-state invoice creation UI.
+- [x] Stop sending `discount_amount` from the repair-order create-invoice mutation.
+- [x] Simplify invoice option summary to due-date only.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User confirmed invoice discount should be removed because it does not affect the Price Builder order total.
+- [x] Removed invoice discount props and input from the redesigned Price Builder footer.
+- [x] Removed invoice discount state, summary text, payload, and reset calls from `RepairOrdersPage`.
+- [x] Removed the dormant legacy completed-card invoice discount field.
+- [x] Kept display-only existing invoice discount rows so older invoices with stored discounts still render accurately.
+- [x] Passed focused lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- New invoices can no longer receive an invoice-only discount from the repair-order drawer. Discounts now need to be applied through Price Builder before invoice creation.
+
+---
+
+# Create Invoice Due-Date Popover (2026-07-06)
+
+## Plan
+- [x] Replace the completed-state invoice settings row with a popover opened from `Create Invoice`.
+- [x] Offer `Due today` as the default immediate path.
+- [x] Offer `Choose due date` with an inline date picker and create action.
+- [x] Keep the footer compact and avoid adding a persistent settings section.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User chose the popover direction for invoice due-date selection.
+- [x] Removed the persistent completed-state invoice settings strip from the drawer footer.
+- [x] Changed `Create Invoice` to open a compact due-date popover.
+- [x] Added `Due today` and `Choose due date` actions inside the popover.
+- [x] Updated the parent `onCreateInvoice` callback so the popover can submit an explicit date or default to today.
+- [x] Passed focused lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx src/features/repair-orders/RepairOrdersPage.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- Completed-state invoice creation now keeps the footer compact and asks for due-date intent only when the user starts creating an invoice.
+
+---
+
+# Price Builder History Load More (2026-07-06)
+
+## Plan
+- [x] Remove the internal history scrollbar.
+- [x] Show the latest 5 history events first.
+- [x] Add a `Show older events` control that reveals 5 more events at a time.
+- [x] Add `Show less` to collapse the timeline back to the latest 5 events.
+- [x] Run focused frontend verification and document the result.
+
+## Progress Notes
+- [x] User rejected the double-scroll history design and chose progressive disclosure instead.
+- [x] Sorted history newest-first for the timeline view.
+- [x] Replaced the scroll-capped list with `historyVisibleCount`, defaulting to 5.
+- [x] Added `Show older events` and `Show less` controls below the timeline.
+- [x] Removed internal `overflow-y-auto` from the history section so the drawer remains the only scroll surface.
+- [x] Passed focused lint:
+  `npx eslint src/features/repair-orders/PriceBuilderPanel.tsx --max-warnings 0` (from `frontend/`)
+- [x] Passed full frontend TypeScript:
+  `npx tsc --noEmit --pretty false` (from `frontend/`)
+- [x] Passed frontend production build:
+  `npm run build` (from `frontend/`)
+
+## Review
+- History now uses progressive disclosure instead of nested scrolling: latest 5 events first, then older events in 5-event batches.
