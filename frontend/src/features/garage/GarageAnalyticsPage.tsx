@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
-import { 
-  TrendingUp, TrendingDown, Users, DollarSign, 
+import { useSearchParams } from 'react-router-dom'
+import {
+  TrendingUp, TrendingDown, Users, DollarSign,
   ShoppingCart, Target, Activity, Wrench, Clock
 } from 'lucide-react'
 import api from '../../lib/api'
+import RecentActivityFeed from '../dashboard/RecentActivityFeed'
+import InternalInvoiceList from './InternalInvoiceList'
+
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'activity', label: 'Recent Activity' },
+  { id: 'internal', label: 'Internal Fleet Costs' },
+] as const
+type TabId = typeof TABS[number]['id']
 interface DashboardStats {
   total_customers: number
   total_vehicles: number
@@ -34,12 +44,29 @@ interface DashboardStats {
     assigned_count: number
     in_progress_count: number
   }>
+  internal_costs?: {
+    today: string
+    this_week: string
+    this_month: string
+    total_internal_invoices: number
+  }
 }
 
 export default function GarageAnalyticsPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const activeTab: TabId = TABS.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'overview'
+  const setActiveTab = (id: TabId) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (id === 'overview') next.delete('tab')
+      else next.set('tab', id)
+      return next
+    })
+  }
 
   useEffect(() => {
     fetchStats()
@@ -113,6 +140,27 @@ export default function GarageAnalyticsPage() {
         <h1 className="text-2xl font-bold text-white mb-2">Shop Analytics</h1>
         <p className="text-gray-400">Performance overview and insights</p>
       </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-gray-700/50">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2.5 text-sm font-semibold rounded-t-lg transition-colors ${
+              activeTab === tab.id
+                ? 'bg-gray-800/50 text-white border border-gray-700/50 border-b-transparent -mb-px'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/30'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
 
       {/* Revenue Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -338,6 +386,43 @@ export default function GarageAnalyticsPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+        </div>
+      )}
+
+      {activeTab === 'activity' && (
+        <RecentActivityFeed />
+      )}
+
+      {activeTab === 'internal' && (
+        <div className="space-y-6">
+          {stats.internal_costs && Number(stats.internal_costs.total_internal_invoices) > 0 && (
+            <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white">Internal Fleet Costs (At Cost)</h2>
+                <Wrench className="w-5 h-5 text-orange-400" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gray-700/30 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">Today</p>
+                  <p className="text-xl font-bold text-orange-400 mt-1">${stats.internal_costs.today}</p>
+                </div>
+                <div className="bg-gray-700/30 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">This Week</p>
+                  <p className="text-xl font-bold text-orange-400 mt-1">${stats.internal_costs.this_week}</p>
+                </div>
+                <div className="bg-gray-700/30 rounded-lg p-4">
+                  <p className="text-gray-400 text-sm">This Month</p>
+                  <p className="text-xl font-bold text-orange-400 mt-1">${stats.internal_costs.this_month}</p>
+                </div>
+              </div>
+              <p className="text-gray-500 text-xs mt-3">
+                Parts at cost + internal labor rate for company-owned trucks — not customer revenue.
+              </p>
+            </div>
+          )}
+          <InternalInvoiceList />
         </div>
       )}
     </div>
