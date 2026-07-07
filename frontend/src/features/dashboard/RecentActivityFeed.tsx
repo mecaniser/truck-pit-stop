@@ -116,7 +116,7 @@ function groupByDayAndActor(items: ActivityEvent[]): DayGroup[] {
   })
 }
 
-export default function RecentActivityFeed() {
+export default function RecentActivityFeed({ className }: { className?: string }) {
   const navigate = useNavigate()
   const [olderItems, setOlderItems] = useState<ActivityEvent[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -166,6 +166,12 @@ export default function RecentActivityFeed() {
     }
   }
 
+  const showLess = () => {
+    setOlderItems([])
+    setCursor(data?.next_cursor ?? null)
+    setHasMore(data?.has_more ?? false)
+  }
+
   const isForbidden = isError && (error as ApiErrorLike)?.response?.status === 403
 
   const items = useMemo(() => [...(data?.items || []), ...olderItems], [data, olderItems])
@@ -173,16 +179,11 @@ export default function RecentActivityFeed() {
   const hasActiveFilters = !!(actorFilter || eventTypeFilter || dateFrom || dateTo)
 
   if (isForbidden) return null
-  if (!isLoading && items.length === 0 && !hasMore && !hasActiveFilters) return null
 
   return (
-    <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
-      </div>
-
+    <div className={className ?? 'bg-gray-800/50 border border-gray-700/50 rounded-lg p-6'}>
       {data && data.warnings.length > 0 && (
-        <div className="mb-4 space-y-2">
+        <div className="mb-4 space-y-2 flex-shrink-0">
           {data.warnings.map((warning) => (
             <div
               key={warning}
@@ -195,7 +196,7 @@ export default function RecentActivityFeed() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4 flex-shrink-0">
         <select
           value={actorFilter}
           onChange={(e) => setActorFilter(e.target.value)}
@@ -246,57 +247,75 @@ export default function RecentActivityFeed() {
       ) : dayGroups.length === 0 ? (
         <p className="text-sm text-gray-500 text-center py-8">No activity matches these filters.</p>
       ) : (
-        <div className="space-y-5">
-          {dayGroups.map((day) => (
-            <div key={day.dateKey}>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">{day.label}</h3>
-              <div className="space-y-3">
-                {day.actorGroups.map((actorGroup, idx) => (
-                  <div key={`${day.dateKey}-${actorGroup.actorName || 'system'}-${idx}`}>
-                    <p className="text-xs text-gray-500 mb-1 px-1">
-                      {actorGroup.actorName || 'System'}
-                      <span className="text-gray-600"> · {actorGroup.events.length} action{actorGroup.events.length === 1 ? '' : 's'}</span>
-                    </p>
-                    <div className="space-y-1">
-                      {actorGroup.events.map((event) => {
-                        const Icon = EVENT_ICON[event.event_type] || ClipboardList
-                        const color = EVENT_COLOR[event.event_type] || 'text-gray-400'
-                        return (
-                          <button
-                            key={event.id}
-                            type="button"
-                            disabled={!event.order_id}
-                            onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${event.order_id}`)}
-                            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-gray-700/30 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
-                          >
-                            <Icon className={`w-4 h-4 flex-shrink-0 ${color}`} />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm text-gray-200 truncate">
-                                {event.label}
-                                {event.order_number ? <span className="text-gray-400"> · {event.order_number}</span> : null}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}
-                              </p>
-                            </div>
-                          </button>
-                        )
-                      })}
+        <div className="flex flex-col flex-1 min-h-0">
+          <div
+            className="grid gap-4 flex-1 min-h-0 items-stretch"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
+          >
+            {dayGroups.map((day) => (
+              <div key={day.dateKey} className="flex flex-col min-h-0">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2 flex-shrink-0">{day.label}</h3>
+                <div className="flex-1 min-h-0 space-y-3 overflow-y-auto scrollbar-dark pr-1">
+                  {day.actorGroups.map((actorGroup, idx) => (
+                    <div key={`${day.dateKey}-${actorGroup.actorName || 'system'}-${idx}`}>
+                      <p className="text-xs text-gray-500 mb-1 px-1">
+                        {actorGroup.actorName || 'System'}
+                        <span className="text-gray-600"> · {actorGroup.events.length} action{actorGroup.events.length === 1 ? '' : 's'}</span>
+                      </p>
+                      <div className="space-y-1">
+                        {actorGroup.events.map((event) => {
+                          const Icon = EVENT_ICON[event.event_type] || ClipboardList
+                          const color = EVENT_COLOR[event.event_type] || 'text-gray-400'
+                          return (
+                            <button
+                              key={event.id}
+                              type="button"
+                              disabled={!event.order_id}
+                              onClick={() => event.order_id && navigate(`/dashboard/repair-orders?selected=${event.order_id}`)}
+                              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-gray-700/30 disabled:hover:bg-transparent disabled:cursor-default transition-colors"
+                            >
+                              <Icon className={`w-4 h-4 flex-shrink-0 ${color}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm text-gray-200 truncate">
+                                  {event.label}
+                                  {event.order_number ? <span className="text-gray-400"> · {event.order_number}</span> : null}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {formatDistanceToNow(new Date(event.occurred_at), { addSuffix: true })}
+                                </p>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
+            ))}
+          </div>
+          {(hasMore || olderItems.length > 0) && (
+            <div className="flex items-center justify-center gap-3 mt-3 flex-shrink-0">
+              {hasMore && (
+                <button
+                  type="button"
+                  disabled={loadingMore}
+                  onClick={loadMore}
+                  className="py-2 text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              )}
+              {olderItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={showLess}
+                  className="py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  Show less
+                </button>
+              )}
             </div>
-          ))}
-          {hasMore && (
-            <button
-              type="button"
-              disabled={loadingMore}
-              onClick={loadMore}
-              className="w-full mt-2 py-2 text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-            >
-              {loadingMore ? 'Loading…' : 'Load more'}
-            </button>
           )}
         </div>
       )}

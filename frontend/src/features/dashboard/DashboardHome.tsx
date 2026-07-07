@@ -5,6 +5,8 @@ import {
   ChevronRight,
   ChevronUp,
   DollarSign,
+  History,
+  LayoutGrid,
   Phone,
   Plus,
   RefreshCw,
@@ -26,6 +28,7 @@ import { useNotificationManager } from '../../hooks/useNotificationManager'
 import NotificationBanner from '../../components/NotificationBanner'
 import AlertsBanner from '../../components/AlertsBanner'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
+import RecentActivityFeed from './RecentActivityFeed'
 
 interface StatusCount {
   status: string
@@ -364,6 +367,7 @@ export default function DashboardHome() {
   const [isRevenueCollapsed, setIsRevenueCollapsed] = useState(true)
   const [isTeamCapacityCollapsed, setIsTeamCapacityCollapsed] = useState(true)
   const [activeMobileLane, setActiveMobileLane] = useState<0 | 1 | 2>(0)
+  const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true
   )
@@ -380,6 +384,9 @@ export default function DashboardHome() {
 
   const isMechanic = user?.role === 'mechanic'
   const isManager = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  // Matches ACTIVITY_ROLES in backend/app/api/v1/endpoints/activity.py —
+  // mechanics/fleet managers stay scoped to their own boards.
+  const canViewActivity = ['garage_owner', 'garage_admin', 'receptionist'].includes(user?.role || '')
   const isExpandedFont = fontSize === 'comfortable' || fontSize === 'large'
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
@@ -834,6 +841,28 @@ export default function DashboardHome() {
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              {canViewActivity && (
+                <div className="flex items-center gap-0.5 bg-white/5 rounded-md p-0.5">
+                  <button
+                    onClick={() => setQueueView('queue')}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs 2xl:text-sm rounded transition-colors ${
+                      queueView === 'queue' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Queue</span>
+                  </button>
+                  <button
+                    onClick={() => setQueueView('activity')}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 text-xs 2xl:text-sm rounded transition-colors ${
+                      queueView === 'activity' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>Activity</span>
+                  </button>
+                </div>
+              )}
               <button
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
@@ -847,6 +876,9 @@ export default function DashboardHome() {
             </div>
           </div>
 
+          {queueView === 'activity' ? (
+            <RecentActivityFeed className="flex flex-1 min-h-0 flex-col p-3 2xl:p-2.5" />
+          ) : (
           <div className="flex flex-1 min-h-0 flex-col gap-3 p-3 2xl:gap-2.5 2xl:p-2.5 lg:grid lg:grid-cols-3">
               {/* Lane 1: Needs Action */}
               <div className={getLaneContainerClass(0)}>
@@ -944,6 +976,7 @@ export default function DashboardHome() {
                 </div>
               </div>
             </div>
+          )}
           </div>
         </div>
 

@@ -5,12 +5,10 @@ import {
   ShoppingCart, Target, Activity, Wrench, Clock
 } from 'lucide-react'
 import api from '../../lib/api'
-import RecentActivityFeed from '../dashboard/RecentActivityFeed'
 import InternalInvoiceList from './InternalInvoiceList'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'activity', label: 'Recent Activity' },
   { id: 'internal', label: 'Internal Fleet Costs' },
 ] as const
 type TabId = typeof TABS[number]['id']
@@ -389,10 +387,6 @@ export default function GarageAnalyticsPage() {
         </div>
       )}
         </div>
-      )}
-
-      {activeTab === 'activity' && (
-        <RecentActivityFeed />
       )}
 
       {activeTab === 'internal' && (
