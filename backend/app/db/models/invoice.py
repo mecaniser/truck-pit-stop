@@ -44,6 +44,8 @@ class Invoice(BaseModel):
     due_date = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_by_user = relationship("User", foreign_keys=[created_by_user_id])
 
     # Pending Zelle confirmation tracking (customer marked as sent, staff must confirm receipt)
     zelle_pending_submitted_at = Column(DateTime(timezone=True), nullable=True, index=True)

@@ -147,7 +147,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
-          
+          queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
+
           // Route to notification manager
           if (onNotification && data.order_number && data.status) {
             onNotification({
@@ -164,6 +165,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         case 'quote_created':
           queryClient.invalidateQueries({ queryKey: ['quotes'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+          queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
           if (onNotification && data.quote_number) {
             onNotification({
               type: 'quote_created',
@@ -178,6 +180,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
           if (onNotification && data.quote_number) {
             onNotification({
               type: 'quote_approved',
@@ -204,6 +207,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['invoices'] })
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+          queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
           if (onNotification && data.invoice_number) {
             onNotification({
               type: 'invoice_created',
@@ -220,6 +224,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['payments'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
           if (onNotification) {
             onNotification({
               type: 'payment_received',

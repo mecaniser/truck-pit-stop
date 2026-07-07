@@ -704,6 +704,7 @@ async def record_manual_payment(
         method=method_map[body.method],
         status=PaymentStatus.COMPLETED,
         notes=body.notes,
+        recorded_by_user_id=current_user.id,
     )
     db.add(payment)
     

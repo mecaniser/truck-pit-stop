@@ -853,6 +853,7 @@ async def send_quote_to_customer(
     # Mark as sent and reset declined status if resending
     quote.sent_to_customer = True
     quote.sent_at = datetime.now(timezone.utc)
+    quote.sent_by_user_id = current_user.id
     if order.pricing_locked_at is None:
         order.pricing_locked_at = quote.sent_at
     order.pricing_lock_reason = "quote_sent"

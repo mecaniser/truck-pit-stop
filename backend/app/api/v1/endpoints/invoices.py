@@ -369,11 +369,13 @@ async def auto_create_invoice_for_order(
     db: AsyncSession,
     order: RepairOrder,
     tenant: Tenant,
+    created_by_user_id: Optional[UUID] = None,
 ) -> Optional[Invoice]:
     """Auto-create an invoice when a repair order is approved as completed.
 
     Returns the created Invoice, or None if one already exists.
     The order must have .customer and .vehicle relationships already loaded.
+    created_by_user_id is the staff member approving completion, if known.
     """
     # Internal fleet repairs are settled at cost internally — never invoiced to a customer.
     if order.is_internal:
@@ -412,6 +414,7 @@ async def auto_create_invoice_for_order(
             due_date=date.today(),
             paid_at=None,
             notes=None,
+            created_by_user_id=created_by_user_id,
         )
         db.add(inv)
         order.status = RepairOrderStatus.INVOICED
@@ -585,6 +588,7 @@ async def create_invoice(
             due_date=due_date,
             paid_at=None,
             notes=None,
+            created_by_user_id=current_user.id,
         )
         db.add(invoice)
         order.status = RepairOrderStatus.INVOICED

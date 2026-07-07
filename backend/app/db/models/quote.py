@@ -23,7 +23,9 @@ class Quote(BaseModel):
     decline_notes = Column(Text, nullable=True)
     sent_to_customer = Column(Boolean, default=False, nullable=False)
     sent_at = Column(DateTime(timezone=True), nullable=True)
-    
+    sent_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    sent_by_user = relationship("User", foreign_keys=[sent_by_user_id])
+
     # Magic link token for customer approval without login
     approval_token = Column(String(64), unique=True, nullable=True, index=True)
 
