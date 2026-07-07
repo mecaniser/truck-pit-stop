@@ -1,3 +1,33 @@
+# Internal Fleet Costs, Soft-Delete Audit Trail, and Recent Activity Feed (2026-07-07)
+
+## Plan
+- [x] Add per-truck internal cost reporting (parts at cost + internal labor) to the dashboard and Garage Analytics.
+- [x] Restore the Danger Zone delete action for cancelled repair orders and fix the underlying status rule.
+- [x] Convert repair-order delete from a destructive cascade into a soft delete with a restore path and cancel/delete audit trail (who + when).
+- [x] Add actor-tracking columns to Quote/Invoice/Payment (sent_by/created_by/recorded_by).
+- [x] Build a shop-wide Recent Activity feed merging repair-order/quote/invoice/payment events, grouped by day and staff member, with filters and an anomaly callout.
+- [x] Split Garage Analytics into Overview / Recent Activity / Internal Fleet Costs tabs and relocate the internal invoice list out of My Garage settings.
+- [x] Run backend and frontend verification for each stage and document results.
+
+## Progress Notes
+- [x] User found no UI to explain why a repair-order delete was rejected; traced it to the backend-detail-swallowing pattern and confirmed the delete endpoint itself does surface `detail`, but the underlying rule (`draft`/`quoted` only) blocked cancelled orders from ever being deleted — a gap, not a feature.
+- [x] Added per-truck internal cost stats (`InternalCostStats`) to `GET /dashboard/stats` and a summary card on Garage Analytics.
+- [x] Fixed `DANGER_ZONE_STATUSES` (frontend) and split `DANGER_ACTION_RO_STATUSES` into a separate `DELETABLE_RO_STATUSES` (backend) so cancelled customer orders can be deleted, while cancel itself still only applies to draft/quoted.
+- [x] Converted `delete_repair_order` from a ~100-line cascade delete into a soft delete (`deleted_at`/`deleted_by_user_id`), added `POST /repair-orders/{id}/restore` (owner/admin only), and added `cancelled_at`/`cancelled_by_user_id` tracking to cancel.
+- [x] Filtered soft-deleted repair orders out of every list/detail/action query across `repair_orders.py`, `fleet.py`, `mechanics.py`, `customers.py`, `dashboard.py`, and `price_build_service.py`.
+- [x] Added an owner/admin-only "Deleted" filter to the Repair Orders list and a Restore action in both the general drawer and the internal-order Price Builder shell.
+- [x] Added `sent_by_user_id` (Quote), `created_by_user_id` (Invoice), `recorded_by_user_id` (Payment) — set at the actual staff-initiated write sites only; left null on customer/guest self-service payment paths (Stripe confirm, guest checkout).
+- [x] Built `GET /activity`, a read-time fan-out over RepairOrder/Quote/Invoice/Payment merged into one cursor-paginated, chronological event feed — no new activity-log table.
+- [x] Correction: the first `RecentActivityFeed` implementation rendered as a flat, infinitely-scrolling list; user pointed out that isn't usable for "what happened today" or "who did what" — redesigned to group by day then by actor, added an actor/event-type/date-range filter bar, and a same-day cancel+delete anomaly banner (`warnings` field, threshold 3).
+- [x] Correction: `GarageAnalyticsPage.tsx`'s new Recent Activity section was buried at the bottom of a long scrolling page; user asked for top-level tabs. Split the page into Overview / Recent Activity / Internal Fleet Costs tabs synced to `?tab=` in the URL, and moved the internal invoice list (previously in My Garage → Settings) into the new Internal Fleet Costs tab.
+- [x] Passed full backend suite: `python3 -m pytest tests/ -q --deselect tests/test_auth_endpoints.py::test_register_duplicate_email_fails` — 346 passed, 3 skipped (pre-existing, unrelated).
+- [x] Passed frontend TypeScript and focused ESLint on every changed file across all stages.
+
+## Review
+- Internal fleet orders now show at-cost spend on the dashboard and Analytics; deleting a repair order is reversible with a full audit trail instead of destructive and rule-inconsistent; and Recent Activity is a real audit tool (grouped, filterable, anomaly-aware) reachable from its own Analytics tab instead of a flat list buried at the bottom of the page.
+
+---
+
 # Customer Zelle Panel Price Builder Redesign (2026-07-06)
 
 ## Plan

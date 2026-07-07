@@ -1,5 +1,16 @@
 # Lessons
 
+## 2026-07-07
+- Correction: Calling a FastAPI endpoint function directly in a test (bypassing dependency injection) with a new `Optional[X] = Query(None)` parameter left unset left the parameter holding the `Query(...)` sentinel object instead of `None`, since only real HTTP request handling resolves `Query(...)` into its default — silently broke `list_repair_orders` and `list_activity` filtering (an `is not None` check on the sentinel is always true).
+- Rule: Any test that calls an endpoint function directly must pass every `Query(...)`-defaulted parameter explicitly, even ones that look optional.
+- Prevention: When adding a new `Query(...)` parameter to an existing endpoint, grep for direct (non-HTTP-client) test calls to that function and update them to pass explicit values, or add a small test-local wrapper that always supplies every param.
+- Correction: The first `RecentActivityFeed` implementation was a flat, infinitely-scrolling list sorted by time; the user pointed out that this has no real use — an owner can't answer "what happened today" or "who did what" from it.
+- Rule: A shop-wide activity/audit feed must be grouped (by day, then by actor) and filterable, not a flat scroll — the point of the feature is `answer specific accountability questions quickly`, not display a timestamp-ordered stream.
+- Prevention: Before building any "recent activity"/audit-style feed, name the concrete questions a user would come to it to answer, and design the grouping/filtering around those questions first.
+- Correction: Mid-session, `git status` briefly showed nearly all of this session's uncommitted work as reverted to the pre-session commit (a `reset: moving to HEAD` appeared twice in the reflog); a stash restore brought it back, but the cause was never identified.
+- Rule: When `git status`/`git log` don't match the conversation's own record of what was built, stop and verify actual file contents on disk before continuing to build on top of assumed state — don't trust conversation history over the filesystem.
+- Prevention: If a long session's file state looks inconsistent, run a quick existence/content check on a few recently-created files before proceeding, and surface any mismatch to the user immediately rather than silently pushing forward.
+
 ## 2026-07-06
 - Correction: Even with bounded internal scroll, the repair-order history design felt like a double-scroll pattern inside the drawer.
 - Rule: For secondary drawer content such as history, prefer progressive disclosure over nested scroll regions unless the user explicitly wants a fixed scroll pane.
