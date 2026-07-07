@@ -59,7 +59,7 @@ export default function DashboardLayout() {
   const navLinks = user?.role === 'super_admin'
     ? [
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
-        { to: '/dashboard/garages', label: 'Garages', mobileLabel: 'Garages', icon: LayoutGrid },
+        { to: '/dashboard/garages', label: 'Shops', mobileLabel: 'Shops', icon: LayoutGrid },
         { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', icon: UserCheck },
         { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', icon: BarChart3 },
       ]
@@ -69,7 +69,7 @@ export default function DashboardLayout() {
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
         ...(canAccessFleet ? [{ to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck }] : []),
         ...(canAccessMessaging ? [messagesNavLink] : []),
-        { to: '/dashboard/garage', label: 'My Garage', mobileLabel: 'Garage', icon: Building2 },
+        { to: '/dashboard/garage', label: 'My Shop', mobileLabel: 'Shop', icon: Building2 },
       ]
 
   const isActive = (path: string, exact?: boolean) => 

@@ -291,10 +291,10 @@ export default function RegisterPage() {
             )}
           </div>
 
-          {/* Garage Code */}
+          {/* Shop Code */}
           <div>
             <label htmlFor="tenant_slug" className="block text-sm font-medium text-gray-700 mb-1">
-              Garage Code <span className="text-gray-400">(optional)</span>
+              Shop Code <span className="text-gray-400">(optional)</span>
             </label>
             <input
               {...register('tenant_slug')}

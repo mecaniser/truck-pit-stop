@@ -630,7 +630,7 @@ export default function DashboardHome() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl 2xl:text-[2.15rem] font-bold text-white">
-              {isMechanic ? 'My Workbench' : 'Garage Cockpit'}
+              {isMechanic ? 'My Workbench' : 'Shop Cockpit'}
             </h1>
             <p className="text-gray-400 mt-1 2xl:text-[1.02rem]">
               {isMechanic
@@ -1128,7 +1128,7 @@ export default function DashboardHome() {
                 {isRevenueCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
                 <span>Revenue KPIs</span>
               </button>
-              <SectionInfoTooltip text="Minimal finance snapshot for the current garage day, week, and month." />
+              <SectionInfoTooltip text="Minimal finance snapshot for the current shop day, week, and month." />
             </div>
             <span className="text-xs 2xl:text-sm text-gray-400 bg-white/5 border border-white/10 rounded-full px-2.5 py-1">
               {stats?.revenue?.total_paid_orders || 0} paid orders

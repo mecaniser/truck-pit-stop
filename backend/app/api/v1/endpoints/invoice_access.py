@@ -438,7 +438,7 @@ async def submit_guest_zelle_payment(
 
     return SubmitGuestZellePaymentResponse(
         status="success",
-        message="Zelle payment marked as submitted. Garage staff will confirm receipt.",
+        message="Zelle payment marked as submitted. Shop staff will confirm receipt.",
         pending_zelle_confirmation=invoice.pending_zelle_confirmation,
     )
 

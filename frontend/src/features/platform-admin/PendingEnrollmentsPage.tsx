@@ -134,8 +134,8 @@ export default function PendingEnrollmentsPage() {
     <div className="space-y-6">
       {/* Header */}
       <GlassNoirHeader
-        title="Garage Enrollments"
-        subtitle="Review and approve new garage applications"
+        title="Shop Enrollments"
+        subtitle="Review and approve new shop applications"
         icon={<UserCheck className="w-6 h-6 text-gold-400" />}
       />
 
@@ -216,9 +216,9 @@ export default function PendingEnrollmentsPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Garage Info */}
+                {/* Shop Info */}
                 <div className="space-y-3">
-                  <h4 className="text-sm font-semibold text-gold-400/80 uppercase tracking-wide">Garage Info</h4>
+                  <h4 className="text-sm font-semibold text-gold-400/80 uppercase tracking-wide">Shop Info</h4>
                   {enrollment.address && (
                     <div className="flex items-start gap-2 text-sm">
                       <MapPin className="w-4 h-4 text-gray-500 mt-0.5 flex-shrink-0" />

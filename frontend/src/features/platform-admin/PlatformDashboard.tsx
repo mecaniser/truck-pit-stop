@@ -94,14 +94,14 @@ export default function PlatformDashboard() {
       {/* Platform-Level Stats Only */}
       <StatScrollRow
         stats={[
-          { label: 'Garages', value: stats.tenants.total, icon: <Building2 className="w-4 h-4" />, sublabel: `${stats.tenants.active} active`, color: 'gold' },
-          { label: 'Revenue', value: formatCurrency(stats.revenue.total), icon: <DollarSign className="w-4 h-4" />, sublabel: 'All garages', color: 'green' },
+          { label: 'Shops', value: stats.tenants.total, icon: <Building2 className="w-4 h-4" />, sublabel: `${stats.tenants.active} active`, color: 'gold' },
+          { label: 'Revenue', value: formatCurrency(stats.revenue.total), icon: <DollarSign className="w-4 h-4" />, sublabel: 'All shops', color: 'green' },
         ]}
       />
 
-      {/* Garages with Per-Garage User Breakdown */}
+      {/* Shops with Per-Shop User Breakdown */}
       <CollapsibleStats
-        title="Garages"
+        title="Shops"
         summary={
           <InlineStats items={[
             { label: 'Total', value: stats.tenants.total },
@@ -145,7 +145,7 @@ export default function PlatformDashboard() {
             </a>
           ))}
           {tenants.length === 0 && (
-            <div className="text-center py-4 text-gray-500 text-sm">No garages yet</div>
+            <div className="text-center py-4 text-gray-500 text-sm">No shops yet</div>
           )}
         </div>
       </CollapsibleStats>
@@ -160,7 +160,7 @@ export default function PlatformDashboard() {
           >
             <Building2 className="w-5 h-5 text-gold-400 flex-shrink-0" />
             <div className="min-w-0">
-              <div className="font-medium text-white text-sm">All Garages</div>
+              <div className="font-medium text-white text-sm">All Shops</div>
             </div>
           </a>
           <a

@@ -76,7 +76,7 @@ def _require_garage_admin(current_user: User) -> User:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Garage owner/admin access required",
+            detail="Shop owner/admin access required",
         )
     if not current_user.tenant_id:
         raise HTTPException(

@@ -77,7 +77,7 @@ function DesktopGarageNav() {
         <div className="flex-1">
           <h3 className={sectionHeaderClass}>
             <Settings2 className="h-3 w-3" />
-            Garage
+            Shop
           </h3>
           <nav className="space-y-1">
             {GARAGE_SECTIONS.map((section, index) => (

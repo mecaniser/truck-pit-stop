@@ -13,7 +13,7 @@ const BRAND = {
   platformName: 'Diesel Bridge Network',
   networkName: 'Diesel Bridge',
   heroLine: 'Get from breakdown request to active repair in one shared flow.',
-  supportLine: 'One request thread for dispatch, drivers, and garage teams.',
+  supportLine: 'One request thread for dispatch, drivers, and shop teams.',
   networkLine: 'Cut handoff delays and keep every update in one place.',
 }
 
@@ -43,7 +43,7 @@ interface LandingPartner {
 const TOP_USER_GOALS: UserGoal[] = [
   {
     label: 'Reduce downtime across every repair handoff',
-    detail: 'Dispatch, drivers, and garages stay aligned from first request to final closeout.',
+    detail: 'Dispatch, drivers, and shops stay aligned from first request to final closeout.',
   },
   {
     label: 'Give every stakeholder the same live status',
@@ -65,7 +65,7 @@ const FLOW_STEPS: FlowStep[] = [
   {
     step: '02',
     title: 'Run repair with shared visibility',
-    detail: 'Garage teams diagnose and update progress while everyone follows the same status.',
+    detail: 'Shop teams diagnose and update progress while everyone follows the same status.',
     icon: Wrench,
   },
   {
@@ -113,7 +113,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     const pageTitle = 'Diesel Bridge Network | 3-Step Breakdown-to-Repair Flow'
-    const pageDescription = 'Diesel Bridge Network helps dispatch, drivers, and garages coordinate repairs in a clear three-step workflow that reduces downtime.'
+    const pageDescription = 'Diesel Bridge Network helps dispatch, drivers, and shops coordinate repairs in a clear three-step workflow that reduces downtime.'
     const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
     const canonicalUrl = `${siteOrigin}/`
     const ogImage = `${siteOrigin}/DB_bridge_logo_favi_figma_public_B.png`
@@ -224,11 +224,11 @@ export default function LandingPage() {
 
               <Link
                 to="/enroll"
-                aria-label="Apply for founding garage access"
+                aria-label="Apply for founding shop access"
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-7 py-3 text-base font-semibold text-white transition-all hover:opacity-95 hover:shadow-[0_0_24px_var(--accent-500)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
                 style={{ backgroundColor: accent500 }}
               >
-                Apply for Founding Garage Access
+                Apply for Founding Shop Access
                 <ArrowRight className="h-5 w-5" aria-hidden="true" />
               </Link>
             </div>
@@ -239,7 +239,7 @@ export default function LandingPage() {
           <div className="mx-auto max-w-6xl">
             <div className="mb-10 max-w-3xl">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gray-400">Approved Network Partners</p>
-              <h2 className="mt-3 text-3xl font-bold text-white md:text-4xl">Garages already active in Diesel Bridge</h2>
+              <h2 className="mt-3 text-3xl font-bold text-white md:text-4xl">Shops already active in Diesel Bridge</h2>
               <p className="mt-3 text-gray-300">
                 Approved shops and service partners go live here as they join the network.
               </p>

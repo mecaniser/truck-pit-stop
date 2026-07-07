@@ -54,7 +54,7 @@ def get_effective_total(order: RepairOrder) -> Decimal:
 
 def require_manager(current_user: User) -> None:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-        raise HTTPException(status_code=403, detail="Garage owner/admin access required")
+        raise HTTPException(status_code=403, detail="Shop owner/admin access required")
 
 
 class StatusCount(BaseModel):

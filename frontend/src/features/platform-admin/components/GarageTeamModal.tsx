@@ -366,7 +366,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
             >
               {mode.kind === 'edit' && mode.user.is_owner && (
                 <div className="rounded-lg border border-gold-500/30 bg-gold-500/10 px-3 py-2 text-xs text-gold-200">
-                  This is the garage owner account. Changes here take effect immediately.
+                  This is the shop owner account. Changes here take effect immediately.
                 </div>
               )}
 

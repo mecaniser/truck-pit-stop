@@ -96,7 +96,7 @@ export default function ZellePaymentPanel({
             <div className="mb-2">
               <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-blue-200">Use in your bank app</p>
               <p className="mt-1 text-sm text-blue-50">
-                Send to {garageName || 'the garage'} and include the invoice memo below.
+                Send to {garageName || 'the shop'} and include the invoice memo below.
               </p>
             </div>
 
@@ -141,7 +141,7 @@ export default function ZellePaymentPanel({
               <>
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-100">Sent to the garage</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-100">Sent to the shop</p>
                     <p className="mt-1 text-xs text-orange-50/80">These details help staff match your bank transfer.</p>
                   </div>
                   <button
@@ -174,7 +174,7 @@ export default function ZellePaymentPanel({
                     value={senderNotes}
                     onChange={event => onSenderNotesChange(event.target.value)}
                     rows={2}
-                    placeholder="Memo/details sent to garage staff"
+                    placeholder="Memo/details sent to shop staff"
                     disabled={!isSenderEditing}
                     className="w-full resize-none rounded-md border border-orange-200/30 bg-slate-950/20 px-3 py-2 text-white placeholder-orange-100/45 disabled:cursor-not-allowed disabled:opacity-80"
                   />

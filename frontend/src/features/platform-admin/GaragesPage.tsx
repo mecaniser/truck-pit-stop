@@ -73,7 +73,7 @@ export default function GaragesPage() {
       const response = await api.get('/admin/tenants', { params })
       setGarages(response.data)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load garages')
+      setError(err.response?.data?.detail || 'Failed to load shops')
       console.error(err)
     } finally {
       if (mode === 'initial') {
@@ -301,18 +301,18 @@ export default function GaragesPage() {
               Refreshing...
             </span>
           )}
-          <GlassNoirButton onClick={() => alert('Create garage feature coming soon!')} className="whitespace-nowrap" size="sm">
-            + New Garage
+          <GlassNoirButton onClick={() => alert('Create shop feature coming soon!')} className="whitespace-nowrap" size="sm">
+            + New Shop
           </GlassNoirButton>
         </div>
       </div>
 
-      {/* Garages List */}
+      {/* Shops List */}
       <div className="space-y-4">
         {garages.length === 0 ? (
           <GlassNoirCard className="text-center py-12">
             <Building2 className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400">No garages found</p>
+            <p className="text-gray-400">No shops found</p>
           </GlassNoirCard>
         ) : (
           garages.map((garage) => (
@@ -597,7 +597,7 @@ export default function GaragesPage() {
                 <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
                   <p className="text-xs text-red-300">
                     {smsModalMode === 'attach'
-                      ? 'Replacing SMS will switch this garage to the attached Twilio number.'
+                      ? 'Replacing SMS will switch this shop to the attached Twilio number.'
                       : 'Replacing SMS will purchase another number and keep the old one unless it is released separately.'}
                   </p>
                 </div>
@@ -676,7 +676,7 @@ export default function GaragesPage() {
                     className="mt-0.5 w-4 h-4 rounded border-gold-500/50 bg-black/40 text-gold-500 focus:ring-gold-500 focus:ring-offset-0"
                   />
                   <span>
-                    I confirm this will replace the current SMS number for this garage.
+                    I confirm this will replace the current SMS number for this shop.
                   </span>
                 </label>
               )}

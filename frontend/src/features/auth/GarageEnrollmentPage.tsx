@@ -21,7 +21,7 @@ import { applySeo, removeStructuredData } from '../../lib/seo'
 
 // Step 1: Garage Info
 const garageInfoSchema = z.object({
-  garage_name: z.string().min(2, 'Garage name must be at least 2 characters').max(255),
+  garage_name: z.string().min(2, 'Shop name must be at least 2 characters').max(255),
   slug: z.string()
     .min(2, 'URL slug must be at least 2 characters')
     .max(100)
@@ -90,7 +90,7 @@ type ApiErrorShape = {
 }
 
 const steps = [
-  { id: 1, name: 'Garage Info', icon: Building2 },
+  { id: 1, name: 'Shop Info', icon: Building2 },
   { id: 2, name: 'Business Details', icon: FileText },
   { id: 3, name: 'Owner Account', icon: User },
   { id: 4, name: 'Review', icon: CheckCircle },
@@ -217,15 +217,15 @@ export default function GarageEnrollmentPage() {
           type: 'server',
           message: 'This email is already registered. Use a different business email.',
         })
-        setError('Business and owner login email must match. Please update email in Garage Info.')
-      } else if (detail.includes('garage URL slug is already taken')) {
+        setError('Business and owner login email must match. Please update email in Shop Info.')
+      } else if (detail.includes('shop URL slug is already taken')) {
         setResumeStepAfterGarageEdit(4)
         setCurrentStep(1)
         step1Form.setError('slug', {
           type: 'server',
           message: 'This URL slug is already taken. Please choose another.',
         })
-        setError('Garage URL slug is already taken. Please update it in Garage Info.')
+        setError('Shop URL slug is already taken. Please update it in Shop Info.')
       } else {
         setError(detail)
       }
@@ -264,8 +264,8 @@ export default function GarageEnrollmentPage() {
   const progressPercent = ((currentStep - 1) / (steps.length - 1)) * 100
 
   useEffect(() => {
-    const pageTitle = 'Apply for Founding Garage Access | DieselBridge Network'
-    const pageDescription = 'Apply to join DieselBridge Network as a founding garage and launch your shop workspace after approval.'
+    const pageTitle = 'Apply for Founding Shop Access | DieselBridge Network'
+    const pageDescription = 'Apply to join DieselBridge Network as a founding shop and launch your shop workspace after approval.'
     const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
     const canonicalUrl = `${siteOrigin}/enroll`
     const ogImage = `${siteOrigin}/DB_bridge_logo_favi_figma_public_B.png`
@@ -325,14 +325,14 @@ export default function GarageEnrollmentPage() {
                     <BrandLogo alt="Diesel Bridge Network" variant="public" className="h-8 w-auto" />
                   </div>
                   <p className="mb-4 inline-flex items-center rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
-                    Founding Garage Access
+                    Founding Shop Access
                   </p>
                   <h2 className="text-4xl font-black tracking-tight text-zinc-100">
                     Application received.
                     <span className="mt-1 block text-[var(--accent-400)]">You are in review.</span>
                   </h2>
                   <p className="mt-4 max-w-md text-zinc-400">
-                    We review each garage application for readiness and fit, then send owner onboarding instructions by email.
+                    We review each shop application for readiness and fit, then send owner onboarding instructions by email.
                   </p>
                 </div>
 
@@ -369,7 +369,7 @@ export default function GarageEnrollmentPage() {
                 <ol className="mt-3 space-y-2 text-sm text-zinc-300">
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5 h-5 w-5 rounded-full bg-zinc-800 text-center text-xs leading-5 text-zinc-200">1</span>
-                    We verify your garage and owner details.
+                    We verify your shop and owner details.
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5 h-5 w-5 rounded-full bg-zinc-800 text-center text-xs leading-5 text-zinc-200">2</span>
@@ -377,7 +377,7 @@ export default function GarageEnrollmentPage() {
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-0.5 h-5 w-5 rounded-full bg-zinc-800 text-center text-xs leading-5 text-zinc-200">3</span>
-                    You sign in and launch your garage workspace.
+                    You sign in and launch your shop workspace.
                   </li>
                 </ol>
               </div>
@@ -426,10 +426,10 @@ export default function GarageEnrollmentPage() {
                   <BrandLogo alt="Diesel Bridge Network" variant="public" className="h-8 w-auto" />
                 </div>
                 <p className="mb-4 inline-flex items-center rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
-                  Founding Garage Access
+                  Founding Shop Access
                 </p>
                 <h2 className="text-4xl font-black tracking-tight text-zinc-100">
-                  Launch your garage.
+                  Launch your shop.
                   <span className="mt-1 block text-[var(--accent-400)]">Join the network.</span>
                 </h2>
                 <p className="mt-4 max-w-md text-zinc-400">
@@ -440,11 +440,11 @@ export default function GarageEnrollmentPage() {
               <ul className="mt-10 space-y-3 text-sm text-zinc-300">
                 <li className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/60 p-3">
                   <Building2 className="mt-0.5 h-4 w-4 text-[var(--accent-400)]" />
-                  <span>Garage profile setup with URL, contact data, and business verification details.</span>
+                  <span>Shop profile setup with URL, contact data, and business verification details.</span>
                 </li>
                 <li className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/60 p-3">
                   <ShieldCheck className="mt-0.5 h-4 w-4 text-[var(--accent-400)]" />
-                  <span>Owner account credentials are created securely and tied to your garage workspace.</span>
+                  <span>Owner account credentials are created securely and tied to your shop workspace.</span>
                 </li>
                 <li className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-900/60 p-3">
                   <CheckCircle className="mt-0.5 h-4 w-4 text-[var(--accent-400)]" />
@@ -461,10 +461,10 @@ export default function GarageEnrollmentPage() {
               </div>
               <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-900/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-300">
                 <Building2 className="h-3.5 w-3.5 text-[var(--accent-400)]" />
-                Garage Enrollment
+                Shop Enrollment
               </p>
-              <h1 className="text-3xl font-black tracking-tight text-zinc-100">Apply for Founding Garage Access</h1>
-              <p className="mt-2 text-sm text-zinc-400">Register your garage in four guided steps.</p>
+              <h1 className="text-3xl font-black tracking-tight text-zinc-100">Apply for Founding Shop Access</h1>
+              <p className="mt-2 text-sm text-zinc-400">Register your shop in four guided steps.</p>
             </div>
 
             <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900/55 p-4">
@@ -512,12 +512,12 @@ export default function GarageEnrollmentPage() {
               </div>
             )}
 
-            {/* Step 1: Garage Info */}
+            {/* Step 1: Shop Info */}
             {currentStep === 1 && (
               <form onSubmit={step1Form.handleSubmit(handleStep1Submit)} className="space-y-4">
                 <div>
                   <label htmlFor="garage_name" className="mb-1 block text-sm font-medium text-zinc-300">
-                    Garage Name <span className="text-red-400">*</span>
+                    Shop Name <span className="text-red-400">*</span>
                   </label>
                   <input
                     {...step1Form.register('garage_name', {
@@ -600,7 +600,7 @@ export default function GarageEnrollmentPage() {
                       id="email"
                       autoComplete="email"
                       className={getInputClasses(!!step1Form.formState.errors.email)}
-                      placeholder="info@garage.com"
+                      placeholder="info@shop.com"
                     />
                     {step1Form.formState.errors.email && (
                       <p className="mt-1.5 text-sm text-red-400">{step1Form.formState.errors.email.message}</p>
@@ -617,7 +617,7 @@ export default function GarageEnrollmentPage() {
                     type="url"
                     id="website"
                     className={getInputClasses(!!step1Form.formState.errors.website)}
-                    placeholder="https://www.yourgarage.com"
+                    placeholder="https://www.yourshop.com"
                   />
                   {step1Form.formState.errors.website && (
                     <p className="mt-1.5 text-sm text-red-400">{step1Form.formState.errors.website.message}</p>
@@ -756,7 +756,7 @@ export default function GarageEnrollmentPage() {
                   <label htmlFor="owner_phone" className="mb-1 block text-sm font-medium text-zinc-300">
                     Phone <span className="text-red-400">*</span>
                   </label>
-                  <p className="mb-1 text-xs text-zinc-500">Prefilled from Garage Info. Change only if needed.</p>
+                  <p className="mb-1 text-xs text-zinc-500">Prefilled from Shop Info. Change only if needed.</p>
                   <input
                     {...step3Form.register('owner_phone', {
                       onChange: (e) => step3Form.setValue('owner_phone', formatUSPhone(e.target.value)),
@@ -884,7 +884,7 @@ export default function GarageEnrollmentPage() {
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.1em] text-zinc-300">
                       <Building2 className="h-4 w-4 text-[var(--accent-400)]" />
-                      Garage Information
+                      Shop Information
                     </h2>
                     <button
                       type="button"

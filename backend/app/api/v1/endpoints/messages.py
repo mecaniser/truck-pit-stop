@@ -49,7 +49,7 @@ def require_staff_user():
 def require_manager_user():
     async def role_checker(current_user: User = Depends(get_current_active_user)):
         if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Garage owner/admin permissions required")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Shop owner/admin permissions required")
         return current_user
 
     return role_checker

@@ -387,16 +387,16 @@ async def send_new_enrollment_notification(admin_emails: list, garage_name: str,
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">New Garage Enrollment</h1>
+            <h1 style="color: white; margin: 0; font-size: 24px;">New Shop Enrollment</h1>
         </div>
         <div style="background: #f9fafb; padding: 30px; border-radius: 0 0 10px 10px;">
             <p style="color: #4b5563; line-height: 1.6;">
-                A new garage has applied to join DieselBridge Network:
+                A new shop has applied to join DieselBridge Network:
             </p>
             <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e5e7eb;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
-                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Garage Name:</td>
+                        <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Shop Name:</td>
                         <td style="padding: 8px 0; color: #1f2937; font-weight: bold;">{garage_name}</td>
                     </tr>
                     <tr>
@@ -425,7 +425,7 @@ async def send_new_enrollment_notification(admin_emails: list, garage_name: str,
             params = {
                 "from": settings.RESEND_FROM_EMAIL,
                 "to": email,
-                "subject": f"New Garage Enrollment: {garage_name}",
+                "subject": f"New Shop Enrollment: {garage_name}",
                 "html": html_body,
             }
             resend.Emails.send(params)
