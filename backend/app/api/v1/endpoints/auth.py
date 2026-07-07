@@ -145,12 +145,12 @@ async def register(
         if not matching_tenants:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Garage not found. Please check the name or use your garage code.",
+                detail="Shop not found. Please check the name or use your shop code.",
             )
         if len(matching_tenants) > 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Multiple garages match this name. Please use your garage code.",
+                detail="Multiple shops match this name. Please use your shop code.",
             )
         target_tenant_id = matching_tenants[0].id
 
@@ -174,7 +174,7 @@ async def register(
         if not target_tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A garage is required to link your existing account to a new shop.",
+                detail="A shop is required to link your existing account to a new shop.",
             )
 
         # Reject if already linked to this shop
@@ -1239,7 +1239,7 @@ async def enroll_garage(
     if existing_tenant:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This garage URL slug is already taken. Please choose another.",
+            detail="This shop URL slug is already taken. Please choose another.",
         )
     
     # Check if owner email is already registered

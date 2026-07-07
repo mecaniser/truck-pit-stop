@@ -139,7 +139,7 @@ export default function GarageAnalyticsPage() {
           className="inline-flex items-center gap-2 text-gray-400 hover:text-gold-400 mb-4"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Garages
+          Back to Shops
         </Link>
         <GlassNoirCard className="border-red-500/30">
           <p className="text-red-400">{error || 'No data available'}</p>
@@ -159,7 +159,7 @@ export default function GarageAnalyticsPage() {
           className="inline-flex items-center gap-2 text-gray-400 hover:text-gold-400 mb-4 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Garages
+          Back to Shops
         </Link>
         <GlassNoirHeader
           title={stats.tenant_name}

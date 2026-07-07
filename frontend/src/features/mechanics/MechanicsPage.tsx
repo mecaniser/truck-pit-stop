@@ -36,7 +36,7 @@ const STAFF_ROLE_OPTIONS = [
   { value: 'mechanic', label: 'Technician' },
   { value: 'receptionist', label: 'Receptionist' },
   { value: 'fleet_manager', label: 'Fleet Manager' },
-  { value: 'garage_admin', label: 'Garage Admin' },
+  { value: 'garage_admin', label: 'Shop Admin' },
 ] as const
 
 const mechanicSchema = z.object({
@@ -252,7 +252,7 @@ export default function MechanicsPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['staff-roster'] }); setEditingStaff(null) },
   })
   const STAFF_ROLE_LABELS: Record<string, string> = {
-    garage_owner: 'Garage Owner', garage_admin: 'Garage Admin',
+    garage_owner: 'Shop Owner', garage_admin: 'Shop Admin',
     fleet_manager: 'Fleet Manager', receptionist: 'Receptionist', mechanic: 'Technician',
   }
   // Technicians have their own detailed board below; show the rest here.
@@ -445,7 +445,7 @@ export default function MechanicsPage() {
       {user?.role !== 'garage_owner' && user?.role !== 'garage_admin' ? (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
           <h1 className="text-lg font-semibold text-white mb-2">Team</h1>
-          <p className="text-sm text-gray-400">Only garage admins can manage the team.</p>
+          <p className="text-sm text-gray-400">Only shop admins can manage the team.</p>
         </div>
       ) : (
         <>

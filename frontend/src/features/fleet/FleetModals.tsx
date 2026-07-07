@@ -427,14 +427,14 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
         <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
         <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
         {/* Rate is the configured in-house labor cost — read-only. */}
-        <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in garage settings)">{money(internalRate)}/h</span>
+        <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in shop settings)">{money(internalRate)}/h</span>
         <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
           {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
         </button>
       </div>
       {internalRate <= 0 && (
         <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 5, color: '#fb923c' }}>
-          In-house labor rate is $0 — set it in garage settings (owner/admin) so labor is costed.
+          In-house labor rate is $0 — set it in shop settings (owner/admin) so labor is costed.
         </p>
       )}
     </div>

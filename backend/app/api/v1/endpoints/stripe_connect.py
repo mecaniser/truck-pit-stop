@@ -36,7 +36,7 @@ def _require_garage_admin(current_user: User) -> None:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only garage administrators can manage Stripe settings",
+            detail="Only shop administrators can manage Stripe settings",
         )
 
 

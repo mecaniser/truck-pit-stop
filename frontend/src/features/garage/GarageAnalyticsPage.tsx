@@ -110,7 +110,7 @@ export default function GarageAnalyticsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white mb-2">Garage Analytics</h1>
+        <h1 className="text-2xl font-bold text-white mb-2">Shop Analytics</h1>
         <p className="text-gray-400">Performance overview and insights</p>
       </div>
 

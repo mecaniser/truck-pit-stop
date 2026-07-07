@@ -4122,7 +4122,7 @@ export default function RepairOrdersPage() {
                         No Zelle QR code uploaded.
                       </p>
                       <p className="text-gray-400 text-xs mt-1">
-                        Upload in Garage Settings → Zelle Payments
+                        Upload in Shop Settings → Zelle Payments
                       </p>
                     </div>
                   )}

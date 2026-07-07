@@ -120,7 +120,7 @@ const passwordSchema = z.object({
 })
 
 const garageProfileSchema = z.object({
-  name: z.string().min(1, 'Garage name is required').max(255, 'Maximum 255 characters'),
+  name: z.string().min(1, 'Shop name is required').max(255, 'Maximum 255 characters'),
   address: z.string().optional().refine((value) => !value || value.length <= 500, {
     message: 'Maximum 500 characters',
   }),
@@ -347,8 +347,8 @@ function ProfileSection() {
   const getRoleBadge = () => {
     switch (user?.role) {
       case 'super_admin': return { label: 'SUPER ADMIN', variant: 'warning' as const }
-      case 'garage_owner': return { label: 'GARAGE OWNER', variant: 'success' as const }
-      case 'garage_admin': return { label: 'GARAGE ADMIN', variant: 'default' as const }
+      case 'garage_owner': return { label: 'SHOP OWNER', variant: 'success' as const }
+      case 'garage_admin': return { label: 'SHOP ADMIN', variant: 'default' as const }
       case 'fleet_manager': return { label: 'FLEET MANAGER', variant: 'default' as const }
       default: return { label: 'STAFF', variant: 'default' as const }
     }
@@ -551,7 +551,7 @@ function GarageProfileSection() {
     onSuccess: (updated) => {
       syncTenantBranding(updated)
       setIsEditing(false)
-      toast.success('Garage profile updated')
+      toast.success('Shop profile updated')
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to update garage profile')
@@ -588,9 +588,9 @@ function GarageProfileSection() {
         <IndustrialCard className="p-6 sm:p-8">
           <div className={industrialStyles.sectionHeader}>
             <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
-            <span>Garage Profile</span>
+            <span>Shop Profile</span>
           </div>
-          <p className="text-sm text-zinc-400">Loading garage profile...</p>
+          <p className="text-sm text-zinc-400">Loading shop profile...</p>
         </IndustrialCard>
       </div>
     )
@@ -634,7 +634,7 @@ function GarageProfileSection() {
       <IndustrialCard className="p-6 sm:p-8">
         <div className={industrialStyles.sectionHeader}>
           <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
-          <span>Garage Profile</span>
+          <span>Shop Profile</span>
         </div>
 
         {!isEditing ? (
@@ -642,7 +642,7 @@ function GarageProfileSection() {
             <div className="rounded-2xl border border-zinc-700/50 bg-zinc-950/50 p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <label className={industrialStyles.label}>Garage Logo</label>
+                  <label className={industrialStyles.label}>Shop Logo</label>
                 </div>
                 {garageProfile?.logo_url && (
                   <a
@@ -667,7 +667,7 @@ function GarageProfileSection() {
                   />
                 ) : (
                   <div className="text-center text-sm text-zinc-500">
-                    <p>Use the website importer or paste a logo URL in Garage Profile settings.</p>
+                    <p>Use the website importer or paste a logo URL in Shop Profile settings.</p>
                   </div>
                 )}
               </div>
@@ -675,10 +675,10 @@ function GarageProfileSection() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               {[
-                { label: 'Garage Name', value: garageProfile?.name || '—' },
-                { label: 'Garage Slug', value: garageProfile?.slug || '—' },
-                { label: 'Garage Email', value: garageProfile?.email || '—' },
-                { label: 'Garage Phone', value: garageProfile?.phone ? formatUSPhone(garageProfile.phone) : '—' },
+                { label: 'Shop Name', value: garageProfile?.name || '—' },
+                { label: 'Shop Slug', value: garageProfile?.slug || '—' },
+                { label: 'Shop Email', value: garageProfile?.email || '—' },
+                { label: 'Shop Phone', value: garageProfile?.phone ? formatUSPhone(garageProfile.phone) : '—' },
                 { label: 'Website', value: garageProfile?.website || '—' },
                 { label: 'Address', value: garageProfile?.address || '—' },
               ].map((field, index) => (
@@ -708,7 +708,7 @@ function GarageProfileSection() {
                 <div>
                   <label className={industrialStyles.label}>Summary</label>
                   <p className="text-base leading-7 text-zinc-100">
-                    {garageProfile?.partner_summary || 'Add a short summary to describe this garage on the landing page.'}
+                    {garageProfile?.partner_summary || 'Add a short summary to describe this shop on the landing page.'}
                   </p>
                 </div>
                 <div>
@@ -726,31 +726,31 @@ function GarageProfileSection() {
             >
               <span className="flex items-center gap-2">
                 <Settings2 className="w-4 h-4" />
-                Edit Garage Profile
+                Edit Shop Profile
               </span>
             </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div>
-              <label className={industrialStyles.label}>Garage Name</label>
+              <label className={industrialStyles.label}>Shop Name</label>
               <input {...register('name')} className={inputClasses(!!errors.name)} />
               {errors.name && <p className="mt-2 text-xs text-red-400">{errors.name.message}</p>}
             </div>
 
             <div>
-              <label className={industrialStyles.label}>Garage Slug (read-only)</label>
+              <label className={industrialStyles.label}>Shop Slug (read-only)</label>
               <input value={garageProfile?.slug || ''} className={`${industrialStyles.input} opacity-70`} disabled />
             </div>
 
             <div>
-              <label className={industrialStyles.label}>Garage Email</label>
-              <input {...register('email')} type="email" className={inputClasses(!!errors.email)} placeholder="garage@example.com" />
+              <label className={industrialStyles.label}>Shop Email</label>
+              <input {...register('email')} type="email" className={inputClasses(!!errors.email)} placeholder="shop@example.com" />
               {errors.email && <p className="mt-2 text-xs text-red-400">{errors.email.message}</p>}
             </div>
 
             <div>
-              <label className={industrialStyles.label}>Garage Phone</label>
+              <label className={industrialStyles.label}>Shop Phone</label>
               <input {...register('phone')} className={inputClasses(!!errors.phone)} placeholder="(555) 123-4567" />
               {errors.phone && <p className="mt-2 text-xs text-red-400">{errors.phone.message}</p>}
             </div>
@@ -897,7 +897,7 @@ function GarageProfileSection() {
                 disabled={updateMutation.isPending}
                 className={industrialStyles.btnPrimary}
               >
-                {updateMutation.isPending ? 'Saving...' : 'Save Garage Profile'}
+                {updateMutation.isPending ? 'Saving...' : 'Save Shop Profile'}
               </button>
             </div>
           </form>
@@ -2585,7 +2585,7 @@ const PROFILE_SECTIONS = [
 ]
 
 const GARAGE_SECTIONS = [
-  { id: 'garageProfile' as const, label: 'Garage Profile', shortLabel: 'Profile', icon: Building2 },
+  { id: 'garageProfile' as const, label: 'Shop Profile', shortLabel: 'Profile', icon: Building2 },
   { id: 'payments' as const, label: 'Stripe Payments', shortLabel: 'Stripe', icon: CreditCard },
   { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode },
   { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell },
@@ -2660,7 +2660,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
             <div>
               <h3 className={industrialStyles.sectionHeader}>
                 <Settings2 className="w-3 h-3" />
-                Garage
+                Shop
               </h3>
               <nav className="space-y-1">
                 {GARAGE_SECTIONS.map((section, i) => (

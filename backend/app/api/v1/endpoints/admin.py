@@ -203,7 +203,7 @@ async def create_tenant(
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A garage with this slug already exists",
+            detail="A shop with this slug already exists",
         )
     
     # Check if owner email already exists
@@ -928,7 +928,7 @@ def require_garage_owner():
         if current_user.role not in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Garage owner/admin access required",
+                detail="Shop owner/admin access required",
             )
         return current_user
     return role_checker
@@ -980,7 +980,7 @@ async def update_garage_profile(
 
     name = body.name.strip()
     if not name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Garage name is required")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Shop name is required")
 
     def clean_optional_text(value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -1987,7 +1987,7 @@ async def create_staff(
     if body.role not in ASSIGNABLE_STAFF_ROLES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be one of: technician, receptionist, fleet manager, garage admin",
+            detail="Role must be one of: technician, receptionist, fleet manager, shop admin",
         )
     validate_password(body.password)
 
@@ -2038,7 +2038,7 @@ async def update_staff(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
     if user.role == UserRole.GARAGE_OWNER:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The garage owner cannot be modified here")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The shop owner cannot be modified here")
     if user.id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot modify your own account here")
     if body.role is not None:
@@ -2180,7 +2180,7 @@ async def create_tenant_user(
     if body.role not in ADMIN_MANAGEABLE_ROLES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be one of: garage owner, garage admin, receptionist, technician, fleet manager",
+            detail="Role must be one of: shop owner, shop admin, receptionist, technician, fleet manager",
         )
     validate_password(body.password)
 

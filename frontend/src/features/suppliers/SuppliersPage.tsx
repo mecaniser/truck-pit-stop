@@ -552,7 +552,7 @@ export default function SuppliersPage() {
       >
         {!isAdmin && (
           <div className="text-xs text-amber-700 bg-amber-100 border border-amber-200 rounded-lg p-3">
-            You can browse suppliers, but only garage admins can add or edit them.
+            You can browse suppliers, but only shop admins can add or edit them.
           </div>
         )}
 

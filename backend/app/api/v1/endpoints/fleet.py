@@ -109,7 +109,7 @@ def require_fleet_access(current_user: User = Depends(get_current_active_user)) 
 def require_garage_owner_only(current_user: User = Depends(get_current_active_user)) -> User:
     """Owner-only guard. Fleet managers/admins cannot delete inspection records."""
     if current_user.role != UserRole.GARAGE_OWNER:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the garage owner can delete inspections")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the shop owner can delete inspections")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     return current_user

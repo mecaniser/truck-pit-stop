@@ -141,9 +141,9 @@ export default function PlatformAnalyticsPage() {
           {/* Platform-Level Stats Only */}
           <StatScrollRow
             stats={[
-              { label: 'Garages', value: stats.tenants.total, icon: <Building2 className="w-4 h-4" />, sublabel: `${activeRate}% active`, color: 'gold' },
+              { label: 'Shops', value: stats.tenants.total, icon: <Building2 className="w-4 h-4" />, sublabel: `${activeRate}% active`, color: 'gold' },
               { label: 'Users', value: stats.users.total, icon: <Users className="w-4 h-4" />, sublabel: `${stats.users.by_role.garage_owner || 0} owners` },
-              { label: 'Revenue', value: formatCurrency(stats.revenue.total), icon: <DollarSign className="w-4 h-4" />, sublabel: 'All garages', color: 'green' },
+              { label: 'Revenue', value: formatCurrency(stats.revenue.total), icon: <DollarSign className="w-4 h-4" />, sublabel: 'All shops', color: 'green' },
             ]}
           />
 
@@ -181,10 +181,10 @@ export default function PlatformAnalyticsPage() {
             </div>
           </GlassNoirCard>
 
-          {/* Garage List - Links to per-garage analytics */}
+          {/* Shop List - Links to per-shop analytics */}
           <GlassNoirCard>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">Garages</h2>
+              <h2 className="text-lg font-semibold text-white">Shops</h2>
               <div className="text-sm text-gray-400">
                 {stats.tenants.active} active of {stats.tenants.total} total
               </div>
@@ -234,7 +234,7 @@ export default function PlatformAnalyticsPage() {
 
             {tenants.length === 0 && (
               <div className="text-center py-8 text-gray-400">
-                No garages yet.
+                No shops yet.
               </div>
             )}
           </GlassNoirCard>
@@ -258,7 +258,7 @@ export default function PlatformAnalyticsPage() {
                 </div>
               </div>
               <div className="bg-white/5 rounded-lg p-3">
-                <div className="text-gray-400 mb-1">Avg Revenue/Garage</div>
+                <div className="text-gray-400 mb-1">Avg Revenue/Shop</div>
                 <div className="text-xl font-bold text-white">{formatCurrency(avgRevenuePerGarage)}</div>
               </div>
             </div>

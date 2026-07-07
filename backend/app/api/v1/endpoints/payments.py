@@ -900,7 +900,7 @@ async def submit_customer_zelle_payment(
 
     return SubmitCustomerZellePaymentResponse(
         status="success",
-        message="Zelle payment marked as submitted. Garage staff will confirm receipt.",
+        message="Zelle payment marked as submitted. Shop staff will confirm receipt.",
         pending_zelle_confirmation=invoice.pending_zelle_confirmation,
     )
 
@@ -935,7 +935,7 @@ async def get_zelle_info(
     tenant = result.scalar_one_or_none()
     
     if not tenant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Garage not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found")
     
     return ZelleInfoResponse(
         zelle_email=tenant.zelle_email,

@@ -184,7 +184,7 @@ export default function LoginPage() {
                   <BrandLogo alt="Diesel Bridge Network" variant="admin" className="h-8 w-auto" />
                 </div>
                 <h1 className="text-4xl font-black tracking-tight text-zinc-100">
-                  Run your garage.
+                  Run your shop.
                   <span className="mt-1 block text-[var(--accent-400)]">Keep trucks moving.</span>
                 </h1>
                 <p className="mt-4 max-w-md text-zinc-400">
