@@ -167,6 +167,12 @@ class RepairOrderResponse(RepairOrderBase):
     work_completed_at: Optional[datetime] = None
     hold_reason: Optional[str] = None
     held_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    cancelled_by_user_id: Optional[UUID] = None
+    cancelled_by_name: Optional[str] = None
+    deleted_at: Optional[datetime] = None
+    deleted_by_user_id: Optional[UUID] = None
+    deleted_by_name: Optional[str] = None
     estimated_labor_minutes: Optional[int] = None
     actual_tracked_minutes: Optional[int] = None
     total_hold_minutes: Optional[int] = None

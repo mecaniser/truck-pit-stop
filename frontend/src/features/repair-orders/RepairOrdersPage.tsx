@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil, RotateCcw } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -91,7 +91,7 @@ const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = [
   'paid',
 ]
 const LABOR_BREAKDOWN_STATUSES: RepairOrderStatus[] = ['pending_review', 'completed']
-const DANGER_ZONE_STATUSES: RepairOrderStatus[] = ['draft', 'quoted']
+const DANGER_ZONE_STATUSES: RepairOrderStatus[] = ['draft', 'quoted', 'cancelled']
 
 function RepairOrderLaborBreakdown({
   laborItems,
@@ -246,9 +246,9 @@ export default function RepairOrdersPage() {
   const queryClient = useQueryClient()
 
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
-    queryKey: ['repair-orders'],
+    queryKey: ['repair-orders', statusFilter === 'deleted' ? 'deleted' : 'active'],
     queryFn: async () => {
-      const response = await api.get('/repair-orders')
+      const response = await api.get('/repair-orders', statusFilter === 'deleted' ? { params: { deleted: true } } : undefined)
       return response.data
     },
   })
@@ -610,6 +610,23 @@ export default function RepairOrdersPage() {
     },
   })
 
+  const restoreRepairOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const response = await api.post(`/repair-orders/${orderId}/restore`)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      setSelectedOrder(updated)
+      toast.success(`Repair order ${updated.order_number} restored`)
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to restore repair order'))
+    },
+  })
+
   const assignMechanicMutation = useMutation({
     mutationFn: async ({ orderId, mechanicId }: { orderId: string; mechanicId: string; orderStatus?: string }) => {
       // Use dedicated endpoint for all assignment/reassignment actions so mechanic notifications are sent.
@@ -630,6 +647,40 @@ export default function RepairOrdersPage() {
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to assign technician'))
+    },
+  })
+
+  const startWorkOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const response = await api.post(`/fleet/work-orders/${orderId}/start`)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
+      setSelectedOrder(updated)
+      toast.success('Work order in progress')
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to start work order'))
+    },
+  })
+
+  const completeWorkOrderMutation = useMutation({
+    mutationFn: async ({ orderId, mileageOut: woOut }: { orderId: string; mileageOut?: number | null }) => {
+      const response = await api.post(`/fleet/work-orders/${orderId}/complete`, { mileage_out: woOut ?? null })
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
+      setSelectedOrder(updated)
+      toast.success('Work order completed')
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to complete work order'))
     },
   })
 
@@ -924,8 +975,9 @@ export default function RepairOrdersPage() {
 
     let filtered = orders
 
-    // Filter by status
-    if (statusFilter !== 'all') {
+    // Filter by status. 'deleted' isn't a real RO status — the backend query
+    // already scopes to soft-deleted orders for that filter, so skip this.
+    if (statusFilter !== 'all' && statusFilter !== 'deleted') {
       filtered = filtered.filter((order) => order.status === statusFilter)
     }
 
@@ -1088,6 +1140,18 @@ export default function RepairOrdersPage() {
       at: invoiceForOrder?.paid_at,
       detail: invoiceForOrder?.invoice_number,
     })
+    push({
+      id: 'cancelled',
+      label: 'Order cancelled',
+      at: order.cancelled_at,
+      actor: order.cancelled_by_name || undefined,
+    })
+    push({
+      id: 'deleted',
+      label: 'Order deleted',
+      at: order.deleted_at,
+      actor: order.deleted_by_name || undefined,
+    })
 
     return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
   })()
@@ -1181,7 +1245,10 @@ export default function RepairOrdersPage() {
     invoiced:       'Invoice sent — waiting on payment from the customer.',
     paid:           'Payment received — order fully closed.',
     cancelled:      'Orders that were cancelled and are no longer active.',
+    deleted:        'Deleted orders — restore to bring one back.',
   }
+
+  const canViewDeletedOrders = ['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
 
   const statusOptions = [
     { value: 'all', label: 'All' },
@@ -1197,6 +1264,7 @@ export default function RepairOrdersPage() {
     { value: 'invoiced', label: 'Invoiced' },
     { value: 'paid', label: 'Paid' },
     { value: 'cancelled', label: 'Cancelled' },
+    ...(canViewDeletedOrders ? [{ value: 'deleted', label: 'Deleted' }] : []),
   ]
 
   const resetModal = () => {
@@ -2272,9 +2340,31 @@ export default function RepairOrdersPage() {
                 </div>
               </button>
               {showDangerActions && (
+                (orderDetail ?? selectedOrder).deleted_at ? (
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <div className="w-full text-sm leading-5 text-red-600">
+                      {(() => {
+                        const d = orderDetail ?? selectedOrder
+                        const when = format(new Date(d.deleted_at as string), 'MMM d, yyyy h:mm a')
+                        return d.deleted_by_name
+                          ? `Deleted by ${d.deleted_by_name} on ${when}. Restore to bring it back.`
+                          : `Deleted on ${when}. Restore to bring it back.`
+                      })()}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={restoreRepairOrderMutation.isPending}
+                      onClick={() => selectedOrder.id && restoreRepairOrderMutation.mutate(selectedOrder.id)}
+                      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      {restoreRepairOrderMutation.isPending ? 'Restoring...' : 'Restore order'}
+                    </button>
+                  </div>
+                ) : (
                 <div className="flex flex-wrap gap-2 justify-end">
                   <div className="w-full text-sm leading-5 text-red-600">
-                    Cancel stops work without deleting history. Delete will permanently remove this order.
+                    Cancel stops work without deleting history. Delete removes it from your active list — it can be restored later from the Deleted filter.
                   </div>
                   <button
                     type="button"
@@ -2295,6 +2385,7 @@ export default function RepairOrdersPage() {
                     {deleteRepairOrderMutation.isPending ? 'Deleting...' : 'Delete'}
                   </button>
                 </div>
+                )
               )}
             </div>
           )
@@ -2728,6 +2819,10 @@ export default function RepairOrdersPage() {
                         setMileageOut('')
                       }
                     }}
+                    onStartWorkOrder={() => selectedOrder.id && startWorkOrderMutation.mutate(selectedOrder.id)}
+                    startWorkOrderPending={startWorkOrderMutation.isPending}
+                    onCompleteWorkOrder={(mileageOutVal) => selectedOrder.id && completeWorkOrderMutation.mutate({ orderId: selectedOrder.id, mileageOut: mileageOutVal })}
+                    completeWorkOrderPending={completeWorkOrderMutation.isPending}
                     invoiceCreatePending={createInvoiceMutation.isPending}
                     invoiceDueDateValue={invoiceDueDate}
                     showInvoiceCreateOptions={showInvoiceCreateOptions}
@@ -2770,6 +2865,11 @@ export default function RepairOrdersPage() {
                     cancelPending={cancelRepairOrderMutation.isPending}
                     deletePending={deleteRepairOrderMutation.isPending}
                     cancelDisabled={(orderDetail ?? selectedOrder).status === 'cancelled'}
+                    isDeleted={!!(orderDetail ?? selectedOrder).deleted_at}
+                    deletedByName={(orderDetail ?? selectedOrder).deleted_by_name}
+                    deletedAt={(orderDetail ?? selectedOrder).deleted_at}
+                    onRestoreOrder={() => selectedOrder.id && restoreRepairOrderMutation.mutate(selectedOrder.id)}
+                    restorePending={restoreRepairOrderMutation.isPending}
                     recommendedServices={['completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
                     showAddRecommendedService={showAddRecService}
                     recommendedServiceForm={recServiceForm}

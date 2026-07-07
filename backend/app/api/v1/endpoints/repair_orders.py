@@ -78,6 +78,9 @@ price_build_service = PriceBuildService()
 # Only draft and quoted ROs can have parts/labor modified
 EDITABLE_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
 DANGER_ACTION_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
+# Deleting is also allowed once an order is cancelled — cancelling doesn't
+# clean anything up, so customers need a way to remove cancelled clutter.
+DELETABLE_RO_STATUSES = DANGER_ACTION_RO_STATUSES + (RepairOrderStatus.CANCELLED,)
 # Internal fleet WOs log labor/parts as work happens, so they stay editable
 # through the whole active flow — only terminal states freeze them.
 INTERNAL_FROZEN_RO_STATUSES = (
@@ -432,15 +435,21 @@ async def list_repair_orders(
     customer_id: Optional[UUID] = Query(None),
     vehicle_id: Optional[UUID] = Query(None),
     status: Optional[RepairOrderStatus] = Query(None),
+    deleted: bool = Query(False, description="Show only soft-deleted orders (owner/admin only)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(status_code=403, detail="Access denied")
+
     query = select(RepairOrder)
     count_query = select(func.count(RepairOrder.id))
-    
+    query = query.where(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
+    count_query = count_query.where(RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None))
+
     if current_user.role == UserRole.CUSTOMER:
         # Customers can only see their own repair orders
         if not current_user.customer_id:
@@ -497,19 +506,36 @@ async def list_repair_orders(
     else:
         quote_sent_map = {}
         pending_zelle_map = {}
-    
+
+    # The Deleted view needs "who did this" — resolve actor names in bulk
+    # rather than joining on every normal (non-deleted) list request.
+    actor_name_map: dict = {}
+    if deleted and orders:
+        actor_ids = {o.deleted_by_user_id for o in orders if o.deleted_by_user_id}
+        actor_ids |= {o.cancelled_by_user_id for o in orders if o.cancelled_by_user_id}
+        if actor_ids:
+            actor_result = await db.execute(
+                select(User.id, User.first_name, User.last_name).where(User.id.in_(actor_ids))
+            )
+            actor_name_map = {row[0]: f"{row[1]} {row[2]}".strip() for row in actor_result.fetchall()}
+
     def _vehicle_fields(v) -> dict:
         if not v:
             return {"vehicle_make": "", "vehicle_model": "", "vehicle_year": None, "vehicle_unit_number": None, "vehicle_vin": None}
         return {"vehicle_make": v.make or "", "vehicle_model": v.model or "", "vehicle_year": v.year, "vehicle_unit_number": v.unit_number, "vehicle_vin": v.vin}
 
-    _vf_exclude = {'quote_sent', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_unit_number', 'vehicle_vin'}
+    _vf_exclude = {
+        'quote_sent', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
+        'vehicle_unit_number', 'vehicle_vin', 'cancelled_by_name', 'deleted_by_name',
+    }
     items = [
         RepairOrderResponse(
             **RepairOrderResponse.model_validate(o).model_dump(exclude=_vf_exclude),
             **_vehicle_fields(o.vehicle),
             quote_sent=quote_sent_map.get(o.id),
             pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
+            cancelled_by_name=actor_name_map.get(o.cancelled_by_user_id),
+            deleted_by_name=actor_name_map.get(o.deleted_by_user_id),
         )
         for o in orders
     ]
@@ -522,13 +548,20 @@ async def get_repair_order_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # Owner/admin can open a soft-deleted order's detail (e.g. from the
+    # Deleted view, to review before restoring); everyone else gets a 404
+    # for a deleted order, same as if it never existed.
+    can_see_deleted = current_user.role in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+    deleted_filter = () if can_see_deleted else (RepairOrder.deleted_at.is_(None),)
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, *deleted_filter)
         .options(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
             selectinload(RepairOrder.vehicle),
+            selectinload(RepairOrder.cancelled_by_user),
+            selectinload(RepairOrder.deleted_by_user),
         )
     )
     order = result.scalar_one_or_none()
@@ -560,8 +593,15 @@ async def get_repair_order_detail(
     pending_zelle_confirmation = bool(
         invoice and invoice.zelle_pending_submitted_at is not None and invoice.status != InvoiceStatus.PAID
     )
-    _detail_vf_exclude = {'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year', 'vehicle_unit_number', 'vehicle_vin'}
+    _detail_vf_exclude = {
+        'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
+        'vehicle_unit_number', 'vehicle_vin', 'cancelled_by_name', 'deleted_by_name',
+    }
     v = order.vehicle
+
+    def _user_name(u: Optional[User]) -> Optional[str]:
+        return f"{u.first_name} {u.last_name}".strip() if u else None
+
     return RepairOrderDetailResponse(
         **RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude),
         vehicle_make=v.make or "" if v else "",
@@ -570,6 +610,8 @@ async def get_repair_order_detail(
         vehicle_unit_number=v.unit_number if v else None,
         vehicle_vin=v.vin if v else None,
         pending_zelle_confirmation=pending_zelle_confirmation,
+        cancelled_by_name=_user_name(order.cancelled_by_user),
+        deleted_by_name=_user_name(order.deleted_by_user),
         parts_usage=parts_resp,
         labor_items=labor_resp,
         pm_services=pm_services_resp,
@@ -582,7 +624,7 @@ async def get_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     
     if not order:
@@ -625,7 +667,7 @@ async def update_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
 ):
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     
     if not order:
@@ -646,6 +688,8 @@ async def update_repair_order(
     )
     if cancelling_now:
         _require_cancelable_ro(order)
+        order.cancelled_at = datetime.now(timezone.utc)
+        order.cancelled_by_user_id = current_user.id
         # Restore stock — cancelled work means parts were never consumed.
         parts_result = await db.execute(
             select(PartsUsage)
@@ -709,7 +753,7 @@ async def assign_mechanic(
     """Assign/reassign mechanic, set status to assigned when needed, and notify mechanic."""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
@@ -868,7 +912,7 @@ async def acknowledge_job(
 ):
     """Mechanic acknowledges job assignment"""
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id)
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
     order = result.scalar_one_or_none()
     
@@ -913,7 +957,7 @@ async def start_work(
     """Mechanic starts work - notifies customer"""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
@@ -1100,7 +1144,7 @@ async def hold_repair_order(
 ):
     """Mechanic puts an in-progress RO on hold (waiting for parts, customer approval, etc.)"""
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id)
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
     order = result.scalar_one_or_none()
 
@@ -1173,7 +1217,7 @@ async def resume_repair_order(
     """Mechanic resumes a held RO — clears hold state and restarts the timer."""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
@@ -1268,7 +1312,7 @@ async def complete_work(
     """Mechanic marks work as complete - awards points and notifies manager"""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
@@ -1545,7 +1589,7 @@ async def approve_completion(
     """Manager approves completed work - notifies customer"""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
     )
     order = result.scalar_one_or_none()
@@ -1686,7 +1730,7 @@ async def approve_completion(
         tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
         auto_tenant = tenant_result.scalar_one_or_none()
         if auto_tenant:
-            await auto_create_invoice_for_order(db=db, order=order, tenant=auto_tenant)
+            await auto_create_invoice_for_order(db=db, order=order, tenant=auto_tenant, created_by_user_id=current_user.id)
     except Exception:
         logger.exception("Auto-invoice creation failed for order %s", order_id)
 
@@ -1716,97 +1760,17 @@ async def delete_repair_order(
 
     _require_deletable_ro(order)
 
-    # Save identifiers before deletion so we can broadcast cache invalidation.
+    # Save identifiers before commit so we can broadcast cache invalidation.
     tenant_id = str(order.tenant_id)
     customer_id = str(order.customer_id)
     order_id_str = str(order.id)
     order_number = order.order_number
 
-    # Delete related records first (no cascade in FK)
-    # Delete quote if exists
-    quote_result = await db.execute(select(Quote).where(Quote.repair_order_id == order_id))
-    quote = quote_result.scalar_one_or_none()
-    if quote:
-        await db.delete(quote)
-
-    # Delete parts usage and restore stock — these parts were never actually consumed.
-    parts_result = await db.execute(
-        select(PartsUsage)
-        .where(PartsUsage.repair_order_id == order_id)
-        .options(selectinload(PartsUsage.inventory_item))
-    )
-    for part in parts_result.scalars().all():
-        if part.inventory_item is not None:
-            part.inventory_item.stock_quantity = (part.inventory_item.stock_quantity or 0) + part.quantity
-        await db.delete(part)
-
-    # Delete labor items
-    labor_result = await db.execute(select(Labor).where(Labor.repair_order_id == order_id))
-    for labor in labor_result.scalars().all():
-        await db.delete(labor)
-
-    # Delete PM service links (fleet PM work orders). Without this the
-    # repair_order_pm_services FK blocks deleting a PM work order that has
-    # services attached.
-    from app.db.models.fleet import RepairOrderPMService, FleetIncident
-    pm_svc_result = await db.execute(
-        select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == order_id)
-    )
-    for pm_svc in pm_svc_result.scalars().all():
-        await db.delete(pm_svc)
-
-    # Delete work-in-progress child records that also FK to the repair order.
-    # A PM work order accrues these once work starts (timer, photos) or when it
-    # originated from an incident / carried recommended services.
-    from app.db.models.mechanic_points import MechanicPoints
-    from app.db.models.work_photo import WorkPhoto
-    for model in (MechanicTimeSession, MechanicPoints, WorkPhoto, RecommendedService):
-        rows = await db.execute(select(model).where(model.repair_order_id == order_id))
-        for row in rows.scalars().all():
-            await db.delete(row)
-
-    # A recommended service on another RO may point here via
-    # resolved_by_repair_order_id; unlink so that RO isn't affected.
-    resolved_by_result = await db.execute(
-        select(RecommendedService).where(RecommendedService.resolved_by_repair_order_id == order_id)
-    )
-    for rec in resolved_by_result.scalars().all():
-        rec.resolved_by_repair_order_id = None
-
-    # An incident outlives the repair spawned to fix it: unlink rather than delete
-    # so the incident record (and its history) survives the work order.
-    incident_result = await db.execute(
-        select(FleetIncident).where(FleetIncident.repair_order_id == order_id)
-    )
-    for incident in incident_result.scalars().all():
-        incident.repair_order_id = None
-
-    # Unlink any appointment or child (split) repair order pointing at this RO,
-    # so those FKs don't block the delete. The linked records themselves survive.
-    from app.db.models.appointment import Appointment
-    appt_result = await db.execute(
-        select(Appointment).where(Appointment.repair_order_id == order_id)
-    )
-    for appt in appt_result.scalars().all():
-        appt.repair_order_id = None
-    child_result = await db.execute(
-        select(RepairOrder).where(RepairOrder.parent_repair_order_id == order_id)
-    )
-    for child in child_result.scalars().all():
-        child.parent_repair_order_id = None
-
-    # Delete any invoice (and its payments) tied to this RO. Internal fleet ROs
-    # generate an internal cost invoice on completion; without this, the
-    # Invoice.repair_order_id FK blocks deleting a completed RO.
-    from app.db.models.payment import Payment
-    invoice_result = await db.execute(select(Invoice).where(Invoice.repair_order_id == order_id))
-    for invoice in invoice_result.scalars().all():
-        payment_result = await db.execute(select(Payment).where(Payment.invoice_id == invoice.id))
-        for payment in payment_result.scalars().all():
-            await db.delete(payment)
-        await db.delete(invoice)
-
-    await db.delete(order)
+    # Soft delete: hide the order (and keep its quote/parts/labor/invoice
+    # history intact) rather than destroying it, so it can be restored and
+    # so there's always a record of who deleted it and when.
+    order.deleted_at = datetime.now(timezone.utc)
+    order.deleted_by_user_id = current_user.id
     await db.commit()
 
     # Broadcast deletion so dashboards/lists update without manual refresh.
@@ -1820,6 +1784,43 @@ async def delete_repair_order(
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{order_id}/restore", response_model=RepairOrderResponse)
+async def restore_repair_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
+):
+    """Undo a soft delete. Restores the order to whatever status it had
+    when deleted — restoring never changes status on its own."""
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if order.deleted_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Repair order is not deleted")
+
+    order.deleted_at = None
+    order.deleted_by_user_id = None
+    await db.commit()
+    await db.refresh(order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+
+    return RepairOrderResponse.model_validate(order)
 
 
 # --- Helpers for parts/labor and recompute ---
@@ -1846,13 +1847,13 @@ def _require_cancelable_ro(order: RepairOrder) -> None:
 
 def _require_deletable_ro(order: RepairOrder) -> None:
     # Internal fleet work orders have no customer quote/invoice/payment, so they can
-    # be deleted at any status. Customer-facing ROs stay locked to draft/quoted.
+    # be deleted at any status. Customer-facing ROs stay locked to draft/quoted/cancelled.
     if order.is_internal:
         return
-    if order.status not in DANGER_ACTION_RO_STATUSES:
+    if order.status not in DELETABLE_RO_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repair orders can only be deleted when status is draft or quoted",
+            detail="Repair orders can only be deleted when status is draft, quoted, or cancelled",
         )
 
 
@@ -1881,7 +1882,7 @@ def _require_editable_ro(order: RepairOrder) -> None:
 async def _recompute_repair_order_totals(db: AsyncSession, order_id: UUID) -> None:
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(
             selectinload(RepairOrder.parts_usage),
             selectinload(RepairOrder.labor_items),
@@ -2114,7 +2115,7 @@ async def add_parts_to_repair_order(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2182,7 +2183,7 @@ async def list_repair_order_parts(
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id)
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -2219,7 +2220,7 @@ async def get_repair_order_part_suggestions(
     tenant's overall most-frequently-used in-stock parts as a fallback."""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.labor_items))
     )
     order = result.scalar_one_or_none()
@@ -2310,7 +2311,7 @@ async def update_parts_quantity(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2368,7 +2369,7 @@ async def update_parts_quantity(
 
 async def _load_order_for_summary(db: AsyncSession, order_id: UUID) -> RepairOrder:
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id).options(selectinload(RepairOrder.labor_items))
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)).options(selectinload(RepairOrder.labor_items))
     )
     return result.scalar_one()
 
@@ -2386,7 +2387,7 @@ async def set_parts_pricing_mode(
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id).options(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)).options(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item)
         )
     )
@@ -2424,7 +2425,7 @@ async def update_repair_order_discounts(
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id).options(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)).options(
             selectinload(RepairOrder.parts_usage), selectinload(RepairOrder.labor_items)
         )
     )
@@ -2469,7 +2470,7 @@ async def remove_parts_from_repair_order(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2510,7 +2511,7 @@ async def add_labor_to_repair_order(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2552,7 +2553,7 @@ async def list_repair_order_labor(
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id)
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
     )
     order = result.scalar_one_or_none()
     if not order:
@@ -2588,7 +2589,7 @@ async def update_repair_order_labor(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2629,7 +2630,7 @@ async def remove_labor_from_repair_order(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2677,7 +2678,7 @@ async def add_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2704,7 +2705,7 @@ async def list_recommended_services(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2731,7 +2732,7 @@ async def update_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
@@ -2765,7 +2766,7 @@ async def delete_recommended_service(
 ):
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
-    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id))
+    result = await db.execute(select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)))
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")

@@ -258,6 +258,12 @@ export interface RepairOrder {
   pending_zelle_confirmation?: boolean
   hold_reason?: string | null
   held_at?: string | null
+  cancelled_at?: string | null
+  cancelled_by_user_id?: string | null
+  cancelled_by_name?: string | null
+  deleted_at?: string | null
+  deleted_by_user_id?: string | null
+  deleted_by_name?: string | null
   // Time tracking fields (V1.4)
   estimated_labor_minutes?: number | null
   actual_tracked_minutes?: number | null

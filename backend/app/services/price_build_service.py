@@ -207,7 +207,7 @@ class PriceBuildService:
     async def load_order(self, db: AsyncSession, order_id: UUID) -> RepairOrder:
         result = await db.execute(
             select(RepairOrder)
-            .where(RepairOrder.id == order_id)
+            .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
             .options(
                 selectinload(RepairOrder.vehicle),
                 selectinload(RepairOrder.parts_usage),

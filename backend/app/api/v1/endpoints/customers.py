@@ -630,7 +630,7 @@ async def get_customer_history(
     orders_result = await db.execute(
         select(RepairOrder)
         .options(selectinload(RepairOrder.vehicle))
-        .where(RepairOrder.customer_id == customer_id)
+        .where(RepairOrder.customer_id == customer_id, RepairOrder.deleted_at.is_(None))
         .order_by(RepairOrder.created_at.desc())
     )
     orders = orders_result.scalars().all()
@@ -708,7 +708,11 @@ async def get_customer_history_detail(
 
     result = await db.execute(
         select(RepairOrder)
-        .where(and_(RepairOrder.id == order_id, RepairOrder.customer_id == customer_id))
+        .where(and_(
+            RepairOrder.id == order_id,
+            RepairOrder.customer_id == customer_id,
+            RepairOrder.deleted_at.is_(None),
+        ))
         .options(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),

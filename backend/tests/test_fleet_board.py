@@ -307,15 +307,17 @@ async def test_delete_pm_work_order_with_services(db_session):
     )).scalars().all()
     assert len(links) == 1
 
-    # Delete must succeed and remove the RO + its PM service links.
+    # Delete must succeed (no FK error) — it's a soft delete, so the RO and
+    # its PM service links survive, just hidden.
     await delete_repair_order(order_id=ro_id, db=db_session, current_user=user)
 
-    assert (await db_session.execute(
+    stored = (await db_session.execute(
         sa.select(RepairOrder).where(RepairOrder.id == ro_id)
-    )).scalar_one_or_none() is None
+    )).scalar_one()
+    assert stored.deleted_at is not None
     assert (await db_session.execute(
         sa.select(RepairOrderPMService).where(RepairOrderPMService.repair_order_id == ro_id)
-    )).scalars().all() == []
+    )).scalars().all() != []
 
 
 @pytest.mark.asyncio

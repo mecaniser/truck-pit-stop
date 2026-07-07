@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import { format } from 'date-fns'
 import {
   AlertTriangle,
   Box,
@@ -17,7 +18,9 @@ import {
   Mail,
   Pencil,
   Plane,
+  Play,
   Plus,
+  RotateCcw,
   Search,
   Tag,
   Trash2,
@@ -103,6 +106,10 @@ type Props = {
   showReviewNotes?: boolean
   onToggleReviewNotes?: () => void
   onApproveCompletion?: () => void
+  onStartWorkOrder?: () => void
+  startWorkOrderPending?: boolean
+  onCompleteWorkOrder?: (mileageOut: number | null) => void
+  completeWorkOrderPending?: boolean
   invoiceCreatePending?: boolean
   invoiceDueDateValue?: string
   showInvoiceCreateOptions?: boolean
@@ -127,6 +134,11 @@ type Props = {
   cancelPending?: boolean
   deletePending?: boolean
   cancelDisabled?: boolean
+  isDeleted?: boolean
+  deletedByName?: string | null
+  deletedAt?: string | null
+  onRestoreOrder?: () => void
+  restorePending?: boolean
   recommendedServices?: RecommendedService[]
   showAddRecommendedService?: boolean
   recommendedServiceForm?: {
@@ -556,6 +568,10 @@ export default function PriceBuilderPanel({
   showReviewNotes = false,
   onToggleReviewNotes,
   onApproveCompletion,
+  onStartWorkOrder,
+  startWorkOrderPending = false,
+  onCompleteWorkOrder,
+  completeWorkOrderPending = false,
   invoiceCreatePending = false,
   invoiceDueDateValue = '',
   showInvoiceCreateOptions = false,
@@ -580,6 +596,11 @@ export default function PriceBuilderPanel({
   cancelPending,
   deletePending,
   cancelDisabled,
+  isDeleted = false,
+  deletedByName,
+  deletedAt,
+  onRestoreOrder,
+  restorePending = false,
   recommendedServices,
   showAddRecommendedService,
   recommendedServiceForm,
@@ -613,6 +634,8 @@ export default function PriceBuilderPanel({
   const totalMotionTimerRef = useRef<number | null>(null)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
+  const [armWoComplete, setArmWoComplete] = useState(false)
+  const [woMileageOut, setWoMileageOut] = useState('')
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
   const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
@@ -799,6 +822,12 @@ export default function PriceBuilderPanel({
     setHistoryOpen(false)
     setHistoryVisibleCount(5)
   }, [orderId])
+
+  useEffect(() => {
+    if (!['in_progress', 'pending_review'].includes(orderStatus)) {
+      setArmWoComplete(false)
+    }
+  }, [orderStatus])
 
   // --- Bulk parts pricing (Stock ⇄ List) + manager discounts ---
   const [laborDiscount, setLaborDiscount] = useState('')
@@ -1333,10 +1362,19 @@ export default function PriceBuilderPanel({
 
   return (
     <div className="flex h-full min-h-full flex-col overflow-hidden bg-white">
-      <div className="bg-[linear-gradient(100deg,#f7a823,#e07c05)] px-5 py-4 text-white">
+      <div
+        className="px-5 py-4 text-white"
+        style={{
+          background: isInternalOrder
+            ? 'linear-gradient(100deg,#1e3a8a,#0f172a)'
+            : 'linear-gradient(100deg,#f7a823,#e07c05)',
+        }}
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/75">Repair Order</p>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/75">
+              {isInternalOrder ? 'Internal Fleet Order' : 'Repair Order'}
+            </p>
             <h3 className="truncate font-['Barlow_Condensed',sans-serif] text-3xl font-extrabold leading-none tracking-wide">
               #{orderNumber || orderId.slice(0, 8)}
             </h3>
@@ -1586,6 +1624,51 @@ export default function PriceBuilderPanel({
             </div>
           </div>
           )}
+        </div>
+      )}
+
+      {isInternalOrder && armWoComplete && (
+        <div className="rounded-2xl border border-yellow-200 bg-yellow-50/70 p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
+              <CheckCircle className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="font-semibold text-yellow-950">Complete work order</p>
+              <p className="text-sm text-yellow-700">Enter the truck's odometer, then complete. Generates the internal cost record.</p>
+            </div>
+          </div>
+
+          <label className="mb-3 block text-sm">
+            <span className="mb-1 block font-semibold text-yellow-800">Mileage out</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={woMileageOut}
+              onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) setWoMileageOut(v) }}
+              placeholder={mileageIn != null ? `Odometer at return (in: ${mileageIn.toLocaleString()} mi)` : 'Odometer reading at vehicle return'}
+              className="h-10 w-full rounded-lg border border-yellow-200 bg-white px-3 text-sm text-gray-900 placeholder-gray-400 outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-200"
+            />
+          </label>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setArmWoComplete(false)}
+              className="inline-flex h-9 items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={completeWorkOrderPending}
+              onClick={() => onCompleteWorkOrder?.(woMileageOut.trim() === '' ? null : Number(woMileageOut))}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
+            >
+              {completeWorkOrderPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {completeWorkOrderPending ? 'Completing…' : 'Complete work order'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -3012,6 +3095,32 @@ export default function PriceBuilderPanel({
                 </span>
               )
             )}
+            {isInternalOrder && (
+              ['draft', 'assigned', 'acknowledged'].includes(orderStatus) ? (
+                <button
+                  type="button"
+                  disabled={startWorkOrderPending || !onStartWorkOrder}
+                  onClick={onStartWorkOrder}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(245,158,11,.28)] hover:bg-amber-600 disabled:bg-gray-300"
+                >
+                  {startWorkOrderPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  {startWorkOrderPending ? 'Starting...' : 'Start Work'}
+                </button>
+              ) : ['in_progress', 'pending_review'].includes(orderStatus) && !armWoComplete ? (
+                <button
+                  type="button"
+                  onClick={() => { setWoMileageOut(mileageIn != null ? String(mileageIn) : ''); setArmWoComplete(true) }}
+                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Mark Completed
+                </button>
+              ) : orderStatus === 'completed' ? (
+                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
+                  <CheckCircle className="h-4 w-4" /> Completed
+                </span>
+              ) : null
+            )}
           </div>
         </div>
         <div className="-mx-5 -mb-4 mt-4 border-t border-red-100 bg-red-50/60">
@@ -3025,27 +3134,53 @@ export default function PriceBuilderPanel({
           </button>
           {showDangerActions && (
             <div className="border-t border-red-100 px-5 py-3">
-              <p className="mb-3 text-sm text-red-700">
-                Cancel stops work without deleting history. Delete will permanently remove this order.
-              </p>
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  type="button"
-                  disabled={cancelPending || deletePending || cancelDisabled}
-                  onClick={onCancelOrder}
-                  className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
-                >
-                  {cancelPending ? 'Cancelling...' : 'Cancel order'}
-                </button>
-                <button
-                  type="button"
-                  disabled={deletePending}
-                  onClick={onDeleteOrder}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  {deletePending ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
+              {isDeleted ? (
+                <>
+                  <p className="mb-3 text-sm text-red-700">
+                    {(() => {
+                      const when = deletedAt ? format(new Date(deletedAt), 'MMM d, yyyy h:mm a') : null
+                      if (deletedByName && when) return `Deleted by ${deletedByName} on ${when}. Restore to bring it back.`
+                      if (when) return `Deleted on ${when}. Restore to bring it back.`
+                      return 'This order is deleted. Restore to bring it back.'
+                    })()}
+                  </p>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={restorePending}
+                      onClick={onRestoreOrder}
+                      className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      {restorePending ? 'Restoring...' : 'Restore order'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mb-3 text-sm text-red-700">
+                    Cancel stops work without deleting history. Delete removes it from the active list — it can be restored later.
+                  </p>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={cancelPending || deletePending || cancelDisabled}
+                      onClick={onCancelOrder}
+                      className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                    >
+                      {cancelPending ? 'Cancelling...' : 'Cancel order'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deletePending}
+                      onClick={onDeleteOrder}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      {deletePending ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

@@ -111,6 +111,13 @@ class RevenueStats(BaseModel):
     this_month_ppi: str = "0.00"
 
 
+class InternalCostStats(BaseModel):
+    today: str
+    this_week: str
+    this_month: str
+    total_internal_invoices: int
+
+
 class DashboardStats(BaseModel):
     total_customers: int
     total_vehicles: int
@@ -127,6 +134,7 @@ class DashboardStats(BaseModel):
     my_in_progress: int
     # Phase 2: Revenue and workload
     revenue: RevenueStats
+    internal_costs: InternalCostStats
     mechanic_workload: List[MechanicWorkload]
     # Alerts: overdue approvals (quoted > 3 days)
     overdue_approvals: int = 0
@@ -158,6 +166,7 @@ async def get_dashboard_stats(
             my_assigned_orders=0,
             my_in_progress=0,
             revenue=RevenueStats(today="0.00", this_week="0.00", this_month="0.00", total_paid_orders=0),
+            internal_costs=InternalCostStats(today="0.00", this_week="0.00", this_month="0.00", total_internal_invoices=0),
             mechanic_workload=[],
             overdue_approvals=0,
             declined_quotes=0,
@@ -612,6 +621,58 @@ async def get_dashboard_stats(
         this_month_ppi=str(_ppi_for("month")),
     )
 
+    # Internal fleet cost stats: at-cost parts + internal labor rate for
+    # company-owned trucks, from internal invoices (no customer payment).
+    result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
+            and_(
+                Invoice.tenant_id == tenant_id,
+                Invoice.is_internal.is_(True),
+                cast(Invoice.created_at, Date) == today,
+            )
+        )
+    )
+    internal_cost_today = result.scalar() or Decimal("0.00")
+
+    result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
+            and_(
+                Invoice.tenant_id == tenant_id,
+                Invoice.is_internal.is_(True),
+                cast(Invoice.created_at, Date) >= week_start,
+            )
+        )
+    )
+    internal_cost_week = result.scalar() or Decimal("0.00")
+
+    result = await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
+            and_(
+                Invoice.tenant_id == tenant_id,
+                Invoice.is_internal.is_(True),
+                cast(Invoice.created_at, Date) >= month_start,
+            )
+        )
+    )
+    internal_cost_month = result.scalar() or Decimal("0.00")
+
+    result = await db.execute(
+        select(func.count(Invoice.id)).where(
+            and_(
+                Invoice.tenant_id == tenant_id,
+                Invoice.is_internal.is_(True),
+            )
+        )
+    )
+    total_internal_invoices = result.scalar() or 0
+
+    internal_costs = InternalCostStats(
+        today=str(internal_cost_today),
+        this_week=str(internal_cost_week),
+        this_month=str(internal_cost_month),
+        total_internal_invoices=total_internal_invoices,
+    )
+
     # Phase 2: Mechanic workload distribution
     mechanic_workload: List[MechanicWorkload] = []
     if current_user.role in [UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN]:
@@ -663,6 +724,7 @@ async def get_dashboard_stats(
         my_assigned_orders=my_assigned_orders,
         my_in_progress=my_in_progress,
         revenue=revenue,
+        internal_costs=internal_costs,
         mechanic_workload=mechanic_workload,
         overdue_approvals=overdue_approvals,
         declined_quotes=declined_quotes,
@@ -1015,6 +1077,7 @@ async def manager_start_mechanic_timer(
                 and_(
                     RepairOrder.id == repair_order_uuid,
                     RepairOrder.tenant_id == current_user.tenant_id,
+                    RepairOrder.deleted_at.is_(None),
                 )
             )
         )

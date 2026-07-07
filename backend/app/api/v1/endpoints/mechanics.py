@@ -970,6 +970,7 @@ async def get_my_jobs(
                 RepairOrderStatus.IN_PROGRESS,
                 RepairOrderStatus.PENDING_REVIEW,
             ]),
+            RepairOrder.deleted_at.is_(None),
         )
     )
 
@@ -984,6 +985,7 @@ async def get_my_jobs(
                     RepairOrderStatus.IN_PROGRESS,
                     RepairOrderStatus.PENDING_REVIEW,
                 ]),
+                RepairOrder.deleted_at.is_(None),
             )
         )
     )
@@ -1065,6 +1067,7 @@ async def get_my_history(
                 RepairOrderStatus.INVOICED,
                 RepairOrderStatus.PAID,
             ]),
+            RepairOrder.deleted_at.is_(None),
         )
     )
 
@@ -1078,6 +1081,7 @@ async def get_my_history(
                     RepairOrderStatus.INVOICED,
                     RepairOrderStatus.PAID,
                 ]),
+                RepairOrder.deleted_at.is_(None),
             )
         )
     )
@@ -1157,7 +1161,7 @@ async def get_my_job_detail(
     """Get job detail for mechanic - NO customer info exposed"""
     result = await db.execute(
         select(RepairOrder)
-        .where(RepairOrder.id == order_id)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(
             selectinload(RepairOrder.vehicle),
             selectinload(RepairOrder.labor_items),
@@ -1165,7 +1169,7 @@ async def get_my_job_detail(
         )
     )
     order = result.scalar_one_or_none()
-    
+
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     
@@ -1748,6 +1752,7 @@ async def upload_job_photo(
                     RepairOrderStatus.ACKNOWLEDGED,
                     RepairOrderStatus.IN_PROGRESS,
                 ]),
+                RepairOrder.deleted_at.is_(None),
             )
         )
     )

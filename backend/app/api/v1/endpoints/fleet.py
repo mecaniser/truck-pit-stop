@@ -901,6 +901,7 @@ async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dic
                 RepairOrder.vehicle_id.in_(vehicle_ids),
                 RepairOrder.is_internal.is_(True),
                 RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+                RepairOrder.deleted_at.is_(None),
             )
         )
         .options(selectinload(RepairOrder.assigned_mechanic))
@@ -983,7 +984,11 @@ async def truck_detail(
     # All internal ROs for this truck (for history, work order, spend, parts).
     ro_result = await db.execute(
         select(RepairOrder)
-        .where(and_(RepairOrder.vehicle_id == vehicle_id, RepairOrder.is_internal.is_(True)))
+        .where(and_(
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.is_internal.is_(True),
+            RepairOrder.deleted_at.is_(None),
+        ))
         .options(selectinload(RepairOrder.assigned_mechanic))
         .order_by(RepairOrder.created_at.desc())
     )
@@ -1182,9 +1187,12 @@ async def update_truck(
     return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
 
 
-async def _create_internal_invoice(db: AsyncSession, tenant_id: UUID, ro: RepairOrder) -> None:
+async def _create_internal_invoice(
+    db: AsyncSession, tenant_id: UUID, ro: RepairOrder, created_by_user_id: Optional[UUID] = None,
+) -> None:
     """Generate the internal invoice (cost record) for a completed work order.
-    No customer billing/tax/markup; idempotent (one invoice per RO)."""
+    No customer billing/tax/markup; idempotent (one invoice per RO).
+    created_by_user_id is the staff member who completed the work order, if known."""
     from decimal import Decimal
     from app.db.models.invoice import Invoice, InvoiceStatus
     from app.api.v1.endpoints.invoices import generate_invoice_number
@@ -1203,6 +1211,7 @@ async def _create_internal_invoice(db: AsyncSession, tenant_id: UUID, ro: Repair
             subtotal=total, shop_supplies_amount=Decimal("0.00"), service_fee_amount=Decimal("0.00"),
             tax_amount=Decimal("0.00"), discount_amount=Decimal("0.00"), total_amount=total,
             due_date=None, paid_at=None, notes="Internal fleet work order",
+            created_by_user_id=created_by_user_id,
         )
         db.add(inv)
         return inv
@@ -1221,6 +1230,7 @@ async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) 
             RepairOrder.id == ro_id,
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.is_internal.is_(True),
+            RepairOrder.deleted_at.is_(None),
         ))
         .options(selectinload(RepairOrder.assigned_mechanic))
     )
@@ -1292,7 +1302,7 @@ async def complete_work_order(
         veh.active_warning_lights = None
     await db.commit()
     # No external invoice for internal repairs — generate an internal cost record.
-    await _create_internal_invoice(db, current_user.tenant_id, ro)
+    await _create_internal_invoice(db, current_user.tenant_id, ro, created_by_user_id=current_user.id)
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     return _board_work_order(ro)
 

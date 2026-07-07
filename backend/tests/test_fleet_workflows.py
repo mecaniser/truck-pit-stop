@@ -403,9 +403,10 @@ async def test_internal_wo_complete_manual_mileage_out_overrides(db_session):
 
 
 @pytest.mark.asyncio
-async def test_delete_completed_internal_wo_removes_invoice(db_session):
+async def test_delete_completed_internal_wo_keeps_invoice_intact(db_session):
     """A completed internal WO has an internal invoice (FK to the RO). Deleting
-    the RO must clean up that invoice first, or the FK blocks the delete."""
+    the RO is a soft delete, so the invoice is untouched and never at risk of
+    an FK error."""
     from sqlalchemy import select
     from app.api.v1.endpoints import repair_orders as ro_ep
     from app.db.models.invoice import Invoice
@@ -425,11 +426,13 @@ async def test_delete_completed_internal_wo_removes_invoice(db_session):
     ro_id = ro.id
     assert (await db_session.execute(select(Invoice).where(Invoice.repair_order_id == ro_id))).scalar_one_or_none() is not None
 
-    # Deleting the completed internal RO must succeed (no FK error).
+    # Deleting the completed internal RO must succeed (no FK error). It's a
+    # soft delete, so both the RO and its internal invoice survive, hidden.
     await ro_ep.delete_repair_order(order_id=ro_id, db=db_session, current_user=user)
 
-    assert (await db_session.execute(select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one_or_none() is None
-    assert (await db_session.execute(select(Invoice).where(Invoice.repair_order_id == ro_id))).scalar_one_or_none() is None
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one()
+    assert stored.deleted_at is not None
+    assert (await db_session.execute(select(Invoice).where(Invoice.repair_order_id == ro_id))).scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio
@@ -550,6 +553,34 @@ async def test_complete_generates_internal_invoice(db_session):
         sqlalchemy.select(sqlalchemy.func.count(Invoice.id)).where(Invoice.repair_order_id == ro.id)
     )).scalar()
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_dashboard_stats_reports_internal_costs_separately_from_revenue(db_session):
+    import sqlalchemy
+    from app.api.v1.endpoints import dashboard
+
+    _, vehicle, user = await _seed_fleet(db_session)
+    await fleet.new_work_order(vehicle_id=vehicle.id, body=WorkOrderCreate(description="Brakes"),
+                               db=db_session, current_user=user)
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+
+    stats = await dashboard.get_dashboard_stats(db=db_session, current_user=user)
+
+    # No parts/labor were added, so the internal invoice's cost-basis total is zero.
+    expected_total = "0.00"
+    assert stats.internal_costs.total_internal_invoices == 1
+    assert stats.internal_costs.this_month == expected_total
+    assert stats.internal_costs.this_week == expected_total
+    assert stats.internal_costs.today == expected_total
+
+    # Internal invoices have no Payment row, so they must never inflate
+    # customer-facing revenue.
+    assert stats.revenue.this_month == "0.00"
 
 
 @pytest.mark.asyncio

@@ -78,6 +78,15 @@ class RepairOrder(BaseModel):
     pricing_locked_at = Column(DateTime(timezone=True), nullable=True)
     pricing_lock_reason = Column(String(64), nullable=True)
 
+    # Cancel / delete audit trail. deleted_at comes from BaseModel; deleting a
+    # repair order is a soft delete (hidden, not destroyed) so it can be
+    # restored and so there's always a record of who cancelled/deleted it.
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    cancelled_by_user = relationship("User", foreign_keys=[cancelled_by_user_id])
+    deleted_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    deleted_by_user = relationship("User", foreign_keys=[deleted_by_user_id])
+
     # Comeback / warranty tracking
     parent_repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=True)
     is_warranty_repair = Column(Boolean, nullable=False, default=False)

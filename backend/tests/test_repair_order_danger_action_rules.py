@@ -117,11 +117,40 @@ async def test_delete_repair_order_rejects_completed_status(db_session):
         )
 
     assert exc.value.status_code == 400
-    assert exc.value.detail == "Repair orders can only be deleted when status is draft or quoted"
+    assert exc.value.detail == "Repair orders can only be deleted when status is draft, quoted, or cancelled"
 
     stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one_or_none()
     assert stored is not None
     assert stored.status == RepairOrderStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_delete_repair_order_allows_cancelled_status(db_session, monkeypatch):
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.CANCELLED,
+    )
+
+    async def _noop_async(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_async)
+
+    await repair_orders.delete_repair_order(
+        order.id,
+        db=db_session,
+        current_user=user,
+    )
+
+    # Soft delete: the row survives, hidden and stamped with who/when.
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    assert stored.deleted_at is not None
+    assert stored.deleted_by_user_id == user.id
+    assert stored.status == RepairOrderStatus.CANCELLED
 
 
 @pytest.mark.asyncio
@@ -177,5 +206,132 @@ async def test_delete_repair_order_allows_draft_status(db_session, monkeypatch):
 
     assert response.status_code == 204
 
-    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one_or_none()
-    assert stored is None
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    assert stored.deleted_at is not None
+    assert stored.deleted_by_user_id == user.id
+    assert stored.status == RepairOrderStatus.DRAFT
+
+
+@pytest.mark.asyncio
+async def test_cancel_repair_order_records_actor_and_timestamp(db_session, monkeypatch):
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.QUOTED,
+    )
+
+    async def _noop_async(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_async)
+
+    await repair_orders.update_repair_order(
+        order.id,
+        RepairOrderUpdate(status=RepairOrderStatus.CANCELLED),
+        db=db_session,
+        current_user=user,
+    )
+
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    assert stored.cancelled_at is not None
+    assert stored.cancelled_by_user_id == user.id
+
+
+@pytest.mark.asyncio
+async def test_restore_repair_order(db_session, monkeypatch):
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.DRAFT,
+    )
+
+    async def _noop_async(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_async)
+
+    await repair_orders.delete_repair_order(order.id, db=db_session, current_user=user)
+
+    restored = await repair_orders.restore_repair_order(order.id, db=db_session, current_user=user)
+
+    assert restored.status == RepairOrderStatus.DRAFT
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    assert stored.deleted_at is None
+    assert stored.deleted_by_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_restore_repair_order_rejects_non_deleted(db_session):
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.DRAFT,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await repair_orders.restore_repair_order(order.id, db=db_session, current_user=user)
+
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_restore_repair_order_requires_owner_or_admin_role(db_session):
+    user, customer, vehicle = await _seed_context(db_session)
+    user.role = UserRole.RECEPTIONIST
+    await db_session.commit()
+
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.DRAFT,
+    )
+
+    checker = repair_orders.require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+    with pytest.raises(HTTPException) as exc:
+        await checker(current_user=user)
+
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_repair_orders_excludes_deleted(db_session, monkeypatch):
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.DRAFT,
+    )
+
+    async def _noop_async(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_async)
+
+    await repair_orders.delete_repair_order(order.id, db=db_session, current_user=user)
+
+    active_list = await repair_orders.list_repair_orders(
+        customer_id=None, vehicle_id=None, status=None, deleted=False,
+        skip=0, limit=100, paginated=False,
+        db=db_session, current_user=user,
+    )
+    assert order.id not in [o.id for o in active_list]
+
+    deleted_list = await repair_orders.list_repair_orders(
+        customer_id=None, vehicle_id=None, status=None, deleted=True,
+        skip=0, limit=100, paginated=False,
+        db=db_session, current_user=user,
+    )
+    assert order.id in [o.id for o in deleted_list]
