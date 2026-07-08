@@ -53,6 +53,9 @@ class UserResponse(BaseModel):
     role: UserRole
     is_active: bool
     can_access_messaging: bool = False
+    # Shop-wide switch for the Messages feature; defaults on. The frontend ANDs
+    # this with role/grant access to decide whether to show Messaging.
+    messaging_enabled: bool = True
     tenant_id: Optional[UUID] = None
     tenant_name: Optional[str] = None
     tenant_slug: Optional[str] = None

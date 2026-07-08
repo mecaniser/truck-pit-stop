@@ -18,6 +18,9 @@ class Tenant(BaseModel):
     sms_phone_sid = Column(String(64), nullable=True)
     sms_enabled = Column(Boolean, default=False, nullable=False)
     sms_messaging_service_sid = Column(String(64), nullable=True)
+    # Shop-wide switch for the customer Messages feature. Default on so existing
+    # shops are unaffected; owners can turn it off while the feature is unfinished.
+    messaging_enabled = Column(Boolean, default=True, nullable=False)
     
     # Garage ownership
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)

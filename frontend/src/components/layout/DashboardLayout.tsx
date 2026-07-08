@@ -27,10 +27,14 @@ export default function DashboardLayout() {
   const location = useLocation()
   const { accentColors } = useTheme()
   // Owner/admin/receptionist/mechanic have messaging by role; other roles
-  // (notably fleet managers) need the can_access_messaging grant.
+  // (notably fleet managers) need the can_access_messaging grant. Either way,
+  // the shop-wide messaging_enabled switch can turn the whole feature off
+  // (absent flag = on, so nothing changes until a shop disables it).
+  const shopMessagingEnabled = user?.messaging_enabled !== false
   const canAccessMessaging =
-    ['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(user?.role || '') ||
-    Boolean(user?.can_access_messaging)
+    shopMessagingEnabled &&
+    (['garage_owner', 'garage_admin', 'receptionist', 'mechanic'].includes(user?.role || '') ||
+      Boolean(user?.can_access_messaging))
   const messagesNavLink = { to: '/dashboard/messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageSquare }
   const shouldFetchMessagesUnread = Boolean(user && user.role !== 'super_admin' && canAccessMessaging)
   const { data: unreadSummary } = useQuery({

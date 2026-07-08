@@ -13,6 +13,7 @@ from app.core.dependencies import get_current_active_user, get_db
 from app.core.websocket import broadcast_sms_thread_event
 from app.db.models.customer import Customer
 from app.db.models.message_thread import MessageThread
+from app.db.models.tenant import Tenant
 from app.db.models.sms_message import SMSMessage, SMSMessageSource
 from app.db.models.user import User, UserRole
 from app.schemas.message import (
@@ -30,7 +31,10 @@ router = APIRouter()
 
 
 def require_staff_user():
-    async def role_checker(current_user: User = Depends(get_current_active_user)):
+    async def role_checker(
+        current_user: User = Depends(get_current_active_user),
+        db: AsyncSession = Depends(get_db),
+    ):
         # Owner/admin/receptionist/mechanic have messaging by role; other roles
         # (notably fleet managers) need the can_access_messaging grant.
         has_role_access = current_user.role in (
@@ -41,6 +45,17 @@ def require_staff_user():
         )
         if not (has_role_access or current_user.can_access_messaging):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        # Shop-wide kill switch: even permitted staff can't use messaging when
+        # the tenant has the feature turned off.
+        if current_user.tenant_id:
+            tenant = (
+                await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+            ).scalar_one_or_none()
+            if tenant and not tenant.messaging_enabled:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Messaging is disabled for this shop",
+                )
         return current_user
 
     return role_checker

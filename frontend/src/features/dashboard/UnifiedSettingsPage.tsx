@@ -12,7 +12,7 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, Zap, Shield, Settings2, Truck
+  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -1470,10 +1470,31 @@ function ZelleSection() {
 
 function NotificationsSection() {
   const queryClient = useQueryClient()
+  const { user, setUser } = useAuthStore()
   const [remindersEnabled, setRemindersEnabled] = useState(true)
   const [reminderFrequency, setReminderFrequency] = useState(3)
   const [maxReminders, setMaxReminders] = useState(3)
   const [isEditing, setIsEditing] = useState(false)
+
+  // Shop-wide Messaging feature toggle.
+  const { data: tenantSettings } = useQuery<{ messaging_enabled: boolean }>({
+    queryKey: ['tenant-settings'],
+    queryFn: async () => (await api.get('/admin/tenant-settings')).data,
+  })
+  const messagingEnabled = tenantSettings?.messaging_enabled ?? true
+  const messagingMutation = useMutation({
+    mutationFn: async (next: boolean) =>
+      (await api.put('/admin/tenant-settings', { messaging_enabled: next })).data,
+    onSuccess: (data: { messaging_enabled: boolean }) => {
+      toast.success(data.messaging_enabled ? 'Messaging enabled' : 'Messaging disabled')
+      queryClient.invalidateQueries({ queryKey: ['tenant-settings'] })
+      // Reflect immediately so the Messages nav link + route hide/show without a reload.
+      if (user) setUser({ ...user, messaging_enabled: data.messaging_enabled })
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to update messaging')
+    },
+  })
 
   const { data: reminderSettings } = useQuery<ReminderSettings>({
     queryKey: ['reminder-settings'],
@@ -1521,6 +1542,36 @@ function NotificationsSection() {
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <MessageSquare className="w-4 h-4 text-[var(--accent-400)]" />
+          <span>Customer Messaging</span>
+        </div>
+
+        <div className="flex items-center justify-between p-4 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+          <div className="pr-4">
+            <h4 className="font-semibold text-zinc-100 text-sm">Enable Messaging</h4>
+            <p className="text-xs text-zinc-500 mt-1">
+              Shows the Messages inbox and customer conversations. Turn off to hide the feature shop-wide while it's still being built.
+            </p>
+          </div>
+          <button
+            onClick={() => messagingMutation.mutate(!messagingEnabled)}
+            disabled={messagingMutation.isPending}
+            aria-pressed={messagingEnabled}
+            className={`relative w-14 h-8 rounded-full border transition-colors flex-shrink-0 disabled:opacity-60 ${
+              messagingEnabled
+                ? 'bg-[var(--accent-600)] border-[var(--accent-400)]/50'
+                : 'bg-zinc-800 border-zinc-600/50'
+            }`}
+          >
+            <span className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${
+              messagingEnabled ? 'left-7' : 'left-1'
+            }`} />
+          </button>
+        </div>
+      </IndustrialCard>
+
       <IndustrialCard className="p-6 sm:p-8">
         <div className={industrialStyles.sectionHeader}>
           <Bell className="w-4 h-4 text-[var(--accent-400)]" />
