@@ -7,6 +7,7 @@ import { ArrowRight, Download, PackageCheck, Pencil, Plus, Settings, Trash2 } fr
 import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
+import QuantityStepper from '@/components/QuantityStepper'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
@@ -1146,39 +1147,56 @@ export default function InventoryPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Quantity steppers share one row so they read as a group. */}
+        <div className="grid grid-cols-3 gap-3">
           <label className="text-sm text-gray-700 space-y-1">
             <span>Stock Quantity</span>
-            <input
-              type="number"
-              value={manageForm.stock_quantity}
-              onChange={(e) => handleManageChange('stock_quantity', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+            <div className="pt-1">
+              <QuantityStepper
+                ariaLabel="Stock quantity"
+                value={Number(manageForm.stock_quantity) || 0}
+                onChange={(n) => handleManageChange('stock_quantity', String(n))}
+                min={0}
+                unitLabel=""
+                align="start"
+              />
+            </div>
           </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>On Order</span>
-            <input
-              type="number"
-              value={manageForm.on_order_quantity}
-              onChange={(e) => handleManageChange('on_order_quantity', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+            <div className="pt-1">
+              <QuantityStepper
+                ariaLabel="On order quantity"
+                value={Number(manageForm.on_order_quantity) || 0}
+                onChange={(n) => handleManageChange('on_order_quantity', String(n))}
+                min={0}
+                unitLabel=""
+                align="start"
+              />
+            </div>
           </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>Reorder Level</span>
-            <input
-              type="number"
-              value={manageForm.reorder_level}
-              onChange={(e) => handleManageChange('reorder_level', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
+            <div className="pt-1">
+              <QuantityStepper
+                ariaLabel="Reorder level"
+                value={Number(manageForm.reorder_level) || 0}
+                onChange={(n) => handleManageChange('reorder_level', String(n))}
+                min={0}
+                unitLabel=""
+                align="start"
+              />
+            </div>
           </label>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="text-sm text-gray-700 space-y-1">
             <span>Cost <span className="text-gray-400 font-normal">(per unit)</span></span>
             <CurrencyInput
               value={manageForm.cost}
               onChange={(val) => handleManageChange('cost', val)}
+              step={1}
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
@@ -1186,6 +1204,7 @@ export default function InventoryPage() {
             <CurrencyInput
               value={manageForm.selling_price}
               onChange={(val) => handleManageChange('selling_price', val)}
+              step={1}
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
@@ -1435,29 +1454,36 @@ export default function InventoryPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="text-sm text-gray-700 space-y-1">
             <span>Stock Quantity</span>
-            <input
-              type="number"
-              value={addForm.stock_quantity}
-              onChange={(e) => handleAddFormChange('stock_quantity', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="0"
-            />
+            <div className="pt-1">
+              <QuantityStepper
+                ariaLabel="Stock quantity"
+                value={Number(addForm.stock_quantity) || 0}
+                onChange={(n) => handleAddFormChange('stock_quantity', String(n))}
+                min={0}
+                unitLabel=""
+                align="start"
+              />
+            </div>
           </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>Reorder Level</span>
-            <input
-              type="number"
-              value={addForm.reorder_level}
-              onChange={(e) => handleAddFormChange('reorder_level', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="0"
-            />
+            <div className="pt-1">
+              <QuantityStepper
+                ariaLabel="Reorder level"
+                value={Number(addForm.reorder_level) || 0}
+                onChange={(n) => handleAddFormChange('reorder_level', String(n))}
+                min={0}
+                unitLabel=""
+                align="start"
+              />
+            </div>
           </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>Cost <span className="text-gray-400 font-normal">(per unit)</span> *</span>
             <CurrencyInput
               value={addForm.cost}
               onChange={(val) => handleAddFormChange('cost', val)}
+              step={1}
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
@@ -1465,6 +1491,7 @@ export default function InventoryPage() {
             <CurrencyInput
               value={addForm.selling_price}
               onChange={(val) => handleAddFormChange('selling_price', val)}
+              step={1}
             />
           </label>
           <label className="text-sm text-gray-700 space-y-1">
