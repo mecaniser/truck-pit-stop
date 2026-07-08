@@ -80,6 +80,13 @@ export interface Customer {
   sms_opted_out_at?: string | null
   sms_opt_out_source?: string | null
   auto_approval_threshold: string | null
+  usdot_number?: string | null
+  mc_number?: string | null
+  quickbooks_customer_id?: string | null
+  // Computed at query time (not stored columns), populated by the list/detail endpoints.
+  balance?: string
+  vehicle_count?: number
+  single_vehicle_license_plate?: string | null
   created_at: string
   updated_at: string
 }
@@ -167,6 +174,22 @@ export interface Vehicle {
   color: string | null
   mileage: number | null
   notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Contact {
+  id: string
+  tenant_id: string
+  customer_id: string
+  first_name: string | null
+  last_name: string | null
+  role: string | null
+  email: string | null
+  phone: string | null
+  notes: string | null
+  is_primary: boolean
+  source: string | null
   created_at: string
   updated_at: string
 }

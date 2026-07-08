@@ -22,6 +22,8 @@ class CustomerBase(BaseModel):
     billing_country: Optional[str] = "USA"  # column is nullable (e.g. internal-fleet house account)
     notes: Optional[str] = None
     auto_approval_threshold: Optional[Decimal] = None
+    usdot_number: Optional[str] = None
+    mc_number: Optional[str] = None
 
 
 class InitialVehicle(BaseModel):
@@ -68,6 +70,8 @@ class CustomerUpdate(BaseModel):
     billing_country: Optional[str] = None
     notes: Optional[str] = None
     auto_approval_threshold: Optional[Decimal] = None
+    usdot_number: Optional[str] = None
+    mc_number: Optional[str] = None
 
 
 class CustomerResponse(CustomerBase):
@@ -78,8 +82,19 @@ class CustomerResponse(CustomerBase):
     sms_opt_out: bool = False
     sms_opted_out_at: Optional[datetime] = None
     sms_opt_out_source: Optional[str] = None
+    quickbooks_customer_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    # Outstanding AR: sum(invoice.total_amount) - sum(payments.amount) across all
+    # of this customer's invoices. Computed at query time, not a stored column —
+    # populated by the endpoint, defaults to 0 if not explicitly set.
+    balance: Decimal = Decimal("0.00")
+    # Vehicle count + single plate, computed at query time (not stored). Plate is
+    # only meaningful to show directly when there's exactly one vehicle — with
+    # multiple vehicles it's ambiguous which plate to surface, so it's left None
+    # and the UI shows the vehicle count instead.
+    vehicle_count: int = 0
+    single_vehicle_license_plate: Optional[str] = None
     
     class Config:
         from_attributes = True

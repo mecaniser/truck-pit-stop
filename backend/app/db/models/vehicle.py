@@ -22,6 +22,7 @@ class Vehicle(BaseModel):
     color = Column(String(50), nullable=True)
     mileage = Column(Integer, nullable=True)  # current odometer (miles)
     notes = Column(Text, nullable=True)
+    source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
 
     # --- Fleet management (used by the internal Fleet board) ---
     # Assigned driver (simple fields; not a managed entity in v1).

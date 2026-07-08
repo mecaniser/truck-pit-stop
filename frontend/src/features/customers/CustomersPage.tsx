@@ -2,9 +2,9 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, Vehicle, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
+import { Customer, Vehicle, Contact, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
-import { AlertTriangle, ArrowRight, DollarSign, Loader2, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, Truck, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Loader2, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -61,6 +61,26 @@ const emptyVehicleForm: VehicleFormData = {
   color: '',
   mileage: '',
   notes: '',
+}
+
+interface ContactFormData {
+  first_name: string
+  last_name: string
+  role: string
+  email: string
+  phone: string
+  notes: string
+  is_primary: boolean
+}
+
+const emptyContactForm: ContactFormData = {
+  first_name: '',
+  last_name: '',
+  role: '',
+  email: '',
+  phone: '',
+  notes: '',
+  is_primary: false,
 }
 
 const emptyForm: CustomerFormData = {
@@ -196,7 +216,17 @@ const MEXICO_STATES = [
 export default function CustomersPage() {
   const { accentColors } = useTheme()
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchType, setSearchType] = useState<'all' | 'name' | 'email' | 'phone'>('all')
+  type CustomerSortField = 'name' | 'balance' | 'vehicle_count'
+  const [sortField, setSortField] = useState<CustomerSortField>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const toggleSort = (field: CustomerSortField) => {
+    if (sortField === field) {
+      setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm)
@@ -224,6 +254,12 @@ export default function CustomersPage() {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [vehicleFormData, setVehicleFormData] = useState<VehicleFormData>(emptyVehicleForm)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
+
+  // Contact form state
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false)
+  const [editingContact, setEditingContact] = useState<Contact | null>(null)
+  const [contactFormData, setContactFormData] = useState<ContactFormData>(emptyContactForm)
+  const [deleteConfirmContact, setDeleteConfirmContact] = useState<Contact | null>(null)
   
   // Delete confirmation state
   const [deleteConfirmCustomer, setDeleteConfirmCustomer] = useState<Customer | null>(null)
@@ -242,8 +278,20 @@ export default function CustomersPage() {
   const { data: customers, isLoading } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
-      const response = await api.get('/customers')
-      return response.data
+      // The API caps each page at 100 — loop until has_more is false so search
+      // and the customer count reflect everyone, not just the first page.
+      const pageSize = 100
+      let skip = 0
+      const all: Customer[] = []
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const response = await api.get('/customers', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
   
@@ -252,6 +300,16 @@ export default function CustomersPage() {
     queryFn: async () => {
       if (!selectedCustomer?.id) return []
       const response = await api.get(`/customers/${selectedCustomer.id}/vehicles`)
+      return response.data
+    },
+    enabled: !!selectedCustomer?.id && isDetailOpen,
+  })
+
+  const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
+    queryKey: ['customerContacts', selectedCustomer?.id],
+    queryFn: async () => {
+      if (!selectedCustomer?.id) return []
+      const response = await api.get(`/customers/${selectedCustomer.id}/contacts`)
       return response.data
     },
     enabled: !!selectedCustomer?.id && isDetailOpen,
@@ -628,6 +686,68 @@ export default function CustomersPage() {
     },
   })
 
+  const createContactMutation = useMutation({
+    mutationFn: async ({ customerId, data }: { customerId: string; data: ContactFormData }) => {
+      const payload = {
+        first_name: data.first_name || null,
+        last_name: data.last_name || null,
+        role: data.role || null,
+        email: data.email || null,
+        phone: data.phone || null,
+        notes: data.notes || null,
+        is_primary: data.is_primary,
+      }
+      const response = await api.post(`/customers/${customerId}/contacts`, payload)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerContacts', selectedCustomer?.id] })
+      closeContactModal()
+      toast.success('Contact added')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to add contact')
+    },
+  })
+
+  const updateContactMutation = useMutation({
+    mutationFn: async ({ customerId, contactId, data }: { customerId: string; contactId: string; data: ContactFormData }) => {
+      const payload = {
+        first_name: data.first_name || null,
+        last_name: data.last_name || null,
+        role: data.role || null,
+        email: data.email || null,
+        phone: data.phone || null,
+        notes: data.notes || null,
+        is_primary: data.is_primary,
+      }
+      const response = await api.put(`/customers/${customerId}/contacts/${contactId}`, payload)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerContacts', selectedCustomer?.id] })
+      closeContactModal()
+      toast.success('Contact updated')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to update contact')
+    },
+  })
+
+  const deleteContactMutation = useMutation({
+    mutationFn: async ({ customerId, contactId }: { customerId: string; contactId: string }) => {
+      await api.delete(`/customers/${customerId}/contacts/${contactId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerContacts', selectedCustomer?.id] })
+      setDeleteConfirmContact(null)
+      toast.success('Contact deleted')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to delete contact')
+    },
+  })
+
   const resetForm = () => {
     setEditingCustomer(null)
     setFormData(emptyForm)
@@ -791,6 +911,75 @@ export default function CustomersPage() {
       deleteVehicleMutation.mutate({
         customerId: selectedCustomer.id,
         vehicleId: deleteConfirmVehicle.id,
+      })
+    }
+  }
+
+  // Contact form helpers
+  const openAddContactModal = () => {
+    setEditingContact(null)
+    setContactFormData(emptyContactForm)
+    setIsContactModalOpen(true)
+  }
+
+  const openEditContactModal = (contact: Contact) => {
+    setEditingContact(contact)
+    setContactFormData({
+      first_name: contact.first_name || '',
+      last_name: contact.last_name || '',
+      role: contact.role || '',
+      email: contact.email || '',
+      phone: contact.phone || '',
+      notes: contact.notes || '',
+      is_primary: contact.is_primary,
+    })
+    setIsContactModalOpen(true)
+  }
+
+  const closeContactModal = () => {
+    setIsContactModalOpen(false)
+    setEditingContact(null)
+    setContactFormData(emptyContactForm)
+  }
+
+  const handleContactInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target
+    const checked = (e.target as HTMLInputElement).checked
+    setContactFormData((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
+  }
+
+  const handleContactSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedCustomer) return
+
+    if (!contactFormData.first_name.trim() && !contactFormData.last_name.trim() && !contactFormData.email.trim() && !contactFormData.phone.trim()) {
+      toast.error('Enter at least a name, email, or phone')
+      return
+    }
+
+    if (editingContact) {
+      updateContactMutation.mutate({
+        customerId: selectedCustomer.id,
+        contactId: editingContact.id,
+        data: contactFormData,
+      })
+    } else {
+      createContactMutation.mutate({
+        customerId: selectedCustomer.id,
+        data: contactFormData,
+      })
+    }
+  }
+
+  const handleDeleteContactClick = (contact: Contact) => {
+    setDeleteConfirmContact(contact)
+  }
+
+  const confirmDeleteContact = () => {
+    if (deleteConfirmContact && selectedCustomer) {
+      deleteContactMutation.mutate({
+        customerId: selectedCustomer.id,
+        contactId: deleteConfirmContact.id,
       })
     }
   }
@@ -1600,40 +1789,168 @@ export default function CustomersPage() {
     </form>
   )
 
+  const renderContactForm = () => (
+    <form onSubmit={handleContactSubmit} className="p-6 space-y-4">
+      {/* First & Last Name */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+          <input
+            type="text"
+            name="first_name"
+            value={contactFormData.first_name}
+            onChange={handleContactInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="John"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+          <input
+            type="text"
+            name="last_name"
+            value={contactFormData.last_name}
+            onChange={handleContactInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="Doe"
+          />
+        </div>
+      </div>
+
+      {/* Role */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+        <input
+          type="text"
+          name="role"
+          value={contactFormData.role}
+          onChange={handleContactInputChange}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+          placeholder="Dispatcher, Owner, Driver..."
+        />
+      </div>
+
+      {/* Email & Phone */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input
+            type="email"
+            name="email"
+            value={contactFormData.email}
+            onChange={handleContactInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="john@example.com"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+          <input
+            type="tel"
+            name="phone"
+            value={contactFormData.phone}
+            onChange={handleContactInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="(555) 123-4567"
+          />
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+        <textarea
+          name="notes"
+          value={contactFormData.notes}
+          onChange={handleContactInputChange}
+          rows={2}
+          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
+          placeholder="Any additional notes..."
+        />
+      </div>
+
+      {/* Primary toggle */}
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          name="is_primary"
+          checked={contactFormData.is_primary}
+          onChange={handleContactInputChange}
+          className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+        />
+        <span className="text-sm font-medium text-gray-700">Set as primary contact</span>
+      </label>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+        <button
+          type="button"
+          onClick={closeContactModal}
+          className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={createContactMutation.isPending || updateContactMutation.isPending}
+          className="px-5 py-2.5 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+          style={{ backgroundColor: accentColors[500] }}
+        >
+          {(createContactMutation.isPending || updateContactMutation.isPending) && (
+            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+          {editingContact ? 'Save Changes' : 'Add Contact'}
+        </button>
+      </div>
+    </form>
+  )
+
   const filteredCustomers = useMemo(() => {
-    if (!customers || !searchQuery.trim()) return customers
+    let result = customers
 
-    const query = searchQuery.toLowerCase().trim()
-    const phoneQuery = query.replace(/\D/g, '')
-    
-    return customers.filter((customer) => {
-      const nameMatch = `${customer.first_name} ${customer.last_name} ${customer.company_name || ''}`.toLowerCase().includes(query)
-      const emailMatch = customer.email?.toLowerCase().includes(query)
-      const customerPhone = (customer.phone || '').replace(/\D/g, '')
-      const phoneMatch = phoneQuery.length > 0 ? customerPhone.includes(phoneQuery) : false
+    if (customers && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      const phoneQuery = query.replace(/\D/g, '')
 
-      switch (searchType) {
-        case 'name':
-          return nameMatch
-        case 'email':
-          return emailMatch
-        case 'phone':
-          return phoneMatch
+      result = customers.filter((customer) => {
+        const nameMatch = `${customer.first_name} ${customer.last_name} ${customer.company_name || ''}`.toLowerCase().includes(query)
+        const emailMatch = customer.email?.toLowerCase().includes(query)
+        const customerPhone = (customer.phone || '').replace(/\D/g, '')
+        const phoneMatch = phoneQuery.length > 0 ? customerPhone.includes(phoneQuery) : false
+
+        return nameMatch || emailMatch || phoneMatch
+      })
+    }
+
+    if (!result) return result
+
+    const compare = (a: Customer, b: Customer): number => {
+      switch (sortField) {
+        case 'balance':
+          return parseFloat(a.balance || '0') - parseFloat(b.balance || '0')
+        case 'vehicle_count':
+          return (a.vehicle_count || 0) - (b.vehicle_count || 0)
         default:
-          return nameMatch || emailMatch || phoneMatch
+          return customerDisplayName(a).localeCompare(customerDisplayName(b), undefined, { sensitivity: 'base' })
       }
-    })
-  }, [customers, searchQuery, searchType])
+    }
+
+    const sorted = [...result].sort(compare)
+    return sortDirection === 'asc' ? sorted : sorted.reverse()
+  }, [customers, searchQuery, sortField, sortDirection])
 
   if (isLoading) {
     return <div className="text-white">Loading...</div>
   }
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6">
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
         <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
-        <button 
+        <button
           onClick={openCreateModal}
           className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg transition-colors"
           style={{ backgroundColor: accentColors[500] }}
@@ -1643,47 +1960,23 @@ export default function CustomersPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <svg 
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search customers..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            {[
-              { value: 'all', label: 'All' },
-              { value: 'name', label: 'Name' },
-              { value: 'email', label: 'Email' },
-              { value: 'phone', label: 'Phone' },
-            ].map((filter) => (
-              <button
-                key={filter.value}
-                onClick={() => setSearchType(filter.value as typeof searchType)}
-                className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  searchType === filter.value
-                    ? 'text-white'
-                    : 'bg-white/20 text-white hover:bg-white/30 active:bg-white/40'
-                }`}
-                style={searchType === filter.value ? { backgroundColor: accentColors[500] } : undefined}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+      <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4 flex-shrink-0">
+        <div className="relative">
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search by name, email, or phone..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
         </div>
 
         {searchQuery && (
@@ -1693,23 +1986,64 @@ export default function CustomersPage() {
         )}
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
         {/* Header with ViewToggle */}
-        <div className="hidden lg:flex items-center justify-start px-4 py-3 border-b border-white/10">
+        <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
+          <span className="text-sm text-white/70">
+            {filteredCustomers?.length || 0} customer{filteredCustomers?.length !== 1 ? 's' : ''}
+          </span>
         </div>
 
-        <div className="overflow-y-auto max-h-[calc(100vh-280px)]">
+        <div className="overflow-y-auto flex-1 min-h-0">
           {activeViewMode === 'list' ? (
             /* List View */
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
                   <tr>
-                    <th className="px-4 py-3 text-left font-medium">Customer</th>
+                    <th className="px-4 py-3 text-left font-medium">
+                      <button
+                        onClick={() => toggleSort('name')}
+                        className="flex items-center gap-1 hover:text-white transition-colors"
+                      >
+                        Customer
+                        {sortField === 'name' && (sortDirection === 'asc' ? (
+                          <ArrowUp className="w-3 h-3" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3" />
+                        ))}
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Email</th>
-                    <th className="px-4 py-3 text-left font-medium hidden md:table-cell">Phone</th>
-                    <th className="px-4 py-3 text-left font-medium hidden lg:table-cell">Location</th>
+                    <th className="px-4 py-3 text-left font-medium hidden sm:table-cell whitespace-nowrap">Phone</th>
+                    <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">DOT / MC</th>
+                    <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">
+                      <button
+                        onClick={() => toggleSort('vehicle_count')}
+                        className="flex items-center gap-1 hover:text-white transition-colors whitespace-nowrap"
+                      >
+                        Vehicles
+                        {sortField === 'vehicle_count' && (sortDirection === 'asc' ? (
+                          <ArrowUp className="w-3 h-3" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3" />
+                        ))}
+                      </button>
+                    </th>
+                    <th className="px-4 py-3 text-right font-medium hidden md:table-cell">
+                      <button
+                        onClick={() => toggleSort('balance')}
+                        className="flex items-center gap-1 ml-auto hover:text-white transition-colors"
+                      >
+                        Balance
+                        {sortField === 'balance' && (sortDirection === 'asc' ? (
+                          <ArrowUp className="w-3 h-3" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3" />
+                        ))}
+                      </button>
+                    </th>
                     <th className="px-4 py-3 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -1731,13 +2065,23 @@ export default function CustomersPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-white/70 hidden sm:table-cell">{customer.email}</td>
-                      <td className="px-4 py-3 text-white/70 hidden md:table-cell">
+                      <td className="px-4 py-3 text-white/70 hidden sm:table-cell whitespace-nowrap">
                         {customer.phone ? formatUSPhone(customer.phone) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
-                        {customer.billing_city && customer.billing_state
-                          ? `${customer.billing_city}, ${customer.billing_state}`
-                          : '—'}
+                      <td className="px-4 py-3 text-white/70 hidden xl:table-cell text-xs">
+                        {customer.usdot_number && <div>DOT {customer.usdot_number}</div>}
+                        {customer.mc_number && <div>MC {customer.mc_number}</div>}
+                        {!customer.usdot_number && !customer.mc_number && '—'}
+                      </td>
+                      <td className="px-4 py-3 text-white/70 hidden xl:table-cell">
+                        {customer.vehicle_count || 0}
+                      </td>
+                      <td className="px-4 py-3 text-right hidden md:table-cell">
+                        {customer.balance !== undefined ? (
+                          <span className={parseFloat(customer.balance) > 0 ? 'text-amber-400' : 'text-white/70'}>
+                            ${parseFloat(customer.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </span>
+                        ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -1760,10 +2104,10 @@ export default function CustomersPage() {
             /* Cards View */
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredCustomers?.map((customer) => (
-                <div 
+                <div
                   key={customer.id}
                   onClick={() => openDetailPanel(customer)}
-                  className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+                  className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col gap-3 hover:shadow-xl transition-shadow cursor-pointer"
                 >
                   <div>
                     <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: accentColors[500] }}>
@@ -1785,21 +2129,37 @@ export default function CustomersPage() {
                       <span className="truncate">{customer.email}</span>
                     </div>
                     {customer.phone && (
-                      <div className="flex items-center gap-2 text-slate-600">
+                      <div className="flex items-center gap-2 text-slate-600 whitespace-nowrap">
                         <Phone className="w-4 h-4 flex-shrink-0" />
                         <span>{formatUSPhone(customer.phone)}</span>
                       </div>
                     )}
-                    {customer.billing_city && customer.billing_state && (
-                      <div className="flex items-center gap-2 text-slate-600">
-                        <MapPin className="w-4 h-4 flex-shrink-0" />
-                        <span>{customer.billing_city}, {customer.billing_state}</span>
+                    {(customer.usdot_number || customer.mc_number) && (
+                      <div className="text-xs text-slate-500">
+                        {customer.usdot_number && <span>DOT {customer.usdot_number}</span>}
+                        {customer.usdot_number && customer.mc_number && <span> · </span>}
+                        {customer.mc_number && <span>MC {customer.mc_number}</span>}
                       </div>
                     )}
                   </div>
 
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div className="bg-white/50 rounded-lg px-3 py-2">
+                      <p className="text-[11px] text-slate-500">Balance</p>
+                      <p className={`text-sm font-semibold ${customer.balance && parseFloat(customer.balance) > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+                        {customer.balance !== undefined
+                          ? `$${parseFloat(customer.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                          : '—'}
+                      </p>
+                    </div>
+                    <div className="bg-white/50 rounded-lg px-3 py-2">
+                      <p className="text-[11px] text-slate-500">Vehicles</p>
+                      <p className="text-sm font-semibold text-slate-800">{customer.vehicle_count || 0}</p>
+                    </div>
+                  </div>
+
                   <div className="pt-3 border-t border-amber-200/50">
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation()
                         openDetailPanel(customer)
@@ -1813,9 +2173,9 @@ export default function CustomersPage() {
                 </div>
               ))}
 
-              <div 
+              <div
                 onClick={openCreateModal}
-                className="aspect-square bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all"
+                className="bg-white/20 border-2 border-dashed border-white/40 p-4 sm:p-5 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:bg-white/30 hover:border-white/60 transition-all min-h-[200px]"
               >
                 <div className="w-12 h-12 rounded-full bg-white/30 flex items-center justify-center mb-3">
                   <Plus className="w-6 h-6 text-white" />
@@ -2227,59 +2587,190 @@ export default function CustomersPage() {
                     </div>
                   ) : (
                   <>
-                  {/* Contact Information */}
+                  {/* Summary row: Contact, US DOT, MC Number, Address, Customer Since,
+                      Balance — the at-a-glance facts about this company, laid out as a
+                      row of small stat blocks (matches the source system's layout). */}
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Contact Information</h3>
-                    <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                      {selectedCustomer.source && (
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                            <span className="text-indigo-700 font-semibold text-xs">SRC</span>
-                          </div>
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Summary</h3>
+                    <div className="bg-gray-50 rounded-xl p-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      {(() => {
+                        const namedContacts = (customerContacts || []).filter((c) => c.first_name || c.last_name)
+                        const askFor = namedContacts.find((c) => c.is_primary) || namedContacts[0]
+                        const askForName = askFor ? [askFor.first_name, askFor.last_name].filter(Boolean).join(' ') : null
+                        return (
                           <div>
-                            <p className="text-xs text-gray-500">Source</p>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-                              {formatCustomerSource(selectedCustomer.source)}
-                            </span>
+                            <p className="text-xs text-gray-500">Contact</p>
+                            {askForName ? (
+                              <>
+                                <p className="text-gray-900 font-medium">{askForName}</p>
+                                {askFor?.phone && (
+                                  <a href={`tel:${askFor.phone}`} className="text-xs text-gray-500 hover:text-amber-600 block">
+                                    {formatUSPhone(askFor.phone)}
+                                  </a>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {selectedCustomer.phone && (
+                                  <a href={`tel:${selectedCustomer.phone}`} className="text-gray-900 hover:text-amber-600 font-medium block">
+                                    {formatUSPhone(selectedCustomer.phone)}
+                                  </a>
+                                )}
+                                <a href={`mailto:${selectedCustomer.email}`} className="text-xs text-gray-500 hover:text-amber-600 block">
+                                  {selectedCustomer.email}
+                                </a>
+                              </>
+                            )}
                           </div>
-                        </div>
-                      )}
-                      {selectedCustomer.company_name && (
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                            <span className="text-blue-700 font-semibold text-xs">CO</span>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Company</p>
-                            <p className="text-gray-900 font-medium">{selectedCustomer.company_name}</p>
-                          </div>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-                          <Mail className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Email</p>
-                          <a href={`mailto:${selectedCustomer.email}`} className="text-gray-900 hover:text-amber-600 font-medium">
-                            {selectedCustomer.email}
-                          </a>
-                        </div>
+                        )
+                      })()}
+
+                      <div>
+                        <p className="text-xs text-gray-500">US DOT</p>
+                        <p className="text-gray-900 font-medium">{selectedCustomer.usdot_number || '—'}</p>
                       </div>
-                      {selectedCustomer.phone && (
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                            <Phone className="w-5 h-5 text-green-600" />
+
+                      <div>
+                        <p className="text-xs text-gray-500">MC Number</p>
+                        <p className="text-gray-900 font-medium">{selectedCustomer.mc_number || '—'}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500">Address</p>
+                        {selectedCustomer.billing_address_line1 || selectedCustomer.billing_city ? (
+                          <div className="text-gray-900 text-sm">
+                            {selectedCustomer.billing_address_line1 && <p>{selectedCustomer.billing_address_line1}</p>}
+                            <p>
+                              {[selectedCustomer.billing_city, selectedCustomer.billing_state, selectedCustomer.billing_zip]
+                                .filter(Boolean)
+                                .join(', ')}
+                            </p>
                           </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Phone</p>
-                            <a href={`tel:${selectedCustomer.phone}`} className="text-gray-900 hover:text-amber-600 font-medium">
-                              {formatUSPhone(selectedCustomer.phone)}
-                            </a>
-                          </div>
+                        ) : (
+                          <p className="text-gray-900 font-medium">—</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500">Customer Since</p>
+                        <p className="text-gray-900 font-medium">
+                          {new Date(selectedCustomer.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-gray-500">Balance</p>
+                        <p className={`font-semibold ${selectedCustomer.balance && parseFloat(selectedCustomer.balance) > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                          {selectedCustomer.balance !== undefined
+                            ? `$${parseFloat(selectedCustomer.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                            : '—'}
+                        </p>
+                      </div>
+
+                      {selectedCustomer.source && (
+                        <div>
+                          <p className="text-xs text-gray-500">Source</p>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                            {formatCustomerSource(selectedCustomer.source)}
+                          </span>
                         </div>
                       )}
+
+                      <div>
+                        <p className="text-xs text-gray-500">QuickBooks</p>
+                        {selectedCustomer.quickbooks_customer_id ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700 text-sm font-medium">
+                            ✓ Linked
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 text-sm">Not linked</span>
+                        )}
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Contacts: named individuals at this company (dispatcher, owner,
+                      driver). The auto-created "Main Line" placeholder (no name, just
+                      mirrors the company's own email/phone shown above) is filtered out. */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Contacts</h3>
+                      <div className="flex items-center gap-2">
+                        {isLoadingContacts && <span className="text-xs text-gray-400">Loading...</span>}
+                        <button
+                          onClick={openAddContactModal}
+                          className="px-3 py-1.5 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add Contact
+                        </button>
+                      </div>
+                    </div>
+                    {(() => {
+                      const namedContacts = (customerContacts || []).filter((c) => c.first_name || c.last_name)
+                      if (namedContacts.length === 0) {
+                        return (
+                          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-500 text-center">
+                            No named contacts yet — using the company's own email/phone above.
+                          </div>
+                        )
+                      }
+                      return (
+                        <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-100">
+                          {namedContacts.map((contact) => {
+                            const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ')
+                            return (
+                              <div key={contact.id} className="flex items-center justify-between gap-3 px-4 py-3 group">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                                    <User className="w-4 h-4 text-gray-500" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+                                      {contact.is_primary && (
+                                        <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-3 text-xs text-gray-500">
+                                      {contact.role && <span>{contact.role}</span>}
+                                      {contact.email && contact.email !== selectedCustomer.email && (
+                                        <span className="flex items-center gap-1">
+                                          <Mail className="w-3 h-3" />
+                                          {contact.email}
+                                        </span>
+                                      )}
+                                      {contact.phone && contact.phone !== selectedCustomer.phone && (
+                                        <span className="flex items-center gap-1">
+                                          <Phone className="w-3 h-3" />
+                                          {formatUSPhone(contact.phone)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                  <button
+                                    onClick={() => openEditContactModal(contact)}
+                                    className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteContactClick(contact)}
+                                    className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* Auto-Approval Threshold */}
@@ -2300,30 +2791,6 @@ export default function CustomersPage() {
                     </div>
                   )}
 
-                  {/* Billing Address */}
-                  {(selectedCustomer.billing_address_line1 || selectedCustomer.billing_city) && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Billing Address</h3>
-                      <div className="bg-gray-50 rounded-xl p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                            <MapPin className="w-5 h-5 text-blue-600" />
-                          </div>
-                          <div className="text-gray-900">
-                            {selectedCustomer.billing_address_line1 && <p>{selectedCustomer.billing_address_line1}</p>}
-                            {selectedCustomer.billing_address_line2 && <p>{selectedCustomer.billing_address_line2}</p>}
-                            <p>
-                              {[selectedCustomer.billing_city, selectedCustomer.billing_state, selectedCustomer.billing_zip]
-                                .filter(Boolean)
-                                .join(', ')}
-                            </p>
-                            {selectedCustomer.billing_country && <p>{selectedCustomer.billing_country}</p>}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Notes */}
                   {selectedCustomer.notes && (
                     <div>
@@ -2340,7 +2807,7 @@ export default function CustomersPage() {
                       <div className="flex items-center gap-2">
                         {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
                         {customerVehicles && customerVehicles.length > 1 && (
-                          <ViewToggle 
+                          <ViewToggle
                             value={vehiclesViewMode} 
                             onChange={setVehiclesViewMode}
                             variant="light"
@@ -2581,7 +3048,7 @@ export default function CustomersPage() {
                       {editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'}
                     </h2>
                     <p className="text-sm text-gray-500">
-                      for {selectedCustomer.first_name} {selectedCustomer.last_name}
+                      for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}
                     </p>
                   </div>
                   <button
@@ -2650,6 +3117,101 @@ export default function CustomersPage() {
                     </svg>
                   )}
                   Delete Vehicle
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Modal (Add/Edit) */}
+      {isContactModalOpen && selectedCustomer && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={closeContactModal}
+            />
+
+            {/* Modal */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      {editingContact ? 'Edit Contact' : 'Add Contact'}
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={closeContactModal}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Form */}
+              {renderContactForm()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Contact Confirmation Modal */}
+      {deleteConfirmContact && selectedCustomer && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setDeleteConfirmContact(null)}
+            />
+
+            {/* Modal */}
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Delete Contact</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete{' '}
+                <span className="font-semibold">
+                  {[deleteConfirmContact.first_name, deleteConfirmContact.last_name].filter(Boolean).join(' ') || 'this contact'}
+                </span>
+                ?
+              </p>
+
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setDeleteConfirmContact(null)}
+                  className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteContact}
+                  disabled={deleteContactMutation.isPending}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  {deleteContactMutation.isPending && (
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  )}
+                  Delete Contact
                 </button>
               </div>
             </div>

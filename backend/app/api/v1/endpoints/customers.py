@@ -10,14 +10,17 @@ from app.core.pagination import paginated_or_list
 from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
+from app.db.models.contact import Contact
 from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
 from app.db.models.invoice import Invoice
+from app.db.models.payment import Payment
 from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerWithVehiclesResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
+from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
@@ -33,6 +36,75 @@ def require_role(*allowed_roles: UserRole):
             )
         return current_user
     return role_checker
+
+
+async def get_customer_balances(db: AsyncSession, customer_ids: list) -> dict:
+    """Outstanding AR per customer: sum(invoice.total_amount) - sum(payments.amount),
+    across all of a customer's invoices. Two aggregate queries (not N+1) so this
+    scales to the full customer list, not just a single detail view."""
+    if not customer_ids:
+        return {}
+
+    invoiced_result = await db.execute(
+        select(RepairOrder.customer_id, func.coalesce(func.sum(Invoice.total_amount), 0))
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .where(RepairOrder.customer_id.in_(customer_ids))
+        .group_by(RepairOrder.customer_id)
+    )
+    invoiced_by_customer = dict(invoiced_result.all())
+
+    paid_result = await db.execute(
+        select(RepairOrder.customer_id, func.coalesce(func.sum(Payment.amount), 0))
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .join(Payment, Payment.invoice_id == Invoice.id)
+        .where(RepairOrder.customer_id.in_(customer_ids))
+        .group_by(RepairOrder.customer_id)
+    )
+    paid_by_customer = dict(paid_result.all())
+
+    return {
+        cid: invoiced_by_customer.get(cid, 0) - paid_by_customer.get(cid, 0)
+        for cid in customer_ids
+    }
+
+
+async def get_customer_vehicle_info(db: AsyncSession, customer_ids: list) -> dict:
+    """Vehicle count + (single) license plate per customer. Plate is only
+    returned when a customer has exactly one vehicle — with several vehicles
+    there's no single plate to show, so the UI falls back to showing the count."""
+    if not customer_ids:
+        return {}
+
+    count_result = await db.execute(
+        select(Vehicle.customer_id, func.count(Vehicle.id))
+        .where(Vehicle.customer_id.in_(customer_ids))
+        .group_by(Vehicle.customer_id)
+    )
+    counts = dict(count_result.all())
+
+    single_vehicle_ids = [cid for cid, count in counts.items() if count == 1]
+    plates_by_customer = {}
+    if single_vehicle_ids:
+        plate_result = await db.execute(
+            select(Vehicle.customer_id, Vehicle.license_plate)
+            .where(Vehicle.customer_id.in_(single_vehicle_ids))
+        )
+        plates_by_customer = dict(plate_result.all())
+
+    return {
+        cid: {"count": counts.get(cid, 0), "plate": plates_by_customer.get(cid)}
+        for cid in customer_ids
+    }
+
+
+def _customer_response_with_balance(customer: Customer, balances: dict, vehicle_info: Optional[dict] = None) -> CustomerResponse:
+    response = CustomerResponse.model_validate(customer)
+    response.balance = balances.get(customer.id, 0)
+    if vehicle_info:
+        info = vehicle_info.get(customer.id, {})
+        response.vehicle_count = info.get("count", 0)
+        response.single_vehicle_license_plate = info.get("plate")
+    return response
 
 
 @router.post("", response_model=CustomerWithVehiclesResponse, status_code=status.HTTP_201_CREATED)
@@ -127,15 +199,18 @@ async def list_customers(
             select(Customer).where(Customer.id == current_user.customer_id)
         )
         customer = result.scalar_one_or_none()
-        customers = [CustomerResponse.model_validate(customer)] if customer else []
+        cust_ids = [customer.id] if customer else []
+        balances = await get_customer_balances(db, cust_ids)
+        vehicle_info = await get_customer_vehicle_info(db, cust_ids)
+        customers = [_customer_response_with_balance(customer, balances, vehicle_info)] if customer else []
         total = len(customers)
         response_items = customers[skip : skip + limit] if paginated else customers
         return paginated_or_list(response_items, total, skip, limit, paginated)
-    
+
     # Staff can see all customers in their tenant
     if not current_user.tenant_id:
         return paginated_or_list([], 0, skip, limit, paginated)
-    
+
     # The internal-fleet house account is managed via the dedicated fleet view,
     # not listed among real customers.
     base_filter = and_(
@@ -148,7 +223,10 @@ async def list_customers(
     total = total_result.scalar() or 0
     result = await db.execute(select(Customer).where(base_filter).offset(skip).limit(limit))
     customers = result.scalars().all()
-    items = [CustomerResponse.model_validate(c) for c in customers]
+    cust_ids = [c.id for c in customers]
+    balances = await get_customer_balances(db, cust_ids)
+    vehicle_info = await get_customer_vehicle_info(db, cust_ids)
+    items = [_customer_response_with_balance(c, balances, vehicle_info) for c in customers]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -202,8 +280,10 @@ async def get_customer(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    
-    return CustomerResponse.model_validate(customer)
+
+    balances = await get_customer_balances(db, [customer.id])
+    vehicle_info = await get_customer_vehicle_info(db, [customer.id])
+    return _customer_response_with_balance(customer, balances, vehicle_info)
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
@@ -247,8 +327,10 @@ async def update_customer(
     
     await db.commit()
     await db.refresh(customer)
-    
-    return CustomerResponse.model_validate(customer)
+
+    balances = await get_customer_balances(db, [customer.id])
+    vehicle_info = await get_customer_vehicle_info(db, [customer.id])
+    return _customer_response_with_balance(customer, balances, vehicle_info)
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -562,7 +644,139 @@ async def delete_customer_vehicle(
     
     await db.delete(vehicle)
     await db.commit()
-    
+
+    return None
+
+
+async def _get_customer_or_404_with_access(customer_id: UUID, db: AsyncSession, current_user: User) -> Customer:
+    result = await db.execute(select(Customer).where(Customer.id == customer_id))
+    customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    if current_user.role == UserRole.CUSTOMER:
+        if current_user.customer_id != customer_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    elif current_user.tenant_id != customer.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return customer
+
+
+async def _clear_other_primary_contacts(db: AsyncSession, customer_id: UUID, except_contact_id: Optional[UUID] = None):
+    """Enforce at most one is_primary=True contact per customer."""
+    query = select(Contact).where(
+        and_(Contact.customer_id == customer_id, Contact.is_primary.is_(True))
+    )
+    if except_contact_id is not None:
+        query = query.where(Contact.id != except_contact_id)
+    result = await db.execute(query)
+    for other in result.scalars().all():
+        other.is_primary = False
+
+
+@router.get("/{customer_id}/contacts", response_model=List[ContactResponse])
+async def list_customer_contacts(
+    customer_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """List all contacts for a specific customer"""
+    await _get_customer_or_404_with_access(customer_id, db, current_user)
+
+    result = await db.execute(
+        select(Contact).where(Contact.customer_id == customer_id).order_by(Contact.is_primary.desc(), Contact.created_at)
+    )
+    contacts = result.scalars().all()
+    return [ContactResponse.model_validate(c) for c in contacts]
+
+
+@router.post("/{customer_id}/contacts", response_model=ContactResponse, status_code=status.HTTP_201_CREATED)
+async def create_customer_contact(
+    customer_id: UUID,
+    contact_data: ContactCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+    )),
+):
+    """Create a new contact for a specific customer (staff only)"""
+    customer = await _get_customer_or_404_with_access(customer_id, db, current_user)
+
+    if contact_data.is_primary:
+        await _clear_other_primary_contacts(db, customer_id)
+
+    contact = Contact(
+        tenant_id=customer.tenant_id,
+        customer_id=customer_id,
+        **contact_data.model_dump(),
+    )
+    db.add(contact)
+    await db.commit()
+    await db.refresh(contact)
+
+    return ContactResponse.model_validate(contact)
+
+
+@router.put("/{customer_id}/contacts/{contact_id}", response_model=ContactResponse)
+async def update_customer_contact(
+    customer_id: UUID,
+    contact_id: UUID,
+    contact_data: ContactUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+    )),
+):
+    """Update a specific contact for a customer (staff only)"""
+    await _get_customer_or_404_with_access(customer_id, db, current_user)
+
+    result = await db.execute(
+        select(Contact).where(and_(Contact.id == contact_id, Contact.customer_id == customer_id))
+    )
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+
+    update_fields = contact_data.model_dump(exclude_unset=True)
+    if update_fields.get("is_primary"):
+        await _clear_other_primary_contacts(db, customer_id, except_contact_id=contact_id)
+
+    for field, value in update_fields.items():
+        setattr(contact, field, value)
+
+    await db.commit()
+    await db.refresh(contact)
+
+    return ContactResponse.model_validate(contact)
+
+
+@router.delete("/{customer_id}/contacts/{contact_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_customer_contact(
+    customer_id: UUID,
+    contact_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+    )),
+):
+    """Delete a specific contact for a customer (staff only)"""
+    await _get_customer_or_404_with_access(customer_id, db, current_user)
+
+    result = await db.execute(
+        select(Contact).where(and_(Contact.id == contact_id, Contact.customer_id == customer_id))
+    )
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact not found")
+
+    await db.delete(contact)
+    await db.commit()
+
     return None
 
 

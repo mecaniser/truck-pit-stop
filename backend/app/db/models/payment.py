@@ -49,6 +49,7 @@ class Payment(BaseModel):
     
     notes = Column(Text, nullable=True)
     receipt_url = Column(String(500), nullable=True)
+    source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     recorded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     recorded_by_user = relationship("User", foreign_keys=[recorded_by_user_id])
 

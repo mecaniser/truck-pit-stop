@@ -44,6 +44,7 @@ class Invoice(BaseModel):
     due_date = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_by_user = relationship("User", foreign_keys=[created_by_user_id])
 

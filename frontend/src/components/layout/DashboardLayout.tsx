@@ -92,7 +92,10 @@ export default function DashboardLayout() {
   const isSuperAdmin = user?.role === 'super_admin'
   const isGarageWorkspaceRoute =
     !isSuperAdmin &&
-    (location.pathname === '/dashboard/garage' || location.pathname.startsWith('/dashboard/garage/'))
+    (location.pathname === '/dashboard/garage' ||
+      location.pathname.startsWith('/dashboard/garage/') ||
+      location.pathname === '/dashboard/customers' ||
+      location.pathname.startsWith('/dashboard/customers/'))
   const dashboardLogoAlt = isSuperAdmin
     ? 'Diesel Bridge Network'
     : tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'

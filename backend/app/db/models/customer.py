@@ -26,6 +26,11 @@ class Customer(BaseModel):
     notes = Column(Text, nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. zelle, walk_in, portal
 
+    # Federal motor carrier identifiers (FMCSA). Optional — most owner-operators
+    # have a USDOT number; MC (Motor Carrier) number applies to for-hire carriers.
+    usdot_number = Column(String(20), nullable=True, index=True)
+    mc_number = Column(String(20), nullable=True, index=True)
+
     # House account: the garage's own fleet. Vehicles attached here are owned trucks
     # whose repair orders are priced at internal cost (no markup, no customer invoice).
     # Exactly one internal-fleet customer exists per tenant.
@@ -40,6 +45,13 @@ class Customer(BaseModel):
     
     # Stripe
     stripe_customer_id = Column(String(255), nullable=True, unique=True)
-    
+
+    # QuickBooks (integration pending — column exists so the link status can be
+    # surfaced now and populated once the sync is built; null/empty = not linked).
+    # Not unique: today this holds a shared placeholder marker ("qb-linked"),
+    # not yet a real per-customer QuickBooks id.
+    quickbooks_customer_id = Column(String(255), nullable=True)
+
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     repair_orders = relationship("RepairOrder", back_populates="customer")
+    contacts = relationship("Contact", back_populates="customer", cascade="all, delete-orphan")

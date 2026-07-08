@@ -30,7 +30,8 @@ class Inventory(BaseModel):
     
     supplier_name = Column(String(255), nullable=True)
     supplier_contact = Column(String(255), nullable=True)
-    
+    source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
+
     parts_usage = relationship("PartsUsage", back_populates="inventory_item")
 
 

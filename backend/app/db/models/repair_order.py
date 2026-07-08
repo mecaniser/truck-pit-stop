@@ -45,6 +45,7 @@ class RepairOrder(BaseModel):
     customer_notes = Column(Text, nullable=True)
     internal_notes = Column(Text, nullable=True)
     po_number = Column(String(100), nullable=True)
+    source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     mileage_in = Column(Integer, nullable=True)
     mileage_out = Column(Integer, nullable=True)
     
