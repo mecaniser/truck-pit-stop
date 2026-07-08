@@ -69,6 +69,7 @@ async def _build_user_response(user: User, db: AsyncSession) -> UserResponse:
             response.tenant_name = tenant.name
             response.tenant_slug = tenant.slug
             response.tenant_logo_url = tenant.logo_url
+            response.messaging_enabled = tenant.messaging_enabled
 
     return response
 

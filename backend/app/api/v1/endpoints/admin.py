@@ -863,6 +863,15 @@ class ReminderSettingsResponse(BaseModel):
     max_invoice_reminders: int
 
 
+class TenantSettingsResponse(BaseModel):
+    # Shop-wide feature flags. Extend this as more toggles are added.
+    messaging_enabled: bool
+
+
+class TenantSettingsUpdateRequest(BaseModel):
+    messaging_enabled: bool
+
+
 class TaxFeeSettingsRequest(BaseModel):
     sales_tax_rate: float  # Percentage, e.g., 8.25 for 8.25%
     shop_supplies_rate: float  # Percentage of labor
@@ -1011,6 +1020,45 @@ async def update_garage_profile(
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,
     )
+
+
+@router.get("/tenant-settings", response_model=TenantSettingsResponse)
+async def get_tenant_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Shop-wide feature flags for the current tenant (owner/admin only)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    return TenantSettingsResponse(messaging_enabled=tenant.messaging_enabled)
+
+
+@router.put("/tenant-settings", response_model=TenantSettingsResponse)
+async def update_tenant_settings(
+    body: TenantSettingsUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_garage_owner()),
+):
+    """Update shop-wide feature flags for the current tenant (owner/admin only)."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+
+    tenant.messaging_enabled = body.messaging_enabled
+    await db.commit()
+    await db.refresh(tenant)
+
+    return TenantSettingsResponse(messaging_enabled=tenant.messaging_enabled)
 
 
 @router.post("/garage-profile/import-logo", response_model=GarageProfileResponse)
