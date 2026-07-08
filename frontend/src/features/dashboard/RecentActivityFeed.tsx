@@ -116,7 +116,13 @@ function groupByDayAndActor(items: ActivityEvent[]): DayGroup[] {
   })
 }
 
-export default function RecentActivityFeed({ className }: { className?: string }) {
+export default function RecentActivityFeed({
+  className,
+  onCountChange,
+}: {
+  className?: string
+  onCountChange?: (count: number) => void
+}) {
   const navigate = useNavigate()
   const [olderItems, setOlderItems] = useState<ActivityEvent[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -177,6 +183,10 @@ export default function RecentActivityFeed({ className }: { className?: string }
   const items = useMemo(() => [...(data?.items || []), ...olderItems], [data, olderItems])
   const dayGroups = useMemo(() => groupByDayAndActor(items), [items])
   const hasActiveFilters = !!(actorFilter || eventTypeFilter || dateFrom || dateTo)
+
+  useEffect(() => {
+    onCountChange?.(items.length)
+  }, [items.length, onCountChange])
 
   if (isForbidden) return null
 

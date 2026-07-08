@@ -368,6 +368,7 @@ export default function DashboardHome() {
   const [isTeamCapacityCollapsed, setIsTeamCapacityCollapsed] = useState(true)
   const [activeMobileLane, setActiveMobileLane] = useState<0 | 1 | 2>(0)
   const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
+  const [activityCount, setActivityCount] = useState(0)
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true
   )
@@ -825,18 +826,29 @@ export default function DashboardHome() {
           <div className="flex items-start justify-between gap-3 px-3.5 py-3 2xl:px-3 2xl:py-2.5 border-b border-white/10 flex-shrink-0 sm:items-center">
             <div className="flex min-w-0 items-center gap-2 flex-wrap">
               <div className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold text-gray-300 uppercase tracking-[0.14em]">
-                <span>Work Queue</span>
+                <span>{queueView === 'activity' ? 'Activity' : 'Work Queue'}</span>
               </div>
-              <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
-              {alertCounts.critical > 0 && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 whitespace-nowrap">
-                  {alertCounts.critical} critical
-                </span>
-              )}
-              {alertCounts.warning > 0 && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 whitespace-nowrap">
-                  {alertCounts.warning} {alertCounts.warning === 1 ? 'warning' : 'warnings'}
-                </span>
+              {queueView === 'activity' ? (
+                <>
+                  <SectionInfoTooltip text="Recent repair-order activity across quotes, invoices, and payments — grouped by day and staff member." />
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-gray-300 whitespace-nowrap">
+                    {activityCount} {activityCount === 1 ? 'event' : 'events'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <SectionInfoTooltip text="Operational swimlanes showing where repair orders need immediate attention, are actively being worked, or are ready for final closeout." />
+                  {alertCounts.critical > 0 && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 whitespace-nowrap">
+                      {alertCounts.critical} critical
+                    </span>
+                  )}
+                  {alertCounts.warning > 0 && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 whitespace-nowrap">
+                      {alertCounts.warning} {alertCounts.warning === 1 ? 'warning' : 'warnings'}
+                    </span>
+                  )}
+                </>
               )}
             </div>
 
@@ -877,7 +889,10 @@ export default function DashboardHome() {
           </div>
 
           {queueView === 'activity' ? (
-            <RecentActivityFeed className="flex flex-1 min-h-0 flex-col p-3 2xl:p-2.5" />
+            <RecentActivityFeed
+              className="flex flex-1 min-h-0 flex-col p-3 2xl:p-2.5"
+              onCountChange={setActivityCount}
+            />
           ) : (
           <div className="flex flex-1 min-h-0 flex-col gap-3 p-3 2xl:gap-2.5 2xl:p-2.5 lg:grid lg:grid-cols-3">
               {/* Lane 1: Needs Action */}
