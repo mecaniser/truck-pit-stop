@@ -9,6 +9,8 @@ import { Download, Settings, Trash2, Wrench, Plus, X } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import BaseSelect from '@/components/BaseSelect'
+import CurrencyInput from '@/components/CurrencyInput'
+import QuantityStepper from '@/components/QuantityStepper'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 
@@ -375,9 +377,12 @@ export default function ServicesManagementPage() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  const drawerInputClasses = (hasError: boolean) => {
+  // Single-line inputs get a fixed 42px height to match BaseSelect's trigger, so
+  // an input paired beside a dropdown lines up exactly. Multi-line (textarea)
+  // fields pass includeHeight=false to keep their rows-based height.
+  const drawerInputClasses = (hasError: boolean, includeHeight = true) => {
     const base =
-      'w-full px-3 py-2 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 text-sm'
+      `w-full ${includeHeight ? 'h-[42px]' : ''} px-3 py-2 bg-white border rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 text-sm`
     return hasError ? `${base} border-red-500 focus:ring-red-500` : `${base} border-gray-200 focus:ring-amber-500`
   }
 
@@ -795,13 +800,12 @@ export default function ServicesManagementPage() {
                     <label className="block text-xs font-medium text-gray-500 mb-1">
                       Flat labor price ($)
                     </label>
-                    <input
-                      {...register('base_price')}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className={drawerInputClasses(!!errors.base_price)}
+                    <input type="hidden" {...register('base_price')} />
+                    <CurrencyInput
+                      value={watch('base_price') || ''}
+                      onChange={(val) => setValue('base_price', val, { shouldValidate: true })}
                       placeholder="Leave empty to auto-calc"
+                      step={1}
                     />
                     <p className="mt-1 text-[11px] text-gray-500">
                       Blank → labor = shop rate × duration. Bundled parts are always added on top.
@@ -810,13 +814,18 @@ export default function ServicesManagementPage() {
 
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Duration (minutes)</label>
-                    <input
-                      {...register('duration_minutes')}
-                      type="number"
-                      min="5"
-                      className={drawerInputClasses(!!errors.duration_minutes)}
-                      placeholder="60"
-                    />
+                    <input type="hidden" {...register('duration_minutes')} />
+                    <div className="pt-0.5">
+                      <QuantityStepper
+                        ariaLabel="Duration in minutes"
+                        value={Number(watch('duration_minutes')) || 0}
+                        onChange={(n) => setValue('duration_minutes', n, { shouldValidate: true })}
+                        min={5}
+                        step={15}
+                        unitLabel="min"
+                        align="start"
+                      />
+                    </div>
                     {errors.duration_minutes && (
                       <p className="mt-1 text-xs text-red-500">{errors.duration_minutes.message}</p>
                     )}
@@ -859,7 +868,7 @@ export default function ServicesManagementPage() {
                   <textarea
                     {...register('description')}
                     rows={2}
-                    className={drawerInputClasses(false)}
+                    className={drawerInputClasses(false, false)}
                     placeholder="Service description..."
                   />
                 </div>
@@ -968,12 +977,13 @@ export default function ServicesManagementPage() {
                         />
                         <div className="flex items-center gap-2">
                           <label className="text-xs text-gray-600">Qty</label>
-                          <input
-                            type="number"
-                            min="1"
+                          <QuantityStepper
+                            ariaLabel="Part quantity"
                             value={partPickerQty}
-                            onChange={(e) => setPartPickerQty(Math.max(1, parseInt(e.target.value || '1', 10)))}
-                            className="w-20 px-2 py-1.5 border border-gray-200 rounded text-sm text-center"
+                            onChange={(n) => setPartPickerQty(Math.max(1, n))}
+                            min={1}
+                            unitLabel=""
+                            align="start"
                           />
                           <button
                             type="button"

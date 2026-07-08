@@ -12,6 +12,9 @@ type QuantityStepperProps = {
   onRemove?: () => void
   removeAtMin?: boolean
   className?: string
+  /** Wrapper alignment. 'end' (default) suits table/price rows; 'start' suits
+   *  label-over-field forms so the pill lines up under its left-aligned label. */
+  align?: 'start' | 'end'
 }
 
 const formatQuantity = (value: number, step: number) => (
@@ -29,6 +32,7 @@ export default function QuantityStepper({
   onRemove,
   removeAtMin = false,
   className = '',
+  align = 'end',
 }: QuantityStepperProps) {
   const [draft, setDraft] = useState(formatQuantity(value, step))
   const [editing, setEditing] = useState(false)
@@ -39,11 +43,20 @@ export default function QuantityStepper({
     if (!editing) setDraft(formatQuantity(value, step))
   }, [value, step, editing])
 
-  const commit = (next: number) => {
+  // Number of decimals implied by the step (e.g. step 0.25 -> 2), so typed
+  // values are cleaned of float noise without being forced onto the step grid.
+  const stepDecimals = (String(step).split('.')[1] || '').length
+
+  // snap=true (button/keyboard nudges) rounds to the nearest step multiple so
+  // stepping stays on a clean grid. snap=false (typed values) keeps the exact
+  // number the user entered — typing 45 with step 30 stays 45, not 60.
+  const commit = (next: number, snap: boolean) => {
     if (next < min) return
-    const rounded = Math.round(next / step) * step
-    onChange(rounded)
-    setDraft(formatQuantity(rounded, step))
+    const resolved = snap
+      ? Math.round(next / step) * step
+      : Number(next.toFixed(stepDecimals))
+    onChange(resolved)
+    setDraft(formatQuantity(resolved, step))
   }
 
   const commitDraft = () => {
@@ -53,13 +66,13 @@ export default function QuantityStepper({
       setDraft(formatQuantity(value, step))
       return
     }
-    commit(parsed)
+    commit(parsed, false)
   }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) {
       e.preventDefault()
-      commit(value + (e.key === '-' || e.key === '_' ? -step : step))
+      commit(value + (e.key === '-' || e.key === '_' ? -step : step), true)
       return
     }
     if (e.key === 'Enter') {
@@ -74,12 +87,12 @@ export default function QuantityStepper({
   }
 
   return (
-    <span className={`inline-flex min-w-[9.75rem] items-center justify-end gap-1.5 ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 ${align === 'start' ? 'justify-start' : 'min-w-[9.75rem] justify-end'} ${className}`}>
       <span className="inline-flex items-center rounded-lg border border-gray-200 bg-white shadow-sm">
         <button
           type="button"
           disabled={disabled}
-          onClick={canRemove ? onRemove : () => commit(value - step)}
+          onClick={canRemove ? onRemove : () => commit(value - step, true)}
           aria-label={canRemove ? `Remove ${ariaLabel}` : `Decrease ${ariaLabel}`}
           className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
             canRemove ? 'text-red-500 hover:bg-red-50' : 'text-gray-500 hover:bg-gray-50'
@@ -103,14 +116,14 @@ export default function QuantityStepper({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => commit(value + step)}
+          onClick={() => commit(value + step, true)}
           aria-label={`Increase ${ariaLabel}`}
           className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
       </span>
-      <span className="w-7 text-left text-xs text-gray-500">{unitLabel}</span>
+      {unitLabel !== '' && <span className="w-7 text-left text-xs text-gray-500">{unitLabel}</span>}
     </span>
   )
 }
