@@ -1,4 +1,5 @@
 import math
+import re
 import traceback
 from decimal import Decimal
 from typing import List, Optional
@@ -489,7 +490,13 @@ async def list_repair_orders(
     search_term = (search or "").strip()
     if search_term:
         like = f"%{search_term}%"
-        digits = "".join(ch for ch in search_term if ch.isdigit())
+        # Phone matching only kicks in when the term itself looks like a phone
+        # number (all digits after stripping common phone punctuation) — a
+        # term with real letters in it (e.g. "77 cargo") is a name/company
+        # search, and matching its incidental digits ("77") against every
+        # phone number on file would swamp the results with false positives.
+        stripped = re.sub(r"[\s().+-]", "", search_term)
+        phone_digits = stripped if stripped and stripped.isdigit() else None
         query = query.join(Customer, RepairOrder.customer_id == Customer.id).join(
             Vehicle, RepairOrder.vehicle_id == Vehicle.id
         )
@@ -510,9 +517,9 @@ async def list_repair_orders(
             Vehicle.make.ilike(like),
             Vehicle.model.ilike(like),
         ]
-        if digits:
+        if phone_digits:
             clauses.append(
-                func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{digits}%")
+                func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{phone_digits}%")
             )
         search_clause = or_(*clauses)
         query = query.where(search_clause)
