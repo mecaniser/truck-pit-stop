@@ -1067,6 +1067,16 @@ export default function PriceBuilderPanel({
     setPaletteOpen(true)
   }
 
+  // Reverse of forkToLaborBookTime: go back to the simple ad-hoc operation,
+  // carrying the labor name + hours the user has entered so far.
+  const forkBackToOperation = () => {
+    setSearchTerm(laborBookTimeForm.operation_name.trim())
+    setBookTimeHours(laborBookTimeForm.normalized_hours || '1')
+    setShowLaborBookTimeForm(false)
+    setAddType('operation')
+    setPaletteOpen(true)
+  }
+
   const applyLaborBookEntry = useMutation({
     mutationFn: async (entry: LaborBookTimeEntry) => {
       const candidate = laborBookTimeCandidate(entry)
@@ -1172,6 +1182,21 @@ export default function PriceBuilderPanel({
       toast.error(err instanceof Error ? err.message : errorDetail(err, 'Failed to decode VIN'))
     },
   })
+
+  // Auto-decode a full (17-char) VIN when it's typed or prefilled, so the user
+  // doesn't have to click "Decode VIN". A ref tracks the last VIN we auto-decoded
+  // so onSuccess writing the VIN back doesn't retrigger this.
+  const lastAutoDecodedVin = useRef<string>('')
+  const vinToDecode = laborBookTimeForm.vin_sample.trim().toUpperCase()
+  useEffect(() => {
+    if (addType !== 'saved_labor' || !showLaborBookTimeForm) return
+    if (vinToDecode.length !== 17) return
+    if (vinToDecode === lastAutoDecodedVin.current) return
+    if (decodeLaborBookVin.isPending) return
+    lastAutoDecodedVin.current = vinToDecode
+    decodeLaborBookVin.mutate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vinToDecode, addType, showLaborBookTimeForm])
 
   const updateLine = useMutation({
     mutationFn: async ({
@@ -1936,7 +1961,7 @@ export default function PriceBuilderPanel({
                             onClick={forkToLaborBookTime}
                             className="mt-1 text-[11px] font-semibold text-orange-700 hover:text-orange-800 hover:underline"
                           >
-                            More complex? Save as labor book time →
+                            Save as labor book time →
                           </button>
                         )}
                       </div>
@@ -2030,6 +2055,13 @@ export default function PriceBuilderPanel({
                         <p className="mt-0.5 text-xs text-gray-500">
                           Save the verified book hours and truck application, then add it to this repair order.
                         </p>
+                        <button
+                          type="button"
+                          onClick={forkBackToOperation}
+                          className="mt-1 text-[11px] font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+                        >
+                          Keep it simple →
+                        </button>
                       </div>
                       {showLaborBookTimeForm && laborBookEntries.length > 0 && (
                         <button
