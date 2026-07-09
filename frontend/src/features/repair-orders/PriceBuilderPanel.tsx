@@ -1053,6 +1053,20 @@ export default function PriceBuilderPanel({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Unable to apply operation'),
   })
 
+  // Fork from the simple "new operation" row into the full Labor Book Time form:
+  // for complex jobs whose hours depend on the specific truck/engine. Carries
+  // over the typed name + hours; truck fields prefill from the RO's vehicle.
+  const forkToLaborBookTime = () => {
+    setLaborBookTimeForm({
+      ...initialLaborBookTimeForm(),
+      operation_name: searchTerm.trim(),
+      normalized_hours: bookTimeHours || '1',
+    })
+    setAddType('saved_labor')
+    setShowLaborBookTimeForm(true)
+    setPaletteOpen(true)
+  }
+
   const applyLaborBookEntry = useMutation({
     mutationFn: async (entry: LaborBookTimeEntry) => {
       const candidate = laborBookTimeCandidate(entry)
@@ -1916,6 +1930,15 @@ export default function PriceBuilderPanel({
                             ? 'enter book hours to save this time'
                             : `${formatHoursMinutes(c.estimated_hours)} book time`} · {c.description || c.operation_id}
                         </p>
+                        {isAddNew && (
+                          <button
+                            type="button"
+                            onClick={forkToLaborBookTime}
+                            className="mt-1 text-[11px] font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+                          >
+                            More complex? Save as labor book time →
+                          </button>
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {isAddNew ? (
