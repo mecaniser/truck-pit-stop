@@ -268,7 +268,7 @@ function IndustrialBadge({ children, variant = 'default' }: { children: React.Re
     error: 'bg-red-950/80 text-red-400 border-red-700/50',
   }
   return (
-    <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border ${variants[variant]}`}>
+    <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border whitespace-nowrap ${variants[variant]}`}>
       {children}
     </span>
   )
@@ -705,9 +705,11 @@ function GarageProfileSection() {
                     Approved businesses appear automatically. These fields control the public summary shown on the landing page.
                   </p>
                 </div>
-                <IndustrialBadge variant="success">
-                  Public profile
-                </IndustrialBadge>
+                <div className="shrink-0">
+                  <IndustrialBadge variant="success">
+                    Public profile
+                  </IndustrialBadge>
+                </div>
               </div>
 
               <div className="mt-5 grid gap-5 sm:grid-cols-2">

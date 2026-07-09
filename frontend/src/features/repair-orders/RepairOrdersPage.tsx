@@ -1614,11 +1614,16 @@ export default function RepairOrdersPage() {
 
       <div className="flex-1 min-h-0 flex flex-col bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         {/* Header with ViewToggle */}
-        <div className="hidden lg:flex flex-shrink-0 items-center gap-4 px-4 py-3 border-b border-white/10">
-          <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
-          {statusFilter !== 'all' && statusDescriptions[statusFilter] && (
-            <p className="text-xs text-white/50 italic">{statusDescriptions[statusFilter]}</p>
-          )}
+        <div className="hidden lg:flex flex-shrink-0 items-center justify-between gap-4 px-4 py-3 border-b border-white/10">
+          <div className="flex items-center gap-4">
+            <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
+            {statusFilter !== 'all' && statusDescriptions[statusFilter] && (
+              <p className="text-xs text-white/50 italic">{statusDescriptions[statusFilter]}</p>
+            )}
+          </div>
+          <span className="text-sm text-white/70">
+            {filteredOrders?.length || 0} order{filteredOrders?.length !== 1 ? 's' : ''}
+          </span>
         </div>
 
         <div className="flex-1 min-h-0 scrollbar-dark" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
