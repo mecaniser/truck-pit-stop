@@ -440,6 +440,7 @@ async def list_repair_orders(
     customer_id: Optional[UUID] = Query(None),
     vehicle_id: Optional[UUID] = Query(None),
     status: Optional[RepairOrderStatus] = Query(None),
+    search: Optional[str] = Query(None, description="Filter by order number or description"),
     deleted: bool = Query(False, description="Show only soft-deleted orders (owner/admin only)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
@@ -481,13 +482,23 @@ async def list_repair_orders(
     if status:
         query = query.where(RepairOrder.status == status)
         count_query = count_query.where(RepairOrder.status == status)
-    
+    # Search by order number or description (mirrors the previous client-side filter).
+    search_term = (search or "").strip()
+    if search_term:
+        like = f"%{search_term}%"
+        search_clause = or_(
+            RepairOrder.order_number.ilike(like),
+            RepairOrder.description.ilike(like),
+        )
+        query = query.where(search_clause)
+        count_query = count_query.where(search_clause)
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
     result = await db.execute(
         query.offset(skip).limit(limit).order_by(RepairOrder.created_at.desc())
-        .options(selectinload(RepairOrder.vehicle))
+        .options(selectinload(RepairOrder.vehicle), selectinload(RepairOrder.customer))
     )
     orders = result.scalars().all()
     
@@ -529,14 +540,21 @@ async def list_repair_orders(
             return {"vehicle_make": "", "vehicle_model": "", "vehicle_year": None, "vehicle_unit_number": None, "vehicle_vin": None}
         return {"vehicle_make": v.make or "", "vehicle_model": v.model or "", "vehicle_year": v.year, "vehicle_unit_number": v.unit_number, "vehicle_vin": v.vin}
 
+    def _customer_fields(c) -> dict:
+        if not c:
+            return {"customer_first_name": "", "customer_last_name": "", "customer_company_name": None, "customer_email": None, "customer_phone": None}
+        return {"customer_first_name": c.first_name or "", "customer_last_name": c.last_name or "", "customer_company_name": c.company_name, "customer_email": c.email, "customer_phone": c.phone}
+
     _vf_exclude = {
         'quote_sent', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
         'vehicle_unit_number', 'vehicle_vin', 'cancelled_by_name', 'deleted_by_name',
+        'customer_first_name', 'customer_last_name', 'customer_company_name', 'customer_email', 'customer_phone',
     }
     items = [
         RepairOrderResponse(
             **RepairOrderResponse.model_validate(o).model_dump(exclude=_vf_exclude),
             **_vehicle_fields(o.vehicle),
+            **_customer_fields(o.customer),
             quote_sent=quote_sent_map.get(o.id),
             pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
             cancelled_by_name=actor_name_map.get(o.cancelled_by_user_id),

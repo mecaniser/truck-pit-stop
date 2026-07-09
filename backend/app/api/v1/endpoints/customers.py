@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, or_, asc, desc, literal_column
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from app.core.dependencies import get_db, get_current_active_user
@@ -195,11 +195,89 @@ async def create_customer(
     return CustomerWithVehiclesResponse.model_validate(customer)
 
 
+# Fields the customer list may be sorted by. Anything else falls back to name.
+CUSTOMER_SORT_FIELDS = {"name", "balance", "vehicle_count"}
+
+
+def _customer_search_filter(search: Optional[str]):
+    """OR-match across name / company / email (ILIKE substring) plus a
+    digits-only phone match — mirrors the previous client-side search."""
+    term = (search or "").strip()
+    if not term:
+        return None
+    like = f"%{term}%"
+    clauses = [
+        Customer.first_name.ilike(like),
+        Customer.last_name.ilike(like),
+        (Customer.first_name + literal_column("' '") + Customer.last_name).ilike(like),
+        Customer.company_name.ilike(like),
+        Customer.email.ilike(like),
+    ]
+    digits = "".join(ch for ch in term if ch.isdigit())
+    if digits:
+        # Strip non-digits from the stored phone before comparing.
+        clauses.append(
+            func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{digits}%")
+        )
+    return or_(*clauses)
+
+
+def _vehicle_count_subquery():
+    return (
+        select(func.count(Vehicle.id))
+        .where(Vehicle.customer_id == Customer.id)
+        .correlate(Customer)
+        .scalar_subquery()
+    )
+
+
+def _balance_subquery():
+    """Outstanding AR as a scalar subquery, for ORDER BY balance.
+    invoiced - paid across the customer's repair orders."""
+    invoiced = (
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .select_from(RepairOrder)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .where(RepairOrder.customer_id == Customer.id)
+        .correlate(Customer)
+        .scalar_subquery()
+    )
+    paid = (
+        select(func.coalesce(func.sum(Payment.amount), 0))
+        .select_from(RepairOrder)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .join(Payment, Payment.invoice_id == Invoice.id)
+        .where(RepairOrder.customer_id == Customer.id)
+        .correlate(Customer)
+        .scalar_subquery()
+    )
+    return invoiced - paid
+
+
+def _customer_order_by(sort: Optional[str], order: str):
+    """Return the ORDER BY expression list for the customer list."""
+    direction = desc if order == "desc" else asc
+    field = sort if sort in CUSTOMER_SORT_FIELDS else "name"
+    if field == "balance":
+        return [direction(_balance_subquery()), asc(Customer.id)]
+    if field == "vehicle_count":
+        return [direction(_vehicle_count_subquery()), asc(Customer.id)]
+    # name: case-insensitive on first then last, with id as a stable tiebreaker.
+    return [
+        direction(func.lower(Customer.first_name)),
+        direction(func.lower(Customer.last_name)),
+        asc(Customer.id),
+    ]
+
+
 @router.get("", response_model=List[CustomerResponse])
 async def list_customers(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
+    search: Optional[str] = Query(None, description="Filter by name, company, email, or phone"),
+    sort: Optional[str] = Query(None, description="name | balance | vehicle_count"),
+    order: str = Query("asc", pattern="^(asc|desc)$"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -229,11 +307,21 @@ async def list_customers(
         Customer.tenant_id == current_user.tenant_id,
         Customer.is_internal_fleet.is_(False),
     )
+    search_filter = _customer_search_filter(search)
+    where_clause = base_filter if search_filter is None else and_(base_filter, search_filter)
+
+    # total reflects the *filtered* set so the UI count stays correct while searching.
     total_result = await db.execute(
-        select(func.count(Customer.id)).where(base_filter)
+        select(func.count(Customer.id)).where(where_clause)
     )
     total = total_result.scalar() or 0
-    result = await db.execute(select(Customer).where(base_filter).offset(skip).limit(limit))
+    result = await db.execute(
+        select(Customer)
+        .where(where_clause)
+        .order_by(*_customer_order_by(sort, order))
+        .offset(skip)
+        .limit(limit)
+    )
     customers = result.scalars().all()
     cust_ids = [c.id for c in customers]
     balances = await get_customer_balances(db, cust_ids)

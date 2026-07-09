@@ -264,6 +264,13 @@ export interface RepairOrder {
   vehicle_year: number | null
   vehicle_unit_number: string | null
   vehicle_vin: string | null
+  // Denormalized customer summary (present on list responses) so rows render
+  // without loading the full customer table.
+  customer_first_name?: string
+  customer_last_name?: string
+  customer_company_name?: string | null
+  customer_email?: string | null
+  customer_phone?: string | null
   order_number: string
   status: RepairOrderStatus
   description: string | null
