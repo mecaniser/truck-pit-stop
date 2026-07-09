@@ -22,8 +22,17 @@ export default function AppointmentsPage() {
   const { data: appointments, isLoading } = useQuery<Appointment[]>({
     queryKey: ['appointments'],
     queryFn: async () => {
-      const response = await api.get('/appointments')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Appointment[] = []
+      while (true) {
+        const response = await api.get('/appointments', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 

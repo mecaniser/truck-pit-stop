@@ -34,8 +34,17 @@ export default function BookingPage() {
   const { data: vehicles } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
     queryFn: async () => {
-      const response = await api.get('/vehicles')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Vehicle[] = []
+      while (true) {
+        const response = await api.get('/vehicles', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 

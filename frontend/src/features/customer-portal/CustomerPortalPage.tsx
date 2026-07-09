@@ -124,16 +124,34 @@ function CustomerDashboard() {
   const { data: vehicles } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
     queryFn: async () => {
-      const response = await api.get('/vehicles')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Vehicle[] = []
+      while (true) {
+        const response = await api.get('/vehicles', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 
   const { data: repairOrders } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
     queryFn: async () => {
-      const response = await api.get('/repair-orders')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: RepairOrder[] = []
+      while (true) {
+        const response = await api.get('/repair-orders', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 
@@ -422,8 +440,17 @@ function CustomerVehicles() {
   const { data: vehicles, isLoading } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
     queryFn: async () => {
-      const response = await api.get('/vehicles')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Vehicle[] = []
+      while (true) {
+        const response = await api.get('/vehicles', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 
@@ -601,8 +628,17 @@ function CustomerRepairs() {
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
     queryFn: async () => {
-      const response = await api.get('/repair-orders')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: RepairOrder[] = []
+      while (true) {
+        const response = await api.get('/repair-orders', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 

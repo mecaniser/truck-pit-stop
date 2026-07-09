@@ -91,16 +91,34 @@ export default function InventoryPage() {
   const { data: inventory, isLoading } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
     queryFn: async () => {
-      const response = await api.get('/inventory')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: InventoryItem[] = []
+      while (true) {
+        const response = await api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 
   const { data: suppliers } = useQuery<Supplier[]>({
     queryKey: ['suppliers'],
     queryFn: async () => {
-      const response = await api.get('/suppliers')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Supplier[] = []
+      while (true) {
+        const response = await api.get('/suppliers', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 
