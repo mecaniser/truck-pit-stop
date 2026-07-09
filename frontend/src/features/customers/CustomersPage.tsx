@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
@@ -216,6 +217,7 @@ const MEXICO_STATES = [
 
 export default function CustomersPage() {
   const { accentColors } = useTheme()
+  const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   type CustomerSortField = 'name' | 'balance' | 'vehicle_count'
   const [sortField, setSortField] = useState<CustomerSortField>('name')
@@ -2508,8 +2510,11 @@ export default function CustomersPage() {
                         key={order.id}
                         className="bg-gray-50 rounded-xl p-3 hover:bg-gray-100 transition-colors cursor-pointer"
                         onClick={() => {
-                          // Navigate to repair order
-                          window.location.href = `/dashboard/repair-orders?selected=${order.id}`
+                          // Navigate to repair order (SPA nav, not a hard reload —
+                          // a full page reload here would blow away the RO list's
+                          // React Query cache and force the whole paginated fetch
+                          // to run again just to open one panel)
+                          navigate(`/dashboard/repair-orders?selected=${order.id}`)
                         }}
                       >
                         <div className="flex items-center justify-between mb-1">

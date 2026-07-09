@@ -280,6 +280,12 @@ export default function RepairOrdersPage() {
         setIsDetailOpen(true)
         // Clear the query param after opening
         setSearchParams({}, { replace: true })
+      } else {
+        console.warn('[repair-orders] ?selected= id not found in fetched orders', {
+          selectedId,
+          ordersCount: orders.length,
+          sampleIds: orders.slice(0, 3).map(o => o.id),
+        })
       }
     }
   }, [searchParams, orders, setSearchParams])
