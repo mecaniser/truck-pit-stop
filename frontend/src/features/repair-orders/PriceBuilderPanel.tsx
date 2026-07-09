@@ -660,6 +660,9 @@ export default function PriceBuilderPanel({
   })
   const [laborBookTimeForm, setLaborBookTimeForm] = useState<LaborBookTimeForm>(() => initialLaborBookTimeForm())
   const [showLaborBookTimeForm, setShowLaborBookTimeForm] = useState(false)
+  // Inline result of a VIN decode (auto or manual), shown next to the VIN field
+  // instead of a toast.
+  const [vinDecodeStatus, setVinDecodeStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const { data: summary, refetch, isLoading, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
     queryFn: async () => {
@@ -1160,7 +1163,7 @@ export default function PriceBuilderPanel({
     },
     onSuccess: (decoded) => {
       if (decoded.error_text && !decoded.make && !decoded.model) {
-        toast.error(decoded.error_text)
+        setVinDecodeStatus({ ok: false, message: decoded.error_text })
         return
       }
       setLaborBookTimeForm((current) => ({
@@ -1176,10 +1179,11 @@ export default function PriceBuilderPanel({
         engine_displacement_l: decoded.engine_displacement_l ? String(decoded.engine_displacement_l) : current.engine_displacement_l,
         gvwr: decoded.gvwr || current.gvwr,
       }))
-      toast.success('VIN decoded into labor book time scope')
+      const label = [decoded.year, decoded.make, decoded.model].filter(Boolean).join(' ')
+      setVinDecodeStatus({ ok: true, message: label ? `Decoded — ${label}` : 'VIN decoded' })
     },
     onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : errorDetail(err, 'Failed to decode VIN'))
+      setVinDecodeStatus({ ok: false, message: err instanceof Error ? err.message : errorDetail(err, 'Failed to decode VIN') })
     },
   })
 
@@ -1942,8 +1946,20 @@ export default function PriceBuilderPanel({
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-900">
+                        <p className="text-sm font-semibold text-gray-900">
                           {isAddNew ? `Add "${c.name}" as new operation` : c.name}
+                          {isAddNew && (
+                            <>
+                              {' · '}
+                              <button
+                                type="button"
+                                onClick={forkToLaborBookTime}
+                                className="font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+                              >
+                                or save it as labor book time →
+                              </button>
+                            </>
+                          )}
                           {c.provider === 'service_catalog' && (
                             <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700">
                               bundles parts
@@ -1955,15 +1971,6 @@ export default function PriceBuilderPanel({
                             ? 'enter book hours to save this time'
                             : `${formatHoursMinutes(c.estimated_hours)} book time`} · {c.description || c.operation_id}
                         </p>
-                        {isAddNew && (
-                          <button
-                            type="button"
-                            onClick={forkToLaborBookTime}
-                            className="mt-1 text-[11px] font-semibold text-orange-700 hover:text-orange-800 hover:underline"
-                          >
-                            Save as labor book time →
-                          </button>
-                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {isAddNew ? (
@@ -2051,17 +2058,18 @@ export default function PriceBuilderPanel({
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-900">
                           Add "{laborBookTimeForm.operation_name || laborBookSearchTerm}" as new labor book time
+                          {' · '}
+                          <button
+                            type="button"
+                            onClick={forkBackToOperation}
+                            className="font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+                          >
+                            or keep it as a regular service →
+                          </button>
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500">
                           Save the verified book hours and truck application, then add it to this repair order.
                         </p>
-                        <button
-                          type="button"
-                          onClick={forkBackToOperation}
-                          className="mt-1 text-[11px] font-semibold text-orange-700 hover:text-orange-800 hover:underline"
-                        >
-                          Keep it simple →
-                        </button>
                       </div>
                       {showLaborBookTimeForm && laborBookEntries.length > 0 && (
                         <button
@@ -2139,10 +2147,34 @@ export default function PriceBuilderPanel({
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                       <input
                         value={laborBookTimeForm.vin_sample}
-                        onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, vin_sample: e.target.value.toUpperCase() }))}
+                        onChange={(e) => {
+                          setLaborBookTimeForm((current) => ({ ...current, vin_sample: e.target.value.toUpperCase() }))
+                          setVinDecodeStatus(null)
+                        }}
                         placeholder="Optional VIN helper"
                         className="h-9 min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-3 text-sm uppercase outline-none focus:ring-2 focus:ring-orange-200"
                       />
+                      {(decodeLaborBookVin.isPending || vinDecodeStatus) && (
+                        <span
+                          className={`inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium ${
+                            decodeLaborBookVin.isPending ? 'text-gray-500' : vinDecodeStatus?.ok ? 'text-green-700' : 'text-red-600'
+                          }`}
+                        >
+                          {decodeLaborBookVin.isPending ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Decoding…
+                            </>
+                          ) : vinDecodeStatus?.ok ? (
+                            <>
+                              <CheckCircle className="h-3.5 w-3.5" /> {vinDecodeStatus.message}
+                            </>
+                          ) : (
+                            <>
+                              <X className="h-3.5 w-3.5" /> {vinDecodeStatus?.message}
+                            </>
+                          )}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => decodeLaborBookVin.mutate()}
