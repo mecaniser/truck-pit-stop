@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
@@ -12,6 +12,7 @@ import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTheme } from '../../contexts/ThemeContext'
 
 interface CustomerFormData {
@@ -219,10 +220,14 @@ export default function CustomersPage() {
   const { accentColors } = useTheme()
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
+  const PAGE_SIZE = 25
+  const [page, setPage] = useState(0)
   type CustomerSortField = 'name' | 'balance' | 'vehicle_count'
   const [sortField, setSortField] = useState<CustomerSortField>('name')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const toggleSort = (field: CustomerSortField) => {
+    setPage(0)
     if (sortField === field) {
       setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
     } else {
@@ -230,6 +235,8 @@ export default function CustomersPage() {
       setSortDirection('asc')
     }
   }
+  // Any new search term returns to the first page of results.
+  useEffect(() => { setPage(0) }, [debouncedSearch])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [formData, setFormData] = useState<CustomerFormData>(emptyForm)
@@ -271,6 +278,7 @@ export default function CustomersPage() {
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false)
   const [mergeSearchQuery, setMergeSearchQuery] = useState('')
   const [mergeTargetCustomer, setMergeTargetCustomer] = useState<Customer | null>(null)
+  const debouncedMergeSearch = useDebouncedValue(mergeSearchQuery.trim(), 300)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024)
@@ -283,24 +291,44 @@ export default function CustomersPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: customers, isLoading } = useQuery<Customer[]>({
-    queryKey: ['customers'],
+  // Server-side pagination: fetch one page at a time with search + sort pushed
+  // to the API, instead of loading every customer and filtering in the browser.
+  const { data: customerPage, isLoading, isPlaceholderData } = useQuery<{
+    items: Customer[]; total: number; has_more: boolean
+  }>({
+    queryKey: ['customers', { page, search: debouncedSearch, sort: sortField, order: sortDirection }],
     queryFn: async () => {
-      // The API caps each page at 100 — loop until has_more is false so search
-      // and the customer count reflect everyone, not just the first page.
-      const pageSize = 100
-      let skip = 0
-      const all: Customer[] = []
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const response = await api.get('/customers', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
+      const response = await api.get('/customers', {
+        params: {
+          paginated: true,
+          skip: page * PAGE_SIZE,
+          limit: PAGE_SIZE,
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          sort: sortField,
+          order: sortDirection,
+        },
+      })
+      return response.data
     },
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  })
+  const customers = customerPage?.items
+  const totalCustomers = customerPage?.total ?? 0
+
+  // The merge picker must search ALL customers, not just the current page, so it
+  // has its own server-side search query (only runs while the merge modal input
+  // has a term).
+  const { data: mergeCandidatePage } = useQuery<{ items: Customer[] }>({
+    queryKey: ['customers', 'merge-search', debouncedMergeSearch],
+    queryFn: async () => {
+      const response = await api.get('/customers', {
+        params: { paginated: true, skip: 0, limit: 20, search: debouncedMergeSearch },
+      })
+      return response.data
+    },
+    enabled: debouncedMergeSearch.length > 0,
+    placeholderData: keepPreviousData,
   })
   
   const { data: customerVehicles, isLoading: isLoadingVehicles } = useQuery<Vehicle[]>({
@@ -1949,39 +1977,9 @@ export default function CustomersPage() {
     </form>
   )
 
-  const filteredCustomers = useMemo(() => {
-    let result = customers
-
-    if (customers && searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      const phoneQuery = query.replace(/\D/g, '')
-
-      result = customers.filter((customer) => {
-        const nameMatch = `${customer.first_name} ${customer.last_name} ${customer.company_name || ''}`.toLowerCase().includes(query)
-        const emailMatch = customer.email?.toLowerCase().includes(query)
-        const customerPhone = (customer.phone || '').replace(/\D/g, '')
-        const phoneMatch = phoneQuery.length > 0 ? customerPhone.includes(phoneQuery) : false
-
-        return nameMatch || emailMatch || phoneMatch
-      })
-    }
-
-    if (!result) return result
-
-    const compare = (a: Customer, b: Customer): number => {
-      switch (sortField) {
-        case 'balance':
-          return parseFloat(a.balance || '0') - parseFloat(b.balance || '0')
-        case 'vehicle_count':
-          return (a.vehicle_count || 0) - (b.vehicle_count || 0)
-        default:
-          return customerDisplayName(a).localeCompare(customerDisplayName(b), undefined, { sensitivity: 'base' })
-      }
-    }
-
-    const sorted = [...result].sort(compare)
-    return sortDirection === 'asc' ? sorted : sorted.reverse()
-  }, [customers, searchQuery, sortField, sortDirection])
+  // Search, sort, and pagination are all done server-side now, so the rendered
+  // list is simply the current page returned by the API.
+  const filteredCustomers = customers
 
   if (isLoading) {
     return (
@@ -2102,7 +2100,7 @@ export default function CustomersPage() {
         <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
           <span className="text-sm text-white/70">
-            {filteredCustomers?.length || 0} customer{filteredCustomers?.length !== 1 ? 's' : ''}
+            {totalCustomers} customer{totalCustomers !== 1 ? 's' : ''}
           </span>
         </div>
 
@@ -2296,6 +2294,31 @@ export default function CustomersPage() {
             </div>
           )}
         </div>
+
+        {/* Pagination footer */}
+        {totalCustomers > PAGE_SIZE && (
+          <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+            <span>
+              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCustomers)} of {totalCustomers}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0 || isPlaceholderData}
+                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => (customerPage?.has_more ? p + 1 : p))}
+                disabled={!customerPage?.has_more || isPlaceholderData}
+                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {filteredCustomers?.length === 0 && searchQuery && (
@@ -3211,18 +3234,10 @@ export default function CustomersPage() {
                     />
                     <div className="max-h-72 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-xl">
                       {(() => {
-                        const query = mergeSearchQuery.toLowerCase().trim()
-                        const candidates = (customers || [])
+                        const query = mergeSearchQuery.trim()
+                        // Server-side search over all customers, minus the one being merged into.
+                        const candidates = (mergeCandidatePage?.items || [])
                           .filter((c) => c.id !== selectedCustomer.id)
-                          .filter((c) => {
-                            if (!query) return false
-                            const nameMatch = customerDisplayName(c).toLowerCase().includes(query)
-                            const emailMatch = c.email?.toLowerCase().includes(query)
-                            const phoneMatch = query.replace(/\D/g, '').length > 0
-                              && (c.phone || '').replace(/\D/g, '').includes(query.replace(/\D/g, ''))
-                            return nameMatch || emailMatch || phoneMatch
-                          })
-                          .slice(0, 20)
                         if (!query) {
                           return <p className="text-sm text-gray-400 text-center py-6">Start typing to search…</p>
                         }

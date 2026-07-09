@@ -194,6 +194,13 @@ class RepairOrderResponse(RepairOrderBase):
     vehicle_year: Optional[int] = None
     vehicle_unit_number: Optional[str] = None
     vehicle_vin: Optional[str] = None
+    # Customer summary fields (denormalized for display) so the list doesn't need
+    # to load the full customer table to resolve names.
+    customer_first_name: str = ""
+    customer_last_name: str = ""
+    customer_company_name: Optional[str] = None
+    customer_email: Optional[str] = None
+    customer_phone: Optional[str] = None
 
     class Config:
         from_attributes = True
