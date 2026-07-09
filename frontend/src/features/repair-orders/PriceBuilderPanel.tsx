@@ -31,6 +31,8 @@ import {
 
 import api from '@/lib/api'
 import QuantityStepper from '@/components/QuantityStepper'
+import DurationStepper from '@/components/DurationStepper'
+import { formatHoursMinutes } from '@/lib/durationFormat'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import {
   PartsUsage,
@@ -658,6 +660,9 @@ export default function PriceBuilderPanel({
   })
   const [laborBookTimeForm, setLaborBookTimeForm] = useState<LaborBookTimeForm>(() => initialLaborBookTimeForm())
   const [showLaborBookTimeForm, setShowLaborBookTimeForm] = useState(false)
+  // Inline result of a VIN decode (auto or manual), shown next to the VIN field
+  // instead of a toast.
+  const [vinDecodeStatus, setVinDecodeStatus] = useState<{ ok: boolean; message: string } | null>(null)
   const { data: summary, refetch, isLoading, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
     queryFn: async () => {
@@ -1060,6 +1065,30 @@ export default function PriceBuilderPanel({
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Unable to apply operation'),
   })
 
+  // Fork from the simple "new operation" row into the full Labor Book Time form:
+  // for complex jobs whose hours depend on the specific truck/engine. Carries
+  // over the typed name + hours; truck fields prefill from the RO's vehicle.
+  const forkToLaborBookTime = () => {
+    setLaborBookTimeForm({
+      ...initialLaborBookTimeForm(),
+      operation_name: searchTerm.trim(),
+      normalized_hours: bookTimeHours || '1',
+    })
+    setAddType('saved_labor')
+    setShowLaborBookTimeForm(true)
+    setPaletteOpen(true)
+  }
+
+  // Reverse of forkToLaborBookTime: go back to the simple ad-hoc operation,
+  // carrying the labor name + hours the user has entered so far.
+  const forkBackToOperation = () => {
+    setSearchTerm(laborBookTimeForm.operation_name.trim())
+    setBookTimeHours(laborBookTimeForm.normalized_hours || '1')
+    setShowLaborBookTimeForm(false)
+    setAddType('operation')
+    setPaletteOpen(true)
+  }
+
   const applyLaborBookEntry = useMutation({
     mutationFn: async (entry: LaborBookTimeEntry) => {
       const candidate = laborBookTimeCandidate(entry)
@@ -1143,7 +1172,7 @@ export default function PriceBuilderPanel({
     },
     onSuccess: (decoded) => {
       if (decoded.error_text && !decoded.make && !decoded.model) {
-        toast.error(decoded.error_text)
+        setVinDecodeStatus({ ok: false, message: decoded.error_text })
         return
       }
       setLaborBookTimeForm((current) => ({
@@ -1159,12 +1188,27 @@ export default function PriceBuilderPanel({
         engine_displacement_l: decoded.engine_displacement_l ? String(decoded.engine_displacement_l) : current.engine_displacement_l,
         gvwr: decoded.gvwr || current.gvwr,
       }))
-      toast.success('VIN decoded into labor book time scope')
+      setVinDecodeStatus({ ok: true, message: 'Decoded' })
     },
     onError: (err: unknown) => {
-      toast.error(err instanceof Error ? err.message : errorDetail(err, 'Failed to decode VIN'))
+      setVinDecodeStatus({ ok: false, message: err instanceof Error ? err.message : errorDetail(err, 'Failed to decode VIN') })
     },
   })
+
+  // Auto-decode a full (17-char) VIN when it's typed or prefilled, so the user
+  // doesn't have to click "Decode VIN". A ref tracks the last VIN we auto-decoded
+  // so onSuccess writing the VIN back doesn't retrigger this.
+  const lastAutoDecodedVin = useRef<string>('')
+  const vinToDecode = laborBookTimeForm.vin_sample.trim().toUpperCase()
+  useEffect(() => {
+    if (addType !== 'saved_labor' || !showLaborBookTimeForm) return
+    if (vinToDecode.length !== 17) return
+    if (vinToDecode === lastAutoDecodedVin.current) return
+    if (decodeLaborBookVin.isPending) return
+    lastAutoDecodedVin.current = vinToDecode
+    decodeLaborBookVin.mutate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vinToDecode, addType, showLaborBookTimeForm])
 
   const updateLine = useMutation({
     mutationFn: async ({
@@ -1322,7 +1366,7 @@ export default function PriceBuilderPanel({
     if (metric === 'labor') {
       const rows = laborLines.map((line) => ({
         label: line.description || lineTypeLabel(line),
-        meta: `${parseFloat(line.hours).toFixed(2)} hr × ${money(line.hourly_rate)}/hr`,
+        meta: `${formatHoursMinutes(line.hours)} × ${money(line.hourly_rate)}/hr`,
         value: money(line.total_cost),
       }))
       return (
@@ -1726,8 +1770,8 @@ export default function PriceBuilderPanel({
       )}
 
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className={`${addBarReadOnly ? 'grid grid-cols-1' : 'grid grid-cols-4'} rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className={`${addBarReadOnly ? 'grid grid-cols-1' : 'grid grid-cols-4'} shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200`}>
             {(addBarReadOnly ? ([
               ['history', History, 'History'],
             ] as const) : ([
@@ -1753,7 +1797,7 @@ export default function PriceBuilderPanel({
             ))}
           </div>
           {addType !== 'history' && (
-          <div className="relative min-w-0 flex-1">
+          <div className="relative min-w-[240px] flex-1 basis-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -1910,8 +1954,20 @@ export default function PriceBuilderPanel({
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-gray-900">
+                        <p className="text-sm font-semibold text-gray-900">
                           {isAddNew ? `Add "${c.name}" as new operation` : c.name}
+                          {isAddNew && (
+                            <>
+                              {' · '}
+                              <button
+                                type="button"
+                                onClick={forkToLaborBookTime}
+                                className="font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+                              >
+                                or save it as labor book time →
+                              </button>
+                            </>
+                          )}
                           {c.provider === 'service_catalog' && (
                             <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-700">
                               bundles parts
@@ -1921,26 +1977,19 @@ export default function PriceBuilderPanel({
                         <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
                           {isAddNew
                             ? 'enter book hours to save this time'
-                            : `${parseFloat(c.estimated_hours || '0').toFixed(2)} hr book time`} · {c.description || c.operation_id}
+                            : `${formatHoursMinutes(c.estimated_hours)} book time`} · {c.description || c.operation_id}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {isAddNew ? (
-                          <label className="flex items-center gap-1 text-xs font-semibold text-gray-600">
-                            <span>Book hrs</span>
-                            <input
-                              type="number"
-                              min="0.25"
-                              step="0.25"
-                              value={bookTimeHours}
-                              onChange={(e) => setBookTimeHours(e.target.value)}
-                              className="h-8 w-20 rounded-lg border border-orange-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs outline-none focus:ring-2 focus:ring-orange-200"
-                              placeholder="0.00"
-                            />
-                          </label>
+                          <DurationStepper
+                            ariaLabel="Book time"
+                            hours={Number(bookTimeHours) || 0}
+                            onChange={(h) => setBookTimeHours(String(h))}
+                          />
                         ) : (
                           <span className="hidden font-['JetBrains_Mono',monospace] text-xs font-semibold text-gray-600 sm:inline">
-                            est. {parseFloat(c.estimated_hours || '0').toFixed(1)} hr
+                            est. {formatHoursMinutes(c.estimated_hours)}
                           </span>
                         )}
                         <button
@@ -1980,7 +2029,7 @@ export default function PriceBuilderPanel({
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">{entry.operation_name}</p>
                         <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                          {parseFloat(entry.normalized_hours || '0').toFixed(2)} hr · {scope.primary} · {scope.secondary}
+                          {formatHoursMinutes(entry.normalized_hours)} · {scope.primary} · {scope.secondary}
                         </p>
                       </div>
                       <button
@@ -2017,6 +2066,14 @@ export default function PriceBuilderPanel({
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-gray-900">
                           Add "{laborBookTimeForm.operation_name || laborBookSearchTerm}" as new labor book time
+                          {' · '}
+                          <button
+                            type="button"
+                            onClick={forkBackToOperation}
+                            className="font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+                          >
+                            or keep it as a regular service →
+                          </button>
                         </p>
                         <p className="mt-0.5 text-xs text-gray-500">
                           Save the verified book hours and truck application, then add it to this repair order.
@@ -2040,15 +2097,12 @@ export default function PriceBuilderPanel({
                         placeholder="Labor name"
                         className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      {/* Book hours step in 15-minute (0.25 hr) increments. */}
-                      <QuantityStepper
-                        ariaLabel="Book hours"
-                        value={Number(laborBookTimeForm.normalized_hours) || 0}
-                        onChange={(n) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(n) }))}
-                        min={0.25}
-                        step={0.25}
-                        unitLabel="hr"
-                        align="start"
+                      {/* One control: reads out as "1h 45m", steps by 15 min,
+                          stores decimal hours under the hood. */}
+                      <DurationStepper
+                        ariaLabel="Book time"
+                        hours={Number(laborBookTimeForm.normalized_hours) || 0}
+                        onChange={(h) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(h) }))}
                       />
                     </div>
                     <textarea
@@ -2101,10 +2155,34 @@ export default function PriceBuilderPanel({
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                       <input
                         value={laborBookTimeForm.vin_sample}
-                        onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, vin_sample: e.target.value.toUpperCase() }))}
+                        onChange={(e) => {
+                          setLaborBookTimeForm((current) => ({ ...current, vin_sample: e.target.value.toUpperCase() }))
+                          setVinDecodeStatus(null)
+                        }}
                         placeholder="Optional VIN helper"
                         className="h-9 min-w-0 flex-1 rounded-lg border border-orange-200 bg-white px-3 text-sm uppercase outline-none focus:ring-2 focus:ring-orange-200"
                       />
+                      {(decodeLaborBookVin.isPending || vinDecodeStatus) && (
+                        <span
+                          className={`inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium ${
+                            decodeLaborBookVin.isPending ? 'text-gray-500' : vinDecodeStatus?.ok ? 'text-green-700' : 'text-red-600'
+                          }`}
+                        >
+                          {decodeLaborBookVin.isPending ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Decoding…
+                            </>
+                          ) : vinDecodeStatus?.ok ? (
+                            <>
+                              <CheckCircle className="h-3.5 w-3.5" /> {vinDecodeStatus.message}
+                            </>
+                          ) : (
+                            <>
+                              <X className="h-3.5 w-3.5" /> {vinDecodeStatus?.message}
+                            </>
+                          )}
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => decodeLaborBookVin.mutate()}
@@ -2501,7 +2579,7 @@ export default function PriceBuilderPanel({
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1">
-                    <span className="font-medium">{parseFloat(line.hours).toFixed(2)} hr</span>
+                    <span className="font-medium">{formatHoursMinutes(line.hours)}</span>
                     {canMutate && (
                       <button
                         type="button"
@@ -2616,7 +2694,7 @@ export default function PriceBuilderPanel({
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">{lineTypeLabel(line)}</span>
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-gray-500">
-                          {parseFloat(line.hours).toFixed(2)} hr labor · {groupedParts.length} parts{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
+                          {formatHoursMinutes(line.hours)} labor · {groupedParts.length} parts{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
                         </span>
                       </span>
                       <span className="text-right">

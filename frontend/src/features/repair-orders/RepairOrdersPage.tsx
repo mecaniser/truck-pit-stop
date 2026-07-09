@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
@@ -105,10 +106,7 @@ function RepairOrderLaborBreakdown({
   isLoading: boolean
 }) {
   const formatMoney = (value: string) => (parseFloat(value || '0') || 0).toFixed(2)
-  const formatHours = (value: string) => {
-    const hours = parseFloat(value || '0') || 0
-    return Number.isInteger(hours) ? `${hours.toFixed(0)}h` : `${hours.toFixed(2)}h`
-  }
+  const formatHours = (value: string) => formatHoursMinutes(value)
   const formatLineType = (line: Labor) => {
     if (line.source_service_id) return 'service labor'
     return line.line_type.replace('_', ' ')
