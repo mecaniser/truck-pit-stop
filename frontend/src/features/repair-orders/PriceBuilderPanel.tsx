@@ -31,6 +31,7 @@ import {
 
 import api from '@/lib/api'
 import QuantityStepper from '@/components/QuantityStepper'
+import { formatHoursMinutes } from '@/lib/durationFormat'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import {
   PartsUsage,
@@ -1313,7 +1314,7 @@ export default function PriceBuilderPanel({
     if (metric === 'labor') {
       const rows = laborLines.map((line) => ({
         label: line.description || lineTypeLabel(line),
-        meta: `${parseFloat(line.hours).toFixed(2)} hr × ${money(line.hourly_rate)}/hr`,
+        meta: `${formatHoursMinutes(line.hours)} × ${money(line.hourly_rate)}/hr`,
         value: money(line.total_cost),
       }))
       return (
@@ -1912,7 +1913,7 @@ export default function PriceBuilderPanel({
                         <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
                           {isAddNew
                             ? 'enter book hours to save this time'
-                            : `${parseFloat(c.estimated_hours || '0').toFixed(2)} hr book time`} · {c.description || c.operation_id}
+                            : `${formatHoursMinutes(c.estimated_hours)} book time`} · {c.description || c.operation_id}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
@@ -1931,7 +1932,7 @@ export default function PriceBuilderPanel({
                           </label>
                         ) : (
                           <span className="hidden font-['JetBrains_Mono',monospace] text-xs font-semibold text-gray-600 sm:inline">
-                            est. {parseFloat(c.estimated_hours || '0').toFixed(1)} hr
+                            est. {formatHoursMinutes(c.estimated_hours)}
                           </span>
                         )}
                         <button
@@ -1971,7 +1972,7 @@ export default function PriceBuilderPanel({
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-gray-900">{entry.operation_name}</p>
                         <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                          {parseFloat(entry.normalized_hours || '0').toFixed(2)} hr · {scope.primary} · {scope.secondary}
+                          {formatHoursMinutes(entry.normalized_hours)} · {scope.primary} · {scope.secondary}
                         </p>
                       </div>
                       <button
@@ -2492,7 +2493,7 @@ export default function PriceBuilderPanel({
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1">
-                    <span className="font-medium">{parseFloat(line.hours).toFixed(2)} hr</span>
+                    <span className="font-medium">{formatHoursMinutes(line.hours)}</span>
                     {canMutate && (
                       <button
                         type="button"
@@ -2607,7 +2608,7 @@ export default function PriceBuilderPanel({
                           <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">{lineTypeLabel(line)}</span>
                         </span>
                         <span className="mt-0.5 block truncate text-xs text-gray-500">
-                          {parseFloat(line.hours).toFixed(2)} hr labor · {groupedParts.length} parts{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
+                          {formatHoursMinutes(line.hours)} labor · {groupedParts.length} parts{partSavings > 0 ? ` · saves ${money(partSavings)}` : ''}
                         </span>
                       </span>
                       <span className="text-right">
