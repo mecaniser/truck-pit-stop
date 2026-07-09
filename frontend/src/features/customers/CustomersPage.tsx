@@ -1960,7 +1960,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="mb-6 bg-white/10 backdrop-blur rounded-xl p-4 flex-shrink-0">
+      <div className="mb-6 flex-shrink-0">
         <div className="relative">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
@@ -1978,12 +1978,6 @@ export default function CustomersPage() {
             className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
           />
         </div>
-
-        {searchQuery && (
-          <div className="mt-3 text-sm text-white/70">
-            Found {filteredCustomers?.length || 0} customer{filteredCustomers?.length !== 1 ? 's' : ''}
-          </div>
-        )}
       </div>
 
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
