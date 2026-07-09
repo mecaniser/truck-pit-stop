@@ -95,7 +95,11 @@ class CustomerResponse(CustomerBase):
     # and the UI shows the vehicle count instead.
     vehicle_count: int = 0
     single_vehicle_license_plate: Optional[str] = None
-    
+    # Which field(s) satisfied the current search term (e.g. ["phone"],
+    # ["company"]) — only populated when a search is active, so the UI can
+    # show why a result matched. Empty when there's no active search.
+    matched_fields: List[str] = Field(default_factory=list)
+
     class Config:
         from_attributes = True
 

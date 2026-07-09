@@ -87,6 +87,9 @@ export interface Customer {
   balance?: string
   vehicle_count?: number
   single_vehicle_license_plate?: string | null
+  // Which field(s) satisfied the current search term (e.g. ["phone"]).
+  // Only populated while a search is active.
+  matched_fields?: string[]
   created_at: string
   updated_at: string
 }

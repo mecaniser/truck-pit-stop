@@ -110,13 +110,20 @@ async def get_customer_vehicle_info(db: AsyncSession, customer_ids: list) -> dic
     }
 
 
-def _customer_response_with_balance(customer: Customer, balances: dict, vehicle_info: Optional[dict] = None) -> CustomerResponse:
+def _customer_response_with_balance(
+    customer: Customer,
+    balances: dict,
+    vehicle_info: Optional[dict] = None,
+    search: Optional[str] = None,
+) -> CustomerResponse:
     response = CustomerResponse.model_validate(customer)
     response.balance = balances.get(customer.id, 0)
     if vehicle_info:
         info = vehicle_info.get(customer.id, {})
         response.vehicle_count = info.get("count", 0)
         response.single_vehicle_license_plate = info.get("plate")
+    if search:
+        response.matched_fields = _customer_matched_fields(customer, search)
     return response
 
 
@@ -232,6 +239,38 @@ def _customer_search_filter(search: Optional[str]):
     return or_(*clauses)
 
 
+def _customer_matched_fields(customer: Customer, search: Optional[str]) -> List[str]:
+    """Which field(s) on this customer actually satisfied the search term —
+    mirrors _customer_search_filter's own logic exactly (same digit-stripping
+    rule for phone) so the two can't drift out of sync. Used to show the
+    user *why* a result matched (e.g. a "Phone" or "VIN" badge)."""
+    term = (search or "").strip()
+    if not term:
+        return []
+    q = term.lower()
+    matched: List[str] = []
+
+    def has(value: Optional[str]) -> bool:
+        return bool(value) and q in value.lower()
+
+    if has(customer.first_name) or has(customer.last_name) or has(f"{customer.first_name or ''} {customer.last_name or ''}"):
+        matched.append("name")
+    if has(customer.company_name):
+        matched.append("company")
+    if has(customer.email):
+        matched.append("email")
+    if has(customer.usdot_number):
+        matched.append("usdot")
+    if has(customer.mc_number):
+        matched.append("mc")
+    stripped = re.sub(r"[\s().+-]", "", term)
+    if stripped and stripped.isdigit():
+        phone_digits = re.sub(r"\D", "", customer.phone or "")
+        if stripped in phone_digits:
+            matched.append("phone")
+    return matched
+
+
 def _vehicle_count_subquery():
     return (
         select(func.count(Vehicle.id))
@@ -336,7 +375,7 @@ async def list_customers(
     cust_ids = [c.id for c in customers]
     balances = await get_customer_balances(db, cust_ids)
     vehicle_info = await get_customer_vehicle_info(db, cust_ids)
-    items = [_customer_response_with_balance(c, balances, vehicle_info) for c in customers]
+    items = [_customer_response_with_balance(c, balances, vehicle_info, search) for c in customers]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
