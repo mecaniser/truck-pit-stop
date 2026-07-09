@@ -1179,8 +1179,7 @@ export default function PriceBuilderPanel({
         engine_displacement_l: decoded.engine_displacement_l ? String(decoded.engine_displacement_l) : current.engine_displacement_l,
         gvwr: decoded.gvwr || current.gvwr,
       }))
-      const label = [decoded.year, decoded.make, decoded.model].filter(Boolean).join(' ')
-      setVinDecodeStatus({ ok: true, message: label ? `Decoded — ${label}` : 'VIN decoded' })
+      setVinDecodeStatus({ ok: true, message: 'Decoded' })
     },
     onError: (err: unknown) => {
       setVinDecodeStatus({ ok: false, message: err instanceof Error ? err.message : errorDetail(err, 'Failed to decode VIN') })
