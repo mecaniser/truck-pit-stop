@@ -22,6 +22,10 @@ class MessageThread(BaseModel):
     archived_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
 
     tenant = relationship("Tenant", backref="message_threads")
-    customer = relationship("Customer", backref="message_threads")
+    # No backref to Customer: nothing in the codebase uses `customer.message_threads`,
+    # and having it caused SQLAlchemy's unit-of-work to null out this FK on unrelated
+    # MessageThread rows during the customer-merge flow's `db.delete(loser)` flush
+    # (see the customer merge endpoint) — a nullable=False column can't hold that.
+    customer = relationship("Customer")
     messages = relationship("SMSMessage", back_populates="thread", cascade="all, delete-orphan")
     archived_by_user = relationship("User", foreign_keys=[archived_by_user_id])

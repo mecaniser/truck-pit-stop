@@ -569,15 +569,27 @@ async def merge_customers(
         else:
             link.customer_id = winner.id
 
+    winner_id_for_log = str(winner.id)
+    loser_id_for_log = str(loser.id)
     try:
+        # Flush the customer_id reassignments above before deleting `loser`.
+        # Without this, SQLAlchemy's unit-of-work still sees the (now stale)
+        # in-memory collections on `loser` (vehicles/repair_orders/contacts/etc,
+        # loaded via their own `select(...).where(customer_id == loser.id)`
+        # queries above) as belonging to it, and cascades accordingly on
+        # delete — nulling or deleting rows we already just moved to `winner`.
+        # Expiring `loser` forces a fresh reload of its relationships, which
+        # will correctly come back empty now that the FK flush has landed.
+        await db.flush()
+        db.expire(loser)
         await db.delete(loser)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         logger.error(
             "customer_merge_integrity_error",
-            winner_id=str(winner.id),
-            loser_id=str(loser.id),
+            winner_id=winner_id_for_log,
+            loser_id=loser_id_for_log,
             error=str(exc.orig) if exc.orig else str(exc),
         )
         raise HTTPException(
