@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -201,7 +202,15 @@ CUSTOMER_SORT_FIELDS = {"name", "balance", "vehicle_count"}
 
 def _customer_search_filter(search: Optional[str]):
     """OR-match across name / company / email / DOT / MC (ILIKE substring)
-    plus a digits-only phone match."""
+    plus a phone match when the term itself looks like a phone number.
+
+    Phone matching only kicks in when the search term, after stripping common
+    phone punctuation (spaces/dashes/parens/dots/plus), is made up entirely of
+    digits — e.g. "704-705" or "(704) 705-0486". A term with real letters in
+    it (e.g. "77 cargo") is clearly a name/company search, not a phone
+    number, and matching its incidental digits ("77") as a phone substring
+    would match nearly every phone on file and swamp the results.
+    """
     term = (search or "").strip()
     if not term:
         return None
@@ -215,11 +224,10 @@ def _customer_search_filter(search: Optional[str]):
         Customer.usdot_number.ilike(like),
         Customer.mc_number.ilike(like),
     ]
-    digits = "".join(ch for ch in term if ch.isdigit())
-    if digits:
-        # Strip non-digits from the stored phone before comparing.
+    stripped = re.sub(r"[\s().+-]", "", term)
+    if stripped and stripped.isdigit():
         clauses.append(
-            func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{digits}%")
+            func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{stripped}%")
         )
     return or_(*clauses)
 
