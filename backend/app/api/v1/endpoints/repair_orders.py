@@ -6,7 +6,7 @@ from uuid import UUID
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, literal_column
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
@@ -482,14 +482,39 @@ async def list_repair_orders(
     if status:
         query = query.where(RepairOrder.status == status)
         count_query = count_query.where(RepairOrder.status == status)
-    # Search by order number or description (mirrors the previous client-side filter).
+    # Search across the order plus its customer and vehicle: order number,
+    # description, customer name/company/DOT/MC/phone, and vehicle VIN/unit/
+    # make/model. The Customer/Vehicle joins are added only when a term is
+    # present so the common (no-search) list path stays a single-table query.
     search_term = (search or "").strip()
     if search_term:
         like = f"%{search_term}%"
-        search_clause = or_(
+        digits = "".join(ch for ch in search_term if ch.isdigit())
+        query = query.join(Customer, RepairOrder.customer_id == Customer.id).join(
+            Vehicle, RepairOrder.vehicle_id == Vehicle.id
+        )
+        count_query = count_query.join(Customer, RepairOrder.customer_id == Customer.id).join(
+            Vehicle, RepairOrder.vehicle_id == Vehicle.id
+        )
+        clauses = [
             RepairOrder.order_number.ilike(like),
             RepairOrder.description.ilike(like),
-        )
+            Customer.first_name.ilike(like),
+            Customer.last_name.ilike(like),
+            (Customer.first_name + literal_column("' '") + Customer.last_name).ilike(like),
+            Customer.company_name.ilike(like),
+            Customer.usdot_number.ilike(like),
+            Customer.mc_number.ilike(like),
+            Vehicle.vin.ilike(like),
+            Vehicle.unit_number.ilike(like),
+            Vehicle.make.ilike(like),
+            Vehicle.model.ilike(like),
+        ]
+        if digits:
+            clauses.append(
+                func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{digits}%")
+            )
+        search_clause = or_(*clauses)
         query = query.where(search_clause)
         count_query = count_query.where(search_clause)
 

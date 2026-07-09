@@ -254,31 +254,45 @@ export default function RepairOrdersPage() {
 
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
-  const { data: orderPage, isLoading, isPlaceholderData } = useQuery<{
-    items: RepairOrder[]; total: number; has_more: boolean
-  }>({
-    queryKey: ['repair-orders', { page, search: debouncedSearch, status: statusFilter }],
-    queryFn: async () => {
-      const response = await api.get('/repair-orders', {
-        params: {
-          paginated: true,
-          skip: page * RO_PAGE_SIZE,
-          limit: RO_PAGE_SIZE,
-          ...(statusFilter === 'deleted'
-            ? { deleted: true }
-            : statusFilter !== 'all'
-              ? { status: statusFilter }
-              : {}),
-          ...(debouncedSearch ? { search: debouncedSearch } : {}),
-        },
-      })
-      return response.data
-    },
+  const orderPageKey = (p: number) =>
+    ['repair-orders', { page: p, search: debouncedSearch, status: statusFilter }] as const
+  const fetchOrderPage = async (p: number) => {
+    const response = await api.get('/repair-orders', {
+      params: {
+        paginated: true,
+        skip: p * RO_PAGE_SIZE,
+        limit: RO_PAGE_SIZE,
+        ...(statusFilter === 'deleted'
+          ? { deleted: true }
+          : statusFilter !== 'all'
+            ? { status: statusFilter }
+            : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      },
+    })
+    return response.data as { items: RepairOrder[]; total: number; has_more: boolean }
+  }
+  const { data: orderPage, isLoading, isPlaceholderData, isFetching } = useQuery({
+    queryKey: orderPageKey(page),
+    queryFn: () => fetchOrderPage(page),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
   const orders = orderPage?.items
   const totalOrders = orderPage?.total ?? 0
+
+  // Prefetch the next page once the current one settles, so paging forward feels
+  // instant. Only when a next page exists and we're showing live (non-placeholder) data.
+  useEffect(() => {
+    if (orderPage?.has_more && !isPlaceholderData) {
+      queryClient.prefetchQuery({
+        queryKey: orderPageKey(page + 1),
+        queryFn: () => fetchOrderPage(page + 1),
+        staleTime: 30_000,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch, statusFilter, orderPage?.has_more, isPlaceholderData])
 
   // Handle ?selected= query param to auto-open a repair order
   useEffect(() => {
@@ -1654,12 +1668,16 @@ export default function RepairOrdersPage() {
               <p className="text-xs text-white/50 italic">{statusDescriptions[statusFilter]}</p>
             )}
           </div>
-          <span className="text-sm text-white/70">
-            {filteredOrders?.length || 0} order{filteredOrders?.length !== 1 ? 's' : ''}
-          </span>
         </div>
 
-        <div className="flex-1 min-h-0 scrollbar-dark" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
+        <div className="flex-1 min-h-0 scrollbar-dark relative" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
+          {/* Loading overlay for page/search/filter changes (first load uses the
+              skeleton; this covers subsequent batch fetches). */}
+          {isFetching && !isLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-blueNoir-900/40 backdrop-blur-[1px] pointer-events-none">
+              <Loader2 className="w-6 h-6 text-white/80 animate-spin" />
+            </div>
+          )}
           {isMobile ? (
             /* Mobile: compact list cards */
             <div className="divide-y divide-white/10">
@@ -1875,28 +1893,30 @@ export default function RepairOrdersPage() {
           )}
         </div>
 
-        {/* Pagination footer */}
-        {totalOrders > RO_PAGE_SIZE && (
+        {/* Pagination footer (also carries the total count) */}
+        {totalOrders > 0 && (
           <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
             <span>
-              {page * RO_PAGE_SIZE + 1}–{Math.min((page + 1) * RO_PAGE_SIZE, totalOrders)} of {totalOrders}
+              {page * RO_PAGE_SIZE + 1}–{Math.min((page + 1) * RO_PAGE_SIZE, totalOrders)} of {totalOrders} order{totalOrders !== 1 ? 's' : ''}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0 || isPlaceholderData}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => (orderPage?.has_more ? p + 1 : p))}
-                disabled={!orderPage?.has_more || isPlaceholderData}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
-            </div>
+            {totalOrders > RO_PAGE_SIZE && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0 || isPlaceholderData}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPage((p) => (orderPage?.has_more ? p + 1 : p))}
+                  disabled={!orderPage?.has_more || isPlaceholderData}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
