@@ -123,6 +123,36 @@ const emptyForm: CustomerFormData = {
 const stripRegNumber = (value?: string | null): string =>
   (value || '').replace(/^\s*(us\s*dot|dot|mc)[\s#:-]*/i, '').trim()
 
+// Short labels for the "matched via" badges shown next to a search result,
+// so it's clear *why* a customer showed up (e.g. their phone matched, not
+// their name) rather than just showing every field that happens to match.
+const MATCH_FIELD_LABELS: Record<string, string> = {
+  name: 'Name',
+  company: 'Company',
+  email: 'Email',
+  phone: 'Phone',
+  usdot: 'DOT',
+  mc: 'MC',
+}
+
+function MatchBadges({ matchedFields, variant = 'dark' }: { matchedFields?: string[]; variant?: 'dark' | 'light' }) {
+  if (!matchedFields || matchedFields.length === 0) return null
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {matchedFields.map((field) => (
+        <span
+          key={field}
+          className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${
+            variant === 'dark' ? 'bg-white/10 text-white/70' : 'bg-black/10 text-slate-600'
+          }`}
+        >
+          {MATCH_FIELD_LABELS[field] || field}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 const US_STATES = [
   { code: '', name: 'Select State' },
   { code: 'AL', name: 'Alabama' },
@@ -2226,7 +2256,10 @@ export default function CustomersPage() {
                               {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
                             </span>
                           </div>
-                          <span className="text-white font-medium">{customerDisplayName(customer)}</span>
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="text-white font-medium truncate">{customerDisplayName(customer)}</span>
+                            <MatchBadges matchedFields={customer.matched_fields} />
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-white/70 hidden sm:table-cell">{customer.email}</td>
@@ -2283,6 +2316,7 @@ export default function CustomersPage() {
                     <h3 className="text-lg font-bold text-slate-800 leading-tight">
                       {customerDisplayName(customer)}
                     </h3>
+                    <MatchBadges matchedFields={customer.matched_fields} variant="light" />
                   </div>
 
                   <div className="space-y-2 text-sm">
