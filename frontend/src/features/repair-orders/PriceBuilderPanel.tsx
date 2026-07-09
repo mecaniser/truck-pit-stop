@@ -31,6 +31,7 @@ import {
 
 import api from '@/lib/api'
 import QuantityStepper from '@/components/QuantityStepper'
+import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import {
@@ -1918,18 +1919,11 @@ export default function PriceBuilderPanel({
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         {isAddNew ? (
-                          <label className="flex items-center gap-1 text-xs font-semibold text-gray-600">
-                            <span>Book hrs</span>
-                            <input
-                              type="number"
-                              min="0.25"
-                              step="0.25"
-                              value={bookTimeHours}
-                              onChange={(e) => setBookTimeHours(e.target.value)}
-                              className="h-8 w-20 rounded-lg border border-orange-200 bg-white px-2 text-right font-['JetBrains_Mono',monospace] text-xs outline-none focus:ring-2 focus:ring-orange-200"
-                              placeholder="0.00"
-                            />
-                          </label>
+                          <DurationStepper
+                            ariaLabel="Book time"
+                            hours={Number(bookTimeHours) || 0}
+                            onChange={(h) => setBookTimeHours(String(h))}
+                          />
                         ) : (
                           <span className="hidden font-['JetBrains_Mono',monospace] text-xs font-semibold text-gray-600 sm:inline">
                             est. {formatHoursMinutes(c.estimated_hours)}
@@ -2032,24 +2026,13 @@ export default function PriceBuilderPanel({
                         placeholder="Labor name"
                         className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      {/* Book hours step in 15-minute (0.25 hr) increments, with a
-                          live h/m hint so entry matches how the saved line reads. */}
-                      <div className="flex flex-col items-end gap-0.5">
-                        <QuantityStepper
-                          ariaLabel="Book hours"
-                          value={Number(laborBookTimeForm.normalized_hours) || 0}
-                          onChange={(n) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(n) }))}
-                          min={0.25}
-                          step={0.25}
-                          unitLabel="hr"
-                          align="start"
-                        />
-                        {Number(laborBookTimeForm.normalized_hours) > 0 && (
-                          <span className="text-[11px] text-gray-500">
-                            = {formatHoursMinutes(laborBookTimeForm.normalized_hours)}
-                          </span>
-                        )}
-                      </div>
+                      {/* One control: reads out as "1h 45m", steps by 15 min,
+                          stores decimal hours under the hood. */}
+                      <DurationStepper
+                        ariaLabel="Book time"
+                        hours={Number(laborBookTimeForm.normalized_hours) || 0}
+                        onChange={(h) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(h) }))}
+                      />
                     </div>
                     <textarea
                       value={laborBookTimeForm.operation_description}
