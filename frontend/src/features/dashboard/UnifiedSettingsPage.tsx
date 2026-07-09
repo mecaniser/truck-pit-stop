@@ -150,6 +150,13 @@ const garageProfileSchema = z.object({
   partner_services: z.string().optional().refine((value) => !value || value.length <= 180, {
     message: 'Maximum 180 characters',
   }),
+  order_number_prefix: z.string().optional()
+    .refine((value) => !value || value.length <= 10, {
+      message: 'Maximum 10 characters',
+    })
+    .refine((value) => !value || /^[A-Za-z0-9]+$/.test(value), {
+      message: 'Letters and numbers only',
+    }),
 })
 
 type ProfileFormData = z.infer<typeof profileSchema>
@@ -229,6 +236,8 @@ interface GarageProfile {
   logo_url: string | null
   partner_summary: string | null
   partner_services: string | null
+  order_number_prefix: string | null
+  effective_order_number_prefix: string
 }
 
 // ============ INDUSTRIAL COMPONENTS ============
@@ -498,6 +507,7 @@ function GarageProfileSection() {
       logo_url: garageProfile.logo_url || '',
       partner_summary: garageProfile.partner_summary || '',
       partner_services: garageProfile.partner_services || '',
+      order_number_prefix: garageProfile.order_number_prefix || '',
     })
   }, [garageProfile, isEditing, reset])
 
@@ -532,6 +542,7 @@ function GarageProfileSection() {
         logo_url: data.logo_url?.trim() || null,
         partner_summary: data.partner_summary?.trim() || null,
         partner_services: data.partner_services?.trim() || null,
+        order_number_prefix: data.order_number_prefix?.trim() || null,
       }
       const response = await api.put('/admin/garage-profile', payload)
       return response.data as GarageProfile
@@ -599,6 +610,7 @@ function GarageProfileSection() {
         logo_url: garageProfile.logo_url || '',
         partner_summary: garageProfile.partner_summary || '',
         partner_services: garageProfile.partner_services || '',
+        order_number_prefix: garageProfile.order_number_prefix || '',
       })
     }
     setIsEditing(true)
@@ -669,6 +681,12 @@ function GarageProfileSection() {
                 { label: 'Shop Phone', value: garageProfile?.phone ? formatUSPhone(garageProfile.phone) : '—' },
                 { label: 'Website', value: garageProfile?.website || '—' },
                 { label: 'Address', value: garageProfile?.address || '—' },
+                {
+                  label: 'Repair Order Prefix',
+                  value: garageProfile
+                    ? `${garageProfile.effective_order_number_prefix}-000001${garageProfile.order_number_prefix ? '' : ' (auto)'}`
+                    : '—',
+                },
               ].map((field, index) => (
                 <div key={field.label} style={staggeredReveal(index)} className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0">
                   <label className={industrialStyles.label}>{field.label}</label>
@@ -830,6 +848,22 @@ function GarageProfileSection() {
               {errors.address && <p className="mt-2 text-xs text-red-400">{errors.address.message}</p>}
             </div>
 
+            <div>
+              <label className={industrialStyles.label}>Repair Order Prefix</label>
+              <input
+                {...register('order_number_prefix')}
+                className={inputClasses(!!errors.order_number_prefix)}
+                placeholder={garageProfile?.effective_order_number_prefix || 'TPS'}
+                maxLength={10}
+                style={{ textTransform: 'uppercase' }}
+              />
+              {errors.order_number_prefix && <p className="mt-2 text-xs text-red-400">{errors.order_number_prefix.message}</p>}
+              <p className="mt-2 text-xs text-zinc-500">
+                New repair orders will be numbered like "{garageProfile?.effective_order_number_prefix || 'TPS'}-000123".
+                Leave blank to auto-derive from the shop name.
+              </p>
+            </div>
+
             <div className="grid gap-6 lg:grid-cols-2">
               <div>
                 <label className={industrialStyles.label}>Landing Page Summary</label>
@@ -873,6 +907,7 @@ function GarageProfileSection() {
                       logo_url: garageProfile.logo_url || '',
                       partner_summary: garageProfile.partner_summary || '',
                       partner_services: garageProfile.partner_services || '',
+                      order_number_prefix: garageProfile.order_number_prefix || '',
                     })
                   }
                 }}

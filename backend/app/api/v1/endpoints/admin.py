@@ -15,6 +15,7 @@ from twilio.rest import Client
 from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.phone import normalize_phone
+from app.core.unique_id import derive_order_number_prefix
 from app.core.pagination import paginated_or_list
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
@@ -914,6 +915,10 @@ class GarageProfileResponse(BaseModel):
     logo_url: Optional[str] = None
     partner_summary: Optional[str] = None
     partner_services: Optional[str] = None
+    order_number_prefix: Optional[str] = None
+    # The prefix actually used for the next generated repair order number —
+    # either the explicit override above, or the one auto-derived from `name`.
+    effective_order_number_prefix: str
 
 
 class GarageProfileUpdateRequest(BaseModel):
@@ -925,6 +930,7 @@ class GarageProfileUpdateRequest(BaseModel):
     logo_url: Optional[str] = Field(None, max_length=500)
     partner_summary: Optional[str] = Field(None, max_length=280)
     partner_services: Optional[str] = Field(None, max_length=180)
+    order_number_prefix: Optional[str] = Field(None, max_length=10)
 
 
 class GarageLogoImportRequest(BaseModel):
@@ -968,6 +974,8 @@ async def get_garage_profile(
         logo_url=tenant.logo_url,
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,
+        order_number_prefix=tenant.order_number_prefix,
+        effective_order_number_prefix=tenant.order_number_prefix or derive_order_number_prefix(tenant.name),
     )
 
 
@@ -997,6 +1005,15 @@ async def update_garage_profile(
         trimmed = value.strip()
         return trimmed or None
 
+    order_number_prefix = clean_optional_text(body.order_number_prefix)
+    if order_number_prefix:
+        order_number_prefix = order_number_prefix.upper()
+        if not order_number_prefix.isalnum():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Repair order prefix must contain only letters and numbers",
+            )
+
     tenant.name = name
     tenant.address = clean_optional_text(body.address)
     tenant.phone = normalize_phone(body.phone)
@@ -1005,6 +1022,7 @@ async def update_garage_profile(
     tenant.logo_url = clean_optional_text(body.logo_url)
     tenant.partner_summary = clean_optional_text(body.partner_summary)
     tenant.partner_services = clean_optional_text(body.partner_services)
+    tenant.order_number_prefix = order_number_prefix
 
     await db.commit()
     await db.refresh(tenant)
@@ -1019,6 +1037,8 @@ async def update_garage_profile(
         logo_url=tenant.logo_url,
         partner_summary=tenant.partner_summary,
         partner_services=tenant.partner_services,
+        order_number_prefix=tenant.order_number_prefix,
+        effective_order_number_prefix=tenant.order_number_prefix or derive_order_number_prefix(tenant.name),
     )
 
 

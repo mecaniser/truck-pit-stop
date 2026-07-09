@@ -195,13 +195,17 @@ def _map_price_build_error(exc: Exception) -> HTTPException:
 
 async def generate_order_number(db: AsyncSession, tenant_id: UUID) -> str:
     """Generate unique order number using MAX approach."""
-    from app.core.unique_id import generate_unique_number
+    from app.core.unique_id import derive_order_number_prefix, generate_unique_number
+
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    prefix = (tenant.order_number_prefix if tenant else None) or derive_order_number_prefix(tenant.name if tenant else "")
+
     return await generate_unique_number(
         db=db,
         model_class=RepairOrder,
         number_column=RepairOrder.order_number,
         tenant_id=tenant_id,
-        prefix="RO-",
+        prefix=f"{prefix}-",
     )
 
 

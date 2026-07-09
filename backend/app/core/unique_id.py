@@ -20,6 +20,18 @@ logger = get_logger(__name__)
 T = TypeVar("T")
 
 
+def derive_order_number_prefix(shop_name: str) -> str:
+    """Auto-derive a short order-number prefix from a shop name when the
+    tenant hasn't set an explicit one, e.g. "Truck Pit Stop" -> "TPS".
+
+    Falls back to "RO" (the original generic prefix) if the name yields no
+    usable letters (e.g. empty/blank name).
+    """
+    words = [w for w in shop_name.strip().split() if w]
+    initials = "".join(w[0] for w in words if w[0].isalpha()).upper()
+    return initials[:5] or "RO"
+
+
 async def generate_unique_number(
     db: AsyncSession,
     model_class,

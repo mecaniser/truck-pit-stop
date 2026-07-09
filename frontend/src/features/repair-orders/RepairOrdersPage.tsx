@@ -249,8 +249,24 @@ export default function RepairOrdersPage() {
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders', statusFilter === 'deleted' ? 'deleted' : 'active'],
     queryFn: async () => {
-      const response = await api.get('/repair-orders', statusFilter === 'deleted' ? { params: { deleted: true } } : undefined)
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: RepairOrder[] = []
+      while (true) {
+        const response = await api.get('/repair-orders', {
+          params: {
+            paginated: true,
+            skip,
+            limit: pageSize,
+            ...(statusFilter === 'deleted' ? { deleted: true } : {}),
+          },
+        })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
   })
 
