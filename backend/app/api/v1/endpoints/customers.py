@@ -200,8 +200,8 @@ CUSTOMER_SORT_FIELDS = {"name", "balance", "vehicle_count"}
 
 
 def _customer_search_filter(search: Optional[str]):
-    """OR-match across name / company / email (ILIKE substring) plus a
-    digits-only phone match — mirrors the previous client-side search."""
+    """OR-match across name / company / email / DOT / MC (ILIKE substring)
+    plus a digits-only phone match."""
     term = (search or "").strip()
     if not term:
         return None
@@ -212,6 +212,8 @@ def _customer_search_filter(search: Optional[str]):
         (Customer.first_name + literal_column("' '") + Customer.last_name).ilike(like),
         Customer.company_name.ilike(like),
         Customer.email.ilike(like),
+        Customer.usdot_number.ilike(like),
+        Customer.mc_number.ilike(like),
     ]
     digits = "".join(ch for ch in term if ch.isdigit())
     if digits:

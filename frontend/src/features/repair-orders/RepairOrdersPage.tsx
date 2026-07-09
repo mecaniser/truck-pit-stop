@@ -254,31 +254,45 @@ export default function RepairOrdersPage() {
 
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
-  const { data: orderPage, isLoading, isPlaceholderData } = useQuery<{
-    items: RepairOrder[]; total: number; has_more: boolean
-  }>({
-    queryKey: ['repair-orders', { page, search: debouncedSearch, status: statusFilter }],
-    queryFn: async () => {
-      const response = await api.get('/repair-orders', {
-        params: {
-          paginated: true,
-          skip: page * RO_PAGE_SIZE,
-          limit: RO_PAGE_SIZE,
-          ...(statusFilter === 'deleted'
-            ? { deleted: true }
-            : statusFilter !== 'all'
-              ? { status: statusFilter }
-              : {}),
-          ...(debouncedSearch ? { search: debouncedSearch } : {}),
-        },
-      })
-      return response.data
-    },
+  const orderPageKey = (p: number) =>
+    ['repair-orders', { page: p, search: debouncedSearch, status: statusFilter }] as const
+  const fetchOrderPage = async (p: number) => {
+    const response = await api.get('/repair-orders', {
+      params: {
+        paginated: true,
+        skip: p * RO_PAGE_SIZE,
+        limit: RO_PAGE_SIZE,
+        ...(statusFilter === 'deleted'
+          ? { deleted: true }
+          : statusFilter !== 'all'
+            ? { status: statusFilter }
+            : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      },
+    })
+    return response.data as { items: RepairOrder[]; total: number; has_more: boolean }
+  }
+  const { data: orderPage, isLoading, isPlaceholderData, isFetching } = useQuery({
+    queryKey: orderPageKey(page),
+    queryFn: () => fetchOrderPage(page),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
   const orders = orderPage?.items
   const totalOrders = orderPage?.total ?? 0
+
+  // Prefetch the next page once the current one settles, so paging forward feels
+  // instant. Only when a next page exists and we're showing live (non-placeholder) data.
+  useEffect(() => {
+    if (orderPage?.has_more && !isPlaceholderData) {
+      queryClient.prefetchQuery({
+        queryKey: orderPageKey(page + 1),
+        queryFn: () => fetchOrderPage(page + 1),
+        staleTime: 30_000,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch, statusFilter, orderPage?.has_more, isPlaceholderData])
 
   // Handle ?selected= query param to auto-open a repair order
   useEffect(() => {
@@ -1656,7 +1670,14 @@ export default function RepairOrdersPage() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 scrollbar-dark" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
+        <div className="flex-1 min-h-0 scrollbar-dark relative" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
+          {/* Loading overlay for page/search/filter changes (first load uses the
+              skeleton; this covers subsequent batch fetches). */}
+          {isFetching && !isLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-blueNoir-900/40 backdrop-blur-[1px] pointer-events-none">
+              <Loader2 className="w-6 h-6 text-white/80 animate-spin" />
+            </div>
+          )}
           {isMobile ? (
             /* Mobile: compact list cards */
             <div className="divide-y divide-white/10">

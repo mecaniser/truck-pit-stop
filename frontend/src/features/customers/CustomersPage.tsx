@@ -293,28 +293,42 @@ export default function CustomersPage() {
 
   // Server-side pagination: fetch one page at a time with search + sort pushed
   // to the API, instead of loading every customer and filtering in the browser.
-  const { data: customerPage, isLoading, isPlaceholderData } = useQuery<{
-    items: Customer[]; total: number; has_more: boolean
-  }>({
-    queryKey: ['customers', { page, search: debouncedSearch, sort: sortField, order: sortDirection }],
-    queryFn: async () => {
-      const response = await api.get('/customers', {
-        params: {
-          paginated: true,
-          skip: page * PAGE_SIZE,
-          limit: PAGE_SIZE,
-          ...(debouncedSearch ? { search: debouncedSearch } : {}),
-          sort: sortField,
-          order: sortDirection,
-        },
-      })
-      return response.data
-    },
+  const customerPageKey = (p: number) =>
+    ['customers', { page: p, search: debouncedSearch, sort: sortField, order: sortDirection }] as const
+  const fetchCustomerPage = async (p: number) => {
+    const response = await api.get('/customers', {
+      params: {
+        paginated: true,
+        skip: p * PAGE_SIZE,
+        limit: PAGE_SIZE,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        sort: sortField,
+        order: sortDirection,
+      },
+    })
+    return response.data as { items: Customer[]; total: number; has_more: boolean }
+  }
+  const { data: customerPage, isLoading, isPlaceholderData, isFetching } = useQuery({
+    queryKey: customerPageKey(page),
+    queryFn: () => fetchCustomerPage(page),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
   const customers = customerPage?.items
   const totalCustomers = customerPage?.total ?? 0
+
+  // Prefetch the next page once the current one has settled, so paging forward
+  // feels instant. Only when a next page exists and we're showing live data.
+  useEffect(() => {
+    if (customerPage?.has_more && !isPlaceholderData) {
+      queryClient.prefetchQuery({
+        queryKey: customerPageKey(page + 1),
+        queryFn: () => fetchCustomerPage(page + 1),
+        staleTime: 30_000,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch, sortField, sortDirection, customerPage?.has_more, isPlaceholderData])
 
   // The merge picker must search ALL customers, not just the current page, so it
   // has its own server-side search query (only runs while the merge modal input
@@ -2101,7 +2115,14 @@ export default function CustomersPage() {
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
         </div>
 
-        <div className="overflow-y-auto flex-1 min-h-0">
+        <div className="overflow-y-auto flex-1 min-h-0 relative">
+          {/* Loading overlay for page/search/sort changes (first load uses the
+              full skeleton below; this covers subsequent batch fetches). */}
+          {isFetching && !isLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-blueNoir-900/40 backdrop-blur-[1px] pointer-events-none">
+              <Loader2 className="w-6 h-6 text-white/80 animate-spin" />
+            </div>
+          )}
           {activeViewMode === 'list' ? (
             /* List View */
             <div className="overflow-x-auto">
