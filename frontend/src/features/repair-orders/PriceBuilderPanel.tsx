@@ -1759,8 +1759,23 @@ export default function PriceBuilderPanel({
                 addType === 'saved_labor' ? 'Search labor book time — e.g. DPF filter replacement…' :
                 'Add part — search inventory by name or SKU…'
               }
-              className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+              className="h-11 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-10 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Clear the search and cancel any in-progress new-labor entry.
+                  setSearchTerm('')
+                  setSearchWarnings([])
+                  setShowLaborBookTimeForm(false)
+                }}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
           )}
         </div>
@@ -2009,21 +2024,22 @@ export default function PriceBuilderPanel({
                         </button>
                       )}
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_96px]">
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                       <input
                         value={laborBookTimeForm.operation_name}
                         onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, operation_name: e.target.value }))}
                         placeholder="Labor name"
                         className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      <input
-                        value={laborBookTimeForm.normalized_hours}
-                        onChange={(e) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: e.target.value }))}
-                        type="number"
-                        min="0.25"
-                        step="0.25"
-                        placeholder="Book hrs"
-                        className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-right font-['JetBrains_Mono',monospace] text-sm outline-none focus:ring-2 focus:ring-orange-200"
+                      {/* Book hours step in 15-minute (0.25 hr) increments. */}
+                      <QuantityStepper
+                        ariaLabel="Book hours"
+                        value={Number(laborBookTimeForm.normalized_hours) || 0}
+                        onChange={(n) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(n) }))}
+                        min={0.25}
+                        step={0.25}
+                        unitLabel="hr"
+                        align="start"
                       />
                     </div>
                     <textarea
