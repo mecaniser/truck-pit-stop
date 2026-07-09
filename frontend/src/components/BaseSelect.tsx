@@ -6,6 +6,10 @@ export interface BaseSelectOption {
   value: string
   label: string
   subLabel?: string
+  /** Extra text to match against when searching, without displaying it directly
+   * (e.g. a secondary name so a company-name label is still findable by the
+   * contact's personal name, or vice versa). */
+  searchText?: string
 }
 
 interface BaseSelectProps {
@@ -43,7 +47,11 @@ export default function BaseSelect({
   const filtered = useMemo(() => {
     if (!searchable || !query.trim()) return options
     const q = query.toLowerCase()
-    return options.filter((opt) => opt.label.toLowerCase().includes(q) || opt.subLabel?.toLowerCase().includes(q))
+    return options.filter((opt) =>
+      opt.label.toLowerCase().includes(q) ||
+      opt.subLabel?.toLowerCase().includes(q) ||
+      opt.searchText?.toLowerCase().includes(q)
+    )
   }, [options, query, searchable])
 
   const selected = options.find((opt) => opt.value === value)

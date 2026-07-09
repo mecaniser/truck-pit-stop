@@ -1,6 +1,7 @@
 import BaseSelect from './BaseSelect'
 import { Customer } from '../types'
 import { formatUSPhone } from '../utils/phone'
+import { customerDisplayName, customerPersonalName } from '../lib/customerName'
 
 interface CustomerSelectProps {
   customers: Customer[]
@@ -46,8 +47,11 @@ export default function CustomerSelect({
       <BaseSelect
         options={customers.map((c) => ({
           value: c.id,
-          label: `${c.first_name} ${c.last_name}`,
+          label: customerDisplayName(c, `${c.first_name} ${c.last_name}`.trim()),
           subLabel: subLabel(c),
+          // Company name is shown as the label, but the contact's personal
+          // name should still be searchable even when it isn't displayed.
+          searchText: customerPersonalName(c),
         }))}
         value={value}
         onChange={onChange}
