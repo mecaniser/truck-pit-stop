@@ -132,6 +132,23 @@ class CustomerWithVehiclesResponse(CustomerBase):
     created_at: datetime
     updated_at: datetime
     vehicles: List[VehicleInCustomer] = Field(default_factory=list)
-    
+
     class Config:
         from_attributes = True
+
+
+class CustomerMergeRequest(BaseModel):
+    winner_id: UUID   # customer that survives — its own fields are kept as-is
+    loser_id: UUID    # customer whose records get reassigned, then archived
+
+
+class CustomerMergeResult(BaseModel):
+    winner_id: UUID
+    loser_id: UUID
+    vehicles_moved: int
+    repair_orders_moved: int
+    contacts_moved: int
+    appointments_moved: int
+    sms_messages_moved: int
+    message_thread_action: str  # "moved" | "kept_winner_deleted_loser" | "none"
+    user_link_action: str  # "moved" | "kept_winner_deleted_loser" | "none"

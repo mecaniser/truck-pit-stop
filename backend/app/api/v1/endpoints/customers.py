@@ -18,7 +18,17 @@ from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
 from app.db.models.invoice import Invoice
 from app.db.models.payment import Payment
-from app.schemas.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerWithVehiclesResponse
+from app.db.models.message_thread import MessageThread
+from app.db.models.sms_message import SMSMessage
+from app.db.models.user_customer_link import UserCustomerLink
+from app.schemas.customer import (
+    CustomerCreate,
+    CustomerUpdate,
+    CustomerResponse,
+    CustomerWithVehiclesResponse,
+    CustomerMergeRequest,
+    CustomerMergeResult,
+)
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
@@ -417,6 +427,167 @@ async def delete_customer(
         )
 
     return None
+
+
+@router.post("/merge", response_model=CustomerMergeResult)
+async def merge_customers(
+    merge_request: CustomerMergeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+    )),
+):
+    """Merge two customer records that represent the same real company (e.g.
+    one has an email but no phone, another has a phone but no email — a
+    common gap from data imports). All of the loser's vehicles, repair
+    orders (which carry their labor/parts/invoices/payments along via FK),
+    contacts, appointments, and SMS history move to the winner. The loser is
+    then deleted. This is destructive and cannot be undone — callers should
+    show a diff/confirmation before calling this.
+    """
+    if merge_request.winner_id == merge_request.loser_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="winner_id and loser_id must be different customers",
+        )
+
+    winner_result = await db.execute(select(Customer).where(Customer.id == merge_request.winner_id))
+    winner = winner_result.scalar_one_or_none()
+    loser_result = await db.execute(select(Customer).where(Customer.id == merge_request.loser_id))
+    loser = loser_result.scalar_one_or_none()
+
+    if not winner or not loser:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    if winner.tenant_id != current_user.tenant_id or loser.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if winner.tenant_id != loser.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot merge customers from different tenants",
+        )
+
+    # Vehicles
+    vehicles_result = await db.execute(select(Vehicle).where(Vehicle.customer_id == loser.id))
+    vehicles = vehicles_result.scalars().all()
+    for v in vehicles:
+        v.customer_id = winner.id
+    vehicles_moved = len(vehicles)
+
+    # Repair orders — carries labor, parts_usage, invoices, payments along
+    # automatically since those key off repair_order_id, not customer_id.
+    ros_result = await db.execute(select(RepairOrder).where(RepairOrder.customer_id == loser.id))
+    repair_orders = ros_result.scalars().all()
+    for ro in repair_orders:
+        ro.customer_id = winner.id
+    repair_orders_moved = len(repair_orders)
+
+    # Contacts — reassign, then make sure at most one is_primary survives.
+    contacts_result = await db.execute(select(Contact).where(Contact.customer_id == loser.id))
+    contacts = contacts_result.scalars().all()
+    for c in contacts:
+        c.customer_id = winner.id
+    contacts_moved = len(contacts)
+    if contacts_moved:
+        await _clear_other_primary_contacts(db, winner.id)
+
+    # Appointments
+    appts_result = await db.execute(select(Appointment).where(Appointment.customer_id == loser.id))
+    appointments = appts_result.scalars().all()
+    for a in appointments:
+        a.customer_id = winner.id
+    appointments_moved = len(appointments)
+
+    # SMS message history
+    sms_result = await db.execute(select(SMSMessage).where(SMSMessage.customer_id == loser.id))
+    sms_messages = sms_result.scalars().all()
+    for m in sms_messages:
+        m.customer_id = winner.id
+    sms_messages_moved = len(sms_messages)
+
+    # Message thread: unique on (tenant_id, customer_id), so only one can
+    # exist per customer. If only the loser has one, move it. If both have
+    # one, keep the winner's and drop the loser's (no customer portal exists
+    # yet, so there's no live conversation at risk today).
+    winner_thread_result = await db.execute(
+        select(MessageThread).where(MessageThread.customer_id == winner.id)
+    )
+    winner_thread = winner_thread_result.scalar_one_or_none()
+    loser_thread_result = await db.execute(
+        select(MessageThread).where(MessageThread.customer_id == loser.id)
+    )
+    loser_thread = loser_thread_result.scalar_one_or_none()
+
+    if loser_thread and not winner_thread:
+        loser_thread.customer_id = winner.id
+        message_thread_action = "moved"
+    elif loser_thread and winner_thread:
+        await db.delete(loser_thread)
+        message_thread_action = "kept_winner_deleted_loser"
+    else:
+        message_thread_action = "none"
+
+    # Portal user link: User.customer_id is unique, so only one user can be
+    # linked per customer. Same policy as message threads.
+    winner_user_result = await db.execute(select(User).where(User.customer_id == winner.id))
+    winner_user = winner_user_result.scalar_one_or_none()
+    loser_user_result = await db.execute(select(User).where(User.customer_id == loser.id))
+    loser_user = loser_user_result.scalar_one_or_none()
+
+    if loser_user and not winner_user:
+        loser_user.customer_id = winner.id
+        user_link_action = "moved"
+    elif loser_user and winner_user:
+        loser_user.customer_id = None
+        if loser_user.role == UserRole.CUSTOMER:
+            loser_user.is_active = False
+        user_link_action = "kept_winner_deleted_loser"
+    else:
+        user_link_action = "none"
+
+    # UserCustomerLink rows for the loser must move or be dropped before the
+    # loser can be deleted (FK), same unique-per-tenant reasoning as above.
+    loser_links_result = await db.execute(
+        select(UserCustomerLink).where(UserCustomerLink.customer_id == loser.id)
+    )
+    for link in loser_links_result.scalars().all():
+        existing = await db.execute(
+            select(UserCustomerLink).where(
+                and_(
+                    UserCustomerLink.user_id == link.user_id,
+                    UserCustomerLink.tenant_id == link.tenant_id,
+                    UserCustomerLink.customer_id == winner.id,
+                )
+            )
+        )
+        if existing.scalar_one_or_none():
+            await db.delete(link)
+        else:
+            link.customer_id = winner.id
+
+    try:
+        await db.delete(loser)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Merge failed due to related records that could not be reassigned",
+        )
+
+    return CustomerMergeResult(
+        winner_id=winner.id,
+        loser_id=loser.id,
+        vehicles_moved=vehicles_moved,
+        repair_orders_moved=repair_orders_moved,
+        contacts_moved=contacts_moved,
+        appointments_moved=appointments_moved,
+        sms_messages_moved=sms_messages_moved,
+        message_thread_action=message_thread_action,
+        user_link_action=user_link_action,
+    )
 
 
 # ============================================================================
