@@ -29,6 +29,8 @@ interface CustomerFormData {
   billing_country: string
   notes: string
   auto_approval_threshold: string
+  usdot_number: string
+  mc_number: string
   // Initial vehicle fields (for new customers)
   no_vehicle: boolean
   vehicle_vin: string
@@ -100,6 +102,8 @@ const emptyForm: CustomerFormData = {
   billing_country: 'USA',
   notes: '',
   auto_approval_threshold: '',
+  usdot_number: '',
+  mc_number: '',
   // Initial vehicle
   no_vehicle: false,
   vehicle_vin: '',
@@ -112,6 +116,12 @@ const emptyForm: CustomerFormData = {
   vehicle_mileage: '',
   vehicle_notes: '',
 }
+
+// DOT/MC values may be stored bare ("107385") or, from the Easy Truck Shop
+// import, with a redundant prefix ("MC-107385"). Strip a leading DOT/MC label
+// so the UI's own "DOT "/"MC " prefix doesn't double up (e.g. "MC MC-107385").
+const stripRegNumber = (value?: string | null): string =>
+  (value || '').replace(/^\s*(us\s*dot|dot|mc)[\s#:-]*/i, '').trim()
 
 const US_STATES = [
   { code: '', name: 'Select State' },
@@ -560,9 +570,11 @@ export default function CustomersPage() {
         billing_country: data.billing_country,
         notes: data.notes || null,
         auto_approval_threshold: data.auto_approval_threshold ? parseFloat(data.auto_approval_threshold) : null,
+        usdot_number: stripRegNumber(data.usdot_number) || null,
+        mc_number: stripRegNumber(data.mc_number) || null,
         no_vehicle: data.no_vehicle,
       }
-      
+
       // Add initial vehicle if not "no vehicle"
       if (!data.no_vehicle && data.vehicle_make && data.vehicle_model) {
         payload.initial_vehicle = {
@@ -859,6 +871,8 @@ export default function CustomersPage() {
       billing_country: customer.billing_country || 'USA',
       notes: customer.notes || '',
       auto_approval_threshold: customer.auto_approval_threshold ? String(customer.auto_approval_threshold) : '',
+      usdot_number: stripRegNumber(customer.usdot_number),
+      mc_number: stripRegNumber(customer.mc_number),
     })
   }
 
@@ -1110,6 +1124,8 @@ export default function CustomersPage() {
         billing_country: formData.billing_country,
         notes: formData.notes || null,
         auto_approval_threshold: formData.auto_approval_threshold ? parseFloat(formData.auto_approval_threshold) : null,
+        usdot_number: stripRegNumber(formData.usdot_number) || null,
+        mc_number: stripRegNumber(formData.mc_number) || null,
       }
       updateMutation.mutate({ id: editingCustomer.id, data: payload as any })
     } else {
@@ -1290,6 +1306,28 @@ export default function CustomersPage() {
             onChange={handleInputChange}
             className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
             placeholder="(555) 123-4567"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">US DOT #</label>
+          <input
+            type="text"
+            name="usdot_number"
+            value={formData.usdot_number}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="3155331"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">MC #</label>
+          <input
+            type="text"
+            name="mc_number"
+            value={formData.mc_number}
+            onChange={handleInputChange}
+            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            placeholder="107385"
           />
         </div>
       </div>
@@ -2196,8 +2234,8 @@ export default function CustomersPage() {
                         {customer.phone ? formatUSPhone(customer.phone) : '—'}
                       </td>
                       <td className="px-4 py-3 text-white/70 hidden xl:table-cell text-xs">
-                        {customer.usdot_number && <div>DOT {customer.usdot_number}</div>}
-                        {customer.mc_number && <div>MC {customer.mc_number}</div>}
+                        {customer.usdot_number && <div>DOT {stripRegNumber(customer.usdot_number)}</div>}
+                        {customer.mc_number && <div>MC {stripRegNumber(customer.mc_number)}</div>}
                         {!customer.usdot_number && !customer.mc_number && '—'}
                       </td>
                       <td className="px-4 py-3 text-white/70 hidden xl:table-cell">
@@ -2263,9 +2301,9 @@ export default function CustomersPage() {
                     )}
                     {(customer.usdot_number || customer.mc_number) && (
                       <div className="text-xs text-slate-500">
-                        {customer.usdot_number && <span>DOT {customer.usdot_number}</span>}
+                        {customer.usdot_number && <span>DOT {stripRegNumber(customer.usdot_number)}</span>}
                         {customer.usdot_number && customer.mc_number && <span> · </span>}
-                        {customer.mc_number && <span>MC {customer.mc_number}</span>}
+                        {customer.mc_number && <span>MC {stripRegNumber(customer.mc_number)}</span>}
                       </div>
                     )}
                   </div>
@@ -2798,12 +2836,12 @@ export default function CustomersPage() {
 
                       <div>
                         <p className="text-xs text-gray-500">US DOT</p>
-                        <p className="text-gray-900 font-medium">{selectedCustomer.usdot_number || '—'}</p>
+                        <p className="text-gray-900 font-medium">{stripRegNumber(selectedCustomer.usdot_number) || '—'}</p>
                       </div>
 
                       <div>
                         <p className="text-xs text-gray-500">MC Number</p>
-                        <p className="text-gray-900 font-medium">{selectedCustomer.mc_number || '—'}</p>
+                        <p className="text-gray-900 font-medium">{stripRegNumber(selectedCustomer.mc_number) || '—'}</p>
                       </div>
 
                       <div>
