@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil, RotateCcw } from 'lucide-react'
+import { ArrowRight, Loader2, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil, RotateCcw } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -2391,7 +2391,39 @@ export default function RepairOrdersPage() {
           )
         }
       >
-        {selectedOrder && (
+        {selectedOrder && isOrderDetailLoading && !orderDetail && !priceBuilderOwnsShell && (
+          <div className="p-6 space-y-6 animate-pulse">
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading repair order…
+            </div>
+            <div>
+              <div className="h-3 w-24 bg-gray-200 rounded mb-3" />
+              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-3/4" />
+                <div className="h-4 bg-gray-200 rounded w-1/2" />
+                <div className="h-4 bg-gray-200 rounded w-2/3" />
+              </div>
+            </div>
+            <div>
+              <div className="h-3 w-32 bg-gray-200 rounded mb-3" />
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="h-8 bg-gray-200 rounded" />
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="h-3 w-28 bg-gray-200 rounded mb-3" />
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-8 bg-gray-200 rounded" />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
           <div className={priceBuilderOwnsShell ? 'h-full min-h-0' : 'p-6 space-y-6'}>
 
                 {/* Quote Workflow — the customer quote/approval flow doesn't
