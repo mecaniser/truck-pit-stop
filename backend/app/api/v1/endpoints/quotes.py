@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.vehicle_display import vehicle_display_label
 from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.redis import (
@@ -797,7 +798,7 @@ async def send_quote_to_customer(
     vehicle = order.vehicle
     vehicle_info = ""
     if vehicle:
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip()
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number)
         if vehicle.vin:
             vehicle_info += f" (VIN: {vehicle.vin[-6:]})"
     
@@ -917,7 +918,7 @@ async def send_quote_to_customer(
     
     # SMS notification for quote with approval link
     if customer.phone:
-        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
         if auto_approved:
             sms_body = f"Your repair for {vi} (${quote.total_amount:,.2f}) has been auto-approved. Work will begin shortly. Order #{order.order_number} - {shop_name}"
         else:
@@ -1095,7 +1096,7 @@ async def decline_quote(
     # Notify shop managers via SMS (same as token-based decline)
     customer = order.customer
     vehicle = order.vehicle
-    vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "vehicle"
+    vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
     customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
     
     # Find managers to notify
@@ -1476,7 +1477,7 @@ async def decline_quote_by_token(
     # Notify shop managers via SMS
     customer = order.customer
     vehicle = order.vehicle
-    vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "vehicle"
+    vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
     customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
     
     # Find managers to notify

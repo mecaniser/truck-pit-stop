@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.vehicle_display import vehicle_display_label
 from app.db.models.customer import Customer
 from app.db.models.inventory import PartsUsage
 from app.db.models.invoice import Invoice
@@ -66,7 +67,7 @@ async def send_invoice_payment_confirmation_email(
     shop_name = tenant.name if tenant else "Your Shop"
     shop_phone = tenant.phone if tenant else ""
     shop_email_addr = tenant.email if tenant else ""
-    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
     paid_on = invoice.paid_at.strftime("%m/%d/%Y") if invoice.paid_at else "Today"
     total = Decimal(str(invoice.total_amount))
 

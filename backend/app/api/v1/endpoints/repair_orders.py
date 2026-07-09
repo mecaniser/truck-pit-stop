@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.customer import Customer
@@ -828,7 +829,7 @@ async def assign_mechanic(
     
     # Send email notification to MECHANIC (not customer - customer notified when work starts)
     vehicle = order.vehicle
-    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
     portal_url = f"{settings.FRONTEND_URL.rstrip('/')}/mechanic"
     
     # Parse services from internal_notes
@@ -1055,7 +1056,7 @@ async def start_work(
         customer = order.customer
         if customer and customer.email:
             vehicle = order.vehicle
-            vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+            vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
             
             html_body = f"""
             <html>
@@ -1098,7 +1099,7 @@ async def start_work(
         # SMS notification
         if customer and customer.phone:
             vehicle = order.vehicle
-            vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+            vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
             try:
                 await send_sms(
                     db,
@@ -1508,7 +1509,7 @@ async def complete_work(
     managers = result.scalars().all()
     
     vehicle = order.vehicle
-    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
     
     for manager in managers:
         if manager.email:
@@ -1553,7 +1554,7 @@ async def complete_work(
     customer = order.customer
     if customer and customer.phone:
         vehicle = order.vehicle
-        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
         try:
             await send_sms(
                 db,
@@ -1660,7 +1661,7 @@ async def approve_completion(
     customer = order.customer
     if customer and customer.email:
         vehicle = order.vehicle
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
         
         html_body = f"""
         <html>
@@ -1710,7 +1711,7 @@ async def approve_completion(
     # SMS: ready for pickup
     if customer and customer.phone:
         vehicle = order.vehicle
-        vi = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+        vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
         try:
             await send_sms(
                 db,

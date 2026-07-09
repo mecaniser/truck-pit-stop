@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -447,7 +448,7 @@ async def auto_create_invoice_for_order(
     )
 
     if customer and customer.email:
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
         invoice_access_url = await generate_invoice_access_link(
             invoice=invoice,
             order=order,
@@ -626,7 +627,7 @@ async def create_invoice(
     customer = order.customer
     vehicle = order.vehicle
     if customer and customer.email:
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
         invoice_access_url = await generate_invoice_access_link(
             invoice=invoice,
             order=order,
@@ -745,7 +746,7 @@ async def get_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip()
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number)
     customer_name = f"{customer.first_name} {customer.last_name}"
     return InvoiceDetailResponse(
         **InvoiceResponse.model_validate(inv).model_dump(),
@@ -873,7 +874,7 @@ async def resend_invoice(
             detail="No email address available",
         )
     
-    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip()
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number)
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
     invoice_access_url = await generate_invoice_access_link(
