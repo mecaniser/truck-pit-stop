@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.dependencies import get_db
 from app.core.logging import get_logger
+from app.core.vehicle_display import vehicle_display_label
 from app.core.metrics import record_payment, record_payment_error
 from app.core.rate_limit import limiter
 from app.core.redis import (
@@ -329,7 +330,7 @@ async def resolve_invoice_link(
         )
         existing_user = user_result.scalar_one_or_none()
 
-    vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Vehicle"
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
     _zelle_amount = get_order_checkout_breakdown(order, tenant)["estimated_zelle_total"] if tenant else (
         Decimal(str(invoice.total_amount)) - Decimal(str(invoice.service_fee_amount or 0))
     ).quantize(Decimal("0.01"))

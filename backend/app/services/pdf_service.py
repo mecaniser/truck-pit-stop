@@ -24,6 +24,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.vehicle_display import vehicle_display_label
+
 # ── Brand colours ──────────────────────────────────────────────────────────────
 C_DARK = HexColor("#1F2937")
 C_AMBER = HexColor("#D97706")
@@ -327,7 +329,7 @@ def generate_invoice_pdf(
     story.append(Spacer(1, 10))
 
     # ── Vehicle info ───────────────────────────────────────────────────────────
-    vehicle_str = f"{vehicle_year or ''} {vehicle_make} {vehicle_model}".strip()
+    vehicle_str = vehicle_display_label(vehicle_year, vehicle_make, vehicle_model, None)
     vehicle_rows = [[_p("VEHICLE", S_LABEL)], [_p(vehicle_str, S_BOLD)]]
     detail_parts = []
     if vehicle_unit:

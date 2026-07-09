@@ -11,6 +11,7 @@ import json
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.vehicle_display import vehicle_display_label
 from app.core.security import get_password_hash
 from app.core.password_policy import validate_password
 from app.core.logging import get_logger
@@ -1027,7 +1028,7 @@ async def get_my_jobs(
     jobs = []
     for order in orders:
         vehicle = order.vehicle
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Unknown"
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Unknown"
         
         services = _build_mechanic_scope_items(order, pm_entries_by_order.get(order.id, []))
         
@@ -1126,7 +1127,7 @@ async def get_my_history(
     history = []
     for order in orders:
         vehicle = order.vehicle
-        vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "Unknown"
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Unknown"
         
         services_count = len(_build_mechanic_scope_items(order, pm_entries_by_order.get(order.id, [])))
         
@@ -1266,7 +1267,7 @@ async def get_mechanic_work(
                 id=str(order.id),
                 order_number=order.order_number,
                 status=order.status.value if hasattr(order.status, "value") else str(order.status),
-                vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
+                vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
                 updated_at=order.updated_at.isoformat(),
             )
         )

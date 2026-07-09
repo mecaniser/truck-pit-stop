@@ -16,6 +16,7 @@ from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
+from app.core.vehicle_display import vehicle_display_label
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.twilio_service import send_sms
@@ -109,7 +110,7 @@ async def _process_invoice_reminders(tenant_id: str = None):
                 invoice.status = InvoiceStatus.OVERDUE
             
             # Build reminder message
-            vehicle_info = f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip() if vehicle else "your vehicle"
+            vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
             days_overdue = (today - invoice.due_date.date()).days if invoice.due_date else 0
             garage_name = tenant.name if tenant else "DieselBridge Network"
             

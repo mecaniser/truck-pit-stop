@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import aliased
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.vehicle_display import vehicle_display_label
 from app.core.websocket import (
     broadcast_repair_order_update,
     broadcast_mechanic_attendance_update,
@@ -281,7 +282,7 @@ async def get_dashboard_stats(
             status=order.status.value if hasattr(order.status, "value") else order.status,
             description=order.description,
             customer_name=fleet_display_name(customer, fleet_company_name),
-            vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
+            vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,
@@ -303,7 +304,7 @@ async def get_dashboard_stats(
             pending_zelle_confirmation=pending_zelle_confirmation,
             description=order.description,
             customer_name=fleet_display_name(customer, fleet_company_name),
-            vehicle_info=f"{vehicle.year or ''} {vehicle.make} {vehicle.model}".strip(),
+            vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
             total_cost=str(get_effective_total(order)),
             created_at=order.created_at,
             updated_at=order.updated_at,

@@ -470,9 +470,7 @@ export default function RepairOrdersPage() {
   const paymentCompanyNameShort = truncateWithEllipsis(paymentCompanyName, 34)
   const paymentTruckUnit = selectedOrderVehicle?.unit_number || 'No unit number'
   const paymentVehicleLabel = selectedOrderVehicle
-    ? [selectedOrderVehicle.year, selectedOrderVehicle.make, selectedOrderVehicle.model]
-        .filter(Boolean)
-        .join(' ')
+    ? vehicleDisplayLabel({ ...selectedOrderVehicle, unit_number: null })
     : 'Vehicle info unavailable'
 
   const parseServiceNotes = (notes?: string | null) => {
@@ -1022,7 +1020,80 @@ export default function RepairOrdersPage() {
   }, [isDetailOpen, filteredOrders, selectedOrder])
 
   if (isLoading) {
-    return <div className="text-white">Loading...</div>
+    return (
+      <div className="flex flex-col h-full">
+        <h1 className="text-xl sm:text-2xl font-bold text-white mb-4 flex-shrink-0">Repair Orders</h1>
+
+        <div className="mb-4 flex-shrink-0 bg-white/10 backdrop-blur rounded-xl p-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="relative flex-1 min-w-0">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search by order # or description..."
+                disabled
+                className="w-full h-10 pl-10 pr-4 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none disabled:opacity-60"
+              />
+            </div>
+            <button
+              type="button"
+              disabled
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-white opacity-60 shrink-0"
+              style={{ backgroundColor: accentColors[600] }}
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Add Repair Order</span>
+              <span className="sm:hidden">Add</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-between gap-4 px-4 py-3 border-b border-white/10">
+            <div className="h-7 w-32 bg-white/10 rounded-lg animate-pulse" />
+            <div className="flex items-center gap-2 text-sm text-white/50">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading repair orders…
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Order #</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Description</th>
+                  <th className="px-4 py-3 text-left font-medium hidden md:table-cell">Customer</th>
+                  <th className="px-4 py-3 text-left font-medium hidden lg:table-cell">Vehicle</th>
+                  <th className="px-4 py-3 text-right font-medium hidden xl:table-cell">Total</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {[...Array(12)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded w-20" /></td>
+                    <td className="px-4 py-3"><div className="h-5 bg-white/10 rounded-full w-20" /></td>
+                    <td className="px-4 py-3 hidden sm:table-cell"><div className="h-4 bg-white/10 rounded w-40" /></td>
+                    <td className="px-4 py-3 hidden md:table-cell"><div className="h-4 bg-white/10 rounded w-32" /></td>
+                    <td className="px-4 py-3 hidden lg:table-cell"><div className="h-4 bg-white/10 rounded w-28" /></td>
+                    <td className="px-4 py-3 hidden xl:table-cell"><div className="h-4 bg-white/10 rounded w-16 ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded w-10 ml-auto" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   // Navigation state for prev/next browsing in the detail panel
