@@ -331,8 +331,17 @@ export default function RepairOrdersPage() {
   const { data: customers } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
-      const response = await api.get('/customers')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Customer[] = []
+      while (true) {
+        const response = await api.get('/customers', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
     enabled: needsFormData,
   })
