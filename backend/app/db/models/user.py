@@ -41,7 +41,12 @@ class User(BaseModel):
     tenant = relationship("Tenant", foreign_keys=[tenant_id], backref="users")
     
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True, unique=True)
-    customer = relationship("Customer", backref="user", uselist=False)
+    # No backref to Customer: unused elsewhere, and an unguarded backref risks
+    # SQLAlchemy silently nullifying it during unrelated unit-of-work flushes
+    # (see MessageThread.customer for the incident this pattern caused during
+    # customer merges — this FK is nullable so it wouldn't crash, just silently
+    # unlink the wrong user).
+    customer = relationship("Customer", uselist=False)
 
     # Optional per-mechanic workforce overrides
     core_hours_target_minutes_override = Column(Integer, nullable=True)

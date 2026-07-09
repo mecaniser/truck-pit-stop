@@ -22,7 +22,11 @@ class Appointment(BaseModel):
     tenant = relationship("Tenant", backref="appointments")
     
     customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False, index=True)
-    customer = relationship("Customer", backref="appointments")
+    # No backref to Customer: unused elsewhere, and an unguarded backref on a
+    # nullable=False FK risks SQLAlchemy nullifying it during unrelated
+    # unit-of-work flushes (see MessageThread.customer for the incident this
+    # pattern caused during customer merges).
+    customer = relationship("Customer")
     
     vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=True, index=True)
     vehicle = relationship("Vehicle", backref="appointments")

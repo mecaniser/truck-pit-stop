@@ -569,6 +569,8 @@ async def merge_customers(
         else:
             link.customer_id = winner.id
 
+    winner_id_for_log = str(winner.id)
+    loser_id_for_log = str(loser.id)
     try:
         await db.delete(loser)
         await db.commit()
@@ -576,8 +578,8 @@ async def merge_customers(
         await db.rollback()
         logger.error(
             "customer_merge_integrity_error",
-            winner_id=str(winner.id),
-            loser_id=str(loser.id),
+            winner_id=winner_id_for_log,
+            loser_id=loser_id_for_log,
             error=str(exc.orig) if exc.orig else str(exc),
         )
         raise HTTPException(

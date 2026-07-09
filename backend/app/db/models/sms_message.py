@@ -79,5 +79,8 @@ class SMSMessage(BaseModel):
 
     tenant = relationship("Tenant", backref="sms_messages")
     thread = relationship("MessageThread", back_populates="messages")
-    customer = relationship("Customer", backref="sms_messages")
+    # No backref to Customer: same reasoning as MessageThread.customer above —
+    # nothing uses `customer.sms_messages`, and the unused backref risks the
+    # same unit-of-work FK-nullification footgun during customer merges.
+    customer = relationship("Customer")
     created_by_user = relationship("User", foreign_keys=[created_by_user_id])

@@ -18,7 +18,11 @@ class UserCustomerLink(BaseModel):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
 
     user = relationship("User", backref="customer_links")
-    customer = relationship("Customer", backref="user_link", uselist=False)
+    # No backref to Customer: unused elsewhere, and an unguarded backref on a
+    # nullable=False FK risks SQLAlchemy nullifying it during unrelated
+    # unit-of-work flushes (see MessageThread.customer for the incident this
+    # pattern caused during customer merges).
+    customer = relationship("Customer", uselist=False)
     tenant = relationship("Tenant", backref="customer_links")
 
     __table_args__ = (
