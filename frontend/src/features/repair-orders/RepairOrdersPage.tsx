@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
@@ -159,7 +160,12 @@ export default function RepairOrdersPage() {
   // Connect to WebSocket for real-time updates (cache/status refresh only on this page).
   useWebSocket()
   const [searchQuery, setSearchQuery] = useState('')
+  const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const RO_PAGE_SIZE = 25
+  const [page, setPage] = useState(0)
+  // Reset to the first page whenever the search term or status filter changes.
+  useEffect(() => { setPage(0) }, [debouncedSearch, statusFilter])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
@@ -246,29 +252,33 @@ export default function RepairOrdersPage() {
 
   const queryClient = useQueryClient()
 
-  const { data: orders, isLoading } = useQuery<RepairOrder[]>({
-    queryKey: ['repair-orders', statusFilter === 'deleted' ? 'deleted' : 'active'],
+  // Server-side pagination: one page at a time, with search + status pushed to
+  // the API instead of loading every order and filtering in the browser.
+  const { data: orderPage, isLoading, isPlaceholderData } = useQuery<{
+    items: RepairOrder[]; total: number; has_more: boolean
+  }>({
+    queryKey: ['repair-orders', { page, search: debouncedSearch, status: statusFilter }],
     queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: RepairOrder[] = []
-      while (true) {
-        const response = await api.get('/repair-orders', {
-          params: {
-            paginated: true,
-            skip,
-            limit: pageSize,
-            ...(statusFilter === 'deleted' ? { deleted: true } : {}),
-          },
-        })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
+      const response = await api.get('/repair-orders', {
+        params: {
+          paginated: true,
+          skip: page * RO_PAGE_SIZE,
+          limit: RO_PAGE_SIZE,
+          ...(statusFilter === 'deleted'
+            ? { deleted: true }
+            : statusFilter !== 'all'
+              ? { status: statusFilter }
+              : {}),
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        },
+      })
+      return response.data
     },
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
   })
+  const orders = orderPage?.items
+  const totalOrders = orderPage?.total ?? 0
 
   // Handle ?selected= query param to auto-open a repair order
   useEffect(() => {
@@ -299,12 +309,18 @@ export default function RepairOrdersPage() {
     }
   }, [searchParams, setSearchParams])
 
+  // The full customer / vehicle / service lists are only needed by the create
+  // and edit forms — not to render the paginated list, which carries its own
+  // denormalized customer/vehicle summaries. Load them lazily when a form opens.
+  const needsFormData = isModalOpen || isDetailOpen
+
   const { data: customers } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
       const response = await api.get('/customers')
       return response.data
     },
+    enabled: needsFormData,
   })
 
   // Fleet company name, so internal fleet ROs show the fleet operator (e.g.
@@ -323,6 +339,7 @@ export default function RepairOrdersPage() {
       const response = await api.get('/vehicles')
       return response.data
     },
+    enabled: needsFormData,
   })
 
   const { data: services, refetch: refetchServices } = useQuery<Service[]>({
@@ -334,6 +351,7 @@ export default function RepairOrdersPage() {
     // Stock can change in another tab (e.g. user replenished from the warning panel),
     // so refresh when the user comes back to this tab.
     refetchOnWindowFocus: true,
+    enabled: needsFormData,
   })
 
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
@@ -453,17 +471,45 @@ export default function RepairOrdersPage() {
     return []
   }, [vehicles, selectedCustomerId])
 
+  // Seed the lookups from each order's denormalized customer/vehicle summary so
+  // list rows render without loading the full customer/vehicle tables. When the
+  // full lists are loaded (e.g. the create/edit modal is open) those richer
+  // objects take precedence.
   const customerLookup = useMemo(() => {
-    const map = new Map<string, Customer>()
+    const map = new Map<string, Partial<Customer>>()
+    orders?.forEach((o) => {
+      if (o.customer_id && !map.has(o.customer_id)) {
+        map.set(o.customer_id, {
+          id: o.customer_id,
+          first_name: o.customer_first_name ?? '',
+          last_name: o.customer_last_name ?? '',
+          company_name: o.customer_company_name ?? null,
+          email: o.customer_email ?? null,
+          phone: o.customer_phone ?? null,
+        } as Partial<Customer>)
+      }
+    })
     customers?.forEach((c) => map.set(c.id, c))
-    return map
-  }, [customers])
+    return map as Map<string, Customer>
+  }, [orders, customers])
 
   const vehicleLookup = useMemo(() => {
-    const map = new Map<string, Vehicle>()
+    const map = new Map<string, Partial<Vehicle>>()
+    orders?.forEach((o) => {
+      if (o.vehicle_id && !map.has(o.vehicle_id)) {
+        map.set(o.vehicle_id, {
+          id: o.vehicle_id,
+          make: o.vehicle_make,
+          model: o.vehicle_model,
+          year: o.vehicle_year,
+          unit_number: o.vehicle_unit_number,
+          vin: o.vehicle_vin,
+        } as Partial<Vehicle>)
+      }
+    })
     vehicles?.forEach((v) => map.set(v.id, v))
-    return map
-  }, [vehicles])
+    return map as Map<string, Vehicle>
+  }, [orders, vehicles])
 
   const mechanicLookup = useMemo(() => {
     const map = new Map<string, string>()
@@ -991,28 +1037,9 @@ export default function RepairOrdersPage() {
 
   const [quoteSent, setQuoteSent] = useState(false)
 
-  const filteredOrders = useMemo(() => {
-    if (!orders) return orders
-
-    let filtered = orders
-
-    // Filter by status. 'deleted' isn't a real RO status — the backend query
-    // already scopes to soft-deleted orders for that filter, so skip this.
-    if (statusFilter !== 'all' && statusFilter !== 'deleted') {
-      filtered = filtered.filter((order) => order.status === statusFilter)
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      filtered = filtered.filter((order) => 
-        order.order_number.toLowerCase().includes(query) ||
-        order.description?.toLowerCase().includes(query)
-      )
-    }
-
-    return filtered
-  }, [orders, searchQuery, statusFilter])
+  // Status filter and search are applied server-side now, so the rendered list
+  // is simply the current page returned by the API.
+  const filteredOrders = orders
 
   // Keyboard left/right arrow navigation between orders when detail panel is open
   useEffect(() => {
@@ -1613,7 +1640,7 @@ export default function RepairOrdersPage() {
 
         {(searchQuery || statusFilter !== 'all') && (
           <div className="mt-2 text-sm text-white/70">
-            Found {filteredOrders?.length || 0} order{filteredOrders?.length !== 1 ? 's' : ''}
+            Found {totalOrders} order{totalOrders !== 1 ? 's' : ''}
           </div>
         )}
       </div>
@@ -1847,6 +1874,31 @@ export default function RepairOrdersPage() {
             </div>
           )}
         </div>
+
+        {/* Pagination footer */}
+        {totalOrders > RO_PAGE_SIZE && (
+          <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
+            <span>
+              {page * RO_PAGE_SIZE + 1}–{Math.min((page + 1) * RO_PAGE_SIZE, totalOrders)} of {totalOrders}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0 || isPlaceholderData}
+                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => (orderPage?.has_more ? p + 1 : p))}
+                disabled={!orderPage?.has_more || isPlaceholderData}
+                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {filteredOrders?.length === 0 && (searchQuery || statusFilter !== 'all') && (
