@@ -11,6 +11,7 @@ import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
 import { customerDisplayName as customerNameOf } from '../../lib/customerName'
+import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { formatUSPhone } from '@/utils/phone'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 import BaseSelect from '../../components/BaseSelect'
@@ -1566,7 +1567,7 @@ export default function RepairOrdersPage() {
                       </div>
                       <p className="text-white/50 text-xs truncate">
                         {orderCustomerName(order, customer, '')}
-                        {vehicle ? ` · ${[vehicle.year, vehicle.make].filter(Boolean).join(' ')}` : ''}
+                        {vehicle && ` · ${vehicleDisplayLabel(vehicle)}`}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
@@ -1636,7 +1637,7 @@ export default function RepairOrdersPage() {
                           {orderCustomerName(order, customer)}
                         </td>
                         <td className="px-4 py-3 text-white/70 hidden lg:table-cell">
-                          {vehicle ? `${vehicle.year || ''} ${vehicle.make} ${vehicle.model}`.trim() : '—'}
+                          {vehicle ? vehicleDisplayLabel(vehicle) : '—'}
                         </td>
                         <td className="px-4 py-3 text-right text-white font-medium hidden xl:table-cell">
                           ${displayTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -1849,7 +1850,9 @@ export default function RepairOrdersPage() {
                                   }`}
                                 >
                                   <div className="text-xs text-slate-500 mb-1">{vehicle.year || 'Year'}</div>
-                                  <div className="text-sm font-semibold text-slate-900">{vehicle.make} {vehicle.model}</div>
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    {vehicleDisplayLabel(vehicle, { includeYear: false })}
+                                  </div>
                                   <div className="text-xs text-slate-600 mt-1">{vehicle.license_plate || 'No plate'}</div>
                                 </button>
                               )

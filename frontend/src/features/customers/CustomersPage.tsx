@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
+import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Loader2, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
@@ -1981,7 +1982,83 @@ export default function CustomersPage() {
   }, [customers, searchQuery, sortField, sortDirection])
 
   if (isLoading) {
-    return <div className="text-white">Loading...</div>
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Customers</h1>
+          <button
+            disabled
+            className="mt-3 sm:mt-0 px-4 py-2 text-white font-medium rounded-lg opacity-60"
+            style={{ backgroundColor: accentColors[500] }}
+          >
+            + Add Customer
+          </button>
+        </div>
+
+        {/* Search Bar */}
+        <div className="mb-6 flex-shrink-0">
+          <div className="relative">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by name, email, or phone..."
+              disabled
+              className="w-full pl-10 pr-4 py-2.5 bg-white rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60"
+            />
+          </div>
+        </div>
+
+        <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
+          <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
+            <div className="h-7 w-32 bg-white/10 rounded-lg animate-pulse" />
+            <div className="flex items-center gap-2 text-sm text-white/50">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading customers…
+            </div>
+          </div>
+          <div className="overflow-hidden flex-1">
+            <table className="w-full text-sm">
+              <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Customer</th>
+                  <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Email</th>
+                  <th className="px-4 py-3 text-left font-medium hidden sm:table-cell">Phone</th>
+                  <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">DOT / MC</th>
+                  <th className="px-4 py-3 text-left font-medium hidden xl:table-cell">Vehicles</th>
+                  <th className="px-4 py-3 text-right font-medium hidden md:table-cell">Balance</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {[...Array(12)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-white/10 flex-shrink-0" />
+                        <div className="h-4 bg-white/10 rounded w-32" />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell"><div className="h-4 bg-white/10 rounded w-36" /></td>
+                    <td className="px-4 py-3 hidden sm:table-cell"><div className="h-4 bg-white/10 rounded w-24" /></td>
+                    <td className="px-4 py-3 hidden xl:table-cell"><div className="h-4 bg-white/10 rounded w-20" /></td>
+                    <td className="px-4 py-3 hidden xl:table-cell"><div className="h-4 bg-white/10 rounded w-8" /></td>
+                    <td className="px-4 py-3 hidden md:table-cell"><div className="h-4 bg-white/10 rounded w-16 ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 bg-white/10 rounded w-10 ml-auto" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -2272,7 +2349,7 @@ export default function CustomersPage() {
         width="max-w-[max(50vw,_400px)]"
         title={
           selectedVehicleInPanel
-            ? `${selectedVehicleInPanel.year ? `${selectedVehicleInPanel.year} ` : ''}${selectedVehicleInPanel.make} ${selectedVehicleInPanel.model}`
+            ? vehicleDisplayLabel(selectedVehicleInPanel)
             : selectedCustomer
             ? customerDisplayName(selectedCustomer, '')
             : ''
@@ -2589,7 +2666,12 @@ export default function CustomersPage() {
                                           <div className="text-[11px] text-gray-500 font-normal ml-3">{dateFmt}</div>
                                         </td>
                                         <td className="px-3 py-2.5 text-gray-700">
-                                          {ro.vehicle_year ? `${ro.vehicle_year} ` : ''}{ro.vehicle_make} {ro.vehicle_model}
+                                          {vehicleDisplayLabel({
+                                            year: ro.vehicle_year,
+                                            make: ro.vehicle_make,
+                                            model: ro.vehicle_model,
+                                            unit_number: ro.vehicle_unit_number,
+                                          })}
                                           {ro.vehicle_unit_number && (
                                             <div className="text-[11px] text-gray-500">#{ro.vehicle_unit_number}</div>
                                           )}
@@ -2882,7 +2964,7 @@ export default function CustomersPage() {
                                   className="hover:bg-gray-100/50 cursor-pointer group"
                                 >
                                   <td className="px-3 py-2.5 text-gray-900 font-medium">
-                                    {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
+                                    {vehicleDisplayLabel(vehicle)}
                                     {vehicle.color && <span className="text-gray-500 font-normal"> · {vehicle.color}</span>}
                                   </td>
                                   <td className="px-3 py-2.5">
@@ -2935,7 +3017,7 @@ export default function CustomersPage() {
                                 className="cursor-pointer"
                               >
                                 <p className="text-sm font-semibold text-gray-900 mb-1">
-                                  {vehicle.year ? `${vehicle.year} ` : ''}{vehicle.make} {vehicle.model}
+                                  {vehicleDisplayLabel(vehicle)}
                                 </p>
                                 {vehicle.license_plate && (
                                   <span className="inline-block text-xs font-medium text-amber-700 bg-amber-100 rounded px-2 py-0.5 mb-2">
