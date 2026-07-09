@@ -1654,9 +1654,6 @@ export default function RepairOrdersPage() {
               <p className="text-xs text-white/50 italic">{statusDescriptions[statusFilter]}</p>
             )}
           </div>
-          <span className="text-sm text-white/70">
-            {filteredOrders?.length || 0} order{filteredOrders?.length !== 1 ? 's' : ''}
-          </span>
         </div>
 
         <div className="flex-1 min-h-0 scrollbar-dark" style={{ overflowY: isDetailOpen ? 'hidden' : 'auto' }}>
@@ -1875,28 +1872,30 @@ export default function RepairOrdersPage() {
           )}
         </div>
 
-        {/* Pagination footer */}
-        {totalOrders > RO_PAGE_SIZE && (
+        {/* Pagination footer (also carries the total count) */}
+        {totalOrders > 0 && (
           <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
             <span>
-              {page * RO_PAGE_SIZE + 1}–{Math.min((page + 1) * RO_PAGE_SIZE, totalOrders)} of {totalOrders}
+              {page * RO_PAGE_SIZE + 1}–{Math.min((page + 1) * RO_PAGE_SIZE, totalOrders)} of {totalOrders} order{totalOrders !== 1 ? 's' : ''}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0 || isPlaceholderData}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => (orderPage?.has_more ? p + 1 : p))}
-                disabled={!orderPage?.has_more || isPlaceholderData}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
-            </div>
+            {totalOrders > RO_PAGE_SIZE && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0 || isPlaceholderData}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPage((p) => (orderPage?.has_more ? p + 1 : p))}
+                  disabled={!orderPage?.has_more || isPlaceholderData}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

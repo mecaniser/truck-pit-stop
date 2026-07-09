@@ -2096,12 +2096,9 @@ export default function CustomersPage() {
       </div>
 
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden flex flex-col flex-1 min-h-0">
-        {/* Header with ViewToggle */}
+        {/* Header with ViewToggle. Total count lives in the pagination footer. */}
         <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
           <ViewToggle value={activeViewMode} onChange={setViewMode} disabled={isMobile} />
-          <span className="text-sm text-white/70">
-            {totalCustomers} customer{totalCustomers !== 1 ? 's' : ''}
-          </span>
         </div>
 
         <div className="overflow-y-auto flex-1 min-h-0">
@@ -2295,28 +2292,30 @@ export default function CustomersPage() {
           )}
         </div>
 
-        {/* Pagination footer */}
-        {totalCustomers > PAGE_SIZE && (
+        {/* Pagination footer (also carries the total count) */}
+        {totalCustomers > 0 && (
           <div className={`flex items-center justify-between px-4 py-3 border-t border-white/10 flex-shrink-0 text-sm text-white/70 ${isPlaceholderData ? 'opacity-60' : ''}`}>
             <span>
-              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCustomers)} of {totalCustomers}
+              {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, totalCustomers)} of {totalCustomers} customer{totalCustomers !== 1 ? 's' : ''}
             </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0 || isPlaceholderData}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => (customerPage?.has_more ? p + 1 : p))}
-                disabled={!customerPage?.has_more || isPlaceholderData}
-                className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
-            </div>
+            {totalCustomers > PAGE_SIZE && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0 || isPlaceholderData}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setPage((p) => (customerPage?.has_more ? p + 1 : p))}
+                  disabled={!customerPage?.has_more || isPlaceholderData}
+                  className="px-3 py-1.5 rounded-lg border border-white/15 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
