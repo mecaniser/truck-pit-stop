@@ -1761,8 +1761,8 @@ export default function PriceBuilderPanel({
       )}
 
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className={`${addBarReadOnly ? 'grid grid-cols-1' : 'grid grid-cols-4'} rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className={`${addBarReadOnly ? 'grid grid-cols-1' : 'grid grid-cols-4'} shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200`}>
             {(addBarReadOnly ? ([
               ['history', History, 'History'],
             ] as const) : ([
@@ -1788,7 +1788,7 @@ export default function PriceBuilderPanel({
             ))}
           </div>
           {addType !== 'history' && (
-          <div className="relative min-w-0 flex-1">
+          <div className="relative min-w-[240px] flex-1 basis-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
