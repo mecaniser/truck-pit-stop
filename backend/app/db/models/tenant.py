@@ -65,6 +65,9 @@ class Tenant(BaseModel):
     # Shown as the customer on internal fleet repair orders. Distinct from `name`
     # (the garage's own business name).
     fleet_company_name = Column(String(255), nullable=True)
+    # Prefix for generated repair order numbers (e.g. "TPS" -> "TPS-000123").
+    # Nullable — when unset, the app auto-derives one from `name`.
+    order_number_prefix = Column(String(10), nullable=True)
     partner_summary = Column(String(280), nullable=True)
     partner_services = Column(String(180), nullable=True)
     applied_at = Column(DateTime(timezone=True), nullable=True)
