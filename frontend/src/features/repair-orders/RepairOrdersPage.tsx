@@ -328,7 +328,7 @@ export default function RepairOrdersPage() {
   // denormalized customer/vehicle summaries. Load them lazily when a form opens.
   const needsFormData = isModalOpen || isDetailOpen
 
-  const { data: customers } = useQuery<Customer[]>({
+  const { data: customers, isLoading: isLoadingCustomers } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
       const pageSize = 100
@@ -2007,6 +2007,7 @@ export default function RepairOrdersPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
                           <CustomerSelect
                             customers={customers || []}
+                            isLoading={isLoadingCustomers}
                             value={selectedCustomerId}
                             onChange={(val) => {
                               if (val === 'add_new') {

@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react'
 import BaseSelect from './BaseSelect'
 import { Customer } from '../types'
 import { formatUSPhone } from '../utils/phone'
@@ -17,6 +18,9 @@ interface CustomerSelectProps {
   phoneRequired?: boolean
   phoneValue?: string
   onPhoneChange?: (phone: string) => void
+  /** While true, the select is disabled and shows a "Loading customers…" state
+   * instead of an empty/unresponsive-looking dropdown. */
+  isLoading?: boolean
 }
 
 export default function CustomerSelect({
@@ -31,6 +35,7 @@ export default function CustomerSelect({
   phoneRequired = false,
   phoneValue = '',
   onPhoneChange,
+  isLoading = false,
 }: CustomerSelectProps) {
   const selectedCustomer = customers.find((c) => c.id === value)
   const needsPhone = phoneRequired && !!selectedCustomer && !selectedCustomer.phone
@@ -44,23 +49,36 @@ export default function CustomerSelect({
 
   return (
     <div className="flex flex-col gap-2">
-      <BaseSelect
-        options={customers.map((c) => ({
-          value: c.id,
-          label: customerDisplayName(c, `${c.first_name} ${c.last_name}`.trim()),
-          subLabel: subLabel(c),
-          // Company name is shown as the label, but the contact's personal
-          // name should still be searchable even when it isn't displayed.
-          searchText: customerPersonalName(c),
-        }))}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        allowAddNew={allowAddNew}
-        addNewLabel="+ Add new customer"
-        onAddNew={onAddNew}
-        variant={variant}
-      />
+      {isLoading ? (
+        <div
+          className={`flex h-[42px] w-full items-center gap-2 rounded-lg border px-4 text-sm ${
+            variant === 'dark'
+              ? 'border-white/20 bg-white/10 text-gray-400'
+              : 'border-gray-300 bg-gray-50 text-gray-500'
+          }`}
+        >
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading customers…
+        </div>
+      ) : (
+        <BaseSelect
+          options={customers.map((c) => ({
+            value: c.id,
+            label: customerDisplayName(c, `${c.first_name} ${c.last_name}`.trim()),
+            subLabel: subLabel(c),
+            // Company name is shown as the label, but the contact's personal
+            // name should still be searchable even when it isn't displayed.
+            searchText: customerPersonalName(c),
+          }))}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          allowAddNew={allowAddNew}
+          addNewLabel="+ Add new customer"
+          onAddNew={onAddNew}
+          variant={variant}
+        />
+      )}
 
       {needsPhone && (
         <div>
