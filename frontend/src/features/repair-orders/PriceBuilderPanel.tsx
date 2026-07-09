@@ -2032,16 +2032,24 @@ export default function PriceBuilderPanel({
                         placeholder="Labor name"
                         className="h-9 rounded-lg border border-orange-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                       />
-                      {/* Book hours step in 15-minute (0.25 hr) increments. */}
-                      <QuantityStepper
-                        ariaLabel="Book hours"
-                        value={Number(laborBookTimeForm.normalized_hours) || 0}
-                        onChange={(n) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(n) }))}
-                        min={0.25}
-                        step={0.25}
-                        unitLabel="hr"
-                        align="start"
-                      />
+                      {/* Book hours step in 15-minute (0.25 hr) increments, with a
+                          live h/m hint so entry matches how the saved line reads. */}
+                      <div className="flex flex-col items-end gap-0.5">
+                        <QuantityStepper
+                          ariaLabel="Book hours"
+                          value={Number(laborBookTimeForm.normalized_hours) || 0}
+                          onChange={(n) => setLaborBookTimeForm((current) => ({ ...current, normalized_hours: String(n) }))}
+                          min={0.25}
+                          step={0.25}
+                          unitLabel="hr"
+                          align="start"
+                        />
+                        {Number(laborBookTimeForm.normalized_hours) > 0 && (
+                          <span className="text-[11px] text-gray-500">
+                            = {formatHoursMinutes(laborBookTimeForm.normalized_hours)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <textarea
                       value={laborBookTimeForm.operation_description}
