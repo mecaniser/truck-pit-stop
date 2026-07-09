@@ -331,8 +331,17 @@ export default function RepairOrdersPage() {
   const { data: customers } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
-      const response = await api.get('/customers')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Customer[] = []
+      while (true) {
+        const response = await api.get('/customers', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
     enabled: needsFormData,
   })
@@ -350,8 +359,17 @@ export default function RepairOrdersPage() {
   const { data: vehicles } = useQuery<Vehicle[]>({
     queryKey: ['vehicles'],
     queryFn: async () => {
-      const response = await api.get('/vehicles')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Vehicle[] = []
+      while (true) {
+        const response = await api.get('/vehicles', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
     enabled: needsFormData,
   })
@@ -359,8 +377,17 @@ export default function RepairOrdersPage() {
   const { data: services, refetch: refetchServices } = useQuery<Service[]>({
     queryKey: ['services'],
     queryFn: async () => {
-      const response = await api.get('/services')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: Service[] = []
+      while (true) {
+        const response = await api.get('/services', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
     // Stock can change in another tab (e.g. user replenished from the warning panel),
     // so refresh when the user comes back to this tab.
@@ -388,8 +415,17 @@ export default function RepairOrdersPage() {
   const { data: inventory } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
     queryFn: async () => {
-      const response = await api.get('/inventory')
-      return response.data
+      const pageSize = 100
+      let skip = 0
+      const all: InventoryItem[] = []
+      while (true) {
+        const response = await api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
+        const data = response.data
+        all.push(...data.items)
+        if (!data.has_more || data.items.length === 0) break
+        skip = data.skip + data.limit
+      }
+      return all
     },
     enabled: isDetailOpen,
   })
