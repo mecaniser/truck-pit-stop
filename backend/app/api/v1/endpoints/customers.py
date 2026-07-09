@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.phone import normalize_phone
+from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
 from app.db.models.contact import Contact
@@ -35,6 +36,7 @@ from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def require_role(*allowed_roles: UserRole):
@@ -570,8 +572,14 @@ async def merge_customers(
     try:
         await db.delete(loser)
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
+        logger.error(
+            "customer_merge_integrity_error",
+            winner_id=str(winner.id),
+            loser_id=str(loser.id),
+            error=str(exc.orig) if exc.orig else str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Merge failed due to related records that could not be reassigned",
