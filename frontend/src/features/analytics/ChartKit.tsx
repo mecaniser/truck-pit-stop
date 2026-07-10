@@ -17,9 +17,13 @@ import { SERIES, STATUS, CHART, categoricalColor } from './chartTheme'
 
 // ---- Card wrapper (matches GarageAnalyticsPage's card class) ----
 export function ChartCard({
-  title, subtitle, action, height = 260, children,
+  title, subtitle, action, height = 260, fit = false, children,
 }: {
-  title: string; subtitle?: string; action?: ReactNode; height?: number; children: ReactNode
+  title: string; subtitle?: string; action?: ReactNode; height?: number
+  /** When true the plot area grows to fit its content (min-height) instead of a
+   *  fixed height — use for content-sized layouts like the ranked bar list, so
+   *  the first row isn't clipped by an overflowing fixed-height container. */
+  fit?: boolean; children: ReactNode
 }) {
   return (
     <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
@@ -30,7 +34,7 @@ export function ChartCard({
         </div>
         {action}
       </div>
-      <div style={{ height }}>{children}</div>
+      <div style={fit ? { minHeight: height } : { height }}>{children}</div>
     </div>
   )
 }
@@ -137,7 +141,7 @@ export function RankedBar<T extends Record<string, unknown>>({
   const max = Math.max(...data.map((d) => Number(d[dataKey]) || 0), 1)
 
   return (
-    <div className="flex h-full flex-col justify-center gap-2.5 overflow-y-auto pr-1">
+    <div className="flex h-full flex-col justify-center gap-2.5">
       {data.map((d, i) => {
         const value = Number(d[dataKey]) || 0
         const name = String(d[nameKey] ?? '')

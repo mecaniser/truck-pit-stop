@@ -374,7 +374,7 @@ function InsightsSection({ range }: { range: DateRangePreset }) {
         {hasAccounts ? <ParetoChart accounts={accounts.data!.accounts.slice(0, 12)} /> : <EmptyChart loading={accounts.isLoading} />}
       </ChartCard>
 
-      <ChartCard title="Cost per Truck" subtitle="Internal-fleet maintenance spend, top 10" height={380}>
+      <ChartCard title="Cost per Truck" subtitle="Internal-fleet maintenance spend, top 10" height={380} fit>
         {hasTrucks
           ? <RankedBar
               data={trucks.data!.trucks}
@@ -428,7 +428,7 @@ function SalesTab({ range }: { range: DateRangePreset }) {
       </div>
 
       {data.rows.length > 0 && (
-        <ChartCard title="Top Customers by Net Sales" subtitle={`Top ${Math.min(10, data.rows.length)} of ${data.rows.length}`} height={380}>
+        <ChartCard title="Top Customers by Net Sales" subtitle={`Top ${Math.min(10, data.rows.length)} of ${data.rows.length}`} height={380} fit>
           <RankedBar
             data={[...data.rows].sort((a, b) => parseFloat(b.net_sales) - parseFloat(a.net_sales)).slice(0, 10)
               .map((r) => ({ label: r.group_label, value: parseFloat(r.net_sales) }))}
@@ -509,7 +509,7 @@ function FeesTab({ range }: { range: DateRangePreset }) {
         <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
       </div>
       {data.rows.length > 0 && (
-        <ChartCard title="Fees by Total Charged" height={380}>
+        <ChartCard title="Fees by Total Charged" height={380} fit>
           <RankedBar
             data={[...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged)).slice(0, 10)
               .map((r) => ({ label: r.fee_name, value: parseFloat(r.total_charged) }))}
@@ -574,7 +574,7 @@ function TaxTab({ range }: { range: DateRangePreset }) {
   return (
     <div className="space-y-4">
     {data.rows.length > 0 && (
-      <ChartCard title="Tax Collected by Rate" height={380}>
+      <ChartCard title="Tax Collected by Rate" height={380} fit>
         <RankedBar
           data={[...data.rows].sort((a, b) => parseFloat(b.tax_collected) - parseFloat(a.tax_collected)).slice(0, 10)
             .map((r) => ({ label: r.rate_label, value: parseFloat(r.tax_collected) }))}
@@ -716,7 +716,7 @@ function InventoryTab() {
         <MetricCard label="Total Value" value={fmtMoney(data.total_value)} />
       </div>
       {data.rows.length > 0 && (
-        <ChartCard title="Top Parts by Inventory Value" height={380}>
+        <ChartCard title="Top Parts by Inventory Value" height={380} fit>
           <RankedBar
             data={[...data.rows].sort((a, b) => parseFloat(b.total_value) - parseFloat(a.total_value)).slice(0, 10)
               .map((r) => ({ label: r.name, value: parseFloat(r.total_value) }))}
@@ -792,7 +792,7 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
         <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
       </div>
       {data.rows.length > 0 && (
-        <ChartCard title="Top Service Types by Charges" height={380}>
+        <ChartCard title="Top Service Types by Charges" height={380} fit>
           <RankedBar
             data={[...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged)).slice(0, 10)
               .map((r) => ({ label: r.name, value: parseFloat(r.total_charged) }))}
