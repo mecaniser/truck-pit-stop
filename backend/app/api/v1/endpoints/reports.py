@@ -728,3 +728,259 @@ async def get_reports_service_types(
         total_charged=str(total_charged),
         rows=service_rows,
     )
+
+
+# ===========================================================================
+# Analytics charts — the richer visualisations for the Analytics dashboard.
+# Only aggregations backed by existing data are implemented here; charts that
+# need event tracking we don't yet capture (quote "viewed", historical
+# per-mile fleet cost) are deferred.
+# ===========================================================================
+
+
+class ScatterPoint(BaseModel):
+    type: str
+    subtotal: float
+    marginPct: float
+    hours: float
+
+
+class ProfitabilityResponse(BaseModel):
+    range_start: date
+    range_end: date
+    ros: List[ScatterPoint]
+
+
+def _ro_type(order: RepairOrder) -> str:
+    if order.is_internal:
+        return "Internal"
+    if order.is_pm:
+        return "PM"
+    if order.is_warranty_repair:
+        return "Warranty"
+    return "Repair"
+
+
+@router.get("/analytics/profitability", response_model=ProfitabilityResponse)
+async def get_analytics_profitability(
+    range: str = Query("this_month"),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Per-RO subtotal vs margin %, sized by labor hours — powers the
+    labor-vs-parts profitability bubble scatter."""
+    _require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    tenant_id = current_user.tenant_id
+    rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
+
+    # Sum labor hours per RO in one grouped query, then join the orders.
+    hours_result = await db.execute(
+        select(Labor.repair_order_id, func.coalesce(func.sum(Labor.hours), 0))
+        .join(RepairOrder, Labor.repair_order_id == RepairOrder.id)
+        .where(RepairOrder.tenant_id == tenant_id)
+        .group_by(Labor.repair_order_id)
+    )
+    hours_by_ro = {rid: Decimal(str(h or 0)) for rid, h in hours_result.all()}
+
+    result = await db.execute(
+        select(RepairOrder).where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            func.date(RepairOrder.created_at) >= rng.start,
+            func.date(RepairOrder.created_at) <= rng.end,
+        )
+    )
+    orders = result.scalars().all()
+
+    points: List[ScatterPoint] = []
+    for o in orders:
+        subtotal = _money(o.total_cost)
+        cost = _money(o.total_labor_cost) + _money(o.total_parts_cost)
+        if subtotal <= 0:
+            continue
+        margin_pct = float(((subtotal - cost) / subtotal) * 100) if subtotal else 0.0
+        points.append(ScatterPoint(
+            type=_ro_type(o),
+            subtotal=float(subtotal),
+            marginPct=round(max(0.0, min(100.0, margin_pct)), 1),
+            hours=float(hours_by_ro.get(o.id, Decimal("0"))),
+        ))
+
+    return ProfitabilityResponse(range_start=rng.start, range_end=rng.end, ros=points)
+
+
+class AccountRow(BaseModel):
+    name: str
+    revenue: float
+    marginPct: float
+    cumPct: float
+
+
+class AccountsResponse(BaseModel):
+    range_start: date
+    range_end: date
+    accounts: List[AccountRow]
+
+
+@router.get("/analytics/accounts", response_model=AccountsResponse)
+async def get_analytics_accounts(
+    range: str = Query("this_year"),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Revenue + margin per customer account, sorted desc with a running
+    cumulative % — powers the Pareto chart and the account detail table."""
+    _require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    tenant_id = current_user.tenant_id
+    rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
+
+    result = await db.execute(
+        select(Invoice, RepairOrder, Customer)
+        .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.status == InvoiceStatus.PAID,
+            Invoice.is_internal.is_(False),
+            func.date(Invoice.paid_at) >= rng.start,
+            func.date(Invoice.paid_at) <= rng.end,
+        )
+    )
+    rows = result.all()
+
+    by_customer: Dict[UUID, Dict[str, Decimal]] = {}
+    labels: Dict[UUID, str] = {}
+    for invoice, order, customer in rows:
+        b = by_customer.setdefault(customer.id, {"rev": Decimal("0"), "cost": Decimal("0")})
+        b["rev"] += _money(invoice.total_amount)
+        b["cost"] += _money(order.total_labor_cost) + _money(order.total_parts_cost)
+        labels[customer.id] = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
+
+    ranked = sorted(by_customer.items(), key=lambda kv: kv[1]["rev"], reverse=True)
+    total_rev = sum((v["rev"] for _, v in ranked), Decimal("0")) or Decimal("1")
+
+    accounts: List[AccountRow] = []
+    running = Decimal("0")
+    for cid, vals in ranked:
+        running += vals["rev"]
+        margin = float(((vals["rev"] - vals["cost"]) / vals["rev"]) * 100) if vals["rev"] else 0.0
+        accounts.append(AccountRow(
+            name=labels[cid],
+            revenue=float(vals["rev"]),
+            marginPct=round(max(0.0, min(100.0, margin)), 1),
+            cumPct=round(float(running / total_rev * 100), 1),
+        ))
+
+    return AccountsResponse(range_start=rng.start, range_end=rng.end, accounts=accounts)
+
+
+class FunnelResponse(BaseModel):
+    range_start: date
+    range_end: date
+    sent: int
+    approved: int
+    invoiced: int
+
+
+@router.get("/analytics/quote-funnel", response_model=FunnelResponse)
+async def get_analytics_quote_funnel(
+    range: str = Query("this_month"),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Quote sent -> approved -> invoiced counts. NOTE: a "viewed" stage is
+    intentionally omitted — the app does not yet record a quote-view event."""
+    _require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    tenant_id = current_user.tenant_id
+    rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
+
+    from app.db.models.quote import Quote
+
+    sent = (await db.execute(
+        select(func.count(Quote.id)).where(
+            Quote.tenant_id == tenant_id,
+            Quote.sent_to_customer.is_(True),
+            func.date(Quote.created_at) >= rng.start,
+            func.date(Quote.created_at) <= rng.end,
+        )
+    )).scalar() or 0
+    approved = (await db.execute(
+        select(func.count(Quote.id)).where(
+            Quote.tenant_id == tenant_id,
+            Quote.is_approved.is_(True),
+            func.date(Quote.created_at) >= rng.start,
+            func.date(Quote.created_at) <= rng.end,
+        )
+    )).scalar() or 0
+    invoiced = (await db.execute(
+        select(func.count(Invoice.id))
+        .join(Quote, Quote.repair_order_id == Invoice.repair_order_id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Quote.is_approved.is_(True),
+            func.date(Quote.created_at) >= rng.start,
+            func.date(Quote.created_at) <= rng.end,
+        )
+    )).scalar() or 0
+
+    return FunnelResponse(range_start=rng.start, range_end=rng.end, sent=sent, approved=approved, invoiced=invoiced)
+
+
+class TruckCostRow(BaseModel):
+    unit: str
+    ytdCost: float
+
+
+class TruckCostResponse(BaseModel):
+    range_start: date
+    range_end: date
+    trucks: List[TruckCostRow]
+
+
+@router.get("/analytics/truck-costs", response_model=TruckCostResponse)
+async def get_analytics_truck_costs(
+    range: str = Query("this_year"),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Internal-fleet maintenance cost per truck (top spenders) — powers the
+    cost-per-truck ranked bar."""
+    _require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    tenant_id = current_user.tenant_id
+    rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
+
+    from app.db.models.vehicle import Vehicle
+
+    result = await db.execute(
+        select(Vehicle.unit_number, func.coalesce(func.sum(RepairOrder.total_cost), 0))
+        .join(RepairOrder, RepairOrder.vehicle_id == Vehicle.id)
+        .where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.is_internal.is_(True),
+            RepairOrder.deleted_at.is_(None),
+            func.date(RepairOrder.created_at) >= rng.start,
+            func.date(RepairOrder.created_at) <= rng.end,
+        )
+        .group_by(Vehicle.unit_number)
+    )
+    rows = [(unit or "—", _money(cost)) for unit, cost in result.all()]
+    rows.sort(key=lambda r: r[1], reverse=True)
+    trucks = [TruckCostRow(unit=u, ytdCost=float(c)) for u, c in rows[:10]]
+
+    return TruckCostResponse(range_start=rng.start, range_end=rng.end, trucks=trucks)
