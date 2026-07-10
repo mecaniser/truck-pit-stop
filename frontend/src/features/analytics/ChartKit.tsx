@@ -63,7 +63,6 @@ function ChartTip({ active, payload, label, formatter }: TipProps & { formatter?
 const tip = (formatter?: TipFormatter) => (props: object) => <ChartTip {...(props as TipProps)} formatter={formatter} />
 
 const axisTick = { fill: CHART.axis, fontSize: 11 }
-const catTick = { fill: CHART.axisTick, fontSize: 12 }
 const Grid = () => <CartesianGrid stroke={CHART.grid} vertical={false} />
 const money = (v: number) => '$' + v.toLocaleString()
 const moneyK = (v: number) => '$' + (v / 1000) + 'k'
@@ -118,25 +117,45 @@ export function ProfitabilityScatter({ ros }: { ros: { type: string; subtotal: n
 }
 
 // ---- Ranked horizontal bar ----
+/**
+ * Ranked horizontal bars as an HTML list: each row is a single-line label on
+ * the dark surface (always high-contrast — never white-on-green) above a
+ * proportional magnitude bar with its value at the end. Labels never wrap; the
+ * full name is in the row's title tooltip. This reads far cleaner than labels
+ * painted inside a light-coloured bar, and gives comfortable row spacing.
+ */
 export function RankedBar<T extends Record<string, unknown>>({
-  data, dataKey, nameKey, colorFn, tickFormatter, tooltipFormatter,
+  data, dataKey, nameKey, colorFn, tickFormatter,
 }: {
   data: T[]; dataKey: string; nameKey: string
-  colorFn?: (d: T) => string; tickFormatter?: (v: number) => string; tooltipFormatter?: TipFormatter
+  colorFn?: (d: T) => string; tickFormatter?: (v: number) => string
+  /** kept for API compatibility; unused in the HTML variant */
+  tooltipFormatter?: TipFormatter
 }) {
   const { accentColors } = useTheme()
+  const valueFmt = tickFormatter ?? ((v: number) => String(v))
+  const max = Math.max(...data.map((d) => Number(d[dataKey]) || 0), 1)
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 20, left: 6, bottom: 0 }}>
-        <Grid />
-        <XAxis type="number" tick={axisTick} axisLine={false} tickLine={false} tickFormatter={tickFormatter} />
-        <YAxis type="category" dataKey={nameKey} width={90} tick={catTick} axisLine={false} tickLine={false} />
-        <Tooltip content={tip(tooltipFormatter)} cursor={{ fill: CHART.cursorFill }} />
-        <Bar dataKey={dataKey} radius={[0, 5, 5, 0]} maxBarSize={18} isAnimationActive={false}>
-          {data.map((d, i) => <Cell key={i} fill={colorFn ? colorFn(d) : accentColors[500]} />)}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="flex h-full flex-col justify-center gap-2.5 overflow-y-auto pr-1">
+      {data.map((d, i) => {
+        const value = Number(d[dataKey]) || 0
+        const name = String(d[nameKey] ?? '')
+        const width = Math.max(2, (value / max) * 100)
+        const fill = colorFn ? colorFn(d) : accentColors[500]
+        return (
+          <div key={i} title={name} className="min-w-0">
+            <div className="mb-1 flex items-baseline justify-between gap-3">
+              <span className="truncate text-[12.5px] font-medium text-gray-200">{name}</span>
+              <span className="shrink-0 font-['JetBrains_Mono',monospace] text-xs text-gray-400">{valueFmt(value)}</span>
+            </div>
+            <div className="h-2.5 w-full rounded-full bg-white/5">
+              <div className="h-full rounded-full" style={{ width: `${width}%`, background: fill }} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
