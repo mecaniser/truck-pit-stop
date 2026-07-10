@@ -290,13 +290,15 @@ export function QuoteFunnel({ funnel }: { funnel: { sent: number; viewed?: numbe
           <LabelList
             position="center" stroke="none" fontSize={12.5} fontWeight={600}
             content={(p: object) => {
-              const { x = 0, y = 0, width = 0, height = 0, value, index = 0 } =
-                p as { x?: number; y?: number; width?: number; height?: number; value?: number; index?: number }
+              const { x = 0, y = 0, width = 0, height = 0, index = 0 } =
+                p as { x?: number; y?: number; width?: number; height?: number; index?: number }
               const stage = stages[index]
               if (!stage) return null
+              // Use the stage's own name + numeric value; the `value` prop Recharts
+              // passes here is the name string, which caused "Sent · Sent".
               return (
                 <text x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={12.5} fontWeight={600}>
-                  {stage.name} · {value}
+                  {stage.name} · {stage.value}
                 </text>
               )
             }}
