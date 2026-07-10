@@ -2,16 +2,17 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { Download, Loader2 } from 'lucide-react'
+import { ReactNode } from 'react'
+import { Download, Loader2, Lightbulb } from 'lucide-react'
 import api from '../../lib/api'
 import { useTheme } from '../../contexts/ThemeContext'
 import InternalInvoiceList from './InternalInvoiceList'
 import {
   ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
 } from '../analytics/ChartKit'
-import { SERIES, CATEGORICAL } from '../analytics/chartTheme'
+import { SERIES, TAB_ACCENT } from '../analytics/chartTheme'
 
 // ============ SHARED TYPES ============
 
@@ -226,58 +227,6 @@ function DateRangePicker({
   )
 }
 
-// ============ SUMMARY CARD ============
-
-function MetricCard({
-  label,
-  value,
-  trend,
-  color = '#60a5fa',
-  chartType = 'bar',
-}: {
-  label: string
-  value: string
-  trend?: TrendPoint[]
-  color?: string
-  chartType?: 'bar' | 'line'
-}) {
-  const chartData = (trend || []).map((p) => ({ label: p.label, value: parseFloat(p.value) }))
-  return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-      <p className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-1">{label}</p>
-      <p className="text-2xl font-bold text-white mb-3">{value}</p>
-      {chartData.length > 0 && (
-        <div className="h-24">
-          <ResponsiveContainer width="100%" height="100%">
-            {chartType === 'line' ? (
-              <LineChart data={chartData}>
-                <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                  labelStyle={{ color: '#e5e7eb' }}
-                  formatter={(v) => fmtMoney(v as number)}
-                />
-                <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
-            ) : (
-              <BarChart data={chartData}>
-                <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                  labelStyle={{ color: '#e5e7eb' }}
-                  formatter={(v) => fmtMoney(v as number)}
-                />
-                <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function LoadingBlock() {
   return (
@@ -301,6 +250,68 @@ function ExportButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+// ============ VISUAL HIERARCHY: Hero / StatStrip / DetailTable ============
+// Per the analytics "Visual Hierarchy" handoff: every tab leads with an
+// accent-coloured Hero (the one number that matters + its chart), then quiet
+// StatStrip tiles, then a muted DetailTable — so a glance at colour + shape
+// identifies the tab before any label is read.
+
+function Hero({ label, value, sub, accent, insight, children }: {
+  label: string; value: string; sub?: string; accent: string; insight?: string; children?: ReactNode
+}) {
+  return (
+    <div
+      className="relative rounded-2xl p-6 overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))', border: '1px solid rgba(255,255,255,0.12)' }}
+    >
+      <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: accent }} />
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-1">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: accent }}>{label}</p>
+          <p className="text-4xl font-bold text-white leading-none truncate">{value}</p>
+          {sub && <p className="text-sm text-white/50 mt-2">{sub}</p>}
+        </div>
+      </div>
+      {children && <div className="mt-5">{children}</div>}
+      {insight && (
+        <div className="flex items-start gap-2.5 bg-black/20 rounded-lg p-3 mt-5 text-[12.5px] text-white/80 leading-relaxed">
+          <Lightbulb className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: accent }} />
+          <div>{insight}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatStrip({ stats }: { stats: { label: string; value: string }[] }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.06] rounded-xl overflow-hidden border border-white/[0.06]">
+      {stats.map((s, i) => (
+        <div key={i} className="bg-[#141a24] px-4 py-3.5">
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-white/40">{s.label}</p>
+          <p className="text-lg font-semibold text-white/90 mt-0.5">{s.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DetailTable({ title, count, onExport, children }: {
+  title: string; count?: number; onExport?: () => void; children: ReactNode
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2 px-0.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/35">{title}{count != null && ' · ' + count}</span>
+        {onExport && <ExportButton onClick={onExport} />}
+      </div>
+      <div className="bg-white/[0.025] border border-white/[0.06] rounded-xl overflow-hidden">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // ============ TAB: DASHBOARD ============
 
 function DashboardTab({ range }: { range: DateRangePreset }) {
@@ -312,19 +323,48 @@ function DashboardTab({ range }: { range: DateRangePreset }) {
 
   if (isLoading || !data) return <LoadingBlock />
 
+  const accent = accentColors[500]
+  // Stacked Labor + Parts revenue across the trend window (both trends share labels).
+  const trendRows = data.revenue.trend.map((p, i) => ({
+    label: p.label,
+    labor: parseFloat(data.labor_revenue.trend[i]?.value ?? '0'),
+    parts: parseFloat(data.part_revenue.trend[i]?.value ?? '0'),
+  }))
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        <MetricCard label="Revenue" value={fmtMoney(data.revenue.value)} trend={data.revenue.trend} color={accentColors[500]} />
-        <MetricCard label="Labor Revenue" value={fmtMoney(data.labor_revenue.value)} trend={data.labor_revenue.trend} color={SERIES.cumulative} />
-        <MetricCard label="Part Revenue" value={fmtMoney(data.part_revenue.value)} trend={data.part_revenue.trend} color={SERIES.parts} />
-        <MetricCard label="Fees Revenue" value={fmtMoney(data.fees_revenue.value)} trend={data.fees_revenue.trend} color={SERIES.margin} />
-        <MetricCard label="Parts Profit" value={fmtMoney(data.parts_profit.value)} trend={data.parts_profit.trend} color={SERIES.margin} />
-        <MetricCard label="Inventory Value" value={fmtMoney(data.inventory_value.value)} chartType="line" color={SERIES.parts} />
-        <MetricCard label="Invoiced Hours" value={`${fmtNumber(data.invoiced_hours.value)} hrs`} trend={data.invoiced_hours.trend} color={SERIES.danger} />
-        <MetricCard label="Part Sales Finalized" value={fmtNumber(data.part_sales_finalized.value)} trend={data.part_sales_finalized.trend} color={SERIES.cumulative} />
-        <MetricCard label="Services Finalized" value={fmtNumber(data.services_finalized.value)} trend={data.services_finalized.trend} color={accentColors[500]} />
-      </div>
+      <Hero
+        label="Total Revenue"
+        value={fmtMoney(data.revenue.value)}
+        accent={accent}
+        insight="Labor and parts stacked below show where the revenue actually comes from across the period."
+      >
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={trendRows} margin={{ top: 6, right: 6, left: -12, bottom: 0 }}>
+              <XAxis dataKey="label" tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#6b7280', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => '$' + (v / 1000) + 'k'} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#151b26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: '#9ca3af' }}
+                formatter={(v, n) => [fmtMoney(Number(v ?? 0)), n] as [string, typeof n]}
+                cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+              />
+              <Bar dataKey="labor" name="Labor" stackId="r" fill={SERIES.parts} maxBarSize={30} isAnimationActive={false} />
+              <Bar dataKey="parts" name="Parts" stackId="r" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Hero>
+
+      <StatStrip stats={[
+        { label: 'Fees Revenue', value: fmtMoney(data.fees_revenue.value) },
+        { label: 'Parts Profit', value: fmtMoney(data.parts_profit.value) },
+        { label: 'Invoiced Hours', value: `${fmtNumber(data.invoiced_hours.value)} hrs` },
+        { label: 'Inventory Value', value: fmtMoney(data.inventory_value.value) },
+        { label: 'Part Sales', value: fmtNumber(data.part_sales_finalized.value) },
+        { label: 'Services', value: fmtNumber(data.services_finalized.value) },
+      ]} />
 
       <InsightsSection range={range} />
     </div>
@@ -400,7 +440,6 @@ function EmptyChart({ loading }: { loading: boolean }) {
 // ============ TAB: SALES ============
 
 function SalesTab({ range }: { range: DateRangePreset }) {
-  const { accentColors } = useTheme()
   const { data, isLoading } = useQuery<ReportsSalesResponse>({
     queryKey: ['reports-sales', range],
     queryFn: async () => (await api.get('/reports/sales', { params: { range } })).data,
@@ -408,6 +447,7 @@ function SalesTab({ range }: { range: DateRangePreset }) {
 
   if (isLoading || !data) return <LoadingBlock />
 
+  const accent = TAB_ACCENT.sales
   const handleExport = () => {
     exportRowsToCsv(
       'sales-report.csv',
@@ -415,70 +455,72 @@ function SalesTab({ range }: { range: DateRangePreset }) {
       data.rows.map((r) => [r.group_label, r.labor, r.parts, r.fees, r.sales_tax, r.discounts, r.net_sales])
     )
   }
+  const ranked = [...data.rows].sort((a, b) => parseFloat(b.net_sales) - parseFloat(a.net_sales))
+  const top = ranked[0]
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-        <MetricCard label="Net Sales" value={fmtMoney(data.summary.net_sales)} chartType="line" color={accentColors[500]} />
-        <MetricCard label="Labor" value={fmtMoney(data.summary.labor)} chartType="line" color={CATEGORICAL[4]} />
-        <MetricCard label="Parts" value={fmtMoney(data.summary.parts)} chartType="line" color={SERIES.parts} />
-        <MetricCard label="Discounts" value={fmtMoney(data.summary.discounts)} chartType="line" color={SERIES.danger} />
-        <MetricCard label="Fees" value={fmtMoney(data.summary.fees)} chartType="line" color={SERIES.margin} />
-        <MetricCard label="Sales Tax" value={fmtMoney(data.summary.sales_tax)} chartType="line" color={CATEGORICAL[2]} />
-      </div>
+      <Hero
+        label="Top Account This Period"
+        value={top ? top.group_label : '—'}
+        sub={top ? `${fmtMoney(top.net_sales)} net sales` : undefined}
+        accent={accent}
+        insight="Your revenue concentration — how much of net sales rides on the top handful of accounts."
+      >
+        {ranked.length > 0 && (
+          <div className="h-56">
+            <RankedBar
+              accent={accent}
+              data={ranked.slice(0, 8).map((r) => ({ label: r.group_label, value: parseFloat(r.net_sales) }))}
+              dataKey="value" nameKey="label"
+              tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            />
+          </div>
+        )}
+      </Hero>
 
-      {data.rows.length > 0 && (
-        <ChartCard title="Top Customers by Net Sales" subtitle={`Top ${Math.min(10, data.rows.length)} of ${data.rows.length}`} height={380} fit>
-          <RankedBar
-            data={[...data.rows].sort((a, b) => parseFloat(b.net_sales) - parseFloat(a.net_sales)).slice(0, 10)
-              .map((r) => ({ label: r.group_label, value: parseFloat(r.net_sales) }))}
-            dataKey="value"
-            nameKey="label"
-            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
-            tooltipFormatter={(v) => '$' + v.toLocaleString()}
-          />
-        </ChartCard>
-      )}
+      <StatStrip stats={[
+        { label: 'Net Sales', value: fmtMoney(data.summary.net_sales) },
+        { label: 'Labor', value: fmtMoney(data.summary.labor) },
+        { label: 'Parts', value: fmtMoney(data.summary.parts) },
+        { label: 'Discounts', value: fmtMoney(data.summary.discounts) },
+        { label: 'Fees', value: fmtMoney(data.summary.fees) },
+        { label: 'Sales Tax', value: fmtMoney(data.summary.sales_tax) },
+      ]} />
 
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <span className="text-sm text-white/70">Grouped by customer &middot; {data.rows.length} results</span>
-          <ExportButton onClick={handleExport} />
-        </div>
+      <DetailTable title="All accounts" count={data.rows.length} onExport={handleExport}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+            <thead className="text-white/35 text-[11px] uppercase tracking-wider">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Customer</th>
-                <th className="px-4 py-3 text-right font-medium">Labor</th>
-                <th className="px-4 py-3 text-right font-medium">Parts</th>
-                <th className="px-4 py-3 text-right font-medium">Fees</th>
-                <th className="px-4 py-3 text-right font-medium">Sales Tax</th>
-                <th className="px-4 py-3 text-right font-medium">Discounts</th>
-                <th className="px-4 py-3 text-right font-medium">Net Sales</th>
+                <th className="px-4 py-2.5 text-left font-medium">Customer</th>
+                <th className="px-4 py-2.5 text-right font-medium">Labor</th>
+                <th className="px-4 py-2.5 text-right font-medium">Parts</th>
+                <th className="px-4 py-2.5 text-right font-medium">Fees</th>
+                <th className="px-4 py-2.5 text-right font-medium">Sales Tax</th>
+                <th className="px-4 py-2.5 text-right font-medium">Discounts</th>
+                <th className="px-4 py-2.5 text-right font-medium">Net Sales</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10">
+            <tbody className="divide-y divide-white/[0.06]">
               {data.rows.map((row) => (
-                <tr key={row.group_key} className="hover:bg-white/5">
-                  <td className="px-4 py-3 text-white font-medium">{row.group_label}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.labor)}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.parts)}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.fees)}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.sales_tax)}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.discounts)}</td>
-                  <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.net_sales)}</td>
+                <tr key={row.group_key} className="hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.group_label}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.labor)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.parts)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.fees)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.sales_tax)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.discounts)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.net_sales)}</td>
                 </tr>
               ))}
               {data.rows.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-white/50">No sales in this range</td>
-                </tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-white/40">No sales in this range</td></tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </DetailTable>
     </div>
   )
 }
@@ -501,54 +543,62 @@ function FeesTab({ range }: { range: DateRangePreset }) {
     )
   }
 
+  const accent = TAB_ACCENT.fees
+  const ranked = [...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged))
+  const top = ranked[0]
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard label="Times Added" value={fmtNumber(data.times_added)} />
-        <MetricCard label="Average Charge" value={fmtMoney(data.average_charge)} />
-        <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
-      </div>
-      {data.rows.length > 0 && (
-        <ChartCard title="Fees by Total Charged" height={380} fit>
-          <RankedBar
-            data={[...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged)).slice(0, 10)
-              .map((r) => ({ label: r.fee_name, value: parseFloat(r.total_charged) }))}
-            dataKey="value" nameKey="label"
-            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
-            tooltipFormatter={(v) => '$' + v.toLocaleString()}
-          />
-        </ChartCard>
-      )}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-end px-4 py-3 border-b border-white/10">
-          <ExportButton onClick={handleExport} />
-        </div>
+      <Hero
+        label="Highest-earning fee"
+        value={top ? top.fee_name : '—'}
+        sub={top ? `${fmtMoney(top.total_charged)} collected` : undefined}
+        accent={accent}
+        insight="If a fee rarely gets added, it's probably mispriced or forgotten at the counter."
+      >
+        {ranked.length > 0 && (
+          <div className="h-56">
+            <RankedBar
+              accent={accent}
+              data={ranked.slice(0, 8).map((r) => ({ label: r.fee_name, value: parseFloat(r.total_charged) }))}
+              dataKey="value" nameKey="label"
+              tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            />
+          </div>
+        )}
+      </Hero>
+
+      <StatStrip stats={[
+        { label: 'Times Added', value: fmtNumber(data.times_added) },
+        { label: 'Average Charge', value: fmtMoney(data.average_charge) },
+        { label: 'Total Charged', value: fmtMoney(data.total_charged) },
+      ]} />
+
+      <DetailTable title="All fees" count={data.rows.length} onExport={handleExport}>
         <table className="w-full text-sm">
-          <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+          <thead className="text-white/35 text-[11px] uppercase tracking-wider">
             <tr>
-              <th className="px-4 py-3 text-left font-medium">Fee Name</th>
-              <th className="px-4 py-3 text-right font-medium">Times Added</th>
-              <th className="px-4 py-3 text-right font-medium">Average Charge</th>
-              <th className="px-4 py-3 text-right font-medium">Total Charged</th>
+              <th className="px-4 py-2.5 text-left font-medium">Fee Name</th>
+              <th className="px-4 py-2.5 text-right font-medium">Times Added</th>
+              <th className="px-4 py-2.5 text-right font-medium">Average Charge</th>
+              <th className="px-4 py-2.5 text-right font-medium">Total Charged</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/10">
+          <tbody className="divide-y divide-white/[0.06]">
             {data.rows.map((row) => (
-              <tr key={row.fee_name} className="hover:bg-white/5">
-                <td className="px-4 py-3 text-white font-medium">{row.fee_name}</td>
-                <td className="px-4 py-3 text-right text-white/70">{row.times_added}</td>
-                <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.average_charge)}</td>
-                <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.total_charged)}</td>
+              <tr key={row.fee_name} className="hover:bg-white/[0.03]">
+                <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.fee_name}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{row.times_added}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.average_charge)}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.total_charged)}</td>
               </tr>
             ))}
             {data.rows.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-white/50">No fees charged in this range</td>
-              </tr>
+              <tr><td colSpan={4} className="px-4 py-8 text-center text-white/40">No fees charged in this range</td></tr>
             )}
           </tbody>
         </table>
-      </div>
+      </DetailTable>
     </div>
   )
 }
@@ -571,47 +621,53 @@ function TaxTab({ range }: { range: DateRangePreset }) {
     )
   }
 
+  const accent = TAB_ACCENT.tax
+  const ranked = [...data.rows].sort((a, b) => parseFloat(b.tax_collected) - parseFloat(a.tax_collected))
+  const total = data.rows.reduce((s, r) => s + parseFloat(r.tax_collected), 0)
+
   return (
     <div className="space-y-4">
-    {data.rows.length > 0 && (
-      <ChartCard title="Tax Collected by Rate" height={380} fit>
-        <RankedBar
-          data={[...data.rows].sort((a, b) => parseFloat(b.tax_collected) - parseFloat(a.tax_collected)).slice(0, 10)
-            .map((r) => ({ label: r.rate_label, value: parseFloat(r.tax_collected) }))}
-          dataKey="value" nameKey="label"
-          tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
-          tooltipFormatter={(v) => '$' + v.toLocaleString()}
-        />
-      </ChartCard>
-    )}
-    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-end px-4 py-3 border-b border-white/10">
-        <ExportButton onClick={handleExport} />
-      </div>
-      <table className="w-full text-sm">
-        <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
-          <tr>
-            <th className="px-4 py-3 text-left font-medium">Rate</th>
-            <th className="px-4 py-3 text-right font-medium">Percentage</th>
-            <th className="px-4 py-3 text-right font-medium">Tax Collected</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-white/10">
-          {data.rows.map((row) => (
-            <tr key={row.rate_label} className="hover:bg-white/5">
-              <td className="px-4 py-3 text-white font-medium">{row.rate_label}</td>
-              <td className="px-4 py-3 text-right text-white/70">{row.percentage}%</td>
-              <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.tax_collected)}</td>
-            </tr>
-          ))}
-          {data.rows.length === 0 && (
+      <Hero
+        label="Total Tax Collected"
+        value={fmtMoney(total)}
+        accent={accent}
+        insight="Tax collected is a pass-through liability — it's owed to the jurisdiction, not shop revenue."
+      >
+        {ranked.length > 0 && (
+          <div className="h-56">
+            <RankedBar
+              accent={accent}
+              data={ranked.map((r) => ({ label: r.rate_label, value: parseFloat(r.tax_collected) }))}
+              dataKey="value" nameKey="label"
+              tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            />
+          </div>
+        )}
+      </Hero>
+
+      <DetailTable title="Rate components" count={data.rows.length} onExport={handleExport}>
+        <table className="w-full text-sm">
+          <thead className="text-white/35 text-[11px] uppercase tracking-wider">
             <tr>
-              <td colSpan={3} className="px-4 py-8 text-center text-white/50">No tax collected in this range</td>
+              <th className="px-4 py-2.5 text-left font-medium">Rate</th>
+              <th className="px-4 py-2.5 text-right font-medium">Percentage</th>
+              <th className="px-4 py-2.5 text-right font-medium">Tax Collected</th>
             </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-white/[0.06]">
+            {data.rows.map((row) => (
+              <tr key={row.rate_label} className="hover:bg-white/[0.03]">
+                <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.rate_label}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{row.percentage}%</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.tax_collected)}</td>
+              </tr>
+            ))}
+            {data.rows.length === 0 && (
+              <tr><td colSpan={3} className="px-4 py-8 text-center text-white/40">No tax collected in this range</td></tr>
+            )}
+          </tbody>
+        </table>
+      </DetailTable>
     </div>
   )
 }
@@ -634,59 +690,65 @@ function PartsTab({ range }: { range: DateRangePreset }) {
     )
   }
 
+  const accent = TAB_ACCENT.parts
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <MetricCard label="Revenue" value={fmtMoney(data.revenue)} />
-        <MetricCard label="Cost" value={fmtMoney(data.cost)} />
-        <MetricCard label="Profit" value={fmtMoney(data.profit)} />
-        <MetricCard label="Margin" value={`${data.margin_pct}%`} />
-      </div>
-      {data.rows.length > 0 && (
-        <ChartCard title="Parts Profitability by Invoice" subtitle="Revenue × margin %, sized by profit — spot underpriced parts jobs">
-          <ProfitabilityScatter
-            ros={data.rows.map((r) => ({
-              type: 'Part sale',
-              subtotal: parseFloat(r.revenue),
-              marginPct: parseFloat(r.margin_pct),
-              hours: parseFloat(r.profit),
-            }))}
-          />
-        </ChartCard>
-      )}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <span className="text-sm text-white/70">Grouped by invoice &middot; {data.rows.length} results</span>
-          <ExportButton onClick={handleExport} />
-        </div>
+      <Hero
+        label="Parts Margin"
+        value={`${data.margin_pct}%`}
+        sub={`${fmtMoney(data.profit)} profit on ${fmtMoney(data.revenue)} revenue`}
+        accent={accent}
+        insight="Each point is an invoice — low-margin points at high revenue are the underpriced parts jobs to fix."
+      >
+        {data.rows.length > 0 && (
+          <div className="h-56">
+            <ProfitabilityScatter
+              ros={data.rows.map((r) => ({
+                type: 'Part sale',
+                subtotal: parseFloat(r.revenue),
+                marginPct: parseFloat(r.margin_pct),
+                hours: parseFloat(r.profit),
+              }))}
+            />
+          </div>
+        )}
+      </Hero>
+
+      <StatStrip stats={[
+        { label: 'Revenue', value: fmtMoney(data.revenue) },
+        { label: 'Cost', value: fmtMoney(data.cost) },
+        { label: 'Profit', value: fmtMoney(data.profit) },
+        { label: 'Margin', value: `${data.margin_pct}%` },
+      ]} />
+
+      <DetailTable title="By invoice" count={data.rows.length} onExport={handleExport}>
         <table className="w-full text-sm">
-          <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+          <thead className="text-white/35 text-[11px] uppercase tracking-wider">
             <tr>
-              <th className="px-4 py-3 text-left font-medium">Invoice</th>
-              <th className="px-4 py-3 text-right font-medium">Revenue</th>
-              <th className="px-4 py-3 text-right font-medium">Cost</th>
-              <th className="px-4 py-3 text-right font-medium">Profit</th>
-              <th className="px-4 py-3 text-right font-medium">Margin</th>
+              <th className="px-4 py-2.5 text-left font-medium">Invoice</th>
+              <th className="px-4 py-2.5 text-right font-medium">Revenue</th>
+              <th className="px-4 py-2.5 text-right font-medium">Cost</th>
+              <th className="px-4 py-2.5 text-right font-medium">Profit</th>
+              <th className="px-4 py-2.5 text-right font-medium">Margin</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/10">
+          <tbody className="divide-y divide-white/[0.06]">
             {data.rows.map((row) => (
-              <tr key={row.invoice_number} className="hover:bg-white/5">
-                <td className="px-4 py-3 text-white font-medium">{row.invoice_number}</td>
-                <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.revenue)}</td>
-                <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.cost)}</td>
-                <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.profit)}</td>
-                <td className="px-4 py-3 text-right text-white/70">{row.margin_pct}%</td>
+              <tr key={row.invoice_number} className="hover:bg-white/[0.03]">
+                <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.invoice_number}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.revenue)}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.cost)}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.profit)}</td>
+                <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{row.margin_pct}%</td>
               </tr>
             ))}
             {data.rows.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-white/50">No part sales in this range</td>
-              </tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-white/40">No part sales in this range</td></tr>
             )}
           </tbody>
         </table>
-      </div>
+      </DetailTable>
     </div>
   )
 }
@@ -709,59 +771,65 @@ function InventoryTab() {
     )
   }
 
+  const accent = TAB_ACCENT.inventory
+  const ranked = [...data.rows].sort((a, b) => parseFloat(b.total_value) - parseFloat(a.total_value))
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <MetricCard label="Part Value" value={fmtMoney(data.part_value)} />
-        <MetricCard label="Total Value" value={fmtMoney(data.total_value)} />
-      </div>
-      {data.rows.length > 0 && (
-        <ChartCard title="Top Parts by Inventory Value" height={380} fit>
-          <RankedBar
-            data={[...data.rows].sort((a, b) => parseFloat(b.total_value) - parseFloat(a.total_value)).slice(0, 10)
-              .map((r) => ({ label: r.name, value: parseFloat(r.total_value) }))}
-            dataKey="value" nameKey="label"
-            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
-            tooltipFormatter={(v) => '$' + v.toLocaleString()}
-          />
-        </ChartCard>
-      )}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <span className="text-sm text-white/70">{data.rows.length} parts in stock</span>
-          <ExportButton onClick={handleExport} />
-        </div>
+      <Hero
+        label="Capital Tied Up in Parts"
+        value={fmtMoney(data.total_value)}
+        sub={`${data.rows.length} SKUs in stock`}
+        accent={accent}
+        insight="The biggest SKUs by value are where dead stock hides — check turnover on anything near the top that isn't moving."
+      >
+        {ranked.length > 0 && (
+          <div className="h-56">
+            <RankedBar
+              accent={accent}
+              data={ranked.slice(0, 8).map((r) => ({ label: r.name, value: parseFloat(r.total_value) }))}
+              dataKey="value" nameKey="label"
+              tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            />
+          </div>
+        )}
+      </Hero>
+
+      <StatStrip stats={[
+        { label: 'Part Value', value: fmtMoney(data.part_value) },
+        { label: 'Total Value', value: fmtMoney(data.total_value) },
+      ]} />
+
+      <DetailTable title="Full inventory" count={data.rows.length} onExport={handleExport}>
         <div className="max-h-[32rem] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider sticky top-0">
+            <thead className="text-white/35 text-[11px] uppercase tracking-wider sticky top-0 bg-[#12161d]">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Part</th>
-                <th className="px-4 py-3 text-right font-medium">Quantity</th>
-                <th className="px-4 py-3 text-right font-medium">Unit Cost</th>
-                <th className="px-4 py-3 text-right font-medium">Total Value</th>
+                <th className="px-4 py-2.5 text-left font-medium">Part</th>
+                <th className="px-4 py-2.5 text-right font-medium">Quantity</th>
+                <th className="px-4 py-2.5 text-right font-medium">Unit Cost</th>
+                <th className="px-4 py-2.5 text-right font-medium">Total Value</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10">
+            <tbody className="divide-y divide-white/[0.06]">
               {data.rows.map((row) => (
-                <tr key={row.sku} className="hover:bg-white/5">
-                  <td className="px-4 py-3">
-                    <div className="text-white font-medium">{row.sku}</div>
-                    <div className="text-xs text-white/50">{row.name}</div>
+                <tr key={row.sku} className="hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5">
+                    <div className="text-[13px] text-white/85 font-medium">{row.sku}</div>
+                    <div className="text-xs text-white/40">{row.name}</div>
                   </td>
-                  <td className="px-4 py-3 text-right text-white/70">{row.quantity}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.unit_cost)}</td>
-                  <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.total_value)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{row.quantity}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.unit_cost)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.total_value)}</td>
                 </tr>
               ))}
               {data.rows.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-white/50">No inventory on file</td>
-                </tr>
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-white/40">No inventory on file</td></tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </DetailTable>
     </div>
   )
 }
@@ -784,57 +852,64 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
     )
   }
 
+  const accent = TAB_ACCENT.serviceTypes
+  const ranked = [...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged))
+  const top = ranked[0]
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard label="Service Items" value={fmtNumber(data.service_items)} />
-        <MetricCard label="Hours Billed" value={`${fmtNumber(data.hours_billed)} hrs`} />
-        <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
-      </div>
-      {data.rows.length > 0 && (
-        <ChartCard title="Top Service Types by Charges" height={380} fit>
-          <RankedBar
-            data={[...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged)).slice(0, 10)
-              .map((r) => ({ label: r.name, value: parseFloat(r.total_charged) }))}
-            dataKey="value" nameKey="label"
-            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
-            tooltipFormatter={(v) => '$' + v.toLocaleString()}
-          />
-        </ChartCard>
-      )}
-      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <span className="text-sm text-white/70">{data.rows.length} service types</span>
-          <ExportButton onClick={handleExport} />
-        </div>
+      <Hero
+        label="Most-billed Service"
+        value={top ? top.name : '—'}
+        sub={top ? `${fmtMoney(top.total_charged)} charged` : undefined}
+        accent={accent}
+        insight="Your bread-and-butter jobs — the top few by charges are where pricing and speed matter most."
+      >
+        {ranked.length > 0 && (
+          <div className="h-56">
+            <RankedBar
+              accent={accent}
+              data={ranked.slice(0, 8).map((r) => ({ label: r.name, value: parseFloat(r.total_charged) }))}
+              dataKey="value" nameKey="label"
+              tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            />
+          </div>
+        )}
+      </Hero>
+
+      <StatStrip stats={[
+        { label: 'Service Items', value: fmtNumber(data.service_items) },
+        { label: 'Hours Billed', value: `${fmtNumber(data.hours_billed)} hrs` },
+        { label: 'Total Charged', value: fmtMoney(data.total_charged) },
+      ]} />
+
+      <DetailTable title="All service types" count={data.rows.length} onExport={handleExport}>
         <div className="max-h-[32rem] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider sticky top-0">
+            <thead className="text-white/35 text-[11px] uppercase tracking-wider sticky top-0 bg-[#12161d]">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="px-4 py-3 text-right font-medium">Quantity</th>
-                <th className="px-4 py-3 text-right font-medium">Hours Billed</th>
-                <th className="px-4 py-3 text-right font-medium">Total Charged</th>
+                <th className="px-4 py-2.5 text-left font-medium">Name</th>
+                <th className="px-4 py-2.5 text-right font-medium">Quantity</th>
+                <th className="px-4 py-2.5 text-right font-medium">Hours Billed</th>
+                <th className="px-4 py-2.5 text-right font-medium">Total Charged</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/10">
+            <tbody className="divide-y divide-white/[0.06]">
               {data.rows.map((row) => (
-                <tr key={row.name} className="hover:bg-white/5">
-                  <td className="px-4 py-3 text-white font-medium">{row.name}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{row.quantity}</td>
-                  <td className="px-4 py-3 text-right text-white/70">{fmtNumber(row.hours_billed)}</td>
-                  <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.total_charged)}</td>
+                <tr key={row.name} className="hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">{row.name}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{row.quantity}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtNumber(row.hours_billed)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.total_charged)}</td>
                 </tr>
               ))}
               {data.rows.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-white/50">No service items in this range</td>
-                </tr>
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-white/40">No service items in this range</td></tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </DetailTable>
     </div>
   )
 }

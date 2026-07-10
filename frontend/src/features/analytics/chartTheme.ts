@@ -59,3 +59,21 @@ export const CHART = {
 export function categoricalColor(index: number): string {
   return index < CATEGORICAL.length ? CATEGORICAL[index] : SERIES.neutral
 }
+
+/**
+ * Per-tab accent colours (the "Visual Hierarchy" handoff requires every tab to
+ * own a distinct accent so it's identifiable by colour alone). These are
+ * validated near-equivalents of the handoff's hexes — same hue family, snapped
+ * into the dark lightness band so they read correctly (the handoff's literal
+ * #34d399 / #facc15 / etc. were out-of-band on the dark surface). Dashboard
+ * uses the user's live theme accent, so it's resolved at the call site.
+ */
+export const TAB_ACCENT = {
+  sales: '#3987e5', // blue   (handoff #60a5fa)
+  fees: '#d95926', // orange (handoff #fb923c)
+  tax: '#c98500', // amber  (handoff #facc15)
+  parts: '#199e70', // emerald(handoff #34d399)
+  inventory: '#1c9dd4', // sky    (handoff #38bdf8)
+  serviceTypes: '#6366F1', // indigo (handoff #818cf8)
+  fleet: '#d95926', // orange (handoff #fb923c)
+} as const

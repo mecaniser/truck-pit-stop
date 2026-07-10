@@ -129,14 +129,17 @@ export function ProfitabilityScatter({ ros }: { ros: { type: string; subtotal: n
  * painted inside a light-coloured bar, and gives comfortable row spacing.
  */
 export function RankedBar<T extends Record<string, unknown>>({
-  data, dataKey, nameKey, colorFn, tickFormatter,
+  data, dataKey, nameKey, colorFn, tickFormatter, accent,
 }: {
   data: T[]; dataKey: string; nameKey: string
   colorFn?: (d: T) => string; tickFormatter?: (v: number) => string
+  /** Bar fill; defaults to the user's theme accent. */
+  accent?: string
   /** kept for API compatibility; unused in the HTML variant */
   tooltipFormatter?: TipFormatter
 }) {
   const { accentColors } = useTheme()
+  const barColor = accent ?? accentColors[500]
   const valueFmt = tickFormatter ?? ((v: number) => String(v))
   const max = Math.max(...data.map((d) => Number(d[dataKey]) || 0), 1)
 
@@ -146,7 +149,7 @@ export function RankedBar<T extends Record<string, unknown>>({
         const value = Number(d[dataKey]) || 0
         const name = String(d[nameKey] ?? '')
         const width = Math.max(2, (value / max) * 100)
-        const fill = colorFn ? colorFn(d) : accentColors[500]
+        const fill = colorFn ? colorFn(d) : barColor
         return (
           <div key={i} title={name} className="min-w-0">
             <div className="mb-1 flex items-baseline justify-between gap-3">
