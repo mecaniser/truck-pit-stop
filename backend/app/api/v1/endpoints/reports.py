@@ -88,14 +88,17 @@ class ReportsDashboardResponse(BaseModel):
 
 
 def _week_buckets(rng: DateRange) -> List[tuple[date, date, str]]:
-    """Split the range into calendar weeks (Mon-Sun) for the trend charts,
-    labelled like ETS's "W27" (ISO week number)."""
+    """Split the range into calendar weeks (Mon-Sun) for the trend charts.
+    Label with the ISO week number plus the week's start date (e.g.
+    "W27 · Jul 7") so it's anchorable — a bare week number is meaningless to
+    most people and the dashboard shows no dates otherwise."""
     buckets = []
     cursor = rng.start - timedelta(days=rng.start.weekday())
     while cursor <= rng.end:
         week_end = cursor + timedelta(days=6)
         iso_week = cursor.isocalendar()[1]
-        buckets.append((cursor, week_end, f"W{iso_week}"))
+        label = f"W{iso_week} · {cursor.strftime('%b %-d')}"
+        buckets.append((cursor, week_end, label))
         cursor = week_end + timedelta(days=1)
     return buckets
 

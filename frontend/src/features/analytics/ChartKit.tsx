@@ -275,7 +275,8 @@ export function QuoteFunnel({ funnel }: { funnel: { sent: number; viewed?: numbe
   ]
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <FunnelChart margin={{ top: 6, right: 20, left: 20, bottom: 6 }}>
+      {/* Extra right margin so the in-segment "Name — value" labels never clip. */}
+      <FunnelChart margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
         <Tooltip content={({ active, payload }) => {
           if (!active || !payload || !payload.length) return null
           const p = payload[0].payload as { name: string; value: number }
@@ -284,8 +285,22 @@ export function QuoteFunnel({ funnel }: { funnel: { sent: number; viewed?: numbe
           </div>
         }} />
         <Funnel dataKey="value" data={stages} isAnimationActive={false}>
-          <LabelList position="right" fill="#e5e7eb" stroke="none" dataKey="name" fontSize={12.5} />
-          <LabelList position="left" fill="#9ca3af" stroke="none" dataKey="value" fontSize={12.5} />
+          {/* Name + value together, centred inside the segment — never spills off
+              the edge or collides with the funnel taper. */}
+          <LabelList
+            position="center" stroke="none" fontSize={12.5} fontWeight={600}
+            content={(p: object) => {
+              const { x = 0, y = 0, width = 0, height = 0, value, index = 0 } =
+                p as { x?: number; y?: number; width?: number; height?: number; value?: number; index?: number }
+              const stage = stages[index]
+              if (!stage) return null
+              return (
+                <text x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={12.5} fontWeight={600}>
+                  {stage.name} · {value}
+                </text>
+              )
+            }}
+          />
         </Funnel>
       </FunnelChart>
     </ResponsiveContainer>
