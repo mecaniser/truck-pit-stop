@@ -11,7 +11,7 @@ import InternalInvoiceList from './InternalInvoiceList'
 import {
   ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
 } from '../analytics/ChartKit'
-import { SERIES } from '../analytics/chartTheme'
+import { SERIES, CATEGORICAL } from '../analytics/chartTheme'
 
 // ============ SHARED TYPES ============
 
@@ -400,6 +400,7 @@ function EmptyChart({ loading }: { loading: boolean }) {
 // ============ TAB: SALES ============
 
 function SalesTab({ range }: { range: DateRangePreset }) {
+  const { accentColors } = useTheme()
   const { data, isLoading } = useQuery<ReportsSalesResponse>({
     queryKey: ['reports-sales', range],
     queryFn: async () => (await api.get('/reports/sales', { params: { range } })).data,
@@ -418,13 +419,26 @@ function SalesTab({ range }: { range: DateRangePreset }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-        <MetricCard label="Net Sales" value={fmtMoney(data.summary.net_sales)} chartType="line" color="#60a5fa" />
-        <MetricCard label="Labor" value={fmtMoney(data.summary.labor)} chartType="line" color="#a78bfa" />
-        <MetricCard label="Parts" value={fmtMoney(data.summary.parts)} chartType="line" color="#34d399" />
-        <MetricCard label="Discounts" value={fmtMoney(data.summary.discounts)} chartType="line" color="#f87171" />
-        <MetricCard label="Fees" value={fmtMoney(data.summary.fees)} chartType="line" color="#fb923c" />
-        <MetricCard label="Sales Tax" value={fmtMoney(data.summary.sales_tax)} chartType="line" color="#facc15" />
+        <MetricCard label="Net Sales" value={fmtMoney(data.summary.net_sales)} chartType="line" color={accentColors[500]} />
+        <MetricCard label="Labor" value={fmtMoney(data.summary.labor)} chartType="line" color={CATEGORICAL[4]} />
+        <MetricCard label="Parts" value={fmtMoney(data.summary.parts)} chartType="line" color={SERIES.parts} />
+        <MetricCard label="Discounts" value={fmtMoney(data.summary.discounts)} chartType="line" color={SERIES.danger} />
+        <MetricCard label="Fees" value={fmtMoney(data.summary.fees)} chartType="line" color={SERIES.margin} />
+        <MetricCard label="Sales Tax" value={fmtMoney(data.summary.sales_tax)} chartType="line" color={CATEGORICAL[2]} />
       </div>
+
+      {data.rows.length > 0 && (
+        <ChartCard title="Top Customers by Net Sales" subtitle={`Top ${Math.min(10, data.rows.length)} of ${data.rows.length}`}>
+          <RankedBar
+            data={[...data.rows].sort((a, b) => parseFloat(b.net_sales) - parseFloat(a.net_sales)).slice(0, 10)
+              .map((r) => ({ label: r.group_label, value: parseFloat(r.net_sales) }))}
+            dataKey="value"
+            nameKey="label"
+            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            tooltipFormatter={(v) => '$' + v.toLocaleString()}
+          />
+        </ChartCard>
+      )}
 
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -494,6 +508,17 @@ function FeesTab({ range }: { range: DateRangePreset }) {
         <MetricCard label="Average Charge" value={fmtMoney(data.average_charge)} />
         <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
       </div>
+      {data.rows.length > 0 && (
+        <ChartCard title="Fees by Total Charged">
+          <RankedBar
+            data={[...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged)).slice(0, 10)
+              .map((r) => ({ label: r.fee_name, value: parseFloat(r.total_charged) }))}
+            dataKey="value" nameKey="label"
+            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            tooltipFormatter={(v) => '$' + v.toLocaleString()}
+          />
+        </ChartCard>
+      )}
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         <div className="flex items-center justify-end px-4 py-3 border-b border-white/10">
           <ExportButton onClick={handleExport} />
@@ -547,6 +572,18 @@ function TaxTab({ range }: { range: DateRangePreset }) {
   }
 
   return (
+    <div className="space-y-4">
+    {data.rows.length > 0 && (
+      <ChartCard title="Tax Collected by Rate">
+        <RankedBar
+          data={[...data.rows].sort((a, b) => parseFloat(b.tax_collected) - parseFloat(a.tax_collected)).slice(0, 10)
+            .map((r) => ({ label: r.rate_label, value: parseFloat(r.tax_collected) }))}
+          dataKey="value" nameKey="label"
+          tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+          tooltipFormatter={(v) => '$' + v.toLocaleString()}
+        />
+      </ChartCard>
+    )}
     <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
       <div className="flex items-center justify-end px-4 py-3 border-b border-white/10">
         <ExportButton onClick={handleExport} />
@@ -574,6 +611,7 @@ function TaxTab({ range }: { range: DateRangePreset }) {
           )}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }
@@ -604,6 +642,18 @@ function PartsTab({ range }: { range: DateRangePreset }) {
         <MetricCard label="Profit" value={fmtMoney(data.profit)} />
         <MetricCard label="Margin" value={`${data.margin_pct}%`} />
       </div>
+      {data.rows.length > 0 && (
+        <ChartCard title="Parts Profitability by Invoice" subtitle="Revenue × margin %, sized by profit — spot underpriced parts jobs">
+          <ProfitabilityScatter
+            ros={data.rows.map((r) => ({
+              type: 'Part sale',
+              subtotal: parseFloat(r.revenue),
+              marginPct: parseFloat(r.margin_pct),
+              hours: parseFloat(r.profit),
+            }))}
+          />
+        </ChartCard>
+      )}
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-sm text-white/70">Grouped by invoice &middot; {data.rows.length} results</span>
@@ -665,6 +715,17 @@ function InventoryTab() {
         <MetricCard label="Part Value" value={fmtMoney(data.part_value)} />
         <MetricCard label="Total Value" value={fmtMoney(data.total_value)} />
       </div>
+      {data.rows.length > 0 && (
+        <ChartCard title="Top Parts by Inventory Value">
+          <RankedBar
+            data={[...data.rows].sort((a, b) => parseFloat(b.total_value) - parseFloat(a.total_value)).slice(0, 10)
+              .map((r) => ({ label: r.name, value: parseFloat(r.total_value) }))}
+            dataKey="value" nameKey="label"
+            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            tooltipFormatter={(v) => '$' + v.toLocaleString()}
+          />
+        </ChartCard>
+      )}
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-sm text-white/70">{data.rows.length} parts in stock</span>
@@ -730,6 +791,17 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
         <MetricCard label="Hours Billed" value={`${fmtNumber(data.hours_billed)} hrs`} />
         <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
       </div>
+      {data.rows.length > 0 && (
+        <ChartCard title="Top Service Types by Charges">
+          <RankedBar
+            data={[...data.rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged)).slice(0, 10)
+              .map((r) => ({ label: r.name, value: parseFloat(r.total_charged) }))}
+            dataKey="value" nameKey="label"
+            tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+            tooltipFormatter={(v) => '$' + v.toLocaleString()}
+          />
+        </ChartCard>
+      )}
       <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-sm text-white/70">{data.rows.length} service types</span>
