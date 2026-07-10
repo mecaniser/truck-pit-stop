@@ -348,10 +348,12 @@ function DashboardTab({ range }: { range: DateRangePreset }) {
                 contentStyle={{ backgroundColor: '#151b26', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                 labelStyle={{ color: '#9ca3af' }}
                 formatter={(v, n) => [fmtMoney(Number(v ?? 0)), n] as [string, typeof n]}
-                cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                cursor={false}
+                offset={18}
+                allowEscapeViewBox={{ x: true, y: false }}
               />
-              <Bar dataKey="labor" name="Labor" stackId="r" fill={SERIES.parts} maxBarSize={30} isAnimationActive={false} />
-              <Bar dataKey="parts" name="Parts" stackId="r" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} />
+              <Bar dataKey="labor" name="Labor" stackId="r" fill={SERIES.parts} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: SERIES.parts, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
+              <Bar dataKey="parts" name="Parts" stackId="r" fill={accent} radius={[4, 4, 0, 0]} maxBarSize={30} isAnimationActive={false} activeBar={{ fill: accent, stroke: '#fff', strokeOpacity: 0.35, strokeWidth: 1 }} />
             </BarChart>
           </ResponsiveContainer>
         </div>
