@@ -1,424 +1,766 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
-  TrendingUp, TrendingDown, Users, DollarSign,
-  ShoppingCart, Target, Activity, Wrench, Clock
-} from 'lucide-react'
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from 'recharts'
+import { Download, Loader2 } from 'lucide-react'
 import api from '../../lib/api'
+import { useTheme } from '../../contexts/ThemeContext'
 import InternalInvoiceList from './InternalInvoiceList'
 
-const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'internal', label: 'Internal Fleet Costs' },
-] as const
-type TabId = typeof TABS[number]['id']
-interface DashboardStats {
-  total_customers: number
-  total_vehicles: number
-  total_repair_orders: number
-  orders_by_status: Array<{ status: string; count: number }>
-  active_orders: number
-  awaiting_approval: number
-  pending_invoices: number
-  low_stock_count: number
-  revenue: {
-    today: string
-    this_week: string
-    this_month: string
-    total_paid_orders: number
-    today_parts_margin: string
-    this_week_parts_margin: string
-    this_month_parts_margin: string
-    today_gross_profit: string
-    this_week_gross_profit: string
-    this_month_gross_profit: string
-    today_ppi: string
-    this_week_ppi: string
-    this_month_ppi: string
-  }
-  mechanic_workload?: Array<{
-    mechanic_id: string
-    mechanic_name: string
-    assigned_count: number
-    in_progress_count: number
-  }>
-  internal_costs?: {
-    today: string
-    this_week: string
-    this_month: string
-    total_internal_invoices: number
-  }
+// ============ SHARED TYPES ============
+
+type DateRangePreset =
+  | 'this_year' | 'last_year'
+  | 'this_quarter' | 'last_quarter'
+  | 'this_month' | 'last_month'
+  | 'this_week' | 'last_week'
+  | 'custom'
+
+const RANGE_LABELS: Record<DateRangePreset, string> = {
+  this_year: 'This Year',
+  last_year: 'Last Year',
+  this_quarter: 'This Quarter',
+  last_quarter: 'Last Quarter',
+  this_month: 'This Month',
+  last_month: 'Last Month',
+  this_week: 'This Week',
+  last_week: 'Last Week',
+  custom: 'Custom',
 }
 
+interface TrendPoint {
+  label: string
+  value: string
+}
+
+interface DashboardMetric {
+  value: string
+  trend: TrendPoint[]
+}
+
+interface ReportsDashboardResponse {
+  range_start: string
+  range_end: string
+  revenue: DashboardMetric
+  labor_revenue: DashboardMetric
+  part_revenue: DashboardMetric
+  fees_revenue: DashboardMetric
+  parts_profit: DashboardMetric
+  inventory_value: DashboardMetric
+  invoiced_hours: DashboardMetric
+  part_sales_finalized: DashboardMetric
+  services_finalized: DashboardMetric
+}
+
+interface SalesGroupRow {
+  group_key: string
+  group_label: string
+  labor: string
+  parts: string
+  fees: string
+  sales_tax: string
+  discounts: string
+  net_sales: string
+}
+
+interface ReportsSalesResponse {
+  summary: {
+    net_sales: string
+    labor: string
+    parts: string
+    discounts: string
+    fees: string
+    sales_tax: string
+  }
+  rows: SalesGroupRow[]
+}
+
+interface FeeRow {
+  fee_name: string
+  times_added: number
+  average_charge: string
+  total_charged: string
+}
+
+interface ReportsFeesResponse {
+  times_added: number
+  average_charge: string
+  total_charged: string
+  rows: FeeRow[]
+}
+
+interface TaxRow {
+  rate_label: string
+  percentage: string
+  tax_collected: string
+}
+
+interface ReportsTaxResponse {
+  rows: TaxRow[]
+}
+
+interface PartRevenueRow {
+  invoice_number: string
+  revenue: string
+  cost: string
+  profit: string
+  margin_pct: string
+}
+
+interface ReportsPartsResponse {
+  revenue: string
+  cost: string
+  profit: string
+  margin_pct: string
+  rows: PartRevenueRow[]
+}
+
+interface InventoryRow {
+  sku: string
+  name: string
+  quantity: string
+  unit_cost: string
+  total_value: string
+}
+
+interface ReportsInventoryResponse {
+  part_value: string
+  total_value: string
+  rows: InventoryRow[]
+}
+
+interface ServiceTypeRow {
+  name: string
+  quantity: number
+  hours_billed: string
+  total_charged: string
+}
+
+interface ReportsServiceTypesResponse {
+  service_items: number
+  hours_billed: string
+  total_charged: string
+  rows: ServiceTypeRow[]
+}
+
+// ============ HELPERS ============
+
+const fmtMoney = (value: string | number | undefined): string => {
+  const n = parseFloat(String(value ?? 0))
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+const fmtNumber = (value: string | number | undefined): string => {
+  const n = parseFloat(String(value ?? 0))
+  return n.toLocaleString('en-US', { maximumFractionDigits: 1 })
+}
+
+function exportRowsToCsv(filename: string, headers: string[], rows: (string | number)[][]) {
+  const escape = (v: string | number) => {
+    const s = String(v)
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = [headers, ...rows].map((r) => r.map(escape).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ============ DATE RANGE PICKER ============
+
+function DateRangePicker({
+  value,
+  onChange,
+}: {
+  value: DateRangePreset
+  onChange: (preset: DateRangePreset) => void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const options: DateRangePreset[] = [
+    'this_year', 'last_year', 'this_quarter', 'last_quarter',
+    'this_month', 'last_month', 'this_week', 'last_week',
+  ]
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((o) => !o)}
+        className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+      >
+        {RANGE_LABELS[value]}
+      </button>
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+          <div className="absolute z-50 mt-1 w-44 rounded-lg bg-gray-900 border border-white/20 shadow-xl py-1">
+            {options.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => {
+                  onChange(opt)
+                  setIsOpen(false)
+                }}
+                className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                  opt === value ? 'text-white bg-white/10' : 'text-gray-200 hover:bg-white/5'
+                }`}
+              >
+                {RANGE_LABELS[opt]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ============ SUMMARY CARD ============
+
+function MetricCard({
+  label,
+  value,
+  trend,
+  color = '#60a5fa',
+  chartType = 'bar',
+}: {
+  label: string
+  value: string
+  trend?: TrendPoint[]
+  color?: string
+  chartType?: 'bar' | 'line'
+}) {
+  const chartData = (trend || []).map((p) => ({ label: p.label, value: parseFloat(p.value) }))
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+      <p className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-2xl font-bold text-white mb-3">{value}</p>
+      {chartData.length > 0 && (
+        <div className="h-24">
+          <ResponsiveContainer width="100%" height="100%">
+            {chartType === 'line' ? (
+              <LineChart data={chartData}>
+                <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: '#e5e7eb' }}
+                  formatter={(v) => fmtMoney(v as number)}
+                />
+                <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            ) : (
+              <BarChart data={chartData}>
+                <XAxis dataKey="label" tick={{ fill: '#9ca3af', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: '#e5e7eb' }}
+                  formatter={(v) => fmtMoney(v as number)}
+                />
+                <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LoadingBlock() {
+  return (
+    <div className="flex items-center justify-center gap-2 text-white/50 text-sm py-16">
+      <Loader2 className="w-4 h-4 animate-spin" />
+      Loading report…
+    </div>
+  )
+}
+
+function ExportButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+    >
+      <Download className="w-4 h-4" />
+      Export
+    </button>
+  )
+}
+
+// ============ TAB: DASHBOARD ============
+
+function DashboardTab({ range }: { range: DateRangePreset }) {
+  const { accentColors } = useTheme()
+  const { data, isLoading } = useQuery<ReportsDashboardResponse>({
+    queryKey: ['reports-dashboard', range],
+    queryFn: async () => (await api.get('/reports/dashboard', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+      <MetricCard label="Revenue" value={fmtMoney(data.revenue.value)} trend={data.revenue.trend} color={accentColors[500]} />
+      <MetricCard label="Labor Revenue" value={fmtMoney(data.labor_revenue.value)} trend={data.labor_revenue.trend} color="#a78bfa" />
+      <MetricCard label="Part Revenue" value={fmtMoney(data.part_revenue.value)} trend={data.part_revenue.trend} color="#34d399" />
+      <MetricCard label="Fees Revenue" value={fmtMoney(data.fees_revenue.value)} trend={data.fees_revenue.trend} color="#fb923c" />
+      <MetricCard label="Parts Profit" value={fmtMoney(data.parts_profit.value)} trend={data.parts_profit.trend} color="#2dd4bf" />
+      <MetricCard label="Inventory Value" value={fmtMoney(data.inventory_value.value)} chartType="line" color="#38bdf8" />
+      <MetricCard label="Invoiced Hours" value={`${fmtNumber(data.invoiced_hours.value)} hrs`} trend={data.invoiced_hours.trend} color="#f87171" />
+      <MetricCard label="Part Sales Finalized" value={fmtNumber(data.part_sales_finalized.value)} trend={data.part_sales_finalized.trend} color="#f472b6" />
+      <MetricCard label="Services Finalized" value={fmtNumber(data.services_finalized.value)} trend={data.services_finalized.trend} color="#818cf8" />
+    </div>
+  )
+}
+
+// ============ TAB: SALES ============
+
+function SalesTab({ range }: { range: DateRangePreset }) {
+  const { data, isLoading } = useQuery<ReportsSalesResponse>({
+    queryKey: ['reports-sales', range],
+    queryFn: async () => (await api.get('/reports/sales', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'sales-report.csv',
+      ['Customer', 'Labor', 'Parts', 'Fees', 'Sales Tax', 'Discounts', 'Net Sales'],
+      data.rows.map((r) => [r.group_label, r.labor, r.parts, r.fees, r.sales_tax, r.discounts, r.net_sales])
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+        <MetricCard label="Net Sales" value={fmtMoney(data.summary.net_sales)} chartType="line" color="#60a5fa" />
+        <MetricCard label="Labor" value={fmtMoney(data.summary.labor)} chartType="line" color="#a78bfa" />
+        <MetricCard label="Parts" value={fmtMoney(data.summary.parts)} chartType="line" color="#34d399" />
+        <MetricCard label="Discounts" value={fmtMoney(data.summary.discounts)} chartType="line" color="#f87171" />
+        <MetricCard label="Fees" value={fmtMoney(data.summary.fees)} chartType="line" color="#fb923c" />
+        <MetricCard label="Sales Tax" value={fmtMoney(data.summary.sales_tax)} chartType="line" color="#facc15" />
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <span className="text-sm text-white/70">Grouped by customer &middot; {data.rows.length} results</span>
+          <ExportButton onClick={handleExport} />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Customer</th>
+                <th className="px-4 py-3 text-right font-medium">Labor</th>
+                <th className="px-4 py-3 text-right font-medium">Parts</th>
+                <th className="px-4 py-3 text-right font-medium">Fees</th>
+                <th className="px-4 py-3 text-right font-medium">Sales Tax</th>
+                <th className="px-4 py-3 text-right font-medium">Discounts</th>
+                <th className="px-4 py-3 text-right font-medium">Net Sales</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {data.rows.map((row) => (
+                <tr key={row.group_key} className="hover:bg-white/5">
+                  <td className="px-4 py-3 text-white font-medium">{row.group_label}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.labor)}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.parts)}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.fees)}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.sales_tax)}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.discounts)}</td>
+                  <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.net_sales)}</td>
+                </tr>
+              ))}
+              {data.rows.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-white/50">No sales in this range</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============ TAB: FEES ============
+
+function FeesTab({ range }: { range: DateRangePreset }) {
+  const { data, isLoading } = useQuery<ReportsFeesResponse>({
+    queryKey: ['reports-fees', range],
+    queryFn: async () => (await api.get('/reports/fees', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'fees-report.csv',
+      ['Fee Name', 'Times Added', 'Average Charge', 'Total Charged'],
+      data.rows.map((r) => [r.fee_name, r.times_added, r.average_charge, r.total_charged])
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <MetricCard label="Times Added" value={fmtNumber(data.times_added)} />
+        <MetricCard label="Average Charge" value={fmtMoney(data.average_charge)} />
+        <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-end px-4 py-3 border-b border-white/10">
+          <ExportButton onClick={handleExport} />
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">Fee Name</th>
+              <th className="px-4 py-3 text-right font-medium">Times Added</th>
+              <th className="px-4 py-3 text-right font-medium">Average Charge</th>
+              <th className="px-4 py-3 text-right font-medium">Total Charged</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {data.rows.map((row) => (
+              <tr key={row.fee_name} className="hover:bg-white/5">
+                <td className="px-4 py-3 text-white font-medium">{row.fee_name}</td>
+                <td className="px-4 py-3 text-right text-white/70">{row.times_added}</td>
+                <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.average_charge)}</td>
+                <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.total_charged)}</td>
+              </tr>
+            ))}
+            {data.rows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-white/50">No fees charged in this range</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ============ TAB: SALES TAX ============
+
+function TaxTab({ range }: { range: DateRangePreset }) {
+  const { data, isLoading } = useQuery<ReportsTaxResponse>({
+    queryKey: ['reports-tax', range],
+    queryFn: async () => (await api.get('/reports/tax', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'sales-tax-report.csv',
+      ['Rate', 'Percentage', 'Tax Collected'],
+      data.rows.map((r) => [r.rate_label, r.percentage, r.tax_collected])
+    )
+  }
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-end px-4 py-3 border-b border-white/10">
+        <ExportButton onClick={handleExport} />
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+          <tr>
+            <th className="px-4 py-3 text-left font-medium">Rate</th>
+            <th className="px-4 py-3 text-right font-medium">Percentage</th>
+            <th className="px-4 py-3 text-right font-medium">Tax Collected</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/10">
+          {data.rows.map((row) => (
+            <tr key={row.rate_label} className="hover:bg-white/5">
+              <td className="px-4 py-3 text-white font-medium">{row.rate_label}</td>
+              <td className="px-4 py-3 text-right text-white/70">{row.percentage}%</td>
+              <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.tax_collected)}</td>
+            </tr>
+          ))}
+          {data.rows.length === 0 && (
+            <tr>
+              <td colSpan={3} className="px-4 py-8 text-center text-white/50">No tax collected in this range</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ============ TAB: PART REVENUE ============
+
+function PartsTab({ range }: { range: DateRangePreset }) {
+  const { data, isLoading } = useQuery<ReportsPartsResponse>({
+    queryKey: ['reports-parts', range],
+    queryFn: async () => (await api.get('/reports/parts', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'part-revenue-report.csv',
+      ['Invoice', 'Revenue', 'Cost', 'Profit', 'Margin %'],
+      data.rows.map((r) => [r.invoice_number, r.revenue, r.cost, r.profit, r.margin_pct])
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <MetricCard label="Revenue" value={fmtMoney(data.revenue)} />
+        <MetricCard label="Cost" value={fmtMoney(data.cost)} />
+        <MetricCard label="Profit" value={fmtMoney(data.profit)} />
+        <MetricCard label="Margin" value={`${data.margin_pct}%`} />
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <span className="text-sm text-white/70">Grouped by invoice &middot; {data.rows.length} results</span>
+          <ExportButton onClick={handleExport} />
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="px-4 py-3 text-left font-medium">Invoice</th>
+              <th className="px-4 py-3 text-right font-medium">Revenue</th>
+              <th className="px-4 py-3 text-right font-medium">Cost</th>
+              <th className="px-4 py-3 text-right font-medium">Profit</th>
+              <th className="px-4 py-3 text-right font-medium">Margin</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {data.rows.map((row) => (
+              <tr key={row.invoice_number} className="hover:bg-white/5">
+                <td className="px-4 py-3 text-white font-medium">{row.invoice_number}</td>
+                <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.revenue)}</td>
+                <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.cost)}</td>
+                <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.profit)}</td>
+                <td className="px-4 py-3 text-right text-white/70">{row.margin_pct}%</td>
+              </tr>
+            ))}
+            {data.rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-white/50">No part sales in this range</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ============ TAB: INVENTORY ============
+
+function InventoryTab() {
+  const { data, isLoading } = useQuery<ReportsInventoryResponse>({
+    queryKey: ['reports-inventory'],
+    queryFn: async () => (await api.get('/reports/inventory')).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'inventory-value-report.csv',
+      ['SKU', 'Part', 'Quantity', 'Unit Cost', 'Total Value'],
+      data.rows.map((r) => [r.sku, r.name, r.quantity, r.unit_cost, r.total_value])
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <MetricCard label="Part Value" value={fmtMoney(data.part_value)} />
+        <MetricCard label="Total Value" value={fmtMoney(data.total_value)} />
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <span className="text-sm text-white/70">{data.rows.length} parts in stock</span>
+          <ExportButton onClick={handleExport} />
+        </div>
+        <div className="max-h-[32rem] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider sticky top-0">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Part</th>
+                <th className="px-4 py-3 text-right font-medium">Quantity</th>
+                <th className="px-4 py-3 text-right font-medium">Unit Cost</th>
+                <th className="px-4 py-3 text-right font-medium">Total Value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {data.rows.map((row) => (
+                <tr key={row.sku} className="hover:bg-white/5">
+                  <td className="px-4 py-3">
+                    <div className="text-white font-medium">{row.sku}</div>
+                    <div className="text-xs text-white/50">{row.name}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right text-white/70">{row.quantity}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtMoney(row.unit_cost)}</td>
+                  <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.total_value)}</td>
+                </tr>
+              ))}
+              {data.rows.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-white/50">No inventory on file</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============ TAB: SERVICE TYPES ============
+
+function ServiceTypesTab({ range }: { range: DateRangePreset }) {
+  const { data, isLoading } = useQuery<ReportsServiceTypesResponse>({
+    queryKey: ['reports-service-types', range],
+    queryFn: async () => (await api.get('/reports/service-types', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'service-types-report.csv',
+      ['Name', 'Quantity', 'Hours Billed', 'Total Charged'],
+      data.rows.map((r) => [r.name, r.quantity, r.hours_billed, r.total_charged])
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <MetricCard label="Service Items" value={fmtNumber(data.service_items)} />
+        <MetricCard label="Hours Billed" value={`${fmtNumber(data.hours_billed)} hrs`} />
+        <MetricCard label="Total Charged" value={fmtMoney(data.total_charged)} />
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <span className="text-sm text-white/70">{data.rows.length} service types</span>
+          <ExportButton onClick={handleExport} />
+        </div>
+        <div className="max-h-[32rem] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-white/5 text-white/70 text-xs uppercase tracking-wider sticky top-0">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">Name</th>
+                <th className="px-4 py-3 text-right font-medium">Quantity</th>
+                <th className="px-4 py-3 text-right font-medium">Hours Billed</th>
+                <th className="px-4 py-3 text-right font-medium">Total Charged</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {data.rows.map((row) => (
+                <tr key={row.name} className="hover:bg-white/5">
+                  <td className="px-4 py-3 text-white font-medium">{row.name}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{row.quantity}</td>
+                  <td className="px-4 py-3 text-right text-white/70">{fmtNumber(row.hours_billed)}</td>
+                  <td className="px-4 py-3 text-right text-white font-semibold">{fmtMoney(row.total_charged)}</td>
+                </tr>
+              ))}
+              {data.rows.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-white/50">No service items in this range</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============ MAIN PAGE ============
+
+type ReportTab = 'dashboard' | 'sales' | 'fees' | 'tax' | 'parts' | 'inventory' | 'service-types' | 'internal'
+
+const TABS: { id: ReportTab; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'fees', label: 'Fees' },
+  { id: 'tax', label: 'Sales Tax' },
+  { id: 'parts', label: 'Part Revenue' },
+  { id: 'inventory', label: 'Inventory' },
+  { id: 'service-types', label: 'Service Types' },
+  { id: 'internal', label: 'Internal Fleet Costs' },
+]
+
+const DATE_FILTERED_TABS: ReportTab[] = ['dashboard', 'sales', 'fees', 'tax', 'parts', 'service-types']
+
 export default function GarageAnalyticsPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
-  const tabParam = searchParams.get('tab')
-  const activeTab: TabId = TABS.some((t) => t.id === tabParam) ? (tabParam as TabId) : 'overview'
-  const setActiveTab = (id: TabId) => {
+  const tabParam = searchParams.get('tab') as ReportTab | null
+  const activeTab: ReportTab = tabParam && TABS.some((t) => t.id === tabParam) ? tabParam : 'dashboard'
+  const setActiveTab = (id: ReportTab) => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)
-      if (id === 'overview') next.delete('tab')
+      if (id === 'dashboard') next.delete('tab')
       else next.set('tab', id)
       return next
     })
   }
-
-  useEffect(() => {
-    fetchStats()
-  }, [])
-
-  const fetchStats = async () => {
-    try {
-      const response = await api.get('/dashboard/stats')
-      setStats(response.data)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load analytics')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const formatCurrency = (amount: string | number) => {
-    const num = typeof amount === 'string' ? parseFloat(amount) : amount
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0,
-    }).format(num)
-  }
-
-  const getStatusCount = (status: string) => {
-    return stats?.orders_by_status?.find((s) => s.status === status)?.count || 0
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
-      </div>
-    )
-  }
-
-  if (error || !stats) {
-    return (
-      <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-6">
-        <p className="text-red-400">{error || 'No data available'}</p>
-      </div>
-    )
-  }
-
-  const thisMonthRevenue = parseFloat(stats.revenue.this_month)
-  const thisWeekRevenue = parseFloat(stats.revenue.this_week)
-
-  // Calculate week-over-week growth estimate
-  const estimatedMonthlyFromWeek = thisWeekRevenue * 4.33 // avg weeks per month
-  const projectedGrowth = estimatedMonthlyFromWeek > 0 && thisMonthRevenue > 0
-    ? ((thisMonthRevenue / estimatedMonthlyFromWeek - 1) * 100).toFixed(1)
-    : null
-
-  const conversionRate = stats.total_repair_orders > 0
-    ? (stats.revenue.total_paid_orders / stats.total_repair_orders * 100).toFixed(1)
-    : '0.0'
-
-  const avgOrderValue = stats.revenue.total_paid_orders > 0
-    ? thisMonthRevenue / stats.revenue.total_paid_orders
-    : 0
-  const thisMonthGrossProfit = parseFloat(stats.revenue.this_month_gross_profit || '0')
-  const thisMonthPartsMargin = parseFloat(stats.revenue.this_month_parts_margin || '0')
-  const thisMonthPpi = parseFloat(stats.revenue.this_month_ppi || '0')
+  const [range, setRange] = useState<DateRangePreset>('this_month')
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white mb-2">Shop Analytics</h1>
-        <p className="text-gray-400">Performance overview and insights</p>
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Shop Analytics</h1>
+          <p className="text-sm text-white/50">Performance overview and insights</p>
+        </div>
+        {DATE_FILTERED_TABS.includes(activeTab) && <DateRangePicker value={range} onChange={setRange} />}
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 border-b border-gray-700/50">
+      <div className="mb-4 flex-shrink-0 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-semibold rounded-t-lg transition-colors ${
-              activeTab === tab.id
-                ? 'bg-gray-800/50 text-white border border-gray-700/50 border-b-transparent -mb-px'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/30'
+            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
+              activeTab === tab.id ? 'text-white' : 'text-white/50 hover:text-white/80 border-transparent'
             }`}
+            style={activeTab === tab.id ? { borderColor: accentColors[500] } : undefined}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-
-      {/* Revenue Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="p-3 bg-green-500/10 rounded-lg">
-              <DollarSign className="w-6 h-6 text-green-400" />
-            </div>
-            {projectedGrowth && parseFloat(projectedGrowth) !== 0 && (
-              <div className={`flex items-center gap-1 text-sm ${parseFloat(projectedGrowth) > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {parseFloat(projectedGrowth) > 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                {Math.abs(parseFloat(projectedGrowth))}%
-              </div>
-            )}
-          </div>
-          <p className="text-gray-400 text-sm">This Month Revenue</p>
-          <p className="text-2xl font-bold text-white mt-1">{formatCurrency(stats.revenue.this_month)}</p>
-          <p className="text-gray-500 text-xs mt-2">This week: {formatCurrency(stats.revenue.this_week)}</p>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="p-3 bg-blue-500/10 rounded-lg w-fit mb-4">
-            <ShoppingCart className="w-6 h-6 text-blue-400" />
-          </div>
-          <p className="text-gray-400 text-sm">Active Orders</p>
-          <p className="text-2xl font-bold text-white mt-1">{stats.active_orders}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            {stats.total_repair_orders} total orders
-          </p>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="p-3 bg-purple-500/10 rounded-lg w-fit mb-4">
-            <Users className="w-6 h-6 text-purple-400" />
-          </div>
-          <p className="text-gray-400 text-sm">Total Customers</p>
-          <p className="text-2xl font-bold text-white mt-1">{stats.total_customers}</p>
-          <p className="text-gray-500 text-xs mt-2">
-            {stats.total_vehicles} vehicles
-          </p>
-        </div>
-
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="p-3 bg-amber-500/10 rounded-lg w-fit mb-4">
-            <Target className="w-6 h-6 text-amber-400" />
-          </div>
-          <p className="text-gray-400 text-sm">Conversion Rate</p>
-          <p className="text-2xl font-bold text-white mt-1">{conversionRate}%</p>
-          <p className="text-gray-500 text-xs mt-2">Orders → Paid</p>
-        </div>
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
+        {activeTab === 'dashboard' && <DashboardTab range={range} />}
+        {activeTab === 'sales' && <SalesTab range={range} />}
+        {activeTab === 'fees' && <FeesTab range={range} />}
+        {activeTab === 'tax' && <TaxTab range={range} />}
+        {activeTab === 'parts' && <PartsTab range={range} />}
+        {activeTab === 'inventory' && <InventoryTab />}
+        {activeTab === 'service-types' && <ServiceTypesTab range={range} />}
+        {activeTab === 'internal' && <InternalInvoiceList />}
       </div>
-
-      {/* Performance Metrics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Order Pipeline */}
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Order Pipeline</h2>
-            <Activity className="w-5 h-5 text-gray-400" />
-          </div>
-          <div className="space-y-3">
-            {[
-              { status: 'quoted', label: 'Quoted', color: 'bg-blue-500' },
-              { status: 'approved', label: 'Approved', color: 'bg-cyan-500' },
-              { status: 'in_progress', label: 'In Progress', color: 'bg-amber-500' },
-              { status: 'completed', label: 'Completed', color: 'bg-green-500' },
-              { status: 'invoiced', label: 'Invoiced', color: 'bg-purple-500' },
-              { status: 'paid', label: 'Paid', color: 'bg-emerald-500' },
-            ].map(({ status, label, color }) => {
-              const count = getStatusCount(status)
-              const percentage = stats.total_repair_orders > 0
-                ? (count / stats.total_repair_orders * 100).toFixed(0)
-                : 0
-              return (
-                <div key={status}>
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="text-gray-300">{label}</span>
-                    <span className="text-white font-semibold">{count} ({percentage}%)</span>
-                  </div>
-                  <div className="w-full bg-gray-700 rounded-full h-2">
-                    <div 
-                      className={`${color} h-2 rounded-full transition-all`}
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Key Insights */}
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Key Insights</h2>
-            <TrendingUp className="w-5 h-5 text-gray-400" />
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
-              <div className="p-2 bg-green-500/10 rounded">
-                <DollarSign className="w-4 h-4 text-green-400" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">Avg Order Value</div>
-                <div className="text-lg font-semibold text-white">{formatCurrency(avgOrderValue)}</div>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
-              <div className="p-2 bg-blue-500/10 rounded">
-                <ShoppingCart className="w-4 h-4 text-blue-400" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">Orders Per Customer</div>
-                <div className="text-lg font-semibold text-white">
-                  {(stats.total_repair_orders / stats.total_customers).toFixed(2)}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
-              <div className="p-2 bg-amber-500/10 rounded">
-                <TrendingUp className="w-4 h-4 text-amber-400" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">This Month Gross Profit</div>
-                <div className="text-lg font-semibold text-white">{formatCurrency(thisMonthGrossProfit)}</div>
-                <div className="text-xs text-gray-500">Parts margin: {formatCurrency(thisMonthPartsMargin)}</div>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
-              <div className="p-2 bg-violet-500/10 rounded">
-                <Target className="w-4 h-4 text-violet-400" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">PPI (This Month)</div>
-                <div className="text-lg font-semibold text-white">{formatCurrency(thisMonthPpi)}</div>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-gray-700/30 rounded-lg">
-              <div className="p-2 bg-amber-500/10 rounded">
-                <Clock className="w-4 h-4 text-amber-400" />
-              </div>
-              <div>
-                <div className="text-sm text-gray-400">Pending Actions</div>
-                <div className="text-lg font-semibold text-white">
-                  {stats.awaiting_approval + stats.pending_invoices}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {stats.awaiting_approval} approvals, {stats.pending_invoices} invoices
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mechanic Performance */}
-      {stats.mechanic_workload && stats.mechanic_workload.length > 0 && (
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Technician Workload</h2>
-            <Wrench className="w-5 h-5 text-gray-400" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stats.mechanic_workload.map((mechanic) => (
-              <div key={mechanic.mechanic_id} className="bg-gray-700/30 rounded-lg p-4">
-                <div className="font-medium text-white mb-2">{mechanic.mechanic_name}</div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">Assigned:</span>
-                  <span className="text-white font-semibold">{mechanic.assigned_count}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm mt-1">
-                  <span className="text-gray-400">In Progress:</span>
-                  <span className="text-amber-400 font-semibold">{mechanic.in_progress_count}</span>
-                </div>
-                <div className="mt-2 w-full bg-gray-600 rounded-full h-1.5">
-                  <div 
-                    className="bg-amber-500 h-1.5 rounded-full"
-                    style={{ 
-                      width: `${mechanic.assigned_count > 0 ? (mechanic.in_progress_count / mechanic.assigned_count * 100) : 0}%` 
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Alerts & Actions */}
-      {(stats.awaiting_approval > 0 || stats.pending_invoices > 0 || stats.low_stock_count > 0) && (
-        <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Action Items</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {stats.awaiting_approval > 0 && (
-              <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                <Clock className="w-5 h-5 text-yellow-400" />
-                <div>
-                  <div className="text-white font-semibold">{stats.awaiting_approval}</div>
-                  <div className="text-sm text-gray-400">Awaiting Approval</div>
-                </div>
-              </div>
-            )}
-            {stats.pending_invoices > 0 && (
-              <div className="flex items-center gap-3 p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-                <DollarSign className="w-5 h-5 text-purple-400" />
-                <div>
-                  <div className="text-white font-semibold">{stats.pending_invoices}</div>
-                  <div className="text-sm text-gray-400">Pending Invoices</div>
-                </div>
-              </div>
-            )}
-            {stats.low_stock_count > 0 && (
-              <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <Activity className="w-5 h-5 text-red-400" />
-                <div>
-                  <div className="text-white font-semibold">{stats.low_stock_count}</div>
-                  <div className="text-sm text-gray-400">Low Stock Items</div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-        </div>
-      )}
-
-      {activeTab === 'internal' && (
-        <div className="space-y-6">
-          {stats.internal_costs && Number(stats.internal_costs.total_internal_invoices) > 0 && (
-            <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">Internal Fleet Costs (At Cost)</h2>
-                <Wrench className="w-5 h-5 text-orange-400" />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gray-700/30 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">Today</p>
-                  <p className="text-xl font-bold text-orange-400 mt-1">${stats.internal_costs.today}</p>
-                </div>
-                <div className="bg-gray-700/30 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">This Week</p>
-                  <p className="text-xl font-bold text-orange-400 mt-1">${stats.internal_costs.this_week}</p>
-                </div>
-                <div className="bg-gray-700/30 rounded-lg p-4">
-                  <p className="text-gray-400 text-sm">This Month</p>
-                  <p className="text-xl font-bold text-orange-400 mt-1">${stats.internal_costs.this_month}</p>
-                </div>
-              </div>
-              <p className="text-gray-500 text-xs mt-3">
-                Parts at cost + internal labor rate for company-owned trucks — not customer revenue.
-              </p>
-            </div>
-          )}
-          <InternalInvoiceList />
-        </div>
-      )}
     </div>
   )
 }

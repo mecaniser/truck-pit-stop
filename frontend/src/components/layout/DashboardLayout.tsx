@@ -2,7 +2,6 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, Truck } from 'lucide-react'
-import ReportsPage from '@/features/reports/ReportsPage'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -59,9 +58,6 @@ export default function DashboardLayout() {
   // Garage owner/admin own the fleet, so they get a Fleet link into the board.
   // Fleet managers never reach this dashboard (StaffRoute sends them to /fleet).
   const canAccessFleet = user?.role === 'garage_owner' || user?.role === 'garage_admin'
-  // Business reports (revenue, parts profit, inventory value, etc.) are
-  // owner/admin-only, same gate as Shop Profile settings.
-  const canAccessReports = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
   const navLinks = user?.role === 'super_admin'
@@ -77,7 +73,6 @@ export default function DashboardLayout() {
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
         ...(canAccessFleet ? [{ to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck }] : []),
         ...(canAccessMessaging ? [messagesNavLink] : []),
-        ...(canAccessReports ? [{ to: '/dashboard/reports', label: 'Reports', mobileLabel: 'Reports', icon: BarChart3 }] : []),
         { to: '/dashboard/garage', label: 'My Shop', mobileLabel: 'Shop', icon: Building2 },
       ]
 
@@ -100,8 +95,7 @@ export default function DashboardLayout() {
     (location.pathname === '/dashboard/garage' ||
       location.pathname.startsWith('/dashboard/garage/') ||
       location.pathname === '/dashboard/customers' ||
-      location.pathname.startsWith('/dashboard/customers/') ||
-      location.pathname === '/dashboard/reports')
+      location.pathname.startsWith('/dashboard/customers/'))
   const dashboardLogoAlt = isSuperAdmin
     ? 'Diesel Bridge Network'
     : tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
@@ -275,10 +269,6 @@ export default function DashboardLayout() {
                 <Route path="mechanics" element={<MechanicsBoardPage />} />
                 <Route path="mechanics/:mechanicId" element={<MechanicBoardDetailPage />} />
                 <Route path="garage/*" element={<MyGaragePage />} />
-                <Route
-                  path="reports"
-                  element={canAccessReports ? <ReportsPage /> : <Navigate to="/dashboard" replace />}
-                />
                 <Route path="settings" element={<UnifiedSettingsPage />} />
                 <Route
                   path=""
