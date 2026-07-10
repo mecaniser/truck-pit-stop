@@ -468,7 +468,7 @@ function SalesTab({ range }: { range: DateRangePreset }) {
         insight="Your revenue concentration — how much of net sales rides on the top handful of accounts."
       >
         {ranked.length > 0 && (
-          <div className="h-56">
+          <div>
             <RankedBar
               accent={accent}
               data={ranked.slice(0, 8).map((r) => ({ label: r.group_label, value: parseFloat(r.net_sales) }))}
@@ -557,7 +557,7 @@ function FeesTab({ range }: { range: DateRangePreset }) {
         insight="If a fee rarely gets added, it's probably mispriced or forgotten at the counter."
       >
         {ranked.length > 0 && (
-          <div className="h-56">
+          <div>
             <RankedBar
               accent={accent}
               data={ranked.slice(0, 8).map((r) => ({ label: r.fee_name, value: parseFloat(r.total_charged) }))}
@@ -634,7 +634,7 @@ function TaxTab({ range }: { range: DateRangePreset }) {
         insight="Tax collected is a pass-through liability — it's owed to the jurisdiction, not shop revenue."
       >
         {ranked.length > 0 && (
-          <div className="h-56">
+          <div>
             <RankedBar
               accent={accent}
               data={ranked.map((r) => ({ label: r.rate_label, value: parseFloat(r.tax_collected) }))}
@@ -784,7 +784,7 @@ function InventoryTab() {
         insight="The biggest SKUs by value are where dead stock hides — check turnover on anything near the top that isn't moving."
       >
         {ranked.length > 0 && (
-          <div className="h-56">
+          <div>
             <RankedBar
               accent={accent}
               data={ranked.slice(0, 8).map((r) => ({ label: r.name, value: parseFloat(r.total_value) }))}
@@ -866,7 +866,7 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
         insight="Your bread-and-butter jobs — the top few by charges are where pricing and speed matter most."
       >
         {ranked.length > 0 && (
-          <div className="h-56">
+          <div>
             <RankedBar
               accent={accent}
               data={ranked.slice(0, 8).map((r) => ({ label: r.name, value: parseFloat(r.total_charged) }))}

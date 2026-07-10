@@ -144,7 +144,7 @@ export function RankedBar<T extends Record<string, unknown>>({
   const max = Math.max(...data.map((d) => Number(d[dataKey]) || 0), 1)
 
   return (
-    <div className="flex h-full flex-col justify-center gap-2.5">
+    <div className="flex flex-col gap-4">
       {data.map((d, i) => {
         const value = Number(d[dataKey]) || 0
         const name = String(d[nameKey] ?? '')
@@ -152,11 +152,11 @@ export function RankedBar<T extends Record<string, unknown>>({
         const fill = colorFn ? colorFn(d) : barColor
         return (
           <div key={i} title={name} className="min-w-0">
-            <div className="mb-1 flex items-baseline justify-between gap-3">
+            <div className="mb-1.5 flex items-baseline justify-between gap-3">
               <span className="truncate text-[12.5px] font-medium text-gray-200">{name}</span>
               <span className="shrink-0 font-['JetBrains_Mono',monospace] text-xs text-gray-400">{valueFmt(value)}</span>
             </div>
-            <div className="h-2.5 w-full rounded-full bg-white/5">
+            <div className="h-2 w-full rounded-full bg-white/5">
               <div className="h-full rounded-full" style={{ width: `${width}%`, background: fill }} />
             </div>
           </div>
