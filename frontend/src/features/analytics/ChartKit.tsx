@@ -238,10 +238,12 @@ export function ParetoChart({ accounts }: { accounts: { name: string; revenue: n
 }
 
 // ---- Quote → approval funnel ----
-export function QuoteFunnel({ funnel }: { funnel: { sent: number; viewed: number; approved: number; invoiced: number } }) {
+export function QuoteFunnel({ funnel }: { funnel: { sent: number; viewed?: number; approved: number; invoiced: number } }) {
+  // "Viewed" is optional — the app doesn't record a quote-view event yet, so
+  // that stage is only shown when the data provides it.
   const stages = [
     { name: 'Sent', value: funnel.sent, fill: SERIES.neutral },
-    { name: 'Viewed', value: funnel.viewed, fill: SERIES.parts },
+    ...(funnel.viewed != null ? [{ name: 'Viewed', value: funnel.viewed, fill: SERIES.parts }] : []),
     { name: 'Approved', value: funnel.approved, fill: STATUS.mixed },
     { name: 'Invoiced', value: funnel.invoiced, fill: STATUS.good },
   ]

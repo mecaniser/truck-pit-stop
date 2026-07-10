@@ -8,6 +8,10 @@ import { Download, Loader2 } from 'lucide-react'
 import api from '../../lib/api'
 import { useTheme } from '../../contexts/ThemeContext'
 import InternalInvoiceList from './InternalInvoiceList'
+import {
+  ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
+} from '../analytics/ChartKit'
+import { SERIES } from '../analytics/chartTheme'
 
 // ============ SHARED TYPES ============
 
@@ -309,16 +313,86 @@ function DashboardTab({ range }: { range: DateRangePreset }) {
   if (isLoading || !data) return <LoadingBlock />
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-      <MetricCard label="Revenue" value={fmtMoney(data.revenue.value)} trend={data.revenue.trend} color={accentColors[500]} />
-      <MetricCard label="Labor Revenue" value={fmtMoney(data.labor_revenue.value)} trend={data.labor_revenue.trend} color="#a78bfa" />
-      <MetricCard label="Part Revenue" value={fmtMoney(data.part_revenue.value)} trend={data.part_revenue.trend} color="#34d399" />
-      <MetricCard label="Fees Revenue" value={fmtMoney(data.fees_revenue.value)} trend={data.fees_revenue.trend} color="#fb923c" />
-      <MetricCard label="Parts Profit" value={fmtMoney(data.parts_profit.value)} trend={data.parts_profit.trend} color="#2dd4bf" />
-      <MetricCard label="Inventory Value" value={fmtMoney(data.inventory_value.value)} chartType="line" color="#38bdf8" />
-      <MetricCard label="Invoiced Hours" value={`${fmtNumber(data.invoiced_hours.value)} hrs`} trend={data.invoiced_hours.trend} color="#f87171" />
-      <MetricCard label="Part Sales Finalized" value={fmtNumber(data.part_sales_finalized.value)} trend={data.part_sales_finalized.trend} color="#f472b6" />
-      <MetricCard label="Services Finalized" value={fmtNumber(data.services_finalized.value)} trend={data.services_finalized.trend} color="#818cf8" />
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <MetricCard label="Revenue" value={fmtMoney(data.revenue.value)} trend={data.revenue.trend} color={accentColors[500]} />
+        <MetricCard label="Labor Revenue" value={fmtMoney(data.labor_revenue.value)} trend={data.labor_revenue.trend} color={SERIES.cumulative} />
+        <MetricCard label="Part Revenue" value={fmtMoney(data.part_revenue.value)} trend={data.part_revenue.trend} color={SERIES.parts} />
+        <MetricCard label="Fees Revenue" value={fmtMoney(data.fees_revenue.value)} trend={data.fees_revenue.trend} color={SERIES.margin} />
+        <MetricCard label="Parts Profit" value={fmtMoney(data.parts_profit.value)} trend={data.parts_profit.trend} color={SERIES.margin} />
+        <MetricCard label="Inventory Value" value={fmtMoney(data.inventory_value.value)} chartType="line" color={SERIES.parts} />
+        <MetricCard label="Invoiced Hours" value={`${fmtNumber(data.invoiced_hours.value)} hrs`} trend={data.invoiced_hours.trend} color={SERIES.danger} />
+        <MetricCard label="Part Sales Finalized" value={fmtNumber(data.part_sales_finalized.value)} trend={data.part_sales_finalized.trend} color={SERIES.cumulative} />
+        <MetricCard label="Services Finalized" value={fmtNumber(data.services_finalized.value)} trend={data.services_finalized.trend} color={accentColors[500]} />
+      </div>
+
+      <InsightsSection range={range} />
+    </div>
+  )
+}
+
+// ---- Advanced analytics charts (wired to /reports/analytics/*) ----
+interface ProfitabilityResp { ros: { type: string; subtotal: number; marginPct: number; hours: number }[] }
+interface AccountsResp { accounts: { name: string; revenue: number; marginPct: number; cumPct: number }[] }
+interface FunnelResp { sent: number; approved: number; invoiced: number }
+interface TruckCostResp { trucks: { unit: string; ytdCost: number }[] }
+
+function InsightsSection({ range }: { range: DateRangePreset }) {
+  const profit = useQuery<ProfitabilityResp>({
+    queryKey: ['analytics-profitability', range],
+    queryFn: async () => (await api.get('/reports/analytics/profitability', { params: { range } })).data,
+  })
+  const accounts = useQuery<AccountsResp>({
+    queryKey: ['analytics-accounts', range],
+    queryFn: async () => (await api.get('/reports/analytics/accounts', { params: { range } })).data,
+  })
+  const funnel = useQuery<FunnelResp>({
+    queryKey: ['analytics-funnel', range],
+    queryFn: async () => (await api.get('/reports/analytics/quote-funnel', { params: { range } })).data,
+  })
+  const trucks = useQuery<TruckCostResp>({
+    queryKey: ['analytics-trucks', range],
+    queryFn: async () => (await api.get('/reports/analytics/truck-costs', { params: { range } })).data,
+  })
+
+  const hasProfit = (profit.data?.ros.length ?? 0) > 0
+  const hasAccounts = (accounts.data?.accounts.length ?? 0) > 0
+  const hasFunnel = (funnel.data?.sent ?? 0) > 0
+  const hasTrucks = (trucks.data?.trucks.length ?? 0) > 0
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <ChartCard title="Labor vs. Parts Profitability" subtitle="Each bubble is a repair order — subtotal × margin %, sized by labor hours">
+        {hasProfit ? <ProfitabilityScatter ros={profit.data!.ros} /> : <EmptyChart loading={profit.isLoading} />}
+      </ChartCard>
+
+      <ChartCard title="Quote → Approval Funnel" subtitle="Sent → approved → invoiced">
+        {hasFunnel ? <QuoteFunnel funnel={funnel.data!} /> : <EmptyChart loading={funnel.isLoading} />}
+      </ChartCard>
+
+      <ChartCard title="Revenue by Account" subtitle="Which accounts are your 80/20 — bars are revenue, line is cumulative %">
+        {hasAccounts ? <ParetoChart accounts={accounts.data!.accounts.slice(0, 12)} /> : <EmptyChart loading={accounts.isLoading} />}
+      </ChartCard>
+
+      <ChartCard title="Cost per Truck" subtitle="Internal-fleet maintenance spend, top 10">
+        {hasTrucks
+          ? <RankedBar
+              data={trucks.data!.trucks}
+              dataKey="ytdCost"
+              nameKey="unit"
+              tickFormatter={(v) => '$' + (v / 1000).toFixed(1) + 'k'}
+              tooltipFormatter={(v) => '$' + v.toLocaleString()}
+            />
+          : <EmptyChart loading={trucks.isLoading} />}
+      </ChartCard>
+    </div>
+  )
+}
+
+function EmptyChart({ loading }: { loading: boolean }) {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-white/40">
+      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'No data for this range yet'}
     </div>
   )
 }
