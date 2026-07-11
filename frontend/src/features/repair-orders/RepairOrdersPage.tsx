@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatHoursMinutes } from '@/lib/durationFormat'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
@@ -154,6 +154,8 @@ export default function RepairOrdersPage() {
   const currentUser = useAuthStore((s) => s.user)
   const { accentColors } = useTheme()
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const location = useLocation()
 
   // Connect to WebSocket for real-time updates (cache/status refresh only on this page).
   useWebSocket()
@@ -292,26 +294,6 @@ export default function RepairOrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, debouncedSearch, statusFilter, orderPage?.has_more, isPlaceholderData])
 
-  // Handle ?selected= query param to auto-open a repair order
-  useEffect(() => {
-    const selectedId = searchParams.get('selected')
-    if (selectedId && orders) {
-      const order = orders.find(o => o.id === selectedId)
-      if (order) {
-        setSelectedOrder(order)
-        setIsDetailOpen(true)
-        // Clear the query param after opening
-        setSearchParams({}, { replace: true })
-      } else {
-        console.warn('[repair-orders] ?selected= id not found in fetched orders', {
-          selectedId,
-          ordersCount: orders.length,
-          sampleIds: orders.slice(0, 3).map(o => o.id),
-        })
-      }
-    }
-  }, [searchParams, orders, setSearchParams])
-
   // Handle ?new=true query param to auto-open create modal
   useEffect(() => {
     const newParam = searchParams.get('new')
@@ -320,6 +302,101 @@ export default function RepairOrdersPage() {
       setSearchParams({}, { replace: true })
     }
   }, [searchParams, setSearchParams])
+
+  const applyDetailState = (order: RepairOrder) => {
+    setSelectedOrder(order)
+    setIsDetailOpen(true)
+    setQuoteSent(false)
+    setShowReassignMechanic(false)
+    setReviewNotes('')
+    setShowReviewNotes(false)
+    setShowDangerActions(false)
+    setShowPartComposer(false)
+    setAddPartInventoryId('')
+    setAddPartQuantity(1)
+  }
+
+  const openDetail = (order: RepairOrder) => {
+    // Rapid prev/next through the work queue (e.g. paging through 20+ orders
+    // in a few seconds) was leaving every previous order's detail/price-build/
+    // parts/quotes/invoices requests retrying in the background, each holding
+    // its own rate-limit-budget-consuming backoff timer — that pile-up is what
+    // tripped the 429s and left the panel stuck showing a loading placeholder
+    // for the order actually on screen. Cancel the outgoing order's in-flight
+    // queries so only the order you're actually looking at is still fetching.
+    if (selectedOrder?.id && selectedOrder.id !== order.id) {
+      queryClient.cancelQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
+      queryClient.cancelQueries({ queryKey: ['price-build', selectedOrder.id] })
+      queryClient.cancelQueries({ queryKey: ['price-build-parts', selectedOrder.id] })
+      queryClient.cancelQueries({ queryKey: ['price-build-part-suggestions', selectedOrder.id] })
+      queryClient.cancelQueries({ queryKey: ['quote', selectedOrder.id] })
+      queryClient.cancelQueries({ queryKey: ['invoice-for-order', selectedOrder.id] })
+      queryClient.cancelQueries({ queryKey: ['recommended-services', selectedOrder.id] })
+    }
+    applyDetailState(order)
+    // Fresh open pushes ?selected= so Back/close return to the view underneath;
+    // switching orders while open (prev/next, arrow keys) replaces the entry so
+    // Back still exits to the origin instead of replaying every order viewed.
+    setSearchParams({ selected: order.id }, { replace: isDetailOpen })
+  }
+
+  const clearDetailState = () => {
+    setSelectedOrder(null)
+    setIsDetailOpen(false)
+    setQuoteSent(false)
+    setShowDangerActions(false)
+    setShowPartComposer(false)
+    setAddPartInventoryId('')
+    setAddPartQuantity(1)
+    setInvoiceDueDate('')
+    setShowInvoiceCreateOptions(false)
+  }
+
+  const closeDetail = () => {
+    clearDetailState()
+    if (!searchParams.get('selected')) return
+    // Opened via in-app navigation: going back lands on whatever view launched
+    // the panel (dashboard work queue or this list). A deep link / fresh tab
+    // has no in-app history entry, so just strip the param and stay here.
+    if (location.key !== 'default') {
+      navigate(-1)
+    } else {
+      setSearchParams({}, { replace: true })
+    }
+  }
+
+  // The ?selected= URL param is the source of truth for the detail panel: it
+  // survives refresh, makes orders deep-linkable, and lets the dashboard work
+  // queue open any order here. Resolve it from the loaded page when possible,
+  // otherwise fetch directly — the order may be outside the current page
+  // (e.g. an older completed order from the Ready to Close lane).
+  useEffect(() => {
+    const selectedId = searchParams.get('selected')
+    if (!selectedId) {
+      if (isDetailOpen) clearDetailState()
+      return
+    }
+    if (selectedOrder?.id === selectedId) return
+    const order = orders?.find(o => o.id === selectedId)
+    if (order) {
+      applyDetailState(order)
+      return
+    }
+    let cancelled = false
+    api.get(`/repair-orders/${selectedId}/detail`)
+      .then((response) => {
+        if (cancelled) return
+        queryClient.setQueryData(['repair-order-detail', selectedId], response.data)
+        applyDetailState(response.data as RepairOrder)
+      })
+      .catch(() => {
+        if (cancelled) return
+        toast.error("Couldn't open that repair order — it may have been deleted")
+        setSearchParams({}, { replace: true })
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, orders, isDetailOpen, selectedOrder?.id])
 
   // The full customer / vehicle / service lists are only needed by the create
   // and edit forms — not to render the paginated list, which carries its own
@@ -342,6 +419,10 @@ export default function RepairOrdersPage() {
       return all
     },
     enabled: needsFormData,
+    // This pages through the whole tenant's customer list, so it's expensive
+    // to redo on every drawer open. Mutations that add/edit a customer
+    // explicitly invalidate this key, so a resting cache here is safe.
+    staleTime: 5 * 60 * 1000,
   })
 
   // Fleet company name, so internal fleet ROs show the fleet operator (e.g.
@@ -370,6 +451,9 @@ export default function RepairOrdersPage() {
       return all
     },
     enabled: needsFormData,
+    // Same rationale as the customers query above — full-table fetch, so
+    // avoid redoing it on every drawer open. Vehicle mutations invalidate it.
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data: services, refetch: refetchServices } = useQuery<Service[]>({
@@ -391,6 +475,7 @@ export default function RepairOrdersPage() {
     // so refresh when the user comes back to this tab.
     refetchOnWindowFocus: true,
     enabled: needsFormData,
+    staleTime: 60 * 1000,
   })
 
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
@@ -426,6 +511,10 @@ export default function RepairOrdersPage() {
       return all
     },
     enabled: isDetailOpen,
+    // Stock levels move during a shift (parts added to other orders), so a
+    // shorter window than customers/vehicles — but still avoids re-paging
+    // the whole catalog every time a different order's drawer is opened.
+    staleTime: 60 * 1000,
   })
 
   const { data: quoteForOrder, refetch: refetchQuote } = useQuery<Quote | null>({
@@ -1101,19 +1190,12 @@ export default function RepairOrdersPage() {
       if (e.key === 'ArrowLeft' && idx > 0) next = filteredOrders[idx - 1]
       if (e.key === 'ArrowRight' && idx >= 0 && idx < filteredOrders.length - 1) next = filteredOrders[idx + 1]
       if (next) {
-        setSelectedOrder(next)
-        setQuoteSent(false)
-        setShowReassignMechanic(false)
-        setReviewNotes('')
-        setShowReviewNotes(false)
-        setShowDangerActions(false)
-        setShowPartComposer(false)
-        setAddPartInventoryId('')
-        setAddPartQuantity(1)
+        openDetail(next)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDetailOpen, filteredOrders, selectedOrder])
 
   if (isLoading) {
@@ -1456,31 +1538,6 @@ export default function RepairOrdersPage() {
   const closeModal = () => {
     setIsModalOpen(false)
     resetModal()
-  }
-
-  const openDetail = (order: RepairOrder) => {
-    setSelectedOrder(order)
-    setIsDetailOpen(true)
-    setQuoteSent(false)
-    setShowReassignMechanic(false)
-    setReviewNotes('')
-    setShowReviewNotes(false)
-    setShowDangerActions(false)
-    setShowPartComposer(false)
-    setAddPartInventoryId('')
-    setAddPartQuantity(1)
-  }
-
-  const closeDetail = () => {
-    setSelectedOrder(null)
-    setIsDetailOpen(false)
-    setQuoteSent(false)
-    setShowDangerActions(false)
-    setShowPartComposer(false)
-    setAddPartInventoryId('')
-    setAddPartQuantity(1)
-    setInvoiceDueDate('')
-    setShowInvoiceCreateOptions(false)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

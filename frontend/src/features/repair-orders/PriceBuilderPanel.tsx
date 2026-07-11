@@ -663,7 +663,7 @@ export default function PriceBuilderPanel({
   // Inline result of a VIN decode (auto or manual), shown next to the VIN field
   // instead of a toast.
   const [vinDecodeStatus, setVinDecodeStatus] = useState<{ ok: boolean; message: string } | null>(null)
-  const { data: summary, refetch, isLoading, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
+  const { data: summary, refetch, isLoading, isError: summaryErrored, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
     queryFn: async () => {
       const response = await api.get(`/repair-orders/${orderId}/price-build`)
@@ -696,6 +696,11 @@ export default function PriceBuilderPanel({
       }
       return all
     },
+    // Shares the ['inventory'] cache entry with RepairOrdersPage's query — this
+    // panel remounts on every drawer open, and with no staleTime here that was
+    // forcing a full re-page of the catalog every time regardless of the
+    // staleTime set on the other query sharing this key.
+    staleTime: 60 * 1000,
   })
 
   const { data: partSuggestions, isFetching: partSuggestionsFetching } = useQuery<PartSuggestionsResponse>({
@@ -1294,6 +1299,20 @@ export default function PriceBuilderPanel({
     removeLine.isPending
   )
   const orderTotalValue = summary?.total_cost ?? '0'
+  // Totals genuinely default to zero for a brand-new order, but they also
+  // read as zero while `summary` hasn't loaded yet for a just-opened order —
+  // those are different states. The old signal for "still loading" was a
+  // fixed 720ms animation timer (totalMotionActive), which times out before
+  // a slow/rate-limited fetch actually finishes, so a real order would flash
+  // $0.00 / "start by adding an operation" before its real total arrived.
+  // Key this off the query's own state instead.
+  const isInitialSummaryLoad = isLoading && !summary
+  // A failed fetch (e.g. 429 from fast prev/next navigation outrunning the
+  // rate limit) also leaves `summary` undefined once the query settles into
+  // an error — without this, that renders identically to a real empty order
+  // ($0.00, "start by adding an operation"), silently showing wrong totals
+  // for an order that may have real line items the fetch never returned.
+  const summaryLoadFailed = summaryErrored && !summary
 
   useEffect(() => {
     if (!priceUpdating) return
@@ -2649,6 +2668,21 @@ export default function PriceBuilderPanel({
         if (isLoading) {
           return <p className="text-sm text-gray-500">Loading…</p>
         }
+        if (summaryLoadFailed) {
+          return (
+            <div className="rounded-xl border border-dashed border-red-200 bg-red-50/40 px-4 py-6 text-center">
+              <p className="font-semibold text-gray-900">Couldn't load this order's work &amp; labor.</p>
+              <p className="mt-1 text-sm text-gray-500">This isn't necessarily an empty order — the request failed.</p>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+              >
+                Retry
+              </button>
+            </div>
+          )
+        }
         if (!lines.length && !orphanParts.length) {
           return (
             <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/40 px-4 py-6 text-center">
@@ -2920,28 +2954,28 @@ export default function PriceBuilderPanel({
             onClick={() => { setFooterDetailsOpen((open) => open === 'parts' ? null : 'parts'); setDiscountsOpen(false) }}
             className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100"
           >
-            Parts {money(summary?.parts_total)}
+            Parts {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.parts_total)}
           </button>
           <button
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
             className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
           >
-            Labor {money(summary?.labor_total)}
+            Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.labor_total)}
           </button>
           <button
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
             className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
           >
-            Discounts -{money(discountTotal)}
+            Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
           </button>
           <button
             type="button"
             onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
             className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
           >
-            Customer saves {money(customerSavesTotal)}
+            Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
           </button>
           {footerDetailsOpen && (
             <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(380px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
@@ -3057,10 +3091,19 @@ export default function PriceBuilderPanel({
             <div className="text-right">
               <div className="flex items-center justify-end gap-2">
                 <p className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${
-                  totalMotionActive ? 'text-orange-700' : 'text-gray-400'
+                  summaryLoadFailed ? 'text-red-600' : totalMotionActive || isInitialSummaryLoad ? 'text-orange-700' : 'text-gray-400'
                 }`}>
-                  {totalMotionActive && <Loader2 className="h-3 w-3 animate-spin" />}
-                  {totalMotionActive ? 'Calculating' : 'Order Total'}
+                  {(totalMotionActive || isInitialSummaryLoad) && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
+                  {summaryLoadFailed && (
+                    <button
+                      type="button"
+                      onClick={() => refetch()}
+                      className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 hover:bg-red-200"
+                    >
+                      Retry
+                    </button>
+                  )}
                 </p>
               </div>
               <p
@@ -3068,7 +3111,7 @@ export default function PriceBuilderPanel({
                   totalJustChanged ? 'price-total-amount--changed' : totalMotionActive ? 'price-total-amount--updating' : ''
                 }`}
               >
-                {money(orderTotalValue)}
+                {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
             </div>
             {!isInternalOrder && (

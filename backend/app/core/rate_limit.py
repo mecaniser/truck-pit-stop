@@ -130,4 +130,9 @@ def rate_limit_key(request: Request) -> str:
 
 # Shared limiter instance for the whole API.
 # Stricter per-endpoint limits remain via decorators.
-limiter = Limiter(key_func=rate_limit_key, default_limits=["120/minute"])
+# 300/minute (was 120): the repair-order drawer alone fires ~5 requests per
+# order opened (detail, price-build, parts, quotes, recommended-services),
+# and a shop user triaging the work queue can legitimately open several
+# orders within a few seconds — 120/min was tight enough for that normal
+# workflow to trip the limiter on its own.
+limiter = Limiter(key_func=rate_limit_key, default_limits=["300/minute"])
