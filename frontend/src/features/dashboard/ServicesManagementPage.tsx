@@ -211,6 +211,7 @@ export default function ServicesManagementPage() {
   // After a save the green "saved" check lingers briefly then settles back to
   // the quiet "Changes save automatically" resting state.
   const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current) }, [])
   const autoSave = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ServiceFormData }) => {
       const payload = buildPayload(data)
@@ -234,15 +235,16 @@ export default function ServicesManagementPage() {
     },
   })
 
-  // Debounced field-level auto-save (edit mode only). We only save on a real
-  // user field change (info.type is set for those); the programmatic reset()
-  // that populates the form on open emits an event with no `type`, so opening a
-  // service never triggers a save.
+  // Debounced field-level auto-save (edit mode only). Save on any single-field
+  // change — whether from a registered input (info.type === 'change') or a
+  // custom control that calls setValue (info.type is undefined but info.name is
+  // still the field). The programmatic reset() that populates the form on open
+  // fires with info.name === undefined, so opening a service never saves.
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!editingService) return
     const sub = watch((_value, info) => {
-      if (!info?.type) return // ignore programmatic reset / initial population
+      if (!info?.name) return // ignore programmatic reset / initial population
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
       autoSaveTimer.current = setTimeout(async () => {
         if (!(await trigger())) return // don't persist invalid state (e.g. empty name)
@@ -252,7 +254,10 @@ export default function ServicesManagementPage() {
     return () => {
       sub.unsubscribe()
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-      if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
+      // NB: don't clear savedRevertTimer here — onSuccess replaces editingService
+      // with a fresh object, re-running this effect; clearing here would cancel
+      // the fade-back before it fires. Its timer is cancelled on the next save
+      // (onMutate) and on panel open instead.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingService])
@@ -367,6 +372,7 @@ export default function ServicesManagementPage() {
   const startEdit = (service: Service) => {
     setEditingService(service)
     setIsAddingNew(false)
+    if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
     setAutoSaveState('idle') // fresh panel — don't carry over the last service's "saved" check
     setPartError(null)
     setPartPickerInventoryId('')
