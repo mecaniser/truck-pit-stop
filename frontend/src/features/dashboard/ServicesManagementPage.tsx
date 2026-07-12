@@ -908,7 +908,12 @@ export default function ServicesManagementPage() {
                 {/* Parts section — only enabled once service has an id */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase text-gray-600">Parts included</p>
+                    <div>
+                      <p className="text-xs font-semibold uppercase text-gray-600">Parts included</p>
+                      {editingService && (
+                        <p className="text-[11px] text-gray-400 normal-case font-normal">Parts save automatically — no need to hit Save Changes.</p>
+                      )}
+                    </div>
                     {editingService && editingService.parts.length > 0 && (
                       <span className="text-xs font-semibold text-gray-700">
                         ${Number(editingService.parts_cost).toFixed(2)}
