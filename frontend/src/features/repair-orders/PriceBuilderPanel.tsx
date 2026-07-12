@@ -16,7 +16,6 @@ import {
   History,
   Loader2,
   Mail,
-  Pencil,
   Plane,
   Play,
   Plus,
@@ -722,52 +721,19 @@ export default function PriceBuilderPanel({
   const [editingPartsSaving, setEditingPartsSaving] = useState(false)
   const [priceSavingId, setPriceSavingId] = useState<string | null>(null)
 
-  type LaborField = 'hours' | 'rate'
-  const [editingLabor, setEditingLabor] = useState<{ lineId: string; field: LaborField } | null>(null)
-  const [editingLaborValue, setEditingLaborValue] = useState<string>('')
-  const [editingLaborSaving, setEditingLaborSaving] = useState(false)
-
-  const startEditLabor = (lineId: string, field: LaborField, current: string) => {
-    setEditingLabor({ lineId, field })
-    setEditingLaborValue(field === 'rate' ? parseFloat(current).toFixed(2) : current)
-  }
-  const cancelEditLabor = () => {
-    setEditingLabor(null)
-    setEditingLaborValue('')
-  }
-  const saveEditLabor = async (line: { id: string; hours: string; hourly_rate: string }) => {
-    if (!editingLabor) return
-    const { field } = editingLabor
-    const value = parseFloat(editingLaborValue || '0')
-    if (!Number.isFinite(value) || value < 0) {
-      toast.error(field === 'hours' ? 'Hours must be 0 or more' : 'Rate must be 0 or more')
-      return
-    }
-    const current = parseFloat(field === 'hours' ? line.hours : line.hourly_rate)
-    if (Math.abs(value - current) < 0.0001) {
-      cancelEditLabor()
-      return
-    }
-    setEditingLaborSaving(true)
-    try {
-      await updateLine.mutateAsync({
-        lineId: line.id,
-        body: field === 'hours' ? { hours: value } : { hourly_rate: value },
-      })
-      toast.success(field === 'hours' ? `Hours updated to ${value}` : `Rate updated to $${value.toFixed(2)}`)
-      cancelEditLabor()
-    } catch {
-      // error toast handled by mutation
-    } finally {
-      setEditingLaborSaving(false)
-    }
-  }
 
   const isLocked = !!summary?.pricing_locked
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
   const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
   const showRecommendedServicesPanel = !['completed', 'invoiced', 'paid'].includes(orderStatus)
-  const canMutate = canEdit && !isLocked && ['draft', 'quoted'].includes(orderStatus)
+  // Internal fleet orders carry their work through active statuses (e.g. an
+  // in-progress PM) and the owner bills labor at the customer's rate while parts
+  // stay at cost — so labor (duration + rate) must stay editable until the order
+  // freezes, not just in draft/quoted.
+  const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
+  const isEditableStatus = ['draft', 'quoted'].includes(orderStatus) ||
+    (isInternalOrder && !INTERNAL_FROZEN_STATUSES.includes(orderStatus))
+  const canMutate = canEdit && !isLocked && isEditableStatus
   const addBarReadOnly = !canEdit || isLocked || !['draft', 'quoted'].includes(orderStatus) || completionMode || hasInvoice || orderStatus === 'completed'
   const hasQuoteDraft = !!quoteNumber
   const hasAssignedTechnician = !!assignedTechnicianName
@@ -1285,7 +1251,6 @@ export default function PriceBuilderPanel({
     discountsSaving ||
     editingPartsSaving ||
     !!priceSavingId ||
-    editingLaborSaving ||
     addPart.isPending ||
     applyRepairOp.isPending ||
     applyLaborBookEntry.isPending ||
@@ -2531,8 +2496,17 @@ export default function PriceBuilderPanel({
         }
 
         const renderLaborEditor = (line: typeof lines[number]) => {
-          const editingHours = editingLabor?.lineId === line.id && editingLabor.field === 'hours'
-          const editingRate = editingLabor?.lineId === line.id && editingLabor.field === 'rate'
+          const lineHours = parseFloat(line.hours) || 0
+          const lineRate = parseFloat(line.hourly_rate) || 0
+          // Steppers commit on nudge/blur; skip the write if the value is unchanged.
+          const commitHours = (nextHours: number) => {
+            if (Math.abs(nextHours - lineHours) < 0.0001) return
+            updateLine.mutate({ lineId: line.id, body: { hours: nextHours } })
+          }
+          const commitRate = (nextRate: number) => {
+            if (Math.abs(nextRate - lineRate) < 0.0001) return
+            updateLine.mutate({ lineId: line.id, body: { hourly_rate: nextRate } })
+          }
           return (
             <>
               <div className="mb-2 flex items-center gap-1.5">
@@ -2548,99 +2522,37 @@ export default function PriceBuilderPanel({
                   className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-700">
-                {editingHours ? (
-                  <span className="inline-flex items-center gap-1">
-                    <input
-                      type="number"
-                      step="0.25"
-                      min="0"
-                      value={editingLaborValue}
-                      onChange={(e) => setEditingLaborValue(e.target.value)}
-                      className="w-20 h-8 px-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      autoFocus
-                    />
-                    <span className="text-gray-500">hr</span>
-                    <button
-                      type="button"
-                      disabled={editingLaborSaving}
-                      onClick={() => saveEditLabor(line)}
-                      className="h-8 px-2 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-60"
-                    >
-                      {editingLaborSaving ? '…' : 'Save'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEditLabor}
-                      className="h-8 px-1.5 text-xs text-gray-600 hover:text-gray-900"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="font-medium">{formatHoursMinutes(line.hours)}</span>
-                    {canMutate && (
-                      <button
-                        type="button"
-                        onClick={() => startEditLabor(line.id, 'hours', line.hours)}
-                        className="text-amber-700 hover:text-amber-800"
-                        aria-label="Edit hours"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                    )}
-                  </span>
-                )}
-
+              {/* Duration + rate use the shared steppers (step time by 15m, rate by
+                  $1). They persist immediately on change — no separate Save. */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-700">
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Duration</span>
+                  <DurationStepper
+                    hours={lineHours}
+                    onChange={commitHours}
+                    stepMinutes={15}
+                    minMinutes={0}
+                    disabled={!canMutate}
+                    ariaLabel="Labor duration"
+                  />
+                </label>
                 <span className="text-gray-400">×</span>
-
-                {editingRate ? (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="text-gray-500">$</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={editingLaborValue}
-                      onChange={(e) => setEditingLaborValue(e.target.value)}
-                      className="w-20 h-8 px-2 rounded-md border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      autoFocus
-                    />
-                    <span className="text-gray-500">/hr</span>
-                    <button
-                      type="button"
-                      disabled={editingLaborSaving}
-                      onClick={() => saveEditLabor(line)}
-                      className="h-8 px-2 text-xs font-semibold text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-60"
-                    >
-                      {editingLaborSaving ? '…' : 'Save'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEditLabor}
-                      className="h-8 px-1.5 text-xs text-gray-600 hover:text-gray-900"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="font-medium">${parseFloat(line.hourly_rate).toFixed(2)}/hr</span>
-                    {canMutate && (
-                      <button
-                        type="button"
-                        onClick={() => startEditLabor(line.id, 'rate', line.hourly_rate)}
-                        className="text-amber-700 hover:text-amber-800"
-                        aria-label="Edit hourly rate"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                    )}
-                  </span>
-                )}
-
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
+                  <span className="text-gray-500">$</span>
+                  <QuantityStepper
+                    value={lineRate}
+                    onChange={commitRate}
+                    min={0}
+                    step={1}
+                    unitLabel="/hr"
+                    disabled={!canMutate}
+                    ariaLabel="Labor hourly rate"
+                    align="start"
+                  />
+                </label>
                 <span className="text-gray-400">=</span>
-                <span className="text-gray-500">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
+                <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
               </div>
             </>
           )

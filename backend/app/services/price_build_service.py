@@ -49,6 +49,15 @@ class PriceBuildValidationError(PriceBuildError):
 
 
 EDITABLE_RO_STATUSES = {RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED}
+# Internal fleet work orders log labor/parts throughout their active flow (e.g.
+# an in-progress PM) and only freeze once completed/invoiced/paid/cancelled —
+# mirrors INTERNAL_FROZEN_RO_STATUSES in the repair_orders endpoints module.
+INTERNAL_FROZEN_STATUSES = {
+    RepairOrderStatus.COMPLETED,
+    RepairOrderStatus.INVOICED,
+    RepairOrderStatus.PAID,
+    RepairOrderStatus.CANCELLED,
+}
 FINALIZED_STATUSES = {RepairOrderStatus.INVOICED, RepairOrderStatus.PAID}
 logger = get_logger(__name__)
 
@@ -664,6 +673,15 @@ class PriceBuildService:
     def _assert_editable(self, order: RepairOrder) -> None:
         if _is_locked(order):
             raise PriceBuildLockedError("Pricing is locked for this repair order")
+        # Internal fleet orders stay editable through their active flow so the
+        # owner can adjust labor (duration/rate) and parts while work is under
+        # way; customer orders are only editable in draft/quoted.
+        if getattr(order, "is_internal", False):
+            if order.status in INTERNAL_FROZEN_STATUSES:
+                raise PriceBuildValidationError(
+                    "Price build lines can't be modified after the work order is completed"
+                )
+            return
         if order.status not in EDITABLE_RO_STATUSES:
             raise PriceBuildValidationError(
                 "Price build lines can only be modified when repair order is draft or quoted"
