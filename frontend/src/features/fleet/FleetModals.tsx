@@ -439,8 +439,9 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
         />
         {/* Rate is the configured in-house labor cost — read-only. */}
         <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in shop settings)">{money(internalRate)}/h</span>
-        <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+        {/* Labeled so it reads as "add this line" — not another stepper +. */}
+        <button className={ghostBtn} style={{ height: 34, padding: '0 14px', fontSize: 12.5, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
         </button>
       </div>
       {internalRate <= 0 && (
@@ -514,8 +515,8 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
           }))}
         />
       </div>
-      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      <button className={ghostBtn} style={{ height: 34, padding: '0 14px', fontSize: 12.5, fontWeight: 600 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
       </button>
     </div>
   )
@@ -559,8 +560,8 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
         align="start"
         theme="dark"
       />
-      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      <button className={ghostBtn} style={{ height: 34, padding: '0 14px', fontSize: 12.5, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
       </button>
     </div>
   )
