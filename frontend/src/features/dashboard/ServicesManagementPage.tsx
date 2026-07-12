@@ -154,6 +154,8 @@ export default function ServicesManagementPage() {
     reset,
     setValue,
     watch,
+    getValues,
+    trigger,
     formState: { errors },
   } = useForm<ServiceFormData>({
     resolver: zodResolver(serviceSchema),
@@ -201,29 +203,51 @@ export default function ServicesManagementPage() {
     },
   })
 
-  const updateMutation = useMutation({
+  // Silent auto-save used while editing an existing service — persists the top
+  // fields (name/labor/duration/etc.) as they change, like the parts already
+  // do, so the panel has one consistent "just save it" model and no button.
+  // It never closes the drawer or resets the form.
+  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const autoSave = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ServiceFormData }) => {
       const payload = buildPayload(data)
-      // Backend understands clear_base_price flag to distinguish "leave untouched" from "clear to null".
-      const response = await api.put(`/services/${id}`, {
-        ...payload,
-        clear_base_price: payload.base_price === null,
-      })
+      const response = await api.put(`/services/${id}`, { ...payload, clear_base_price: payload.base_price === null })
       return response.data as Service
     },
+    onMutate: () => setAutoSaveState('saving'),
     onSuccess: (svc) => {
       queryClient.invalidateQueries({ queryKey: ['admin-services'] })
-      // Close the drawer so the toast isn't hidden behind it — user confirms "saved"
-      // via the drawer collapsing + the top-right toast.
-      setEditingService(null)
-      setIsAddingNew(false)
-      reset()
-      toast.success(`${svc.name} updated`)
+      // Keep parts_cost / labor recompute in sync, but don't disturb the form.
+      setEditingService((prev) => (prev && prev.id === svc.id ? svc : prev))
+      setAutoSaveState('saved')
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || 'Failed to update service')
+      setAutoSaveState('idle')
+      toast.error(err?.response?.data?.detail || 'Failed to save service')
     },
   })
+
+  // Debounced field-level auto-save (edit mode only). We only save on a real
+  // user field change (info.type is set for those); the programmatic reset()
+  // that populates the form on open emits an event with no `type`, so opening a
+  // service never triggers a save.
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!editingService) return
+    const sub = watch((_value, info) => {
+      if (!info?.type) return // ignore programmatic reset / initial population
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      autoSaveTimer.current = setTimeout(async () => {
+        if (!(await trigger())) return // don't persist invalid state (e.g. empty name)
+        autoSave.mutate({ id: editingService.id, data: getValues() })
+      }, 700)
+    })
+    return () => {
+      sub.unsubscribe()
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingService])
 
   const preloadMutation = useMutation({
     mutationFn: async () => {
@@ -374,8 +398,10 @@ export default function ServicesManagementPage() {
   }
 
   const onSubmit = (data: ServiceFormData) => {
+    // Editing auto-saves; a stray Enter just flushes the current values silently
+    // (no drawer close). Only the create flow has an explicit submit.
     if (editingService) {
-      updateMutation.mutate({ id: editingService.id, data })
+      autoSave.mutate({ id: editingService.id, data })
     } else {
       createMutation.mutate(data)
     }
@@ -908,12 +934,7 @@ export default function ServicesManagementPage() {
                 {/* Parts section — only enabled once service has an id */}
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase text-gray-600">Parts included</p>
-                      {editingService && (
-                        <p className="text-[11px] text-gray-400 normal-case font-normal">Parts save automatically — no need to hit Save Changes.</p>
-                      )}
-                    </div>
+                    <p className="text-xs font-semibold uppercase text-gray-600">Parts included</p>
                     {editingService && editingService.parts.length > 0 && (
                       <span className="text-xs font-semibold text-gray-700">
                         ${Number(editingService.parts_cost).toFixed(2)}
@@ -1031,25 +1052,35 @@ export default function ServicesManagementPage() {
                 </div>
               </div>
 
-              <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? 'Saving...'
-                    : editingService
-                    ? 'Save Changes'
-                    : 'Create Service'}
-                </button>
+              <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
+                {/* Editing auto-saves — show a quiet status instead of a Save button. */}
+                <span className="text-xs text-gray-400">
+                  {editingService
+                    ? autoSaveState === 'saving'
+                      ? 'Saving…'
+                      : autoSaveState === 'saved'
+                      ? 'All changes saved'
+                      : 'Changes save automatically'
+                    : ''}
+                </span>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
+                  >
+                    {editingService ? 'Done' : 'Cancel'}
+                  </button>
+                  {!editingService && (
+                    <button
+                      type="submit"
+                      disabled={createMutation.isPending}
+                      className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
+                    >
+                      {createMutation.isPending ? 'Creating…' : 'Create Service'}
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </aside>
