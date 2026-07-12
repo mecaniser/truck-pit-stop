@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 
@@ -12,6 +13,10 @@ type DurationStepperProps = {
   minMinutes?: number
   disabled?: boolean
   ariaLabel?: string
+  /** When set, `onChange` fires once ~this many ms after the user stops
+   *  stepping (optimistic display advances instantly). Use for steppers that
+   *  persist to the server so rapid clicks become one request. */
+  commitDebounceMs?: number
 }
 
 /**
@@ -27,13 +32,41 @@ export default function DurationStepper({
   minMinutes,
   disabled,
   ariaLabel = 'Duration',
+  commitDebounceMs,
 }: DurationStepperProps) {
   const floor = minMinutes ?? stepMinutes
-  const totalMinutes = Math.round((Number(hours) || 0) * 60)
+  const [localHours, setLocalHours] = useState(hours)
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastEmitted = useRef(hours)
+
+  const displayHours = commitDebounceMs != null ? localHours : hours
+  const totalMinutes = Math.round((Number(displayHours) || 0) * 60)
+
+  // Re-sync from the prop only when no debounced write is pending, so an
+  // in-flight save + refetch doesn't clobber the value being stepped.
+  useEffect(() => {
+    if (commitDebounceMs != null && debounceTimer.current != null) return
+    setLocalHours(hours)
+    lastEmitted.current = hours
+  }, [hours, commitDebounceMs])
+
+  useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }, [])
 
   const setMinutes = (mins: number) => {
     const clamped = Math.max(floor, mins)
-    onChange(clamped / 60)
+    const nextHours = clamped / 60
+    if (commitDebounceMs == null) {
+      onChange(nextHours)
+      return
+    }
+    setLocalHours(nextHours)
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => {
+      debounceTimer.current = null
+      if (Math.abs(nextHours - lastEmitted.current) < 0.0001) return
+      lastEmitted.current = nextHours
+      onChange(nextHours)
+    }, commitDebounceMs)
   }
   const dec = () => setMinutes(totalMinutes - stepMinutes)
   const inc = () => setMinutes(totalMinutes + stepMinutes)
@@ -54,7 +87,7 @@ export default function DurationStepper({
         <Minus className="h-3.5 w-3.5" />
       </button>
       <span className="min-w-[4.5rem] border-x border-gray-200 px-2 text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums text-gray-900">
-        {formatHoursMinutes(hours)}
+        {formatHoursMinutes(displayHours)}
       </span>
       <button
         type="button"

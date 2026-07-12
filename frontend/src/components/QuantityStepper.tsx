@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Minus, Plus, Trash2 } from 'lucide-react'
 
 type QuantityStepperProps = {
@@ -15,6 +15,12 @@ type QuantityStepperProps = {
   /** Wrapper alignment. 'end' (default) suits table/price rows; 'start' suits
    *  label-over-field forms so the pill lines up under its left-aligned label. */
   align?: 'start' | 'end'
+  /** When set, `onChange` fires once ~this many ms after the user stops
+   *  stepping instead of on every click. The control still advances instantly
+   *  (optimistic local value). Use for steppers that persist to the server so a
+   *  flurry of clicks becomes a single request (avoids rate-limit 429s). Leave
+   *  unset for steppers that only update local state. */
+  commitDebounceMs?: number
 }
 
 const formatQuantity = (value: number, step: number) => (
@@ -33,19 +39,51 @@ export default function QuantityStepper({
   removeAtMin = false,
   className = '',
   align = 'end',
+  commitDebounceMs,
 }: QuantityStepperProps) {
+  // Optimistic display value: for debounced steppers it advances on each click
+  // while the write is pending; otherwise it just tracks the prop.
+  const [localValue, setLocalValue] = useState(value)
   const [draft, setDraft] = useState(formatQuantity(value, step))
   const [editing, setEditing] = useState(false)
-  const atMin = value <= min
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastEmitted = useRef(value)
+
+  const displayValue = commitDebounceMs != null ? localValue : value
+  const atMin = displayValue <= min
   const canRemove = removeAtMin && atMin && !!onRemove
 
+  // Re-sync from the prop only when idle (not typing, no pending debounced
+  // write) so an in-flight save + refetch doesn't clobber what the user is
+  // actively stepping.
   useEffect(() => {
-    if (!editing) setDraft(formatQuantity(value, step))
-  }, [value, step, editing])
+    if (editing) return
+    if (commitDebounceMs != null && debounceTimer.current != null) return
+    setLocalValue(value)
+    setDraft(formatQuantity(value, step))
+    lastEmitted.current = value
+  }, [value, step, editing, commitDebounceMs])
+
+  useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }, [])
 
   // Number of decimals implied by the step (e.g. step 0.25 -> 2), so typed
   // values are cleaned of float noise without being forced onto the step grid.
   const stepDecimals = (String(step).split('.')[1] || '').length
+
+  const emit = (resolved: number) => {
+    if (commitDebounceMs == null) {
+      onChange(resolved)
+      return
+    }
+    setLocalValue(resolved)
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => {
+      debounceTimer.current = null
+      if (Math.abs(resolved - lastEmitted.current) < Math.pow(10, -(stepDecimals + 2))) return
+      lastEmitted.current = resolved
+      onChange(resolved)
+    }, commitDebounceMs)
+  }
 
   // snap=true (button/keyboard nudges) rounds to the nearest step multiple so
   // stepping stays on a clean grid. snap=false (typed values) keeps the exact
@@ -55,7 +93,7 @@ export default function QuantityStepper({
     const resolved = snap
       ? Math.round(next / step) * step
       : Number(next.toFixed(stepDecimals))
-    onChange(resolved)
+    emit(resolved)
     setDraft(formatQuantity(resolved, step))
   }
 
@@ -63,7 +101,7 @@ export default function QuantityStepper({
     setEditing(false)
     const parsed = parseFloat(draft)
     if (!Number.isFinite(parsed) || parsed < min) {
-      setDraft(formatQuantity(value, step))
+      setDraft(formatQuantity(displayValue, step))
       return
     }
     commit(parsed, false)
@@ -72,7 +110,7 @@ export default function QuantityStepper({
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')) {
       e.preventDefault()
-      commit(value + (e.key === '-' || e.key === '_' ? -step : step), true)
+      commit(displayValue + (e.key === '-' || e.key === '_' ? -step : step), true)
       return
     }
     if (e.key === 'Enter') {
@@ -81,7 +119,7 @@ export default function QuantityStepper({
       e.currentTarget.blur()
     } else if (e.key === 'Escape') {
       setEditing(false)
-      setDraft(formatQuantity(value, step))
+      setDraft(formatQuantity(displayValue, step))
       e.currentTarget.blur()
     }
   }
@@ -92,7 +130,7 @@ export default function QuantityStepper({
         <button
           type="button"
           disabled={disabled}
-          onClick={canRemove ? onRemove : () => commit(value - step, true)}
+          onClick={canRemove ? onRemove : () => commit(displayValue - step, true)}
           aria-label={canRemove ? `Remove ${ariaLabel}` : `Decrease ${ariaLabel}`}
           className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
             canRemove ? 'text-red-500 hover:bg-red-50' : 'text-gray-500 hover:bg-gray-50'
@@ -116,7 +154,7 @@ export default function QuantityStepper({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => commit(value + step, true)}
+          onClick={() => commit(displayValue + step, true)}
           aria-label={`Increase ${ariaLabel}`}
           className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-50"
         >

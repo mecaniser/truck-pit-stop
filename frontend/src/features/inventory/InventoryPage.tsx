@@ -1254,13 +1254,14 @@ export default function InventoryPage() {
             </div>
             <p className="text-xs text-gray-600">Moves units from On Order into Stock.</p>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="1"
-                value={receiveQty}
-                onChange={(e) => setReceiveQty(e.target.value)}
-                placeholder="Qty"
-                className="w-24 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              <QuantityStepper
+                value={Number(receiveQty) || 1}
+                onChange={(n) => setReceiveQty(String(n))}
+                min={1}
+                step={1}
+                unitLabel=""
+                ariaLabel="Quantity to receive"
+                align="start"
               />
               <button
                 type="button"

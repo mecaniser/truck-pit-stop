@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Loader2, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, Pencil, RotateCcw } from 'lucide-react'
+import { ArrowRight, Loader2, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -17,6 +17,7 @@ import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { formatUSPhone } from '@/utils/phone'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 import BaseSelect from '../../components/BaseSelect'
+import QuantityStepper from '@/components/QuantityStepper'
 import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -205,7 +206,6 @@ export default function RepairOrdersPage() {
   const [addLaborHours, setAddLaborHours] = useState('')
   const [addLaborRate, setAddLaborRate] = useState('100')
   const laborRateInitialized = useRef(false)
-  const [isEditingLaborRate, setIsEditingLaborRate] = useState(false)
   const [showPartComposer, setShowPartComposer] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -3391,13 +3391,17 @@ export default function RepairOrdersPage() {
                                       allowAddNew={false}
                                     />
                                   </div>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    value={addPartQuantity}
-                                    onChange={(e) => setAddPartQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                    className="h-[42px] rounded-lg border border-gray-300 px-3 text-sm w-16 shrink-0"
-                                  />
+                                  <div className="shrink-0">
+                                    <QuantityStepper
+                                      value={addPartQuantity}
+                                      onChange={(n) => setAddPartQuantity(Math.max(1, n))}
+                                      min={1}
+                                      step={1}
+                                      unitLabel=""
+                                      ariaLabel="Part quantity"
+                                      align="start"
+                                    />
+                                  </div>
                                   <button
                                     type="button"
                                     disabled={!addPartInventoryId || addPartMutation.isPending}
@@ -3473,28 +3477,18 @@ export default function RepairOrdersPage() {
                                       className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
                                     />
                                     <span className="text-gray-500 text-sm">×</span>
-                                    {isEditingLaborRate ? (
-                                      <input
-                                        type="number"
-                                        step={0.01}
+                                    <span className="inline-flex items-center gap-1 text-sm text-gray-500">
+                                      <span>$</span>
+                                      <QuantityStepper
+                                        value={parseFloat(addLaborRate) || 0}
+                                        onChange={(n) => setAddLaborRate(String(n))}
                                         min={0}
-                                        autoFocus
-                                        value={addLaborRate}
-                                        onChange={(e) => setAddLaborRate(e.target.value)}
-                                        onBlur={() => setIsEditingLaborRate(false)}
-                                        onKeyDown={(e) => e.key === 'Enter' && setIsEditingLaborRate(false)}
-                                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm w-24"
+                                        step={1}
+                                        unitLabel="/hr"
+                                        ariaLabel="Labor rate per hour"
+                                        align="start"
                                       />
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => setIsEditingLaborRate(true)}
-                                        className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
-                                      >
-                                        <span className="font-medium">${addLaborRate}/hr</span>
-                                        <Pencil className="w-3 h-3 text-gray-400" />
-                                      </button>
-                                    )}
+                                    </span>
                                     <button
                                       type="button"
                                       disabled={!addLaborHours || !addLaborRate || addLaborMutation.isPending}
@@ -3512,7 +3506,6 @@ export default function RepairOrdersPage() {
                                         setAddLaborDescription('')
                                         setAddLaborHours('')
                                         setAddLaborRate(taxFeeSettings?.labor_rate?.toString() || '100')
-                                        setIsEditingLaborRate(false)
                                       }}
                                       className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg"
                                     >
