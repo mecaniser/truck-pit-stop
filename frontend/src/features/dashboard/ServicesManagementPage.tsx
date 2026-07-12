@@ -22,6 +22,8 @@ interface ServicePart {
   // Decimal on the backend (fluids use fractional amounts), so it serializes
   // over the wire as a string, same as unit_price/line_total.
   quantity: string
+  // each | gallon | quart | liter — fluids are ordered in fractional amounts.
+  unit_type?: string
   unit_price: string
   line_total: string
   stock_quantity: number
@@ -74,6 +76,16 @@ const serviceSchema = z.object({
 })
 
 type ServiceFormData = z.infer<typeof serviceSchema>
+
+// Fluids are dispensed in fractional amounts, so their quantity steppers move
+// in quarter-unit increments and show the unit; discrete parts step by whole
+// "each".
+const FLUID_UNITS = new Set(['gallon', 'quart', 'liter'])
+function unitStepConfig(unitType?: string): { step: number; min: number; unitLabel: string } {
+  const u = (unitType || 'each').toLowerCase()
+  if (FLUID_UNITS.has(u)) return { step: 0.25, min: 0.25, unitLabel: u === 'gallon' ? 'gal' : u === 'quart' ? 'qt' : 'L' }
+  return { step: 1, min: 1, unitLabel: 'ea' }
+}
 
 export default function ServicesManagementPage() {
   const queryClient = useQueryClient()
@@ -916,7 +928,9 @@ export default function ServicesManagementPage() {
                         <p className="text-xs text-gray-500">No parts attached. Add batteries, filters, etc. below.</p>
                       ) : (
                         <div className="space-y-2">
-                          {editingService.parts.map((part) => (
+                          {editingService.parts.map((part) => {
+                            const unit = unitStepConfig(part.unit_type)
+                            return (
                             <div
                               key={part.id}
                               className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2"
@@ -924,13 +938,15 @@ export default function ServicesManagementPage() {
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-gray-800 truncate">{part.name}</p>
                                 <p className="text-xs text-gray-500">
-                                  {part.sku} · ${Number(part.unit_price).toFixed(2)}/ea
+                                  {part.sku} · ${Number(part.unit_price).toFixed(2)}/{unit.unitLabel}
                                 </p>
                               </div>
                               <QuantityStepper
                                 ariaLabel={`Quantity for ${part.name}`}
-                                value={Number(part.quantity) || 1}
-                                min={1}
+                                value={Number(part.quantity) || unit.min}
+                                min={unit.min}
+                                step={unit.step}
+                                unitLabel={unit.unitLabel}
                                 onChange={(qty) => {
                                   if (qty !== Number(part.quantity)) {
                                     updatePartMutation.mutate({
@@ -960,7 +976,8 @@ export default function ServicesManagementPage() {
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
 
