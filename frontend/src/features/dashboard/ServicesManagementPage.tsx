@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Download, Settings, Trash2, Wrench, Plus, X } from 'lucide-react'
+import { Download, Settings, Trash2, Wrench, Plus, X, Check, Loader2 } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import BaseSelect from '@/components/BaseSelect'
@@ -359,6 +359,7 @@ export default function ServicesManagementPage() {
   const startEdit = (service: Service) => {
     setEditingService(service)
     setIsAddingNew(false)
+    setAutoSaveState('idle') // fresh panel — don't carry over the last service's "saved" check
     setPartError(null)
     setPartPickerInventoryId('')
     setPartPickerQty(1)
@@ -1054,15 +1055,23 @@ export default function ServicesManagementPage() {
 
               <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
                 {/* Editing auto-saves — show a quiet status instead of a Save button. */}
-                <span className="text-xs text-gray-400">
-                  {editingService
-                    ? autoSaveState === 'saving'
-                      ? 'Saving…'
-                      : autoSaveState === 'saved'
-                      ? 'All changes saved'
-                      : 'Changes save automatically'
-                    : ''}
-                </span>
+                {editingService ? (
+                  autoSaveState === 'saving' ? (
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving…
+                    </span>
+                  ) : autoSaveState === 'saved' ? (
+                    <span className="flex items-center gap-1.5 text-xs text-green-600">
+                      <Check className="w-3.5 h-3.5" />
+                      All changes saved
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-400">Changes save automatically</span>
+                  )
+                ) : (
+                  <span />
+                )}
                 <div className="flex gap-3">
                   <button
                     type="button"
