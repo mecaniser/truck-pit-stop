@@ -6,6 +6,7 @@ import {
   Check, Minus, RotateCcw, Wrench,
 } from 'lucide-react'
 import api from '../../lib/api'
+import BaseSelect from '@/components/BaseSelect'
 import QuantityStepper from '@/components/QuantityStepper'
 import DurationStepper from '@/components/DurationStepper'
 import { useAuthStore } from '../../stores/authStore'
@@ -499,14 +500,20 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
   })
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-      <select style={{ ...costInput, flex: 1, height: 34 }} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-        <option value="">Add service from catalog…</option>
-        {(services || []).map((s) => (
-          <option key={s.service_id} value={s.service_id}>
-            {s.name}{s.duration_minutes ? ` · ${s.duration_minutes}m` : ''}
-          </option>
-        ))}
-      </select>
+      {/* Searchable so a long service catalog is filterable by name. */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <BaseSelect
+          variant="dark"
+          placeholder="Add service from catalog…"
+          value={serviceId}
+          onChange={setServiceId}
+          options={(services || []).map((s) => ({
+            value: s.service_id,
+            label: s.name,
+            subLabel: s.duration_minutes ? `${s.duration_minutes}m` : undefined,
+          }))}
+        />
+      </div>
       <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
         {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
       </button>
@@ -525,11 +532,22 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   const valid = invId !== '' && Number(qty) > 0
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-      <select style={{ ...costInput, flex: 1, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
-        <option value="">Add part from inventory…</option>
-        {/* Internal fleet repairs are costed at the part's cost, not list price. */}
-        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.cost))} cost</option>)}
-      </select>
+      {/* Searchable so a long inventory is findable by name or SKU. Internal fleet
+          repairs are costed at the part's cost, not list price. */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <BaseSelect
+          variant="dark"
+          placeholder="Add part from inventory…"
+          value={invId}
+          onChange={setInvId}
+          options={inventory.map((i) => ({
+            value: i.id,
+            label: i.name,
+            subLabel: `${i.sku} · ${money(toNum(i.cost))} cost`,
+            searchText: i.sku,
+          }))}
+        />
+      </div>
       {/* Local-only until "Add" is clicked — no per-click server write, so no debounce. */}
       <QuantityStepper
         value={Number(qty) || 1}

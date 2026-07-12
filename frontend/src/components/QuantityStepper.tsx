@@ -171,7 +171,10 @@ export default function QuantityStepper({
           onKeyDown={handleKeyDown}
           aria-label={ariaLabel}
           title="Type a value, or use Ctrl/Cmd + and Ctrl/Cmd - to step"
-          className={`h-8 w-14 border-x bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums outline-none disabled:opacity-50 ${t.input}`}
+          // Inline width/height so host stylesheets that target `input` broadly
+          // (e.g. the fleet modal's `.dsec input { width:100% }`) can't stretch it.
+          style={{ width: '3.5rem', height: '2rem' }}
+          className={`flex-none border-x bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums outline-none disabled:opacity-50 ${t.input}`}
         />
         <button
           type="button"
