@@ -1068,20 +1068,23 @@ export default function ServicesManagementPage() {
               </div>
 
               <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
-                {/* Editing auto-saves — show a quiet status instead of a Save button. */}
+                {/* Editing auto-saves — show a quiet status instead of a Save button.
+                    Keyed by state so each swap replays the cross-fade. */}
                 {editingService ? (
                   autoSaveState === 'saving' ? (
-                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <span key="saving" className="animate-status-swap flex items-center gap-1.5 text-xs text-gray-500">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Saving…
                     </span>
                   ) : autoSaveState === 'saved' ? (
-                    <span className="flex items-center gap-1.5 text-xs text-green-600">
+                    <span key="saved" className="animate-status-swap flex items-center gap-1.5 text-xs text-green-600">
                       <Check className="w-3.5 h-3.5" />
                       All changes saved
                     </span>
                   ) : (
-                    <span className="text-xs text-gray-400">Changes save automatically</span>
+                    <span key="idle" className="animate-status-swap text-xs text-gray-400">
+                      Changes save automatically
+                    </span>
                   )
                 ) : (
                   <span />
