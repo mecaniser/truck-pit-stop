@@ -23,7 +23,10 @@ export function Modal({ title, icon, onClose, children, width = 480 }: {
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
-      <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+      {/* overflowX hidden: this is a fixed-width, vertically-scrolling panel — a
+          stray wide child (e.g. a long <select> option) must not add a
+          horizontal scrollbar. */}
+      <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', overflowX: 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div className="dsec-head">
           <div className="dsec-title">{icon}<h3>{title}</h3></div>
           <button className="person-call" onClick={onClose}><X size={18} /></button>
@@ -534,7 +537,9 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
       {/* Searchable so a long inventory is findable by name or SKU. Internal fleet
-          repairs are costed at the part's cost, not list price. */}
+          repairs are costed at the part's cost, not list price. (This BaseSelect
+          replaces the earlier native <select> overflow fix — it manages its own
+          width and portals the menu, so it can't grow a scrollbar either.) */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <BaseSelect
           variant="dark"

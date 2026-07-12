@@ -4,9 +4,17 @@ import {
   Users, DollarSign, 
   ShoppingCart, Target, Activity, ArrowLeft, Building2 
 } from 'lucide-react'
+import {
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+} from 'recharts'
 import api from '../../lib/api'
 import { GlassNoirCard, GlassNoirHeader } from '../../components/ui/GlassNoirCard'
 import { StatScrollRow, CollapsibleStats, InlineStats } from '../../components/ui/MobileStats'
+import { CHART } from '../analytics/chartTheme'
+
+// Super-admin theme uses gold; validated as sufficient-contrast single-series
+// colour on the noir surface.
+const GOLD = '#B8860B'
 
 interface GarageStats {
   tenant_id: string
@@ -73,52 +81,52 @@ export default function GarageAnalyticsPage() {
     }).format(amount)
   }
 
+  // Themed Recharts area chart — replaces the hand-rolled SVG polyline.
   const SimpleLineChart = ({ data, dataKey }: { data: any[], dataKey: string }) => {
     if (!data || data.length === 0) return null
-
-    const values = data.map(d => d[dataKey])
-    const max = Math.max(...values)
-    const min = Math.min(...values)
-    const range = max - min || 1
-
-    const points = data.map((d, i) => {
-      const x = (i / (data.length - 1)) * 100
-      const y = 100 - ((d[dataKey] - min) / range) * 80
-      return `${x},${y}`
-    }).join(' ')
-
     return (
-      <svg className="w-full h-32" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <polyline
-          points={points}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
+      <div className="h-32">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="gAdminRev" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={GOLD} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={GOLD} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={CHART.grid} vertical={false} />
+            <XAxis dataKey="date" hide />
+            <YAxis hide />
+            <Tooltip
+              contentStyle={{ background: CHART.tooltipBg, border: CHART.tooltipBorder, borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: CHART.tooltipMuted }}
+              formatter={(v) => ['$' + Number(v ?? 0).toLocaleString(), 'Revenue']}
+            />
+            <Area type="monotone" dataKey={dataKey} stroke={GOLD} strokeWidth={2} fill="url(#gAdminRev)" isAnimationActive={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
     )
   }
 
+  // Themed Recharts bar chart — replaces the hand-rolled flex bars.
   const SimpleBarChart = ({ data, dataKey }: { data: any[], dataKey: string }) => {
     if (!data || data.length === 0) return null
-
-    const values = data.map(d => d[dataKey])
-    const max = Math.max(...values) || 1
-
     return (
-      <div className="flex items-end justify-between h-32 gap-1">
-        {data.slice(-30).map((d, i) => {
-          const height = (d[dataKey] / max) * 100
-          return (
-            <div
-              key={i}
-              className="flex-1 bg-gold-500 rounded-t transition-all hover:bg-gold-400"
-              style={{ height: `${height}%`, minHeight: '2px' }}
-              title={`${d.date}: ${d[dataKey]}`}
+      <div className="h-32">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data.slice(-30)} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+            <CartesianGrid stroke={CHART.grid} vertical={false} />
+            <XAxis dataKey="date" hide />
+            <YAxis hide />
+            <Tooltip
+              cursor={{ fill: CHART.cursorFill }}
+              contentStyle={{ background: CHART.tooltipBg, border: CHART.tooltipBorder, borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: CHART.tooltipMuted }}
             />
-          )
-        })}
+            <Bar dataKey={dataKey} fill={GOLD} radius={[3, 3, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     )
   }

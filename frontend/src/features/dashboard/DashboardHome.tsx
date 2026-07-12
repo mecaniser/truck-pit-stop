@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { formatUSPhone } from '@/utils/phone'
@@ -403,6 +404,19 @@ export default function DashboardHome() {
       return response.data
     },
     refetchOnWindowFocus: true, // Refresh when tab becomes visible
+    // A 429 means we're rate-limited, not that the request is broken —
+    // retrying immediately just extends the block. Let the limiter's
+    // window clear instead of hammering it.
+    retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
+    // The cockpit unmounts/remounts on every navigation to/from the repair
+    // order drawer (a route change, not a state toggle), so a plain
+    // remount is not a meaningful freshness signal — it just means the user
+    // clicked "close." Freshness here is driven by explicit invalidation
+    // (WebSocket events in useWebSocket.ts, the manual Refresh button), not
+    // by component lifecycle, so skip the automatic refetch-on-mount and
+    // rely on the longer resting staleTime for everything else.
+    refetchOnMount: false,
+    staleTime: 60 * 1000,
   })
 
   const { data: teamBoard } = useQuery<TeamCapacityBoardResponse>({
@@ -413,9 +427,13 @@ export default function DashboardHome() {
     },
     enabled: isManager,
     refetchOnWindowFocus: true,
+    retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
+    refetchOnMount: false,
+    staleTime: 60 * 1000,
   })
-  
-  const error = queryError ? 'Failed to load dashboard stats' : null
+
+  const isRateLimited = isAxiosError(queryError) && queryError.response?.status === 429
+  const error = queryError ? (isRateLimited ? 'Too many requests — waiting a moment before retrying' : 'Failed to load dashboard stats') : null
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
@@ -620,8 +638,14 @@ export default function DashboardHome() {
     return (
       <div className="text-center py-12">
         <p className="text-red-400">{error}</p>
-        <button onClick={handleManualRefresh} className="mt-4 hover:opacity-80" style={{ color: accentColors[500] }}>
-          Try again
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="mt-4 inline-flex items-center gap-2 hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ color: accentColors[500] }}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+          {isRefreshing ? 'Retrying…' : 'Try again'}
         </button>
       </div>
     )

@@ -105,6 +105,27 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Auto-save status: gentle cross-fade + tiny rise as the label swaps between
+   "Saving…" / "All changes saved" / resting. Keyed per state so it re-triggers. */
+@keyframes status-swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-status-swap {
+  animation: status-swap 0.25s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-status-swap {
+    animation: none;
+  }
+}
+
 /* Custom scrollbar for dark theme */
 .scrollbar-dark {
   scrollbar-width: thin;

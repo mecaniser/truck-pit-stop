@@ -5,7 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Download, Settings, Trash2, Wrench, Plus, X } from 'lucide-react'
+import { Download, Settings, Trash2, Wrench, Plus, X, Check, Loader2 } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import BaseSelect from '@/components/BaseSelect'
@@ -22,6 +22,8 @@ interface ServicePart {
   // Decimal on the backend (fluids use fractional amounts), so it serializes
   // over the wire as a string, same as unit_price/line_total.
   quantity: string
+  // each | gallon | quart | liter — fluids are ordered in fractional amounts.
+  unit_type?: string
   unit_price: string
   line_total: string
   stock_quantity: number
@@ -74,6 +76,16 @@ const serviceSchema = z.object({
 })
 
 type ServiceFormData = z.infer<typeof serviceSchema>
+
+// Fluids are dispensed in fractional amounts, so their quantity steppers move
+// in quarter-unit increments and show the unit; discrete parts step by whole
+// "each".
+const FLUID_UNITS = new Set(['gallon', 'quart', 'liter'])
+function unitStepConfig(unitType?: string): { step: number; min: number; unitLabel: string } {
+  const u = (unitType || 'each').toLowerCase()
+  if (FLUID_UNITS.has(u)) return { step: 0.25, min: 0.25, unitLabel: u === 'gallon' ? 'gal' : u === 'quart' ? 'qt' : 'L' }
+  return { step: 1, min: 1, unitLabel: 'ea' }
+}
 
 export default function ServicesManagementPage() {
   const queryClient = useQueryClient()
@@ -142,6 +154,8 @@ export default function ServicesManagementPage() {
     reset,
     setValue,
     watch,
+    getValues,
+    trigger,
     formState: { errors },
   } = useForm<ServiceFormData>({
     resolver: zodResolver(serviceSchema),
@@ -189,29 +203,64 @@ export default function ServicesManagementPage() {
     },
   })
 
-  const updateMutation = useMutation({
+  // Silent auto-save used while editing an existing service — persists the top
+  // fields (name/labor/duration/etc.) as they change, like the parts already
+  // do, so the panel has one consistent "just save it" model and no button.
+  // It never closes the drawer or resets the form.
+  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  // After a save the green "saved" check lingers briefly then settles back to
+  // the quiet "Changes save automatically" resting state.
+  const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current) }, [])
+  const autoSave = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ServiceFormData }) => {
       const payload = buildPayload(data)
-      // Backend understands clear_base_price flag to distinguish "leave untouched" from "clear to null".
-      const response = await api.put(`/services/${id}`, {
-        ...payload,
-        clear_base_price: payload.base_price === null,
-      })
+      const response = await api.put(`/services/${id}`, { ...payload, clear_base_price: payload.base_price === null })
       return response.data as Service
+    },
+    onMutate: () => {
+      if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
+      setAutoSaveState('saving')
     },
     onSuccess: (svc) => {
       queryClient.invalidateQueries({ queryKey: ['admin-services'] })
-      // Close the drawer so the toast isn't hidden behind it — user confirms "saved"
-      // via the drawer collapsing + the top-right toast.
-      setEditingService(null)
-      setIsAddingNew(false)
-      reset()
-      toast.success(`${svc.name} updated`)
+      // Keep parts_cost / labor recompute in sync, but don't disturb the form.
+      setEditingService((prev) => (prev && prev.id === svc.id ? svc : prev))
+      setAutoSaveState('saved')
+      savedRevertTimer.current = setTimeout(() => setAutoSaveState('idle'), 2500)
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || 'Failed to update service')
+      setAutoSaveState('idle')
+      toast.error(err?.response?.data?.detail || 'Failed to save service')
     },
   })
+
+  // Debounced field-level auto-save (edit mode only). Save on any single-field
+  // change — whether from a registered input (info.type === 'change') or a
+  // custom control that calls setValue (info.type is undefined but info.name is
+  // still the field). The programmatic reset() that populates the form on open
+  // fires with info.name === undefined, so opening a service never saves.
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!editingService) return
+    const sub = watch((_value, info) => {
+      if (!info?.name) return // ignore programmatic reset / initial population
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      autoSaveTimer.current = setTimeout(async () => {
+        if (!(await trigger())) return // don't persist invalid state (e.g. empty name)
+        autoSave.mutate({ id: editingService.id, data: getValues() })
+      }, 700)
+    })
+    return () => {
+      sub.unsubscribe()
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      // NB: don't clear savedRevertTimer here — onSuccess replaces editingService
+      // with a fresh object, re-running this effect; clearing here would cancel
+      // the fade-back before it fires. Its timer is cancelled on the next save
+      // (onMutate) and on panel open instead.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingService])
 
   const preloadMutation = useMutation({
     mutationFn: async () => {
@@ -323,6 +372,8 @@ export default function ServicesManagementPage() {
   const startEdit = (service: Service) => {
     setEditingService(service)
     setIsAddingNew(false)
+    if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
+    setAutoSaveState('idle') // fresh panel — don't carry over the last service's "saved" check
     setPartError(null)
     setPartPickerInventoryId('')
     setPartPickerQty(1)
@@ -362,8 +413,10 @@ export default function ServicesManagementPage() {
   }
 
   const onSubmit = (data: ServiceFormData) => {
+    // Editing auto-saves; a stray Enter just flushes the current values silently
+    // (no drawer close). Only the create flow has an explicit submit.
     if (editingService) {
-      updateMutation.mutate({ id: editingService.id, data })
+      autoSave.mutate({ id: editingService.id, data })
     } else {
       createMutation.mutate(data)
     }
@@ -916,7 +969,9 @@ export default function ServicesManagementPage() {
                         <p className="text-xs text-gray-500">No parts attached. Add batteries, filters, etc. below.</p>
                       ) : (
                         <div className="space-y-2">
-                          {editingService.parts.map((part) => (
+                          {editingService.parts.map((part) => {
+                            const unit = unitStepConfig(part.unit_type)
+                            return (
                             <div
                               key={part.id}
                               className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2"
@@ -924,15 +979,16 @@ export default function ServicesManagementPage() {
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm font-medium text-gray-800 truncate">{part.name}</p>
                                 <p className="text-xs text-gray-500">
-                                  {part.sku} · ${Number(part.unit_price).toFixed(2)}/ea
+                                  {part.sku} · ${Number(part.unit_price).toFixed(2)}/{unit.unitLabel}
                                 </p>
                               </div>
-                              <input
-                                type="number"
-                                min="1"
-                                value={part.quantity}
-                                onChange={(e) => {
-                                  const qty = Math.max(1, parseInt(e.target.value || '1', 10))
+                              <QuantityStepper
+                                ariaLabel={`Quantity for ${part.name}`}
+                                value={Number(part.quantity) || unit.min}
+                                min={unit.min}
+                                step={unit.step}
+                                unitLabel={unit.unitLabel}
+                                onChange={(qty) => {
                                   if (qty !== Number(part.quantity)) {
                                     updatePartMutation.mutate({
                                       serviceId: editingService.id,
@@ -942,7 +998,6 @@ export default function ServicesManagementPage() {
                                     })
                                   }
                                 }}
-                                className="w-16 px-2 py-1 border border-gray-200 rounded text-sm text-center"
                               />
                               <span className="w-20 text-right text-sm font-semibold text-gray-700">
                                 ${Number(part.line_total).toFixed(2)}
@@ -962,7 +1017,8 @@ export default function ServicesManagementPage() {
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
 
@@ -1011,25 +1067,46 @@ export default function ServicesManagementPage() {
                 </div>
               </div>
 
-              <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? 'Saving...'
-                    : editingService
-                    ? 'Save Changes'
-                    : 'Create Service'}
-                </button>
+              <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-between gap-3">
+                {/* Editing auto-saves — show a quiet status instead of a Save button.
+                    Keyed by state so each swap replays the cross-fade. */}
+                {editingService ? (
+                  autoSaveState === 'saving' ? (
+                    <span key="saving" className="animate-status-swap flex items-center gap-1.5 text-xs text-gray-500">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving…
+                    </span>
+                  ) : autoSaveState === 'saved' ? (
+                    <span key="saved" className="animate-status-swap flex items-center gap-1.5 text-xs text-green-600">
+                      <Check className="w-3.5 h-3.5" />
+                      All changes saved
+                    </span>
+                  ) : (
+                    <span key="idle" className="animate-status-swap text-xs text-gray-400">
+                      Changes save automatically
+                    </span>
+                  )
+                ) : (
+                  <span />
+                )}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="px-5 py-2 bg-white/10 hover:bg-white/20 text-gray-700 rounded-lg text-sm font-medium"
+                  >
+                    {editingService ? 'Done' : 'Cancel'}
+                  </button>
+                  {!editingService && (
+                    <button
+                      type="submit"
+                      disabled={createMutation.isPending}
+                      className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-400 text-white font-semibold rounded-lg text-sm"
+                    >
+                      {createMutation.isPending ? 'Creating…' : 'Create Service'}
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </aside>
