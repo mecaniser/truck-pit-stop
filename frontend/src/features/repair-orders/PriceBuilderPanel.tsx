@@ -351,6 +351,129 @@ function PartQtyStepper({
   )
 }
 
+// Debounced hours-or-rate field for a labor line. Same shape as PartQtyStepper:
+// keep an optimistic local value so the stepper advances instantly on each
+// click, and coalesce the flurry of clicks into a single PATCH ~500ms after the
+// user settles — otherwise rapid stepping bursts past the API rate limit (429).
+function DebouncedValueStepper({
+  value, onCommit, render,
+}: {
+  value: number
+  onCommit: (next: number) => Promise<void> | void
+  render: (local: number, onChange: (next: number) => void) => React.ReactNode
+}) {
+  const [local, setLocal] = useState(value)
+  const [busy, setBusy] = useState(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastSaved = useRef(value)
+
+  // Re-sync from the server value only when we're not mid-edit, so an in-flight
+  // save + refetch doesn't clobber the value the user is actively stepping.
+  useEffect(() => {
+    if (saveTimer.current == null && !busy) {
+      setLocal(value)
+      lastSaved.current = value
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
+
+  const onChange = (next: number) => {
+    setLocal(next)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      saveTimer.current = null
+      if (Math.abs(next - lastSaved.current) < 0.0001) return
+      setBusy(true)
+      try {
+        await onCommit(next)
+        lastSaved.current = next
+      } finally {
+        setBusy(false)
+      }
+    }, 500)
+  }
+
+  return <>{render(local, onChange)}</>
+}
+
+function LaborLineEditor({
+  line, canMutate, onUpdate,
+}: {
+  line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }
+  canMutate: boolean
+  onUpdate: (body: { description?: string; hours?: number; hourly_rate?: number }) => void
+}) {
+  const lineHours = parseFloat(line.hours) || 0
+  const lineRate = parseFloat(line.hourly_rate) || 0
+  // Live total reflects the optimistic values while a debounced save is pending.
+  const [previewHours, setPreviewHours] = useState(lineHours)
+  const [previewRate, setPreviewRate] = useState(lineRate)
+  useEffect(() => { setPreviewHours(lineHours) }, [lineHours])
+  useEffect(() => { setPreviewRate(lineRate) }, [lineRate])
+
+  return (
+    <>
+      <div className="mb-2 flex items-center gap-1.5">
+        <input
+          defaultValue={line.description}
+          onBlur={(e) => {
+            const value = e.target.value.trim()
+            if (value !== line.description) onUpdate({ description: value })
+          }}
+          disabled={!canMutate}
+          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+        />
+      </div>
+      {/* Duration + rate use the shared steppers (step time by 15m, rate by $1).
+          Writes are debounced so rapid stepping doesn't trip the rate limit. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-700">
+        <label className="inline-flex items-center gap-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Duration</span>
+          <DebouncedValueStepper
+            value={lineHours}
+            onCommit={(h) => onUpdate({ hours: h })}
+            render={(h, onChange) => (
+              <DurationStepper
+                hours={h}
+                onChange={(next) => { setPreviewHours(next); onChange(next) }}
+                stepMinutes={15}
+                minMinutes={0}
+                disabled={!canMutate}
+                ariaLabel="Labor duration"
+              />
+            )}
+          />
+        </label>
+        <span className="text-gray-400">×</span>
+        <label className="inline-flex items-center gap-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
+          <span className="text-gray-500">$</span>
+          <DebouncedValueStepper
+            value={lineRate}
+            onCommit={(r) => onUpdate({ hourly_rate: r })}
+            render={(r, onChange) => (
+              <QuantityStepper
+                value={r}
+                onChange={(next) => { setPreviewRate(next); onChange(next) }}
+                min={0}
+                step={1}
+                unitLabel="/hr"
+                disabled={!canMutate}
+                ariaLabel="Labor hourly rate"
+                align="start"
+              />
+            )}
+          />
+        </label>
+        <span className="text-gray-400">=</span>
+        <span className="font-semibold text-gray-900">${(previewHours * previewRate).toFixed(2)}</span>
+      </div>
+    </>
+  )
+}
+
 function PartPricePopover({
   part, disabled, saving, onApply,
 }: {
@@ -2495,68 +2618,13 @@ export default function PriceBuilderPanel({
           )
         }
 
-        const renderLaborEditor = (line: typeof lines[number]) => {
-          const lineHours = parseFloat(line.hours) || 0
-          const lineRate = parseFloat(line.hourly_rate) || 0
-          // Steppers commit on nudge/blur; skip the write if the value is unchanged.
-          const commitHours = (nextHours: number) => {
-            if (Math.abs(nextHours - lineHours) < 0.0001) return
-            updateLine.mutate({ lineId: line.id, body: { hours: nextHours } })
-          }
-          const commitRate = (nextRate: number) => {
-            if (Math.abs(nextRate - lineRate) < 0.0001) return
-            updateLine.mutate({ lineId: line.id, body: { hourly_rate: nextRate } })
-          }
-          return (
-            <>
-              <div className="mb-2 flex items-center gap-1.5">
-                <input
-                  defaultValue={line.description}
-                  onBlur={(e) => {
-                    const value = e.target.value.trim()
-                    if (value !== line.description) {
-                      updateLine.mutate({ lineId: line.id, body: { description: value } })
-                    }
-                  }}
-                  disabled={!canMutate}
-                  className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
-                />
-              </div>
-              {/* Duration + rate use the shared steppers (step time by 15m, rate by
-                  $1). They persist immediately on change — no separate Save. */}
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-700">
-                <label className="inline-flex items-center gap-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Duration</span>
-                  <DurationStepper
-                    hours={lineHours}
-                    onChange={commitHours}
-                    stepMinutes={15}
-                    minMinutes={0}
-                    disabled={!canMutate}
-                    ariaLabel="Labor duration"
-                  />
-                </label>
-                <span className="text-gray-400">×</span>
-                <label className="inline-flex items-center gap-1.5">
-                  <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
-                  <span className="text-gray-500">$</span>
-                  <QuantityStepper
-                    value={lineRate}
-                    onChange={commitRate}
-                    min={0}
-                    step={1}
-                    unitLabel="/hr"
-                    disabled={!canMutate}
-                    ariaLabel="Labor hourly rate"
-                    align="start"
-                  />
-                </label>
-                <span className="text-gray-400">=</span>
-                <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
-              </div>
-            </>
-          )
-        }
+        const renderLaborEditor = (line: typeof lines[number]) => (
+          <LaborLineEditor
+            line={line}
+            canMutate={canMutate}
+            onUpdate={(body) => updateLine.mutate({ lineId: line.id, body })}
+          />
+        )
 
         if (isLoading) {
           return <p className="text-sm text-gray-500">Loading…</p>
