@@ -26,7 +26,7 @@ export function Modal({ title, icon, onClose, children, width = 480 }: {
       <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div className="dsec-head">
           <div className="dsec-title">{icon}<h3>{title}</h3></div>
-          <button className="person-call" onClick={onClose}><X size={15} /></button>
+          <button className="person-call" onClick={onClose}><X size={18} /></button>
         </div>
         {children}
       </div>
@@ -412,7 +412,12 @@ const costInput: React.CSSProperties = {
   height: 34, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8,
   color: 'var(--text)', padding: '0 8px', font: 'inherit', fontSize: 13,
 }
-const iconBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }
+// Row remove/delete button — sized as a proper touch target (gloved shop hands),
+// matching the 42px controls in the same rows.
+const iconBtn: React.CSSProperties = {
+  background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.28)', borderRadius: 8,
+  cursor: 'pointer', display: 'grid', placeItems: 'center', width: 42, height: 42, flex: 'none',
+}
 
 function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internalRate: number; onChanged: () => void }) {
   const [desc, setDesc] = useState('')
@@ -477,7 +482,7 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
       </span>
       {showPrices && <strong style={{ width: 72, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_cost))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <XCircle size={15} color="var(--red)" />
+        <Trash2 size={18} color="var(--red)" />
       </button>
     </div>
   )
@@ -544,7 +549,8 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
           }))}
         />
       </div>
-      {/* Local-only until "Add" is clicked — no per-click server write, so no debounce. */}
+      {/* Local-only until "Add" is clicked — no per-click server write, so no debounce.
+          Disabled until a part is chosen: no point setting a quantity for nothing. */}
       <QuantityStepper
         value={Number(qty) || 1}
         onChange={(n) => setQty(String(Math.max(1, n)))}
@@ -554,7 +560,8 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
         ariaLabel="Part quantity"
         align="start"
         theme="dark"
-      size="lg"
+        size="lg"
+        disabled={invId === ''}
       />
       <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
         {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
@@ -577,7 +584,7 @@ function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; l
       <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>×{toNum(line.quantity)}</span>
       {showPrices && <strong style={{ width: 72, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <XCircle size={15} color="var(--red)" />
+        <Trash2 size={18} color="var(--red)" />
       </button>
     </div>
   )
@@ -866,11 +873,11 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               renderTrigger={(arm) => (
                 <button
                   className={ghostBtn}
-                  style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  style={{ color: 'var(--red)', height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }}
                   disabled={del.isPending}
                   onClick={arm}
                 >
-                  <Trash2 size={14} /> Delete work order
+                  <Trash2 size={16} /> Delete work order
                 </button>
               )}
             />
