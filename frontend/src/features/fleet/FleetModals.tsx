@@ -6,6 +6,8 @@ import {
   Check, Minus, RotateCcw, Wrench,
 } from 'lucide-react'
 import api from '../../lib/api'
+import QuantityStepper from '@/components/QuantityStepper'
+import DurationStepper from '@/components/DurationStepper'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
@@ -412,20 +414,28 @@ const iconBtn: React.CSSProperties = { background: 'none', border: 'none', curso
 
 function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internalRate: number; onChanged: () => void }) {
   const [desc, setDesc] = useState('')
-  const [hours, setHours] = useState('')
+  const [hours, setHours] = useState(0.5) // sensible starting duration; step from here
   const add = useMutation({
     mutationFn: async () => (await api.post(`/repair-orders/${roId}/labor`, {
-      description: desc.trim() || undefined, hours: Number(hours), hourly_rate: internalRate,
+      description: desc.trim() || undefined, hours, hourly_rate: internalRate,
     })).data,
-    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(''); onChanged() },
+    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(0.5); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add labor'),
   })
-  const valid = hours !== '' && Number(hours) > 0
+  const valid = hours > 0
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
-        <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
+        {/* Local-only until "Add" — no per-click server write, so no debounce. */}
+        <DurationStepper
+          hours={hours}
+          onChange={setHours}
+          stepMinutes={15}
+          minMinutes={15}
+          ariaLabel="Labor duration"
+          theme="dark"
+        />
         {/* Rate is the configured in-house labor cost — read-only. */}
         <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in shop settings)">{money(internalRate)}/h</span>
         <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
@@ -442,11 +452,11 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
 }
 
 function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOLabor; onChanged: () => void; showPrices?: boolean }) {
-  const [hours, setHours] = useState(String(toNum(line.hours)))
-  const dirty = Number(hours) !== toNum(line.hours)
+  // Debounced duration stepper persists hours on change (no Save button). Rate is
+  // the in-house rate, shown read-only.
   const save = useMutation({
-    mutationFn: async () => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours: Number(hours) })).data,
-    onSuccess: () => { toast.success('Labor updated'); onChanged() },
+    mutationFn: async (hours: number) => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours })).data,
+    onSuccess: () => { onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
   })
   const del = useMutation({
@@ -457,15 +467,18 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
-      <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" />
+      <DurationStepper
+        hours={toNum(line.hours)}
+        onChange={(h) => save.mutate(h)}
+        stepMinutes={15}
+        minMinutes={0}
+        ariaLabel={`Duration for ${line.description || 'labor'}`}
+        theme="dark"
+        commitDebounceMs={500}
+      />
       {showPrices
         ? <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
         : <span style={{ width: 72, textAlign: 'right', color: 'var(--muted-2)' }}>hrs</span>}
-      {dirty && (
-        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
-        </button>
-      )}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <XCircle size={15} color="var(--red)" />
       </button>
@@ -517,7 +530,17 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
         {/* Internal fleet repairs are costed at the part's cost, not list price. */}
         {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.cost))} cost</option>)}
       </select>
-      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" placeholder="qty" />
+      {/* Local-only until "Add" is clicked — no per-click server write, so no debounce. */}
+      <QuantityStepper
+        value={Number(qty) || 1}
+        onChange={(n) => setQty(String(Math.max(1, n)))}
+        min={1}
+        step={1}
+        unitLabel=""
+        ariaLabel="Part quantity"
+        align="start"
+        theme="dark"
+      />
       <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
         {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
       </button>
@@ -526,11 +549,11 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
 }
 
 function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOPart; onChanged: () => void; showPrices?: boolean }) {
-  const [qty, setQty] = useState(String(line.quantity))
-  const dirty = Number(qty) !== Number(line.quantity)
+  // Debounced stepper persists the quantity on change (no Save button); a flurry
+  // of clicks coalesces into one PATCH so it doesn't hit the rate limit.
   const save = useMutation({
-    mutationFn: async () => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity: Number(qty) })).data,
-    onSuccess: () => { toast.success('Part updated'); onChanged() },
+    mutationFn: async (quantity: number) => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity })).data,
+    onSuccess: () => { onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
   })
   const del = useMutation({
@@ -541,13 +564,18 @@ function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; l
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
-      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" />
+      <QuantityStepper
+        value={toNum(line.quantity)}
+        onChange={(n) => save.mutate(n)}
+        min={1}
+        step={1}
+        unitLabel=""
+        ariaLabel={`Quantity for ${line.inventory_name}`}
+        align="start"
+        theme="dark"
+        commitDebounceMs={500}
+      />
       {showPrices && <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
-      {dirty && (
-        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
-        </button>
-      )}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <XCircle size={15} color="var(--red)" />
       </button>

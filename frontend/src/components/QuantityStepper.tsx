@@ -21,11 +21,31 @@ type QuantityStepperProps = {
    *  flurry of clicks becomes a single request (avoids rate-limit 429s). Leave
    *  unset for steppers that only update local state. */
   commitDebounceMs?: number
+  /** Visual theme. 'light' (default) suits white surfaces; 'dark' inverts the
+   *  pill for dark modals (e.g. the fleet work-order panel). */
+  theme?: 'light' | 'dark'
 }
 
 const formatQuantity = (value: number, step: number) => (
   step < 1 ? value.toFixed(2) : String(value)
 )
+
+const THEME = {
+  light: {
+    pill: 'border-gray-200 bg-white',
+    btn: 'text-gray-500 hover:bg-gray-50',
+    remove: 'text-red-500 hover:bg-red-50',
+    input: 'border-gray-200 text-gray-900 focus:bg-gray-50',
+    unit: 'text-gray-500',
+  },
+  dark: {
+    pill: 'border-white/15 bg-white/5',
+    btn: 'text-gray-300 hover:bg-white/10',
+    remove: 'text-red-400 hover:bg-red-500/15',
+    input: 'border-white/15 text-gray-100 focus:bg-white/10',
+    unit: 'text-gray-400',
+  },
+} as const
 
 export default function QuantityStepper({
   value,
@@ -40,7 +60,9 @@ export default function QuantityStepper({
   className = '',
   align = 'end',
   commitDebounceMs,
+  theme = 'light',
 }: QuantityStepperProps) {
+  const t = THEME[theme]
   // Optimistic display value: for debounced steppers it advances on each click
   // while the write is pending; otherwise it just tracks the prop.
   const [localValue, setLocalValue] = useState(value)
@@ -126,14 +148,14 @@ export default function QuantityStepper({
 
   return (
     <span className={`inline-flex items-center gap-1.5 ${align === 'start' ? 'justify-start' : 'min-w-[9.75rem] justify-end'} ${className}`}>
-      <span className="inline-flex items-center rounded-lg border border-gray-200 bg-white shadow-sm">
+      <span className={`inline-flex items-center rounded-lg border shadow-sm ${t.pill}`}>
         <button
           type="button"
           disabled={disabled}
           onClick={canRemove ? onRemove : () => commit(displayValue - step, true)}
           aria-label={canRemove ? `Remove ${ariaLabel}` : `Decrease ${ariaLabel}`}
           className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
-            canRemove ? 'text-red-500 hover:bg-red-50' : 'text-gray-500 hover:bg-gray-50'
+            canRemove ? t.remove : t.btn
           }`}
         >
           {canRemove ? <Trash2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
@@ -149,19 +171,19 @@ export default function QuantityStepper({
           onKeyDown={handleKeyDown}
           aria-label={ariaLabel}
           title="Type a value, or use Ctrl/Cmd + and Ctrl/Cmd - to step"
-          className="h-8 w-14 border-x border-gray-200 bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums text-gray-900 outline-none focus:bg-gray-50 disabled:opacity-50"
+          className={`h-8 w-14 border-x bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums outline-none disabled:opacity-50 ${t.input}`}
         />
         <button
           type="button"
           disabled={disabled}
           onClick={() => commit(displayValue + step, true)}
           aria-label={`Increase ${ariaLabel}`}
-          className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+          className={`flex h-8 w-8 items-center justify-center rounded-r-lg disabled:opacity-50 ${t.btn}`}
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
       </span>
-      {unitLabel !== '' && <span className="w-7 text-left text-xs text-gray-500">{unitLabel}</span>}
+      {unitLabel !== '' && <span className={`w-7 text-left text-xs ${t.unit}`}>{unitLabel}</span>}
     </span>
   )
 }
