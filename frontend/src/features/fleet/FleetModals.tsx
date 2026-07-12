@@ -427,20 +427,23 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
-        {/* Local-only until "Add" — no per-click server write, so no debounce. */}
-        <DurationStepper
-          hours={hours}
-          onChange={setHours}
-          stepMinutes={15}
-          minMinutes={15}
-          ariaLabel="Labor duration"
-          theme="dark"
-        />
-        {/* Rate is the configured in-house labor cost — read-only. */}
-        <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in shop settings)">{money(internalRate)}/h</span>
+        <input style={{ ...costInput, flex: 1, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+        {/* Local-only until "Add" — no per-click server write, so no debounce.
+            Rate isn't shown on the row; it's the configured in-house rate,
+            surfaced as a tooltip instead of taking a column. */}
+        <span title={`Billed at the in-house labor rate (${money(internalRate)}/h)`} style={{ display: 'inline-flex' }}>
+          <DurationStepper
+            hours={hours}
+            onChange={setHours}
+            stepMinutes={15}
+            minMinutes={15}
+            ariaLabel="Labor duration"
+            theme="dark"
+          size="lg"
+          />
+        </span>
         {/* Labeled so it reads as "add this line" — not another stepper +. */}
-        <button className={ghostBtn} style={{ height: 34, padding: '0 14px', fontSize: 12.5, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+        <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
           {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
         </button>
       </div>
@@ -469,18 +472,19 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
-      <DurationStepper
-        hours={toNum(line.hours)}
-        onChange={(h) => save.mutate(h)}
-        stepMinutes={15}
-        minMinutes={0}
-        ariaLabel={`Duration for ${line.description || 'labor'}`}
-        theme="dark"
-        commitDebounceMs={500}
-      />
-      {showPrices
-        ? <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
-        : <span style={{ width: 72, textAlign: 'right', color: 'var(--muted-2)' }}>hrs</span>}
+      {/* Rate is surfaced as a tooltip, not an inline column. */}
+      <span title={showPrices ? `Billed at ${money(toNum(line.hourly_rate))}/h (in-house labor rate)` : undefined} style={{ display: 'inline-flex' }}>
+        <DurationStepper
+          hours={toNum(line.hours)}
+          onChange={(h) => save.mutate(h)}
+          stepMinutes={15}
+          minMinutes={0}
+          ariaLabel={`Duration for ${line.description || 'labor'}`}
+          theme="dark"
+          size="lg"
+          commitDebounceMs={500}
+        />
+      </span>
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <XCircle size={15} color="var(--red)" />
       </button>
@@ -515,7 +519,7 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
           }))}
         />
       </div>
-      <button className={ghostBtn} style={{ height: 34, padding: '0 14px', fontSize: 12.5, fontWeight: 600 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
+      <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
         {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
       </button>
     </div>
@@ -559,8 +563,9 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
         ariaLabel="Part quantity"
         align="start"
         theme="dark"
+      size="lg"
       />
-      <button className={ghostBtn} style={{ height: 34, padding: '0 14px', fontSize: 12.5, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+      <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
         {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
       </button>
     </div>
@@ -592,6 +597,7 @@ function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; l
         ariaLabel={`Quantity for ${line.inventory_name}`}
         align="start"
         theme="dark"
+        size="lg"
         commitDebounceMs={500}
       />
       {showPrices && <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}

@@ -23,6 +23,9 @@ interface BaseSelectProps {
   onAddNew?: () => void
   disabled?: boolean
   variant?: 'light' | 'dark'
+  /** Control height class (default h-[42px]). Pass e.g. 'h-[34px]' to match a
+   *  denser row where the select must line up with 34px-tall siblings. */
+  heightClass?: string
 }
 
 export default function BaseSelect({
@@ -36,6 +39,7 @@ export default function BaseSelect({
   onAddNew,
   disabled = false,
   variant = 'light',
+  heightClass = 'h-[42px]',
 }: BaseSelectProps) {
   const dark = variant === 'dark'
   const { accentColors } = useTheme()
@@ -104,7 +108,7 @@ export default function BaseSelect({
           type="button"
           onClick={() => !disabled && setIsOpen(true)}
           disabled={disabled}
-          className={`w-full h-[42px] px-4 border rounded-lg text-left focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
+          className={`w-full ${heightClass} px-4 border rounded-lg text-left focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
             dark
               ? 'border-white/20 bg-white/10 text-white'
               : 'border-gray-300 bg-white text-gray-900'
@@ -125,7 +129,7 @@ export default function BaseSelect({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={selected ? selected.label : placeholder}
-          className={`w-full h-[42px] px-4 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+          className={`w-full ${heightClass} px-4 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
             dark
               ? 'border-white/40 bg-white/10 text-white placeholder:text-gray-500'
               : 'bg-white text-gray-900'

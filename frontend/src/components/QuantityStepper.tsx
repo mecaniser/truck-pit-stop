@@ -24,11 +24,21 @@ type QuantityStepperProps = {
   /** Visual theme. 'light' (default) suits white surfaces; 'dark' inverts the
    *  pill for dark modals (e.g. the fleet work-order panel). */
   theme?: 'light' | 'dark'
+  /** Control size. 'md' (default, 32px) for dense rows; 'lg' (42px) for larger
+   *  touch targets — e.g. a shop floor where users wear gloves. */
+  size?: 'md' | 'lg'
 }
 
 const formatQuantity = (value: number, step: number) => (
   step < 1 ? value.toFixed(2) : String(value)
 )
+
+// px dims per size so buttons, the input, and the pill all scale together and
+// can't be overridden by broad host `input`/`button` stylesheet rules.
+const SIZE = {
+  md: { btn: 32, input: 56, font: 14 },
+  lg: { btn: 42, input: 64, font: 15 },
+} as const
 
 const THEME = {
   light: {
@@ -61,8 +71,10 @@ export default function QuantityStepper({
   align = 'end',
   commitDebounceMs,
   theme = 'light',
+  size = 'md',
 }: QuantityStepperProps) {
   const t = THEME[theme]
+  const sz = SIZE[size]
   // Optimistic display value: for debounced steppers it advances on each click
   // while the write is pending; otherwise it just tracks the prop.
   const [localValue, setLocalValue] = useState(value)
@@ -154,7 +166,8 @@ export default function QuantityStepper({
           disabled={disabled}
           onClick={canRemove ? onRemove : () => commit(displayValue - step, true)}
           aria-label={canRemove ? `Remove ${ariaLabel}` : `Decrease ${ariaLabel}`}
-          className={`flex h-8 w-8 items-center justify-center rounded-l-lg disabled:opacity-50 ${
+          style={{ width: sz.btn, height: sz.btn }}
+          className={`flex items-center justify-center rounded-l-lg disabled:opacity-50 ${
             canRemove ? t.remove : t.btn
           }`}
         >
@@ -173,15 +186,16 @@ export default function QuantityStepper({
           title="Type a value, or use Ctrl/Cmd + and Ctrl/Cmd - to step"
           // Inline width/height so host stylesheets that target `input` broadly
           // (e.g. the fleet modal's `.dsec input { width:100% }`) can't stretch it.
-          style={{ width: '3.5rem', height: '2rem' }}
-          className={`flex-none border-x bg-transparent text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums outline-none disabled:opacity-50 ${t.input}`}
+          style={{ width: sz.input, height: sz.btn, fontSize: sz.font }}
+          className={`flex-none border-x bg-transparent text-center font-['JetBrains_Mono',monospace] tabular-nums outline-none disabled:opacity-50 ${t.input}`}
         />
         <button
           type="button"
           disabled={disabled}
           onClick={() => commit(displayValue + step, true)}
           aria-label={`Increase ${ariaLabel}`}
-          className={`flex h-8 w-8 items-center justify-center rounded-r-lg disabled:opacity-50 ${t.btn}`}
+          style={{ width: sz.btn, height: sz.btn }}
+          className={`flex items-center justify-center rounded-r-lg disabled:opacity-50 ${t.btn}`}
         >
           <Plus className="h-3.5 w-3.5" />
         </button>
