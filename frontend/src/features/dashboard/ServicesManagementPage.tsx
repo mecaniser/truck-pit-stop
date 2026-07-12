@@ -208,18 +208,25 @@ export default function ServicesManagementPage() {
   // do, so the panel has one consistent "just save it" model and no button.
   // It never closes the drawer or resets the form.
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  // After a save the green "saved" check lingers briefly then settles back to
+  // the quiet "Changes save automatically" resting state.
+  const savedRevertTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoSave = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: ServiceFormData }) => {
       const payload = buildPayload(data)
       const response = await api.put(`/services/${id}`, { ...payload, clear_base_price: payload.base_price === null })
       return response.data as Service
     },
-    onMutate: () => setAutoSaveState('saving'),
+    onMutate: () => {
+      if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
+      setAutoSaveState('saving')
+    },
     onSuccess: (svc) => {
       queryClient.invalidateQueries({ queryKey: ['admin-services'] })
       // Keep parts_cost / labor recompute in sync, but don't disturb the form.
       setEditingService((prev) => (prev && prev.id === svc.id ? svc : prev))
       setAutoSaveState('saved')
+      savedRevertTimer.current = setTimeout(() => setAutoSaveState('idle'), 2500)
     },
     onError: (err: any) => {
       setAutoSaveState('idle')
@@ -245,6 +252,7 @@ export default function ServicesManagementPage() {
     return () => {
       sub.unsubscribe()
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+      if (savedRevertTimer.current) clearTimeout(savedRevertTimer.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingService])
