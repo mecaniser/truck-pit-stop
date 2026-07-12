@@ -19,7 +19,10 @@ export function Modal({ title, icon, onClose, children, width = 480 }: {
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
-      <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+      {/* overflowX hidden: this is a fixed-width, vertically-scrolling panel — a
+          stray wide child (e.g. a long <select> option) must not add a
+          horizontal scrollbar. */}
+      <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', overflowX: 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div className="dsec-head">
           <div className="dsec-title">{icon}<h3>{title}</h3></div>
           <button className="person-call" onClick={onClose}><X size={15} /></button>
@@ -512,10 +515,13 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   const valid = invId !== '' && Number(qty) > 0
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-      <select style={{ ...costInput, flex: 1, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
+      {/* minWidth:0 lets the flex item shrink below its widest option, so a long
+          part name can't force the modal to grow a horizontal scrollbar. */}
+      <select style={{ ...costInput, flex: 1, minWidth: 0, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
         <option value="">Add part from inventory…</option>
-        {/* Internal fleet repairs are costed at the part's cost, not list price. */}
-        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.sku}) · {money(toNum(i.cost))} cost</option>)}
+        {/* Internal fleet repairs are costed at the part's cost, not list price.
+            Keep the label compact (name + cost, no SKU) so the dropdown stays tidy. */}
+        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} · {money(toNum(i.cost))}</option>)}
       </select>
       <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" placeholder="qty" />
       <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
