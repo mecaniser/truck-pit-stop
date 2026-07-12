@@ -15,6 +15,7 @@ import type {
   PMServiceEntry,
 } from './types'
 import { fmtDate, money, fmt } from './helpers'
+import { formatHoursMinutes } from '@/lib/durationFormat'
 
 /* shared modal shell (fleet design system) */
 export function Modal({ title, icon, onClose, children, width = 480 }: {
@@ -457,34 +458,24 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
 }
 
 function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOLabor; onChanged: () => void; showPrices?: boolean }) {
-  // Debounced duration stepper persists hours on change (no Save button). Rate is
-  // the in-house rate, shown read-only.
-  const save = useMutation({
-    mutationFn: async (hours: number) => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours })).data,
-    onSuccess: () => { onChanged() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
-  })
+  // Read-only summary: the duration was set when the line was added (via the add
+  // row's stepper, or fixed by the service). To change it, delete and re-add.
   const del = useMutation({
     mutationFn: async () => (await api.delete(`/repair-orders/${roId}/labor/${line.id}`)).data,
     onSuccess: () => { toast.success('Labor removed'); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
   })
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
-      {/* Rate is surfaced as a tooltip, not an inline column. */}
-      <span title={showPrices ? `Billed at ${money(toNum(line.hourly_rate))}/h (in-house labor rate)` : undefined} style={{ display: 'inline-flex' }}>
-        <DurationStepper
-          hours={toNum(line.hours)}
-          onChange={(h) => save.mutate(h)}
-          stepMinutes={15}
-          minMinutes={0}
-          ariaLabel={`Duration for ${line.description || 'labor'}`}
-          theme="dark"
-          size="lg"
-          commitDebounceMs={500}
-        />
+      {/* Rate is a tooltip, not a column. */}
+      <span
+        title={showPrices ? `Billed at ${money(toNum(line.hourly_rate))}/h (in-house labor rate)` : undefined}
+        style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
+      >
+        {formatHoursMinutes(toNum(line.hours))}
       </span>
+      {showPrices && <strong style={{ width: 72, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_cost))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <XCircle size={15} color="var(--red)" />
       </button>
@@ -573,34 +564,18 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
 }
 
 function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOPart; onChanged: () => void; showPrices?: boolean }) {
-  // Debounced stepper persists the quantity on change (no Save button); a flurry
-  // of clicks coalesces into one PATCH so it doesn't hit the rate limit.
-  const save = useMutation({
-    mutationFn: async (quantity: number) => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity })).data,
-    onSuccess: () => { onChanged() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
-  })
+  // Read-only summary: quantity was set when the part was added (via the add
+  // row's stepper). To change it, remove the line and re-add with the new qty.
   const del = useMutation({
     mutationFn: async () => (await api.delete(`/repair-orders/${roId}/parts/${line.id}`)).data,
     onSuccess: () => { toast.success('Part removed'); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
   })
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
-      <QuantityStepper
-        value={toNum(line.quantity)}
-        onChange={(n) => save.mutate(n)}
-        min={1}
-        step={1}
-        unitLabel=""
-        ariaLabel={`Quantity for ${line.inventory_name}`}
-        align="start"
-        theme="dark"
-        size="lg"
-        commitDebounceMs={500}
-      />
-      {showPrices && <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
+      <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>×{toNum(line.quantity)}</span>
+      {showPrices && <strong style={{ width: 72, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <XCircle size={15} color="var(--red)" />
       </button>
