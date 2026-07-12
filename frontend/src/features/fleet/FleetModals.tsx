@@ -471,7 +471,7 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
   })
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
       {/* Rate is a tooltip, not a column. */}
       <span
@@ -480,7 +480,7 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
       >
         {formatHoursMinutes(toNum(line.hours))}
       </span>
-      {showPrices && <strong style={{ width: 72, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_cost))}</strong>}
+      {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_cost))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <Trash2 size={18} color="var(--red)" />
       </button>
@@ -579,10 +579,10 @@ function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; l
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
   })
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
       <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>×{toNum(line.quantity)}</span>
-      {showPrices && <strong style={{ width: 72, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
+      {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_price))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
         <Trash2 size={18} color="var(--red)" />
       </button>
@@ -851,10 +851,10 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
 
           {/* Cost breakdown is owner/admin only — fleet managers don't see prices. */}
           {showPrices && (
-            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 6, fontSize: 14 }}>
               <Row k="Labor" v={money(num(wo.total_labor_cost))} />
               <Row k="Parts" v={money(num(wo.total_parts_cost))} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17, marginTop: 4 }}>
                 <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
                 <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
               </div>
