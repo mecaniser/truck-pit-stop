@@ -299,46 +299,10 @@ function PartQtyStepper({
   const step = isFluid ? 0.25 : 1
   const unitAbbr = UNIT_ABBR[part.unit_type] || ''
   const currentQuantity = parseFloat(part.quantity) || 0
-  const [qty, setQty] = useState(currentQuantity)
-  const [busy, setBusy] = useState(false)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastSaved = useRef(currentQuantity)
-
-  useEffect(() => {
-    if (saveTimer.current == null && !busy) {
-      setQty(currentQuantity)
-      lastSaved.current = currentQuantity
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentQuantity])
-
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
-
-  const commit = (next: number) => {
-    if (next < step) return
-    const rounded = Math.round(next / step) * step
-    setQty(rounded)
-    scheduleSave(rounded)
-  }
-
-  const scheduleSave = (next: number) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      saveTimer.current = null
-      if (next === lastSaved.current) return
-      setBusy(true)
-      try {
-        await onChangeQty(next)
-        lastSaved.current = next
-      } finally {
-        setBusy(false)
-      }
-    }, 500)
-  }
 
   return (
     <QuantityStepper
-      value={qty}
+      value={currentQuantity}
       min={step}
       step={step}
       unitLabel={unitAbbr}
@@ -346,7 +310,8 @@ function PartQtyStepper({
       ariaLabel={`Quantity for ${part.inventory_name}`}
       removeAtMin
       onRemove={onDelete}
-      onChange={commit}
+      onChange={(next) => { void onChangeQty(next) }}
+      commitDebounceMs={500}
     />
   )
 }
@@ -355,48 +320,9 @@ function PartQtyStepper({
 // keep an optimistic local value so the stepper advances instantly on each
 // click, and coalesce the flurry of clicks into a single PATCH ~500ms after the
 // user settles — otherwise rapid stepping bursts past the API rate limit (429).
-function DebouncedValueStepper({
-  value, onCommit, render,
-}: {
-  value: number
-  onCommit: (next: number) => Promise<void> | void
-  render: (local: number, onChange: (next: number) => void) => React.ReactNode
-}) {
-  const [local, setLocal] = useState(value)
-  const [busy, setBusy] = useState(false)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastSaved = useRef(value)
-
-  // Re-sync from the server value only when we're not mid-edit, so an in-flight
-  // save + refetch doesn't clobber the value the user is actively stepping.
-  useEffect(() => {
-    if (saveTimer.current == null && !busy) {
-      setLocal(value)
-      lastSaved.current = value
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
-
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current) }, [])
-
-  const onChange = (next: number) => {
-    setLocal(next)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      saveTimer.current = null
-      if (Math.abs(next - lastSaved.current) < 0.0001) return
-      setBusy(true)
-      try {
-        await onCommit(next)
-        lastSaved.current = next
-      } finally {
-        setBusy(false)
-      }
-    }, 500)
-  }
-
-  return <>{render(local, onChange)}</>
-}
+// Server writes go through the steppers' built-in commitDebounceMs, so a flurry
+// of clicks coalesces into one PATCH (avoids the rate-limit 429).
+const STEPPER_COMMIT_DEBOUNCE_MS = 500
 
 function LaborLineEditor({
   line, canMutate, onUpdate,
@@ -407,11 +333,6 @@ function LaborLineEditor({
 }) {
   const lineHours = parseFloat(line.hours) || 0
   const lineRate = parseFloat(line.hourly_rate) || 0
-  // Live total reflects the optimistic values while a debounced save is pending.
-  const [previewHours, setPreviewHours] = useState(lineHours)
-  const [previewRate, setPreviewRate] = useState(lineRate)
-  useEffect(() => { setPreviewHours(lineHours) }, [lineHours])
-  useEffect(() => { setPreviewRate(lineRate) }, [lineRate])
 
   return (
     <>
@@ -431,44 +352,34 @@ function LaborLineEditor({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-700">
         <label className="inline-flex items-center gap-1.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Duration</span>
-          <DebouncedValueStepper
-            value={lineHours}
-            onCommit={(h) => onUpdate({ hours: h })}
-            render={(h, onChange) => (
-              <DurationStepper
-                hours={h}
-                onChange={(next) => { setPreviewHours(next); onChange(next) }}
-                stepMinutes={15}
-                minMinutes={0}
-                disabled={!canMutate}
-                ariaLabel="Labor duration"
-              />
-            )}
+          <DurationStepper
+            hours={lineHours}
+            onChange={(h) => onUpdate({ hours: h })}
+            stepMinutes={15}
+            minMinutes={0}
+            disabled={!canMutate}
+            ariaLabel="Labor duration"
+            commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
           />
         </label>
         <span className="text-gray-400">×</span>
         <label className="inline-flex items-center gap-1.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
           <span className="text-gray-500">$</span>
-          <DebouncedValueStepper
+          <QuantityStepper
             value={lineRate}
-            onCommit={(r) => onUpdate({ hourly_rate: r })}
-            render={(r, onChange) => (
-              <QuantityStepper
-                value={r}
-                onChange={(next) => { setPreviewRate(next); onChange(next) }}
-                min={0}
-                step={1}
-                unitLabel="/hr"
-                disabled={!canMutate}
-                ariaLabel="Labor hourly rate"
-                align="start"
-              />
-            )}
+            onChange={(r) => onUpdate({ hourly_rate: r })}
+            min={0}
+            step={1}
+            unitLabel="/hr"
+            disabled={!canMutate}
+            ariaLabel="Labor hourly rate"
+            align="start"
+            commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
           />
         </label>
         <span className="text-gray-400">=</span>
-        <span className="font-semibold text-gray-900">${(previewHours * previewRate).toFixed(2)}</span>
+        <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
       </div>
     </>
   )
