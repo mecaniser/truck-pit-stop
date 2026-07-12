@@ -436,6 +436,64 @@ async def quick_create_repair_order(
         )
 
 
+class DescriptionSuggestion(BaseModel):
+    text: str
+    times_used: int
+
+
+@router.get("/description-suggestions", response_model=List[DescriptionSuggestion])
+async def get_description_suggestions(
+    q: str = Query(..., min_length=1, max_length=200, description="What the user has typed so far"),
+    limit: int = Query(6, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Autocomplete for repair order complaint/work-performed text, drawn from
+    this tenant's own history — the shop's own recurring phrasing ("PM
+    service", "Replace tire", "Air leak on front brake chamber"), not a
+    generic canned list. Fuzzy-matched via pg_trgm (already indexed on
+    repair_orders.description) so a few typed words surface the closest past
+    descriptions, ranked by how often the shop has used that exact wording
+    and how recently.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    tenant_id = current_user.tenant_id
+
+    term = q.strip()
+    if not term:
+        return []
+
+    # word_similarity matches a short typed fragment against any substring of
+    # a longer stored description (plain trigram similarity() penalizes
+    # length differences too heavily for "brake" to match "Air leak on front
+    # brake chamber"). Threshold set loosely since this is a suggestion list,
+    # not a hard filter — worst matches just sort last.
+    result = await db.execute(
+        select(
+            RepairOrder.description,
+            func.max(RepairOrder.created_at).label("last_used"),
+            func.count(RepairOrder.id).label("times_used"),
+            func.max(func.word_similarity(term, RepairOrder.description)).label("score"),
+        )
+        .where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.description.isnot(None),
+            RepairOrder.description != "",
+            func.word_similarity(term, RepairOrder.description) > 0.2,
+        )
+        .group_by(RepairOrder.description)
+        .order_by(
+            func.max(func.word_similarity(term, RepairOrder.description)).desc(),
+            func.count(RepairOrder.id).desc(),
+            func.max(RepairOrder.created_at).desc(),
+        )
+        .limit(limit)
+    )
+    rows = result.all()
+    return [DescriptionSuggestion(text=desc, times_used=times_used) for desc, _last_used, times_used, _score in rows]
+
+
 @router.get("", response_model=List[RepairOrderResponse])
 async def list_repair_orders(
     customer_id: Optional[UUID] = Query(None),
