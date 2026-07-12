@@ -927,12 +927,11 @@ export default function ServicesManagementPage() {
                                   {part.sku} · ${Number(part.unit_price).toFixed(2)}/ea
                                 </p>
                               </div>
-                              <input
-                                type="number"
-                                min="1"
-                                value={part.quantity}
-                                onChange={(e) => {
-                                  const qty = Math.max(1, parseInt(e.target.value || '1', 10))
+                              <QuantityStepper
+                                ariaLabel={`Quantity for ${part.name}`}
+                                value={Number(part.quantity) || 1}
+                                min={1}
+                                onChange={(qty) => {
                                   if (qty !== Number(part.quantity)) {
                                     updatePartMutation.mutate({
                                       serviceId: editingService.id,
@@ -942,7 +941,6 @@ export default function ServicesManagementPage() {
                                     })
                                   }
                                 }}
-                                className="w-16 px-2 py-1 border border-gray-200 rounded text-sm text-center"
                               />
                               <span className="w-20 text-right text-sm font-semibold text-gray-700">
                                 ${Number(part.line_total).toFixed(2)}
