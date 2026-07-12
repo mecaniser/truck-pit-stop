@@ -1,4 +1,5 @@
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
@@ -47,6 +48,26 @@ export default function BaseSelect({
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // The floating list renders in a portal with fixed positioning anchored to the
+  // trigger, so an ancestor with overflow:auto (e.g. the fleet modal) can't clip
+  // it or grow a scrollbar. null = closed/unmeasured.
+  const [menuPos, setMenuPos] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null)
+
+  const computePosition = () => {
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const estimatedMenuHeight = 256 // matches max-h below
+    const spaceBelow = window.innerHeight - rect.bottom
+    const openUp = spaceBelow < estimatedMenuHeight && rect.top > spaceBelow
+    setMenuPos({
+      left: rect.left,
+      width: rect.width,
+      top: openUp ? undefined : rect.bottom + 4,
+      bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
+    })
+  }
 
   const filtered = useMemo(() => {
     if (!searchable || !query.trim()) return options
@@ -60,6 +81,21 @@ export default function BaseSelect({
 
   const selected = options.find((opt) => opt.value === value)
 
+  // Measure before paint when opening; keep the menu glued to the trigger while
+  // the user scrolls or resizes.
+  useLayoutEffect(() => {
+    if (!isOpen) { setMenuPos(null); return }
+    computePosition()
+    const onMove = () => computePosition()
+    window.addEventListener('scroll', onMove, true) // capture: also catch inner scrollers
+    window.addEventListener('resize', onMove)
+    return () => {
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
+
   // Focus input when dropdown opens
   useEffect(() => {
     if (isOpen && searchable && inputRef.current) {
@@ -67,13 +103,14 @@ export default function BaseSelect({
     }
   }, [isOpen, searchable])
 
-  // Close on click outside
+  // Close on click outside — but not when clicking inside the portaled menu.
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false)
-        setQuery('')
-      }
+      const target = e.target as Node
+      if (containerRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setIsOpen(false)
+      setQuery('')
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -138,10 +175,19 @@ export default function BaseSelect({
         />
       )}
 
-      {/* Dropdown */}
-      {isOpen && (
+      {/* Dropdown — portaled to <body> with fixed positioning so an ancestor's
+          overflow:auto can't clip it or grow a scrollbar. */}
+      {isOpen && menuPos && createPortal(
         <div
-          className={`absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-lg py-1 shadow-xl ${
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            left: menuPos.left,
+            width: menuPos.width,
+            top: menuPos.top,
+            bottom: menuPos.bottom,
+          }}
+          className={`z-[100] max-h-64 overflow-auto rounded-lg py-1 shadow-xl ${
             dark
               ? 'bg-gray-900 border border-white/20'
               : 'bg-white ring-1 ring-black/10'
@@ -194,7 +240,8 @@ export default function BaseSelect({
           {filtered.length === 0 && !allowAddNew && (
             <div className={`px-4 py-2 text-sm ${dark ? 'text-gray-500' : 'text-gray-500'}`}>No results</div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
