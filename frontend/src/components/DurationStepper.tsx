@@ -17,7 +17,23 @@ type DurationStepperProps = {
    *  stepping (optimistic display advances instantly). Use for steppers that
    *  persist to the server so rapid clicks become one request. */
   commitDebounceMs?: number
+  /** Visual theme. 'light' (default) suits white surfaces; 'dark' inverts the
+   *  pill for dark modals (e.g. the fleet work-order panel). */
+  theme?: 'light' | 'dark'
+  /** Control size. 'md' (default, 32px) for dense rows; 'lg' (42px) for larger
+   *  touch targets — e.g. a gloved shop-floor workflow. */
+  size?: 'md' | 'lg'
 }
+
+const DURATION_THEME = {
+  light: { pill: 'border-gray-200 bg-white', btn: 'text-gray-500 hover:bg-gray-50', text: 'text-gray-900 border-gray-200' },
+  dark: { pill: 'border-white/15 bg-white/5', btn: 'text-gray-300 hover:bg-white/10', text: 'text-gray-100 border-white/15' },
+} as const
+
+const DUR_SIZE = {
+  md: { btn: 32, value: 72, font: 14 },
+  lg: { btn: 42, value: 84, font: 15 },
+} as const
 
 /**
  * A single control for entering how long a job takes. Reads out as "1h 45m",
@@ -33,7 +49,11 @@ export default function DurationStepper({
   disabled,
   ariaLabel = 'Duration',
   commitDebounceMs,
+  theme = 'light',
+  size = 'md',
 }: DurationStepperProps) {
+  const t = DURATION_THEME[theme]
+  const sz = DUR_SIZE[size]
   const floor = minMinutes ?? stepMinutes
   const [localHours, setLocalHours] = useState(hours)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -73,7 +93,7 @@ export default function DurationStepper({
 
   return (
     <span
-      className="inline-flex items-center rounded-lg border border-gray-200 bg-white shadow-sm"
+      className={`inline-flex items-center rounded-lg border shadow-sm ${t.pill}`}
       role="group"
       aria-label={ariaLabel}
     >
@@ -82,11 +102,15 @@ export default function DurationStepper({
         disabled={disabled || totalMinutes <= floor}
         onClick={dec}
         aria-label="Decrease duration"
-        className="flex h-8 w-8 items-center justify-center rounded-l-lg text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+        style={{ width: sz.btn, height: sz.btn }}
+        className={`flex items-center justify-center rounded-l-lg disabled:opacity-40 ${t.btn}`}
       >
         <Minus className="h-3.5 w-3.5" />
       </button>
-      <span className="min-w-[4.5rem] border-x border-gray-200 px-2 text-center font-['JetBrains_Mono',monospace] text-sm tabular-nums text-gray-900">
+      <span
+        style={{ minWidth: sz.value, height: sz.btn, fontSize: sz.font }}
+        className={`inline-flex items-center justify-center border-x px-2 text-center font-['JetBrains_Mono',monospace] tabular-nums ${t.text}`}
+      >
         {formatHoursMinutes(displayHours)}
       </span>
       <button
@@ -94,7 +118,8 @@ export default function DurationStepper({
         disabled={disabled}
         onClick={inc}
         aria-label="Increase duration"
-        className="flex h-8 w-8 items-center justify-center rounded-r-lg text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+        style={{ width: sz.btn, height: sz.btn }}
+        className={`flex items-center justify-center rounded-r-lg disabled:opacity-40 ${t.btn}`}
       >
         <Plus className="h-3.5 w-3.5" />
       </button>

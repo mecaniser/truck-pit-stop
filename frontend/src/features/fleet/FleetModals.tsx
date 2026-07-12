@@ -6,12 +6,16 @@ import {
   Check, Minus, RotateCcw, Wrench,
 } from 'lucide-react'
 import api from '../../lib/api'
+import BaseSelect from '@/components/BaseSelect'
+import QuantityStepper from '@/components/QuantityStepper'
+import DurationStepper from '@/components/DurationStepper'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
   PMServiceEntry,
 } from './types'
 import { fmtDate, money, fmt } from './helpers'
+import { formatHoursMinutes } from '@/lib/durationFormat'
 
 /* shared modal shell (fleet design system) */
 export function Modal({ title, icon, onClose, children, width = 480 }: {
@@ -25,7 +29,7 @@ export function Modal({ title, icon, onClose, children, width = 480 }: {
       <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', overflowX: 'hidden' }} onClick={(e) => e.stopPropagation()}>
         <div className="dsec-head">
           <div className="dsec-title">{icon}<h3>{title}</h3></div>
-          <button className="person-call" onClick={onClose}><X size={15} /></button>
+          <button className="person-call" onClick={onClose}><X size={18} /></button>
         </div>
         {children}
       </div>
@@ -411,28 +415,45 @@ const costInput: React.CSSProperties = {
   height: 34, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 8,
   color: 'var(--text)', padding: '0 8px', font: 'inherit', fontSize: 13,
 }
-const iconBtn: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', display: 'grid', placeItems: 'center', padding: 4 }
+// Row remove/delete button — sized as a proper touch target (gloved shop hands),
+// matching the 42px controls in the same rows.
+const iconBtn: React.CSSProperties = {
+  background: 'rgba(248,113,113,0.10)', border: '1px solid rgba(248,113,113,0.28)', borderRadius: 8,
+  cursor: 'pointer', display: 'grid', placeItems: 'center', width: 42, height: 42, flex: 'none',
+}
 
 function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internalRate: number; onChanged: () => void }) {
   const [desc, setDesc] = useState('')
-  const [hours, setHours] = useState('')
+  const [hours, setHours] = useState(0.5) // sensible starting duration; step from here
   const add = useMutation({
     mutationFn: async () => (await api.post(`/repair-orders/${roId}/labor`, {
-      description: desc.trim() || undefined, hours: Number(hours), hourly_rate: internalRate,
+      description: desc.trim() || undefined, hours, hourly_rate: internalRate,
     })).data,
-    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(''); onChanged() },
+    onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(0.5); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add labor'),
   })
-  const valid = hours !== '' && Number(hours) > 0
+  const valid = hours > 0
   return (
     <div style={{ marginTop: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input style={{ ...costInput, flex: 1 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
-        <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" placeholder="hrs" />
-        {/* Rate is the configured in-house labor cost — read-only. */}
-        <span style={{ ...costInput, width: 72, display: 'grid', alignItems: 'center', color: 'var(--muted)' }} title="In-house labor rate (set in shop settings)">{money(internalRate)}/h</span>
-        <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+        <input style={{ ...costInput, flex: 1, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+        {/* Local-only until "Add" — no per-click server write, so no debounce.
+            Rate isn't shown on the row; it's the configured in-house rate,
+            surfaced as a tooltip instead of taking a column. */}
+        <span title={`Billed at the in-house labor rate (${money(internalRate)}/h)`} style={{ display: 'inline-flex' }}>
+          <DurationStepper
+            hours={hours}
+            onChange={setHours}
+            stepMinutes={15}
+            minMinutes={15}
+            ariaLabel="Labor duration"
+            theme="dark"
+          size="lg"
+          />
+        </span>
+        {/* Labeled so it reads as "add this line" — not another stepper +. */}
+        <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
         </button>
       </div>
       {internalRate <= 0 && (
@@ -445,32 +466,26 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
 }
 
 function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOLabor; onChanged: () => void; showPrices?: boolean }) {
-  const [hours, setHours] = useState(String(toNum(line.hours)))
-  const dirty = Number(hours) !== toNum(line.hours)
-  const save = useMutation({
-    mutationFn: async () => (await api.put(`/repair-orders/${roId}/labor/${line.id}`, { hours: Number(hours) })).data,
-    onSuccess: () => { toast.success('Labor updated'); onChanged() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
-  })
+  // Read-only summary: the duration was set when the line was added (via the add
+  // row's stepper, or fixed by the service). To change it, delete and re-add.
   const del = useMutation({
     mutationFn: async () => (await api.delete(`/repair-orders/${roId}/labor/${line.id}`)).data,
     onSuccess: () => { toast.success('Labor removed'); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
   })
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.description || 'Labor'}</span>
-      <input style={{ ...costInput, width: 60 }} value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" />
-      {showPrices
-        ? <span style={{ width: 72, textAlign: 'right', color: 'var(--muted)' }} title="In-house labor rate">{money(toNum(line.hourly_rate))}/h</span>
-        : <span style={{ width: 72, textAlign: 'right', color: 'var(--muted-2)' }}>hrs</span>}
-      {dirty && (
-        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
-        </button>
-      )}
+      {/* Rate is a tooltip, not a column. */}
+      <span
+        title={showPrices ? `Billed at ${money(toNum(line.hourly_rate))}/h (in-house labor rate)` : undefined}
+        style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
+      >
+        {formatHoursMinutes(toNum(line.hours))}
+      </span>
+      {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_cost))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <XCircle size={15} color="var(--red)" />
+        <Trash2 size={18} color="var(--red)" />
       </button>
     </div>
   )
@@ -489,16 +504,22 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
   })
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-      <select style={{ ...costInput, flex: 1, height: 34 }} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-        <option value="">Add service from catalog…</option>
-        {(services || []).map((s) => (
-          <option key={s.service_id} value={s.service_id}>
-            {s.name}{s.duration_minutes ? ` · ${s.duration_minutes}m` : ''}
-          </option>
-        ))}
-      </select>
-      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      {/* Searchable so a long service catalog is filterable by name. */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <BaseSelect
+          variant="dark"
+          placeholder="Add service from catalog…"
+          value={serviceId}
+          onChange={setServiceId}
+          options={(services || []).map((s) => ({
+            value: s.service_id,
+            label: s.name,
+            subLabel: s.duration_minutes ? `${s.duration_minutes}m` : undefined,
+          }))}
+        />
+      </div>
+      <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
       </button>
     </div>
   )
@@ -515,47 +536,60 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   const valid = invId !== '' && Number(qty) > 0
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-      {/* minWidth:0 lets the flex item shrink below its widest option, so a long
-          part name can't force the modal to grow a horizontal scrollbar. */}
-      <select style={{ ...costInput, flex: 1, minWidth: 0, height: 34 }} value={invId} onChange={(e) => setInvId(e.target.value)}>
-        <option value="">Add part from inventory…</option>
-        {/* Internal fleet repairs are costed at the part's cost, not list price.
-            Keep the label compact (name + cost, no SKU) so the dropdown stays tidy. */}
-        {inventory.map((i) => <option key={i.id} value={i.id}>{i.name} · {money(toNum(i.cost))}</option>)}
-      </select>
-      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" placeholder="qty" />
-      <button className={ghostBtn} style={{ height: 34, padding: '0 10px', fontSize: 12.5 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      {/* Searchable so a long inventory is findable by name or SKU. Internal fleet
+          repairs are costed at the part's cost, not list price. (This BaseSelect
+          replaces the earlier native <select> overflow fix — it manages its own
+          width and portals the menu, so it can't grow a scrollbar either.) */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <BaseSelect
+          variant="dark"
+          placeholder="Add part from inventory…"
+          value={invId}
+          onChange={setInvId}
+          options={inventory.map((i) => ({
+            value: i.id,
+            label: i.name,
+            subLabel: `${i.sku} · ${money(toNum(i.cost))} cost`,
+            searchText: i.sku,
+          }))}
+        />
+      </div>
+      {/* Local-only until "Add" is clicked — no per-click server write, so no debounce.
+          Disabled until a part is chosen: no point setting a quantity for nothing. */}
+      <QuantityStepper
+        value={Number(qty) || 1}
+        onChange={(n) => setQty(String(Math.max(1, n)))}
+        min={1}
+        step={1}
+        unitLabel=""
+        ariaLabel="Part quantity"
+        align="start"
+        theme="dark"
+        size="lg"
+        disabled={invId === ''}
+      />
+      <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
+        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
       </button>
     </div>
   )
 }
 
 function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; line: WOPart; onChanged: () => void; showPrices?: boolean }) {
-  const [qty, setQty] = useState(String(line.quantity))
-  const dirty = Number(qty) !== Number(line.quantity)
-  const save = useMutation({
-    mutationFn: async () => (await api.patch(`/repair-orders/${roId}/parts/${line.id}`, { quantity: Number(qty) })).data,
-    onSuccess: () => { toast.success('Part updated'); onChanged() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
-  })
+  // Read-only summary: quantity was set when the part was added (via the add
+  // row's stepper). To change it, remove the line and re-add with the new qty.
   const del = useMutation({
     mutationFn: async () => (await api.delete(`/repair-orders/${roId}/parts/${line.id}`)).data,
     onSuccess: () => { toast.success('Part removed'); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove'),
   })
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
-      <input style={{ ...costInput, width: 60 }} value={qty} onChange={(e) => setQty(e.target.value)} inputMode="numeric" />
-      {showPrices && <strong style={{ width: 64, textAlign: 'right', color: 'var(--text)' }}>{money(toNum(line.total_price))}</strong>}
-      {dirty && (
-        <button style={iconBtn} title="Save" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={15} color="var(--yellow)" />}
-        </button>
-      )}
+      <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>×{toNum(line.quantity)}</span>
+      {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_price))}</strong>}
       <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <XCircle size={15} color="var(--red)" />
+        <Trash2 size={18} color="var(--red)" />
       </button>
     </div>
   )
@@ -822,10 +856,10 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
 
           {/* Cost breakdown is owner/admin only — fleet managers don't see prices. */}
           {showPrices && (
-            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 4, fontSize: 13 }}>
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 6, fontSize: 14 }}>
               <Row k="Labor" v={money(num(wo.total_labor_cost))} />
               <Row k="Parts" v={money(num(wo.total_parts_cost))} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, marginTop: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17, marginTop: 4 }}>
                 <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
                 <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
               </div>
@@ -844,11 +878,11 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               renderTrigger={(arm) => (
                 <button
                   className={ghostBtn}
-                  style={{ color: 'var(--red)', height: 34, padding: '0 12px', fontSize: 12.5 }}
+                  style={{ color: 'var(--red)', height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }}
                   disabled={del.isPending}
                   onClick={arm}
                 >
-                  <Trash2 size={14} /> Delete work order
+                  <Trash2 size={16} /> Delete work order
                 </button>
               )}
             />
