@@ -57,6 +57,10 @@ class Service(BaseModel):
         "ServicePart",
         back_populates="service",
         cascade="all, delete-orphan",
+        # Stable order (creation order) so the parts list never reshuffles after
+        # a quantity update — otherwise a row jumps position and the next click
+        # lands on the wrong part.
+        order_by="ServicePart.created_at, ServicePart.id",
     )
 
 
