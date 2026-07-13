@@ -4,6 +4,11 @@ import { Minus, Plus, Trash2 } from 'lucide-react'
 type QuantityStepperProps = {
   value: number
   onChange: (next: number) => void
+  /** Fires immediately with the optimistic value on every step, even before
+   *  the debounced `onChange` commits. Use when a sibling control needs to
+   *  read the in-progress value (e.g. a live total computed from this and
+   *  another stepper). */
+  onLocalChange?: (next: number) => void
   min?: number
   step?: number
   unitLabel?: string
@@ -60,6 +65,7 @@ const THEME = {
 export default function QuantityStepper({
   value,
   onChange,
+  onLocalChange,
   min = 1,
   step = 1,
   unitLabel = 'ea',
@@ -105,6 +111,7 @@ export default function QuantityStepper({
   const stepDecimals = (String(step).split('.')[1] || '').length
 
   const emit = (resolved: number) => {
+    onLocalChange?.(resolved)
     if (commitDebounceMs == null) {
       onChange(resolved)
       return

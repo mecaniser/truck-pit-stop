@@ -7,6 +7,11 @@ type DurationStepperProps = {
   hours: number
   /** Called with the new value in decimal hours. */
   onChange: (nextHours: number) => void
+  /** Fires immediately with the optimistic value on every step, even before
+   *  the debounced `onChange` commits. Use when a sibling control needs to
+   *  read the in-progress value (e.g. a live total computed from this and
+   *  another stepper). */
+  onLocalChange?: (nextHours: number) => void
   /** Step size in minutes (default 15). */
   stepMinutes?: number
   /** Minimum in minutes (default = one step). */
@@ -44,6 +49,7 @@ const DUR_SIZE = {
 export default function DurationStepper({
   hours,
   onChange,
+  onLocalChange,
   stepMinutes = 15,
   minMinutes,
   disabled,
@@ -75,6 +81,7 @@ export default function DurationStepper({
   const setMinutes = (mins: number) => {
     const clamped = Math.max(floor, mins)
     const nextHours = clamped / 60
+    onLocalChange?.(nextHours)
     if (commitDebounceMs == null) {
       onChange(nextHours)
       return
