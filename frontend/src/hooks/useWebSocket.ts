@@ -146,7 +146,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          // refetchType 'all': the cockpit is unmounted whenever the user is in
+          // the RO drawer, so ['dashboard-stats'] is an *inactive* query. A default
+          // invalidate only refetches active ones — it would mark this stale and,
+          // because that query sets refetchOnMount:false, serve the stale cache on
+          // the way back (still listing an order that was just deleted).
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
 
           // Route to notification manager
