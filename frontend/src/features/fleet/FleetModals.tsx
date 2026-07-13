@@ -9,6 +9,7 @@ import api from '../../lib/api'
 import BaseSelect from '@/components/BaseSelect'
 import QuantityStepper from '@/components/QuantityStepper'
 import DurationStepper from '@/components/DurationStepper'
+import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
@@ -213,9 +214,9 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
   return (
     <Modal title={`New work order${unitNumber ? ` · ${unitNumber}` : ''}`} icon={<ClipboardList size={17} />} onClose={onClose} width={460}>
       <Field label="What's the work / complaint?">
-        <textarea
+        <SuggestingTextarea
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={setDescription}
           rows={4}
           placeholder="e.g. Air leak on front brake chamber; DOT inspection due; check engine light"
           style={{
@@ -797,9 +798,9 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
           )}
 
           <Field label="Work / complaint">
-            <textarea
+            <SuggestingTextarea
               value={description}
-              onChange={(e) => { setDescription(e.target.value); setDescDirty(true) }}
+              onChange={(v) => { setDescription(v); setDescDirty(true) }}
               rows={3}
               style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical' }}
             />

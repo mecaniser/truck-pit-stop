@@ -15,6 +15,8 @@ from app.db.models.inventory import Inventory
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.service import Service, ServiceCategory, ServicePart
+from app.db.models.description_library import DescriptionLibraryEntry
+from app.services.description_library_service import regenerate_service_name_library
 
 router = APIRouter()
 
@@ -299,6 +301,76 @@ async def list_categories(
 
 
 # --- Services ---
+
+class ServiceNameSuggestion(BaseModel):
+    text: str
+    times_used: int
+
+
+async def _library_suggestions(db: AsyncSession, tenant_id, library_type: str, term: str, limit: int):
+    result = await db.execute(
+        select(
+            DescriptionLibraryEntry.canonical_text,
+            DescriptionLibraryEntry.source_count,
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text).label("score"),
+        )
+        .where(
+            DescriptionLibraryEntry.tenant_id == tenant_id,
+            DescriptionLibraryEntry.library_type == library_type,
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text) > 0.2,
+        )
+        .order_by(
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text).desc(),
+            DescriptionLibraryEntry.source_count.desc(),
+        )
+        .limit(limit)
+    )
+    return result.all()
+
+
+@router.get("/name-suggestions", response_model=List[ServiceNameSuggestion])
+async def get_service_name_suggestions(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(6, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Autocomplete for the new-service Name field, drawn from this tenant's
+    AI-canonicalized service-name library (see
+    app/services/description_library_service.py). A shop with no library yet
+    (never regenerated) simply gets no suggestions here.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    term = q.strip()
+    if not term:
+        return []
+
+    rows = await _library_suggestions(db, current_user.tenant_id, "service_name", term, limit)
+    return [ServiceNameSuggestion(text=text, times_used=count) for text, count, _score in rows]
+
+
+class LibraryRegenerateResponse(BaseModel):
+    entries_written: int
+
+
+@router.post("/name-library/regenerate", response_model=LibraryRegenerateResponse)
+async def regenerate_service_name_library_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Owner/admin-triggered rebuild of this tenant's canonical service-name
+    library from the current Services catalog.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    try:
+        entries_written = await regenerate_service_name_library(db, current_user.tenant_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    return LibraryRegenerateResponse(entries_written=entries_written)
+
 
 @router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_service(

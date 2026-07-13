@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     TELEMATICS_PROVIDER: str = "manual"
     TELEMATICS_API_KEY: str = ""
 
+    # Anthropic (offline description-library canonicalization)
+    ANTHROPIC_API_KEY: str = ""
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     PUBLIC_API_BASE_URL: str = "http://localhost:8000"

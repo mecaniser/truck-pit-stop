@@ -5,12 +5,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Download, Settings, Trash2, Wrench, Plus, X, Check, Loader2 } from 'lucide-react'
+import { Download, Settings, Trash2, Wrench, Plus, X, Check, Loader2, Sparkles } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import BaseSelect from '@/components/BaseSelect'
 import CurrencyInput from '@/components/CurrencyInput'
 import QuantityStepper from '@/components/QuantityStepper'
+import SuggestingTextarea from '@/components/SuggestingTextarea'
+import SuggestingInput from '@/components/SuggestingInput'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 
@@ -320,6 +322,22 @@ export default function ServicesManagementPage() {
     onError: () => toast.error('Failed to clear services'),
   })
 
+  // AI-cleaned canonical version of this shop's repair-order description
+  // history — powers the autocomplete suggestions in the RO work/complaint
+  // field. Not part of the services catalog itself, but lives in the same
+  // "catalog options" menu since it's a shop-owned reference list too.
+  const regenerateDescriptionLibraryMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/repair-orders/description-library/regenerate')
+      return response.data as { entries_written: number }
+    },
+    onSuccess: (data) => {
+      setShowMenu(false)
+      toast.success(`Suggestion library refreshed — ${data.entries_written} canonical descriptions`)
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to refresh suggestion library'),
+  })
+
   const addPartMutation = useMutation({
     mutationFn: async (vars: { serviceId: string; inventoryId: string; quantity: number; partName: string }) => {
       const response = await api.post(`/services/${vars.serviceId}/parts`, {
@@ -498,7 +516,7 @@ export default function ServicesManagementPage() {
             <Settings className="w-4 h-4" />
           </button>
           {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-44 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+            <div className="absolute right-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
               {showClearConfirm ? (
                 <div className="p-2 space-y-1">
                   <p className="text-xs text-gray-400 px-2 py-1">Clear all services?</p>
@@ -524,10 +542,19 @@ export default function ServicesManagementPage() {
                       setShowMenu(false)
                     }}
                     disabled={preloadMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5 shrink-0" />
                     {preloadMutation.isPending ? 'Loading…' : 'Load defaults'}
+                  </button>
+                  <button
+                    onClick={() => regenerateDescriptionLibraryMutation.mutate()}
+                    disabled={regenerateDescriptionLibraryMutation.isPending}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    title="Rebuild repair-order description suggestions from your work-order history"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                    {regenerateDescriptionLibraryMutation.isPending ? 'Refreshing…' : 'Refresh RO suggestions'}
                   </button>
                   <button
                     onClick={() => setShowClearConfirm(true)}
@@ -773,8 +800,10 @@ export default function ServicesManagementPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-                    <input
-                      {...register('name')}
+                    <SuggestingInput
+                      value={watch('name') || ''}
+                      onChange={(val) => setValue('name', val, { shouldValidate: true })}
+                      suggestUrl="/services/name-suggestions"
                       className={drawerInputClasses(!!errors.name)}
                       placeholder="Battery Test & Replacement"
                     />
@@ -918,8 +947,10 @@ export default function ServicesManagementPage() {
 
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-                  <textarea
-                    {...register('description')}
+                  <SuggestingTextarea
+                    value={watch('description') || ''}
+                    onChange={(val) => setValue('description', val, { shouldValidate: true })}
+                    variant="light"
                     rows={2}
                     className={drawerInputClasses(false, false)}
                     placeholder="Service description..."
