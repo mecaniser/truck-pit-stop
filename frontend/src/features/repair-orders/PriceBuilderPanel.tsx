@@ -779,7 +779,9 @@ export default function PriceBuilderPanel({
   const isEditableStatus = ['draft', 'quoted'].includes(orderStatus) ||
     (isInternalOrder && !INTERNAL_FROZEN_STATUSES.includes(orderStatus))
   const canMutate = canEdit && !isLocked && isEditableStatus
-  const addBarReadOnly = !canEdit || isLocked || !['draft', 'quoted'].includes(orderStatus) || completionMode || hasInvoice || orderStatus === 'completed'
+  // The add bar must follow the same editable-status rule as canMutate, or an
+  // internal in-progress order shows "start by adding…" with no add controls.
+  const addBarReadOnly = !canEdit || isLocked || !isEditableStatus || completionMode || hasInvoice || orderStatus === 'completed'
   const hasQuoteDraft = !!quoteNumber
   const hasAssignedTechnician = !!assignedTechnicianName
   const canManageTechnician = !isInternalOrder && quoteIsApproved && !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)

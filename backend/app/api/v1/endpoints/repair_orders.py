@@ -604,7 +604,9 @@ async def list_repair_orders(
     # description, customer name/company/DOT/MC/phone, and vehicle VIN/unit/
     # make/model. The Customer/Vehicle joins are added only when a term is
     # present so the common (no-search) list path stays a single-table query.
-    search_term = (search or "").strip()
+    # Coerce defensively: `search` is a str|None over HTTP, but is safe here even
+    # if a caller (e.g. a direct-function test) leaves it as the Query default.
+    search_term = (search if isinstance(search, str) else "").strip()
     if search_term:
         like = f"%{search_term}%"
         # Phone matching only kicks in when the term itself looks like a phone

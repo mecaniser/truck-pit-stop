@@ -798,14 +798,29 @@ export default function RepairOrdersPage() {
     },
   })
 
+  // Delete/restore/reopen change whether an order shows on the owner's floor
+  // board and dashboard, not just the RO lists — invalidate those too so the
+  // board updates without a manual reload.
+  const invalidateOrderBoards = () => {
+    for (const key of [
+      'repair-orders',
+      'customerRepairOrders',
+      'dashboard-stats',
+      'mechanic-board-team',
+      'mechanic-board-detail',
+      'fleet-board-summary',
+    ]) {
+      queryClient.invalidateQueries({ queryKey: [key] })
+    }
+  }
+
   const deleteRepairOrderMutation = useMutation({
     mutationFn: async (orderId: string) => {
       await api.delete(`/repair-orders/${orderId}`)
       return orderId
     },
     onSuccess: (orderId) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      invalidateOrderBoards()
       if (selectedOrder?.id === orderId) {
         closeDetail()
       }
@@ -822,9 +837,8 @@ export default function RepairOrdersPage() {
       return response.data as RepairOrder
     },
     onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
-      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
       setSelectedOrder(updated)
       toast.success(`Repair order ${updated.order_number} restored`)
@@ -841,7 +855,7 @@ export default function RepairOrdersPage() {
       return response.data as RepairOrder
     },
     onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
       setSelectedOrder(updated)
@@ -4326,13 +4340,14 @@ export default function RepairOrdersPage() {
               </div>
               
               <p className="text-gray-600 mb-6">
-                Are you sure you want to delete this repair order? This will permanently remove:
+                Remove this repair order from your active list? It's hidden from the
+                board along with its:
               </p>
-              
+
               <ul className="text-sm text-gray-600 mb-6 space-y-1 ml-4">
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                  The repair order and all details
+                  Order details and history
                 </li>
                 <li className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
@@ -4343,9 +4358,10 @@ export default function RepairOrdersPage() {
                   Parts and labor records
                 </li>
               </ul>
-              
-              <p className="text-sm text-red-600 font-medium mb-6">
-                This action cannot be undone.
+
+              <p className="text-sm text-gray-500 mb-6">
+                Nothing is destroyed — you can bring it back anytime from the
+                <span className="font-medium text-gray-700"> Deleted</span> filter.
               </p>
               
               <div className="flex gap-3 justify-end">
@@ -4373,7 +4389,7 @@ export default function RepairOrdersPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Delete permanently
+                  Delete order
                 </button>
               </div>
             </div>
