@@ -59,11 +59,14 @@ const THEMES: Record<SuggestionVariant, SuggestionTheme> = {
 export function useSuggestions({
   value,
   onChange,
+  onSelect,
   suggestUrl,
   variant,
 }: {
   value: string
   onChange: (value: string) => void
+  /** Fired only when a suggestion is explicitly picked (click or Enter), not on every keystroke. */
+  onSelect?: (value: string) => void
   suggestUrl: string
   variant: SuggestionVariant
 }) {
@@ -99,6 +102,7 @@ export function useSuggestions({
 
   const applySuggestion = (text: string) => {
     onChange(text)
+    onSelect?.(text)
     setIsOpen(false)
   }
 

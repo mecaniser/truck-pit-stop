@@ -1,9 +1,11 @@
 import { useSuggestions, type SuggestionVariant } from './useSuggestions'
 import SuggestionDropdown from './SuggestionDropdown'
 
-interface SuggestingTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
+interface SuggestingTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'onSelect'> {
   value: string
   onChange: (value: string) => void
+  /** Fired only when a suggestion is explicitly picked (click or Enter), not on every keystroke — distinct from the native textarea/input onSelect (text-selection) event, which this component does not expose. */
+  onSelect?: (value: string) => void
   /** Backend endpoint that returns [{ text, times_used }], filtered by ?q= */
   suggestUrl?: string
   /**
@@ -24,6 +26,7 @@ interface SuggestingTextareaProps extends Omit<React.TextareaHTMLAttributes<HTML
 export default function SuggestingTextarea({
   value,
   onChange,
+  onSelect,
   suggestUrl = '/repair-orders/description-suggestions',
   variant = 'dark',
   style,
@@ -32,7 +35,7 @@ export default function SuggestingTextarea({
   const {
     isOpen, setIsOpen, highlightedIndex, setHighlightedIndex, containerRef,
     visibleSuggestions, applySuggestion, handleKeyDown, theme,
-  } = useSuggestions({ value, onChange, suggestUrl, variant })
+  } = useSuggestions({ value, onChange, onSelect, suggestUrl, variant })
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
