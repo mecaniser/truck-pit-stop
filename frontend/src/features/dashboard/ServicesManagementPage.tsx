@@ -492,8 +492,8 @@ export default function ServicesManagementPage() {
   return (
     <div className="space-y-6 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:gap-4 lg:space-y-0">
       {/* Header */}
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center lg:mb-0 lg:flex-shrink-0">
-        <div className="flex-1">
+      <div className="mb-4 flex flex-row items-center gap-3 lg:mb-0 lg:flex-shrink-0">
+        <div className="flex-1 min-w-0">
           <SearchAddBar
             value={searchQuery}
             onChange={setSearchQuery}

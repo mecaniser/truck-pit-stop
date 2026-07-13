@@ -603,17 +603,78 @@ export default function InventoryPage() {
 
   return (
     <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
-      {/* Mobile Search Bar */}
-      <SearchAddBar
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder="Search parts by SKU, name, or category..."
-        onAdd={openAddPart}
-        addLabel="Add part"
-        addLabelMobile="Add"
-        className="mb-1 lg:hidden"
-        inputWidthClass="sm:min-w-[320px] md:max-w-xl"
-      />
+      {/* Mobile Search Bar + Catalog gear menu, inline so Settings never drops to its own row */}
+      <div className="mb-1 flex flex-row items-center gap-2 lg:hidden">
+        <div className="flex-1 min-w-0">
+          <SearchAddBar
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search parts by SKU, name, or category..."
+            onAdd={openAddPart}
+            addLabel="Add part"
+            addLabelMobile="Add"
+            inputWidthClass="sm:min-w-[320px] md:max-w-xl"
+          />
+        </div>
+        <div className="relative shrink-0" ref={mobileMenuRef}>
+          <button
+            onClick={() => setShowMenu(v => !v)}
+            className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
+            title="Catalog options"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          {showMenu && (
+            <div className="absolute left-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+              {showClearConfirm ? (
+                <div className="p-2 space-y-1">
+                  <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
+                  <button
+                    onClick={() => clearInventoryMutation.mutate()}
+                    disabled={clearInventoryMutation.isPending}
+                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
+                  >
+                    {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
+                    disabled={preloadInventoryMutation.isPending}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+                  </button>
+                  <button
+                    onClick={() => regeneratePartLibraryMutation.mutate()}
+                    disabled={regeneratePartLibraryMutation.isPending}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    title="Rebuild part-name/category/description suggestions from your inventory"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                    {regeneratePartLibraryMutation.isPending ? 'Queuing…' : 'Refresh part suggestions'}
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    Clear all
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Catalog message (success/info) */}
       {catalogMessage && (
@@ -622,66 +683,6 @@ export default function InventoryPage() {
           {catalogMessage}
         </div>
       )}
-
-      {/* Mobile: Catalog gear menu */}
-      <div className="relative lg:hidden" ref={mobileMenuRef}>
-        <button
-          onClick={() => setShowMenu(v => !v)}
-          className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 border border-white/15 transition-colors"
-          title="Catalog options"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-        {showMenu && (
-          <div className="absolute left-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
-            {showClearConfirm ? (
-              <div className="p-2 space-y-1">
-                <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
-                <button
-                  onClick={() => clearInventoryMutation.mutate()}
-                  disabled={clearInventoryMutation.isPending}
-                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-md disabled:opacity-50"
-                >
-                  {clearInventoryMutation.isPending ? 'Clearing…' : 'Yes, clear all'}
-                </button>
-                <button
-                  onClick={() => setShowClearConfirm(false)}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-white/10 rounded-md"
-                >
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <>
-                <button
-                  onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
-                  disabled={preloadInventoryMutation.isPending}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
-                >
-                  <Download className="w-3.5 h-3.5 shrink-0" />
-                  {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
-                </button>
-                <button
-                  onClick={() => regeneratePartLibraryMutation.mutate()}
-                  disabled={regeneratePartLibraryMutation.isPending}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
-                  title="Rebuild part-name/category/description suggestions from your inventory"
-                >
-                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                  {regeneratePartLibraryMutation.isPending ? 'Queuing…' : 'Refresh part suggestions'}
-                </button>
-                <button
-                  onClick={() => setShowClearConfirm(true)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-red-400 hover:bg-white/10"
-                >
-                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                  Clear all
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* Desktop Search Toolbar */}
       <div className="hidden lg:flex items-center gap-4">
