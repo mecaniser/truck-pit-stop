@@ -195,14 +195,16 @@ async def get_dashboard_stats(
 
     # Total repair orders
     result = await db.execute(
-        select(func.count(RepairOrder.id)).where(RepairOrder.tenant_id == tenant_id)
+        select(func.count(RepairOrder.id)).where(
+            RepairOrder.tenant_id == tenant_id, RepairOrder.deleted_at.is_(None)
+        )
     )
     total_repair_orders = result.scalar() or 0
 
     # Orders by status
     result = await db.execute(
         select(RepairOrder.status, func.count(RepairOrder.id))
-        .where(RepairOrder.tenant_id == tenant_id)
+        .where(RepairOrder.tenant_id == tenant_id, RepairOrder.deleted_at.is_(None))
         .group_by(RepairOrder.status)
     )
     status_counts = result.all()
@@ -223,6 +225,7 @@ async def get_dashboard_stats(
         select(func.count(RepairOrder.id)).where(
             and_(
                 RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
                 RepairOrder.status == RepairOrderStatus.QUOTED,
                 RepairOrder.updated_at < three_days_ago,
             )
@@ -235,6 +238,7 @@ async def get_dashboard_stats(
         select(func.count(RepairOrder.id)).where(
             and_(
                 RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
                 RepairOrder.status == RepairOrderStatus.DECLINED,
             )
         )
@@ -270,7 +274,7 @@ async def get_dashboard_stats(
         select(RepairOrder, Customer, Vehicle)
         .join(Customer, RepairOrder.customer_id == Customer.id)
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
-        .where(RepairOrder.tenant_id == tenant_id)
+        .where(RepairOrder.tenant_id == tenant_id, RepairOrder.deleted_at.is_(None))
         .order_by(RepairOrder.updated_at.desc())
         .limit(10)
     )
@@ -346,6 +350,7 @@ async def get_dashboard_stats(
         .where(
             and_(
                 RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
                 RepairOrder.status.in_(needs_action_statuses),
             )
         )
@@ -383,6 +388,7 @@ async def get_dashboard_stats(
         .where(
             and_(
                 RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
                 RepairOrder.status.in_(on_floor_statuses),
             )
         )
@@ -405,6 +411,7 @@ async def get_dashboard_stats(
         .where(
             and_(
                 RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
                 RepairOrder.status.in_([
                     RepairOrderStatus.COMPLETED,
                     RepairOrderStatus.INVOICED,
@@ -450,6 +457,7 @@ async def get_dashboard_stats(
             select(func.count(RepairOrder.id)).where(
                 and_(
                     RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.deleted_at.is_(None),
                     RepairOrder.assigned_mechanic_id == current_user.id,
                 )
             )
@@ -460,6 +468,7 @@ async def get_dashboard_stats(
             select(func.count(RepairOrder.id)).where(
                 and_(
                     RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.deleted_at.is_(None),
                     RepairOrder.assigned_mechanic_id == current_user.id,
                     RepairOrder.status == RepairOrderStatus.IN_PROGRESS,
                 )
