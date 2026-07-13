@@ -19,9 +19,25 @@ from sqlalchemy import select, distinct
 from app.tasks import celery_app
 from app.db.session import AsyncSessionLocal
 from app.db.models.description_library import DescriptionLibraryEntry
-from app.services.description_library_service import regenerate_all_libraries
+from app.services.description_library_service import (
+    regenerate_all_libraries,
+    regenerate_description_library,
+    regenerate_service_name_library,
+    regenerate_part_name_library,
+    regenerate_part_category_library,
+    regenerate_part_description_library,
+)
 
 logger = logging.getLogger(__name__)
+
+# Maps the library group a "Refresh" button represents to the regeneration
+# function(s) it runs — lets the on-demand task share this table with
+# whichever endpoint enqueues it, instead of hardcoding per-endpoint logic.
+_REGENERATE_FNS_BY_GROUP = {
+    "ro_description": [regenerate_description_library],
+    "service_name": [regenerate_service_name_library],
+    "inventory": [regenerate_part_name_library, regenerate_part_category_library, regenerate_part_description_library],
+}
 
 
 async def _tenants_with_existing_libraries(db) -> list:
@@ -64,4 +80,40 @@ def process_description_library_refresh():
         results = loop.run_until_complete(_process_description_library_refresh())
         return {"status": "success", "tenants_refreshed": len(results), "results": results}
     except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+async def _process_on_demand_regenerate(tenant_id: str, group: str) -> dict:
+    fns = _REGENERATE_FNS_BY_GROUP[group]
+    async with AsyncSessionLocal() as db:
+        counts = {}
+        for fn in fns:
+            counts[fn.__name__] = await fn(db, tenant_id)
+        return counts
+
+
+@celery_app.task(name="process_on_demand_library_regenerate")
+def process_on_demand_library_regenerate(tenant_id: str, group: str):
+    """Owner/admin clicked a "Refresh ... suggestions" button. Runs the same
+    regeneration logic as the weekly job, but for one tenant and one library
+    group (ro_description | service_name | inventory), triggered on demand.
+    The HTTP endpoint that enqueues this returns immediately — the button
+    doesn't block on a multi-minute Claude call.
+    """
+    loop = asyncio.get_event_loop()
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    try:
+        counts = loop.run_until_complete(_process_on_demand_regenerate(tenant_id, group))
+        logger.info(
+            "description_library_on_demand_regenerate_succeeded",
+            extra={"tenant_id": tenant_id, "group": group, "counts": counts},
+        )
+        return {"status": "success", "counts": counts}
+    except Exception as e:
+        logger.exception(
+            "description_library_on_demand_regenerate_failed",
+            extra={"tenant_id": tenant_id, "group": group},
+        )
         return {"status": "error", "message": str(e)}

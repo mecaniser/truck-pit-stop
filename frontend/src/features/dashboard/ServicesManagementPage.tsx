@@ -328,14 +328,13 @@ export default function ServicesManagementPage() {
   // "catalog options" menu since it's a shop-owned reference list too.
   const regenerateDescriptionLibraryMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post('/repair-orders/description-library/regenerate')
-      return response.data as { entries_written: number }
+      await api.post('/repair-orders/description-library/regenerate')
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       setShowMenu(false)
-      toast.success(`Suggestion library refreshed — ${data.entries_written} canonical descriptions`)
+      toast.success('Refreshing RO suggestions in the background — this can take a few minutes for shops with a lot of history')
     },
-    onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to refresh suggestion library'),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to queue suggestion library refresh'),
   })
 
   const addPartMutation = useMutation({
@@ -554,7 +553,7 @@ export default function ServicesManagementPage() {
                     title="Rebuild repair-order description suggestions from your work-order history"
                   >
                     <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                    {regenerateDescriptionLibraryMutation.isPending ? 'Refreshing…' : 'Refresh RO suggestions'}
+                    {regenerateDescriptionLibraryMutation.isPending ? 'Queuing…' : 'Refresh RO suggestions'}
                   </button>
                   <button
                     onClick={() => setShowClearConfirm(true)}

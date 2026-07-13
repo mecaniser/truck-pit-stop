@@ -7,17 +7,14 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 from decimal import Decimal
 
+from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.default_catalog import DEFAULT_INVENTORY
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
 from app.db.models.description_library import DescriptionLibraryEntry
-from app.services.description_library_service import (
-    regenerate_part_name_library,
-    regenerate_part_category_library,
-    regenerate_part_description_library,
-)
+from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 
 router = APIRouter()
 
@@ -97,8 +94,7 @@ class InventoryLibrarySuggestion(BaseModel):
 
 
 class InventoryLibraryRegenerateResponse(BaseModel):
-    part_names_written: int
-    part_categories_written: int
+    queued: bool = True
 
 
 async def _inventory_library_suggestions(db: AsyncSession, tenant_id, library_type: str, term: str, limit: int):
@@ -181,26 +177,26 @@ async def get_inventory_description_suggestions(
     return [InventoryLibrarySuggestion(text=text, times_used=count) for text, count, _score in rows]
 
 
-@router.post("/library/regenerate", response_model=InventoryLibraryRegenerateResponse)
+@router.post(
+    "/library/regenerate",
+    response_model=InventoryLibraryRegenerateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def regenerate_inventory_library_endpoint(
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
     """Owner/admin-triggered rebuild of this tenant's canonical part-name,
     part-category, and part-description libraries from the current Inventory
-    catalog.
+    catalog. Runs as a background Celery task — enqueues and returns
+    immediately rather than blocking on the multi-minute Claude call.
     """
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
-    try:
-        names_written = await regenerate_part_name_library(db, current_user.tenant_id)
-        categories_written = await regenerate_part_category_library(db, current_user.tenant_id)
-        await regenerate_part_description_library(db, current_user.tenant_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    return InventoryLibraryRegenerateResponse(
-        part_names_written=names_written, part_categories_written=categories_written
-    )
+    if not settings.ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ANTHROPIC_API_KEY is not configured")
+
+    process_on_demand_library_regenerate.delay(str(current_user.tenant_id), "inventory")
+    return InventoryLibraryRegenerateResponse()
 
 
 @router.get("", response_model=List[InventoryResponse])

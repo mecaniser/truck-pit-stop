@@ -455,18 +455,15 @@ export default function InventoryPage() {
   // data itself, but lives in the same "catalog options" menu.
   const regeneratePartLibraryMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post('/inventory/library/regenerate')
-      return response.data as { part_names_written: number; part_categories_written: number }
+      await api.post('/inventory/library/regenerate')
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       setShowMenu(false)
-      setCatalogMessage(
-        `Suggestion library refreshed — ${data.part_names_written} names, ${data.part_categories_written} categories`
-      )
+      setCatalogMessage('Refreshing part suggestions in the background — this can take a few minutes')
       setTimeout(() => setCatalogMessage(null), 4000)
     },
     onError: () => {
-      setCatalogMessage('Failed to refresh suggestion library')
+      setCatalogMessage('Failed to queue suggestion library refresh')
       setTimeout(() => setCatalogMessage(null), 4000)
     },
   })
@@ -671,7 +668,7 @@ export default function InventoryPage() {
                   title="Rebuild part-name/category/description suggestions from your inventory"
                 >
                   <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                  {regeneratePartLibraryMutation.isPending ? 'Refreshing…' : 'Refresh part suggestions'}
+                  {regeneratePartLibraryMutation.isPending ? 'Queuing…' : 'Refresh part suggestions'}
                 </button>
                 <button
                   onClick={() => setShowClearConfirm(true)}
