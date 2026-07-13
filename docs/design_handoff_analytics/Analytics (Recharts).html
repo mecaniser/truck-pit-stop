@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Truck Pit Stop — Shop Analytics (Recharts)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        gold: { 400:'#D4A84B', 500:'#B8860B', 600:'#9A7209', 700:'#7C5C07' },
+        noir: { 900:'#0a0a0f', 800:'#12121a', 700:'#1a1a24' },
+        blueNoir: { 900:'#0a0f14', 800:'#101820', 700:'#182028' },
+        accent: {
+          cyan:    { 400:'#22D3EE', 500:'#06B6D4', 600:'#0891B2' },
+          indigo:  { 400:'#818CF8', 500:'#6366F1', 600:'#4F46E5' },
+          emerald: { 400:'#34D399', 500:'#10B981', 600:'#059669' },
+          rose:    { 400:'#FB7185', 500:'#F43F5E', 600:'#E11D48' },
+          amber:   { 400:'#FBBF24', 500:'#F59E0B', 600:'#D97706' },
+        },
+      }
+    }
+  }
+}
+</script>
+<style>
+  html,body{ background:#0a0f14; }
+  ::-webkit-scrollbar{width:5px;height:5px;}
+  ::-webkit-scrollbar-thumb{background:rgba(113,113,122,.48);border-radius:99px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
+</head>
+<body class="bg-blueNoir-900 min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel" src="analytics-data.jsx"></script>
+<script type="text/babel" src="analytics-recharts-charts.jsx"></script>
+
+<script type="text/babel">
+const { useState, useMemo, createContext } = React;
+const D = window.AnalyticsData;
+
+const ACCENTS = {
+  cyan:    { name:"Cyan",    c400:"#22D3EE", c500:"#06B6D4", c600:"#0891B2" },
+  indigo:  { name:"Indigo",  c400:"#818CF8", c500:"#6366F1", c600:"#4F46E5" },
+  emerald: { name:"Emerald", c400:"#34D399", c500:"#10B981", c600:"#059669" },
+  rose:    { name:"Rose",    c400:"#FB7185", c500:"#F43F5E", c600:"#E11D48" },
+  amber:   { name:"Amber",   c400:"#FBBF24", c500:"#F59E0B", c600:"#D97706" },
+};
+window.__AccentCtx = createContext(ACCENTS.cyan);
+
+function Icon({d, size=18, cls}){ return <svg className={cls} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d}></path></svg>; }
+const ICONS = {
+  dollar:"M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+  cart:"M6 6h15l-1.5 9h-12L6 6ZM3 3h3l.5 3M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM19 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z",
+  users:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+  target:"M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z",
+  up:"M23 6l-9.5 9.5-5-5L1 18M17 6h6v6",
+  down:"M23 18l-9.5-9.5-5 5L1 6M17 18h6v-6",
+  activity:"M22 12h-4l-3 9L9 3l-3 9H2",
+  wrench:"M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a1.5 1.5 0 0 0 2.1 2.1l6-6a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.1-.5-.5-2.1 2.6-2.6Z",
+  clock:"M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM12 6v6l4 2",
+  bulb:"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.9v.2h5v-.2c0-.8.4-1.5 1-1.9A6 6 0 0 0 12 3Z",
+  chevronDown:"m6 9 6 6 6-6",
+};
+
+function Kpi({icon, iconBg, iconColor, label, value, sub, delta, deltaDir}){
+  return (
+    <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
+      <div className="flex items-start justify-between mb-4">
+        <div className={"p-3 rounded-lg "+iconBg}><Icon d={icon} size={22} cls={iconColor} /></div>
+        {delta!=null && (
+          <div className={"flex items-center gap-1 text-sm "+(deltaDir==="up"?"text-green-400":"text-red-400")}>
+            <Icon d={deltaDir==="up"?ICONS.up:ICONS.down} size={15}/>{delta}
+          </div>
+        )}
+      </div>
+      <p className="text-gray-400 text-sm">{label}</p>
+      <p className="text-2xl font-bold text-white mt-1">{value}</p>
+      {sub && <p className="text-gray-500 text-xs mt-2">{sub}</p>}
+    </div>
+  );
+}
+
+function Card({title, sub, icon, iconColor, children, insight, height=260}){
+  return (
+    <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6 flex flex-col">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {icon && <Icon d={icon} size={18} cls={iconColor||"text-gray-400"} />}
+      </div>
+      {sub && <p className="text-gray-500 text-xs mb-2">{sub}</p>}
+      <div style={{height}} className="mt-2">{children}</div>
+      {insight && (
+        <div className="flex items-start gap-2.5 bg-gray-700/30 rounded-lg p-3 mt-4 text-[12.5px] text-gray-300 leading-relaxed">
+          <Icon d={ICONS.bulb} size={15} cls="text-amber-400 flex-shrink-0 mt-0.5" />
+          <div><b className="text-white">Act on it: </b>{insight}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccentPicker({accentKey, setAccentKey}){
+  return (
+    <div className="flex items-center gap-1.5 bg-gray-800/50 border border-gray-700/50 rounded-lg p-1.5">
+      {Object.keys(ACCENTS).map(k=>(
+        <button key={k} onClick={()=>setAccentKey(k)} title={ACCENTS[k].name}
+          className={"w-6 h-6 rounded-full transition-transform "+(accentKey===k?"scale-110 ring-2 ring-white/40":"opacity-70 hover:opacity-100")}
+          style={{background:ACCENTS[k].c500}}></button>
+      ))}
+    </div>
+  );
+}
+
+function OverviewTab({accentKey, range, setRange, rows, totalsNow}){
+  const f = D.funnel;
+  const techLabels = D.TECHS.map(t=>({name:t.name.split(" ")[0], eff:t.eff, billed:t.billed, available:t.available}));
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi icon={ICONS.dollar} iconBg="bg-green-500/10" iconColor="text-green-400" label="Revenue (period)" value={D.money(totalsNow.revenue)} delta={Math.abs(totalsNow.revChangePct)+"%"} deltaDir={totalsNow.revChangePct>=0?"up":"down"} sub={"Margin "+totalsNow.marginPct+"%"} />
+        <Kpi icon={ICONS.cart} iconBg="bg-blue-500/10" iconColor="text-blue-400" label="Avg RO Value" value={D.money(D.ROS.reduce((a,c)=>a+c.subtotal,0)/D.ROS.length)} sub={D.ROS.length+" repair orders sampled"} />
+        <Kpi icon={ICONS.users} iconBg="bg-purple-500/10" iconColor="text-purple-400" label="Quote Conversion" value={Math.round(f.invoiced/f.sent*100)+"%"} sub={f.invoiced+" of "+f.sent+" quotes"} />
+        <Kpi icon={ICONS.target} iconBg="bg-amber-500/10" iconColor="text-amber-400" label="Avg Time to Approve" value={f.avgApproveHrs+" hrs"} sub="from quote sent" />
+      </div>
+
+      <Card title="Revenue & Profit Trend" sub="Stacked revenue + net margin %" icon={ICONS.activity} height={280}
+        insight="Margin % dipped even as revenue climbed recently — check parts pricing mode before assuming volume alone will fix it.">
+        <RC.RevenueTrendChart rows={rows} />
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="Labor vs. Parts Profitability" sub="Every RO, bubble size = hours" icon={ICONS.dollar} height={280}
+          insight="Large bubbles below 20% margin are high-value ROs quietly under-priced — worth a repricing pass.">
+          <RC.ProfitabilityScatter ros={D.ROS} />
+        </Card>
+        <Card title="Quote → Approval Funnel" sub={"Avg time to approve: "+f.avgApproveHrs+" hrs"} icon={ICONS.target} height={280}
+          insight={"Biggest drop-off is Approved→Invoiced ("+Math.round((1-f.invoiced/f.approved)*100)+"%). Chase approved-but-unscheduled work before it goes cold."}>
+          <RC.QuoteFunnel funnel={f} />
+        </Card>
+      </div>
+
+      <Card title="Technician Productivity" sub="Billed vs. available hours, this period" icon={ICONS.wrench} height={240}
+        insight="Anyone under ~65% efficiency is under-utilized today — a scheduling gap, not a skill gap.">
+        <RC.RankedBar data={techLabels} dataKey="eff" nameKey="name"
+          colorFn={(d)=> d.eff>=85?"#34d399":d.eff>=65?"#f59e0b":"#f87171"}
+          tickFormatter={(v)=>v+"%"}
+          tooltipFormatter={(v,n,p)=>v+"%"} />
+      </Card>
+    </div>
+  );
+}
+
+function InternalTab(){
+  const truckLabels = D.TRUCKS_COST.slice(0,10).map(t=>({name:t.unit.replace("TPS-",""), ytd:t.ytd, perMile:t.perMile, miles:t.miles}));
+  const last = D.pmVsUnplanned[D.pmVsUnplanned.length-1];
+  const unplannedShare = Math.round(last.unplanned/(last.pm+last.unplanned)*100);
+  const lastCpm = D.fleetCostPerMileTrend[D.fleetCostPerMileTrend.length-1].value;
+  const firstCpm = D.fleetCostPerMileTrend[0].value;
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Internal Fleet Costs (At Cost)</h2>
+          <Icon d={ICONS.wrench} cls="text-orange-400" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-gray-700/30 rounded-lg p-4"><p className="text-gray-400 text-sm">Today</p><p className="text-xl font-bold text-orange-400 mt-1">$412</p></div>
+          <div className="bg-gray-700/30 rounded-lg p-4"><p className="text-gray-400 text-sm">This Week</p><p className="text-xl font-bold text-orange-400 mt-1">$2,860</p></div>
+          <div className="bg-gray-700/30 rounded-lg p-4"><p className="text-gray-400 text-sm">This Month</p><p className="text-xl font-bold text-orange-400 mt-1">$11,240</p></div>
+        </div>
+        <p className="text-gray-500 text-xs mt-3">Parts at cost + internal labor rate for company-owned trucks — not customer revenue.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="Cost per Truck (YTD)" sub="Top 10 by total maintenance spend" icon={ICONS.wrench} height={280}
+          insight={"Top spender is TPS-"+D.TRUCKS_COST[0].unit.replace("TPS-","")+" at "+D.money(D.TRUCKS_COST[0].ytd)+". If cost/mile keeps climbing next quarter too, it's a repair-vs-replace call."}>
+          <RC.RankedBar data={truckLabels} dataKey="ytd" nameKey="name" tickFormatter={(v)=>"$"+(v/1000)+"k"} tooltipFormatter={(v)=>"$"+v.toLocaleString()} />
+        </Card>
+        <Card title="Fleet Cost per Mile" sub="12-month trend, whole fleet" icon={ICONS.activity} height={280}
+          insight={lastCpm>firstCpm ? "Cost/mile has risen "+Math.round((lastCpm/firstCpm-1)*100)+"% this year — fleet is aging. Budget for replacements before it erodes margin." : "Cost/mile is flat or improving — current PM cadence is holding."}>
+          <RC.TrendLine data={D.fleetCostPerMileTrend} dataKey="value" color="#f87171" yTick={(v)=>"$"+v.toFixed(2)} />
+        </Card>
+      </div>
+
+      <Card title="Preventive vs. Unplanned Cost" sub="Monthly, whole fleet" icon={ICONS.clock} height={260}
+        insight={unplannedShare>50 ? "Unplanned repairs are now "+unplannedShare+"% of spend — the PM program is falling behind. Tighten intervals before costs compound." : "Unplanned share ("+unplannedShare+"%) is under control."}>
+        <RC.StackedBar rows={D.pmVsUnplanned} />
+      </Card>
+
+      <Card title="Parts Markup & Turnover" sub="Each dot = one part SKU · shop-wide" icon={ICONS.dollar} height={280}
+        insight="Red dots (low turnover + low markup) tie up shelf space for thin returns — candidates to stop stocking. Green dots are restock priorities.">
+        <RC.QuadrantScatter parts={D.PARTS_QUAD} />
+      </Card>
+    </div>
+  );
+}
+
+function AccountsTab(){
+  const top20count = Math.ceil(D.ACCOUNTS.length*0.2);
+  const top20share = D.ACCOUNTS[top20count-1].cumPct;
+  function marginCls(m){ return m>=30?"bg-green-500/10 text-green-400":m>=20?"bg-amber-500/10 text-amber-400":"bg-red-500/10 text-red-400"; }
+  return (
+    <div className="space-y-6">
+      <Card title="Revenue by Account" sub="Pareto — bars + cumulative share" icon={ICONS.users} height={300}
+        insight={"Top "+top20count+" accounts ("+Math.round(top20count/D.ACCOUNTS.length*100)+"% of accounts) already drive "+top20share+"% of revenue. Protect those relationships first."}>
+        <RC.ParetoChart accounts={D.ACCOUNTS} />
+      </Card>
+
+      <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-6">
+        <h2 className="text-lg font-semibold text-white mb-4">Account Detail</h2>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-gray-500 text-xs uppercase tracking-wide">
+              <th className="text-left pb-2 font-semibold">Account</th>
+              <th className="text-right pb-2 font-semibold">Revenue</th>
+              <th className="text-right pb-2 font-semibold">Margin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {D.ACCOUNTS.map((a,i)=>(
+              <tr key={a.name} className="border-t border-gray-700/50">
+                <td className="py-2.5 text-gray-200 font-medium"><span className="text-gray-500 font-mono text-xs mr-2">{i+1}</span>{a.name}</td>
+                <td className="py-2.5 text-right font-mono text-gray-200">{D.money(a.revenue)}</td>
+                <td className="py-2.5 text-right"><span className={"px-2 py-0.5 rounded-full text-xs font-semibold "+marginCls(a.marginPct)}>{a.marginPct}%</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [accentKey, setAccentKey] = useState("cyan");
+  const [tab, setTab] = useState("overview");
+  const [range, setRange] = useState("30d");
+  const accent = ACCENTS[accentKey];
+  const rows = useMemo(()=>D.rollup(range),[range]);
+  const totalsNow = useMemo(()=>D.totals(range),[range]);
+
+  const TABS = [
+    {id:"overview", label:"Overview"},
+    {id:"internal", label:"Internal Fleet Costs"},
+    {id:"accounts", label:"Customer Accounts"},
+  ];
+
+  return (
+    <window.__AccentCtx.Provider value={accent}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="flex items-start justify-between gap-4 mb-2 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-white mb-2">Shop Analytics</h1>
+            <p className="text-gray-400">Performance overview and insights</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex bg-gray-800/50 border border-gray-700/50 rounded-lg p-1">
+              {[["7d","7D"],["30d","30D"],["90d","90D"],["120d","YTD"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setRange(k)}
+                  className={"px-3 py-1.5 rounded-md text-xs font-semibold transition-colors "+(range===k?"bg-white/10 text-white":"text-gray-400 hover:text-white")}>{l}</button>
+              ))}
+            </div>
+            <AccentPicker accentKey={accentKey} setAccentKey={setAccentKey} />
+          </div>
+        </div>
+
+        <div className="flex gap-1 border-b border-gray-700/50 mt-4 mb-6">
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              className={"px-4 py-2.5 text-sm font-semibold rounded-t-lg transition-colors "+(tab===t.id?"bg-gray-800/50 text-white border border-gray-700/50 border-b-transparent -mb-px":"text-gray-400 hover:text-gray-200 hover:bg-gray-800/30")}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab==="overview" && <OverviewTab accentKey={accentKey} range={range} setRange={setRange} rows={rows} totalsNow={totalsNow} />}
+        {tab==="internal" && <InternalTab />}
+        {tab==="accounts" && <AccountsTab />}
+      </div>
+    </window.__AccentCtx.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

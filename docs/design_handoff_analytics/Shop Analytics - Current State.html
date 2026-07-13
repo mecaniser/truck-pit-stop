@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Truck Pit Stop — Shop Analytics (Current State)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html,body{ background:linear-gradient(135deg,#1e293b 0%,#0f172a 50%,#1e3a5f 100%); background-attachment:fixed; min-height:100vh; }
+  body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;}
+  ::-webkit-scrollbar{width:5px;height:5px;} ::-webkit-scrollbar-thumb{background:rgba(113,113,122,.48);border-radius:99px;} ::-webkit-scrollbar-track{background:transparent;}
+  .scrollbar-hide::-webkit-scrollbar{display:none;} .scrollbar-hide{-ms-overflow-style:none;scrollbar-width:none;}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
+</head>
+<body class="min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel" src="shop-analytics-data.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+const R = Recharts;
+const MD = window.ShopAnalyticsData;
+
+const ACCENTS = { cyan:"#06B6D4", indigo:"#6366F1", emerald:"#10B981", rose:"#F43F5E", amber:"#F59E0B" };
+const RANGE_LABELS = {
+  this_year:"This Year", last_year:"Last Year", this_quarter:"This Quarter", last_quarter:"Last Quarter",
+  this_month:"This Month", last_month:"Last Month", this_week:"This Week", last_week:"Last Week",
+};
+
+function Icon({d, size=16, cls}){ return <svg className={cls} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d}></path></svg>; }
+const ICONS = {
+  download:"M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
+  loader:"M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8",
+  truck:"M1 6h14v11H1zM15 9h4l3 3v5h-7",
+  up:"M17 7l-8 8M9 7h8v8",
+  bulb:"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.4 1 1.1 1 1.9v.2h5v-.2c0-.8.4-1.5 1-1.9A6 6 0 0 0 12 3Z",
+};
+
+const fmtMoney = (v)=>{ const n = parseFloat(v??0); return "$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); };
+const fmtMoney0 = (v)=>{ const n = parseFloat(v??0); return "$"+n.toLocaleString("en-US",{maximumFractionDigits:0}); };
+const fmtNumber = (v)=>{ const n = parseFloat(v??0); return n.toLocaleString("en-US",{maximumFractionDigits:1}); };
+
+function DateRangePicker({value,onChange}){
+  const [isOpen,setIsOpen] = useState(false);
+  const options = ["this_year","last_year","this_quarter","last_quarter","this_month","last_month","this_week","last_week"];
+  return (
+    <div className="relative">
+      <button type="button" onClick={()=>setIsOpen(o=>!o)} className="flex items-center gap-2 h-10 px-4 rounded-lg bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors">
+        {RANGE_LABELS[value]}
+      </button>
+      {isOpen && (
+        <React.Fragment>
+          <div className="fixed inset-0 z-40" onClick={()=>setIsOpen(false)}></div>
+          <div className="absolute z-50 mt-1 w-44 rounded-lg bg-gray-900 border border-white/20 shadow-xl py-1 right-0">
+            {options.map(opt=>(
+              <button key={opt} type="button" onClick={()=>{onChange(opt);setIsOpen(false);}}
+                className={"w-full text-left px-4 py-2 text-sm transition-colors "+(opt===value?"text-white bg-white/10":"text-gray-200 hover:bg-white/5")}>
+                {RANGE_LABELS[opt]}
+              </button>
+            ))}
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function ExportButton({onClick}){
+  return (
+    <button type="button" onClick={onClick} className="flex items-center gap-2 h-9 px-3.5 rounded-lg bg-white/10 text-white text-xs font-medium hover:bg-white/15 transition-colors">
+      <Icon d={ICONS.download} size={14} />Export
+    </button>
+  );
+}
+
+// ============ HIERARCHY PRIMITIVES ============
+// Hero: the one thing that matters most on this tab. Big number, full-width chart, accented.
+function Hero({label, value, sub, accent, insight, children}){
+  return (
+    <div className="relative rounded-2xl p-6 overflow-hidden" style={{background:"linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))", border:"1px solid rgba(255,255,255,0.12)"}}>
+      <div className="absolute top-0 left-0 right-0 h-[3px]" style={{background:accent}}></div>
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-1">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{color:accent}}>{label}</p>
+          <p className="text-4xl font-bold text-white leading-none">{value}</p>
+          {sub && <p className="text-sm text-white/50 mt-2">{sub}</p>}
+        </div>
+      </div>
+      {children && <div className="mt-5">{children}</div>}
+      {insight && (
+        <div className="flex items-start gap-2.5 bg-black/20 rounded-lg p-3 mt-5 text-[12.5px] text-white/80 leading-relaxed">
+          <Icon d={ICONS.bulb} size={14} cls="mt-0.5 flex-shrink-0" style={{color:accent}} />
+          <div>{insight}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Secondary: supporting numbers. Small, quiet, no charts — grouped in a single row so they read as "detail", not "headline".
+function StatStrip({stats}){
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.06] rounded-xl overflow-hidden border border-white/[0.06]">
+      {stats.map((s,i)=>(
+        <div key={i} className="bg-[#141a24] px-4 py-3.5">
+          <p className="text-[10.5px] font-semibold uppercase tracking-wider text-white/40">{s.label}</p>
+          <p className="text-lg font-semibold text-white/90 mt-0.5">{s.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Tertiary: the raw detail table. Visually quiet — small label announces it as supplementary, not another headline.
+function DetailTable({title, count, onExport, children}){
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2 px-0.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-white/35">{title}{count!=null && " · "+count}</span>
+        {onExport && <ExportButton onClick={onExport} />}
+      </div>
+      <div className="bg-white/[0.025] border border-white/[0.06] rounded-xl overflow-hidden">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Th({children,r}){ return <th className={"px-4 py-2.5 font-medium text-[11px] uppercase tracking-wide text-white/35 "+(r?"text-right":"text-left")}>{children}</th>; }
+function Td({children,r,strong}){ return <td className={"px-4 py-2.5 text-[13px] "+(r?"text-right ":"")+(strong?"text-white/85 font-medium":"text-white/55")}>{children}</td>; }
+
+function LoadingBlock(){
+  return <div className="flex items-center justify-center gap-2 text-white/50 text-sm py-16"><Icon d={ICONS.loader} size={16} cls="animate-spin" />Loading report…</div>;
+}
+
+// ============ TABS ============
+
+function DashboardTab({range, accent}){
+  const data = MD.dashboard(range);
+  const revTrend = data.revenue.trend.map((p,i)=>({
+    label:p.label, revenue:parseFloat(p.value),
+    labor:parseFloat(data.labor_revenue.trend[i]?.value||0),
+    parts:parseFloat(data.part_revenue.trend[i]?.value||0),
+  }));
+  const secondary = [
+    {label:"Fees Revenue", value:fmtMoney0(data.fees_revenue.value)},
+    {label:"Parts Profit", value:fmtMoney0(data.parts_profit.value)},
+    {label:"Invoiced Hours", value:fmtNumber(data.invoiced_hours.value)+" hrs"},
+    {label:"Inventory Value", value:fmtMoney0(data.inventory_value.value)},
+    {label:"Part Sales Finalized", value:fmtNumber(data.part_sales_finalized.value)},
+    {label:"Services Finalized", value:fmtNumber(data.services_finalized.value)},
+  ];
+  return (
+    <div className="space-y-5">
+      <Hero label="Total Revenue" value={fmtMoney(data.revenue.value)} accent={accent}
+        sub={"Labor "+fmtMoney0(data.labor_revenue.value)+" + Parts "+fmtMoney0(data.part_revenue.value)+" + Fees "+fmtMoney0(data.fees_revenue.value)}
+        insight="Revenue is the one number the whole shop rolls up to — everything else on this page explains where it came from.">
+        <div className="h-56">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.ComposedChart data={revTrend} margin={{top:4,right:6,left:-16,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <R.XAxis dataKey="label" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} />
+              <R.YAxis tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+(v/1000).toFixed(1)+"k"} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="labor" name="Labor" stackId="r" fill="#a78bfa" radius={[0,0,0,0]} isAnimationActive={false} />
+              <R.Bar dataKey="parts" name="Parts" stackId="r" fill={accent} radius={[4,4,0,0]} isAnimationActive={false} />
+              <R.Legend wrapperStyle={{fontSize:11.5,color:"#9ca3af"}} iconSize={9} />
+            </R.ComposedChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <StatStrip stats={secondary} />
+    </div>
+  );
+}
+
+function SalesTab(){
+  const data = MD.sales();
+  const top = [...data.rows].slice(0,8).map(r=>({name:r.group_label.split(" ")[0], net:parseFloat(r.net_sales)}));
+  const topAcct = data.rows[0];
+  return (
+    <div className="space-y-5">
+      <Hero label="Top Account This Period" value={topAcct.group_label} accent="#60a5fa"
+        sub={fmtMoney0(topAcct.net_sales)+" in net sales — "+Math.round(parseFloat(topAcct.net_sales)/parseFloat(data.summary.net_sales)*100)+"% of total"}
+        insight="Ranked by net sales, not alphabetically — the accounts worth protecting first float to the top.">
+        <div className="h-52">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.BarChart data={top} layout="vertical" margin={{top:4,right:24,left:4,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
+              <R.XAxis type="number" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+(v/1000).toFixed(0)+"k"} />
+              <R.YAxis type="category" dataKey="name" width={90} tick={{fill:"#d1d5db",fontSize:12}} axisLine={false} tickLine={false} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="net" fill="#60a5fa" radius={[0,5,5,0]} maxBarSize={16} isAnimationActive={false} />
+            </R.BarChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <StatStrip stats={[
+        {label:"Net Sales", value:fmtMoney0(data.summary.net_sales)},
+        {label:"Labor", value:fmtMoney0(data.summary.labor)},
+        {label:"Parts", value:fmtMoney0(data.summary.parts)},
+        {label:"Discounts", value:fmtMoney0(data.summary.discounts)},
+        {label:"Fees", value:fmtMoney0(data.summary.fees)},
+        {label:"Sales Tax", value:fmtMoney0(data.summary.sales_tax)},
+      ]} />
+      <DetailTable title="All accounts" count={data.rows.length} onExport={()=>{}}>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-white/[0.03]"><tr><Th>Customer</Th><Th r>Labor</Th><Th r>Parts</Th><Th r>Fees</Th><Th r>Sales Tax</Th><Th r>Discounts</Th><Th r>Net Sales</Th></tr></thead>
+            <tbody className="divide-y divide-white/[0.05]">
+              {data.rows.map(row=>(
+                <tr key={row.group_key} className="hover:bg-white/[0.03]">
+                  <Td strong>{row.group_label}</Td><Td r>{fmtMoney(row.labor)}</Td><Td r>{fmtMoney(row.parts)}</Td><Td r>{fmtMoney(row.fees)}</Td><Td r>{fmtMoney(row.sales_tax)}</Td><Td r>{fmtMoney(row.discounts)}</Td><Td r strong>{fmtMoney(row.net_sales)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </DetailTable>
+    </div>
+  );
+}
+
+function FeesTab(){
+  const data = MD.fees();
+  const ranked = [...data.rows].sort((a,b)=>parseFloat(b.total_charged)-parseFloat(a.total_charged));
+  const top = ranked[0];
+  return (
+    <div className="space-y-5">
+      <Hero label="Highest-earning fee" value={top.fee_name} accent="#fb923c"
+        sub={fmtMoney0(top.total_charged)+" total · added "+top.times_added+"x"}
+        insight="If a fee rarely gets added, it's probably mispriced or the team forgets to apply it — check the bottom of this ranking.">
+        <div className="h-48">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.BarChart data={ranked} layout="vertical" margin={{top:4,right:24,left:4,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
+              <R.XAxis type="number" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+v} />
+              <R.YAxis type="category" dataKey="fee_name" width={140} tick={{fill:"#d1d5db",fontSize:11.5}} axisLine={false} tickLine={false} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="total_charged" fill="#fb923c" radius={[0,5,5,0]} maxBarSize={16} isAnimationActive={false} />
+            </R.BarChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <StatStrip stats={[
+        {label:"Times Added", value:fmtNumber(data.times_added)},
+        {label:"Average Charge", value:fmtMoney(data.average_charge)},
+        {label:"Total Charged", value:fmtMoney0(data.total_charged)},
+      ]} />
+      <DetailTable title="All fees" count={data.rows.length} onExport={()=>{}}>
+        <table className="w-full">
+          <thead className="bg-white/[0.03]"><tr><Th>Fee Name</Th><Th r>Times Added</Th><Th r>Average Charge</Th><Th r>Total Charged</Th></tr></thead>
+          <tbody className="divide-y divide-white/[0.05]">
+            {data.rows.map(row=>(<tr key={row.fee_name} className="hover:bg-white/[0.03]"><Td strong>{row.fee_name}</Td><Td r>{row.times_added}</Td><Td r>{fmtMoney(row.average_charge)}</Td><Td r strong>{fmtMoney(row.total_charged)}</Td></tr>))}
+          </tbody>
+        </table>
+      </DetailTable>
+    </div>
+  );
+}
+
+function TaxTab(){
+  const data = MD.tax();
+  const total = data.rows.reduce((a,r)=>a+parseFloat(r.tax_collected),0);
+  return (
+    <div className="space-y-5">
+      <Hero label="Total Tax Collected" value={fmtMoney0(total)} accent="#facc15"
+        sub={data.rows.length+" active rate components"}
+        insight="Broken down by jurisdiction so a rate change (state, county, or transit) can be traced to its exact revenue impact.">
+        <div className="h-40">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.BarChart data={data.rows} margin={{top:4,right:10,left:-16,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+              <R.XAxis dataKey="rate_label" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} />
+              <R.YAxis tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+v} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="tax_collected" fill="#facc15" radius={[4,4,0,0]} maxBarSize={70} isAnimationActive={false} />
+            </R.BarChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <DetailTable title="Rate components" count={data.rows.length} onExport={()=>{}}>
+        <table className="w-full">
+          <thead className="bg-white/[0.03]"><tr><Th>Rate</Th><Th r>Percentage</Th><Th r>Tax Collected</Th></tr></thead>
+          <tbody className="divide-y divide-white/[0.05]">
+            {data.rows.map(row=>(<tr key={row.rate_label} className="hover:bg-white/[0.03]"><Td strong>{row.rate_label}</Td><Td r>{row.percentage}%</Td><Td r strong>{fmtMoney(row.tax_collected)}</Td></tr>))}
+          </tbody>
+        </table>
+      </DetailTable>
+    </div>
+  );
+}
+
+function PartsTab(){
+  const data = MD.parts();
+  return (
+    <div className="space-y-5">
+      <Hero label="Parts Margin" value={data.margin_pct+"%"} accent="#34d399"
+        sub={fmtMoney0(data.profit)+" profit on "+fmtMoney0(data.revenue)+" in parts revenue"}
+        insight={parseFloat(data.margin_pct)<25 ? "Margin is thin for parts — worth checking whether pricing mode defaults to cost-plus rather than list." : "Healthy parts margin — the invoices below show where it's concentrated."}>
+        <div className="h-40">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.BarChart data={[{name:"Revenue",v:parseFloat(data.revenue)},{name:"Cost",v:parseFloat(data.cost)},{name:"Profit",v:parseFloat(data.profit)}]} layout="vertical" margin={{top:4,right:24,left:4,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
+              <R.XAxis type="number" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+(v/1000).toFixed(1)+"k"} />
+              <R.YAxis type="category" dataKey="name" width={60} tick={{fill:"#d1d5db",fontSize:12}} axisLine={false} tickLine={false} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="v" radius={[0,5,5,0]} maxBarSize={22} isAnimationActive={false}>
+                <R.Cell fill="#34d399" /><R.Cell fill="#f87171" /><R.Cell fill="#60a5fa" />
+              </R.Bar>
+            </R.BarChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <DetailTable title="By invoice" count={data.rows.length} onExport={()=>{}}>
+        <table className="w-full">
+          <thead className="bg-white/[0.03]"><tr><Th>Invoice</Th><Th r>Revenue</Th><Th r>Cost</Th><Th r>Profit</Th><Th r>Margin</Th></tr></thead>
+          <tbody className="divide-y divide-white/[0.05]">
+            {data.rows.map(row=>(<tr key={row.invoice_number} className="hover:bg-white/[0.03]"><Td strong>{row.invoice_number}</Td><Td r>{fmtMoney(row.revenue)}</Td><Td r>{fmtMoney(row.cost)}</Td><Td r strong>{fmtMoney(row.profit)}</Td><Td r>{row.margin_pct}%</Td></tr>))}
+          </tbody>
+        </table>
+      </DetailTable>
+    </div>
+  );
+}
+
+function InventoryTab(){
+  const data = MD.inventory();
+  const top = [...data.rows].slice(0,8).map(r=>({name:r.name, value:parseFloat(r.total_value)}));
+  return (
+    <div className="space-y-5">
+      <Hero label="Capital Tied Up In Inventory" value={fmtMoney0(data.total_value)} accent="#38bdf8"
+        sub={data.rows.length+" SKUs on hand"}
+        insight="Top 8 SKUs by dollar value — the parts worth watching for shrink, obsolescence, or a reorder-point review.">
+        <div className="h-56">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.BarChart data={top} layout="vertical" margin={{top:4,right:24,left:4,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
+              <R.XAxis type="number" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+(v/1000).toFixed(1)+"k"} />
+              <R.YAxis type="category" dataKey="name" width={130} tick={{fill:"#d1d5db",fontSize:11.5}} axisLine={false} tickLine={false} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="value" fill="#38bdf8" radius={[0,5,5,0]} maxBarSize={16} isAnimationActive={false} />
+            </R.BarChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <DetailTable title="Full inventory" count={data.rows.length} onExport={()=>{}}>
+        <div className="max-h-[26rem] overflow-y-auto">
+          <table className="w-full">
+            <thead className="bg-white/[0.03] sticky top-0"><tr><Th>Part</Th><Th r>Quantity</Th><Th r>Unit Cost</Th><Th r>Total Value</Th></tr></thead>
+            <tbody className="divide-y divide-white/[0.05]">
+              {data.rows.map(row=>(
+                <tr key={row.sku} className="hover:bg-white/[0.03]">
+                  <td className="px-4 py-2.5"><div className="text-[13px] text-white/85 font-medium">{row.sku}</div><div className="text-[11px] text-white/40">{row.name}</div></td>
+                  <Td r>{row.quantity}</Td><Td r>{fmtMoney(row.unit_cost)}</Td><Td r strong>{fmtMoney(row.total_value)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </DetailTable>
+    </div>
+  );
+}
+
+function ServiceTypesTab(){
+  const data = MD.serviceTypes();
+  const ranked = [...data.rows].sort((a,b)=>parseFloat(b.total_charged)-parseFloat(a.total_charged)).slice(0,8);
+  return (
+    <div className="space-y-5">
+      <Hero label="Most-billed service" value={ranked[0].name} accent="#818cf8"
+        sub={fmtMoney0(ranked[0].total_charged)+" · "+ranked[0].quantity+"x this period"}
+        insight="Ranked by revenue, not job count — a service done often but priced low can rank below one done rarely at a premium.">
+        <div className="h-52">
+          <R.ResponsiveContainer width="100%" height="100%">
+            <R.BarChart data={ranked} layout="vertical" margin={{top:4,right:24,left:4,bottom:0}}>
+              <R.CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
+              <R.XAxis type="number" tick={{fill:"#9ca3af",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={(v)=>"$"+(v/1000).toFixed(1)+"k"} />
+              <R.YAxis type="category" dataKey="name" width={150} tick={{fill:"#d1d5db",fontSize:11}} axisLine={false} tickLine={false} />
+              <R.Tooltip contentStyle={{backgroundColor:"#111827",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12}} labelStyle={{color:"#e5e7eb"}} formatter={(v)=>fmtMoney0(v)} />
+              <R.Bar dataKey="total_charged" fill="#818cf8" radius={[0,5,5,0]} maxBarSize={16} isAnimationActive={false} />
+            </R.BarChart>
+          </R.ResponsiveContainer>
+        </div>
+      </Hero>
+      <StatStrip stats={[
+        {label:"Service Items", value:fmtNumber(data.service_items)},
+        {label:"Hours Billed", value:fmtNumber(data.hours_billed)+" hrs"},
+        {label:"Total Charged", value:fmtMoney0(data.total_charged)},
+      ]} />
+      <DetailTable title="All service types" count={data.rows.length} onExport={()=>{}}>
+        <table className="w-full">
+          <thead className="bg-white/[0.03]"><tr><Th>Name</Th><Th r>Quantity</Th><Th r>Hours Billed</Th><Th r>Total Charged</Th></tr></thead>
+          <tbody className="divide-y divide-white/[0.05]">
+            {data.rows.map(row=>(<tr key={row.name} className="hover:bg-white/[0.03]"><Td strong>{row.name}</Td><Td r>{row.quantity}</Td><Td r>{fmtNumber(row.hours_billed)}</Td><Td r strong>{fmtMoney(row.total_charged)}</Td></tr>))}
+          </tbody>
+        </table>
+      </DetailTable>
+    </div>
+  );
+}
+
+function InternalTab(){
+  const invoices = MD.fleetInvoices();
+  const total = invoices.reduce((a,i)=>a+i.total_amount,0);
+  return (
+    <div className="space-y-5">
+      <Hero label="Internal Fleet Cost" value={fmtMoney0(total)} accent="#fb923c"
+        sub={invoices.length+" internal invoices this period — parts at cost + internal labor rate"}
+        insight="This is what your own trucks cost to keep running, not customer revenue — track it separately so it never dilutes shop margin numbers.">
+        <div />
+      </Hero>
+      <DetailTable title="Internal invoices" count={invoices.length}>
+        <div className="max-h-[26rem] overflow-y-auto divide-y divide-white/[0.05]">
+          {invoices.map(inv=>(
+            <div key={inv.id} className="flex items-start justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[13px] text-white/85 truncate">{inv.invoice_number}{inv.unit_number ? " · "+inv.unit_number : ""}</p>
+                <p className="text-[11px] text-white/40 mt-0.5">{inv.vehicle_label || "Truck"}<span className="mx-2">·</span>{new Date(inv.created_at).toLocaleDateString()}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[13px] text-white/85">${inv.total_amount.toFixed(2)}</p>
+                <p className="text-[11px] text-white/40 capitalize">{inv.status}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </DetailTable>
+    </div>
+  );
+}
+
+const TABS = [
+  {id:"dashboard", label:"Dashboard"},
+  {id:"sales", label:"Sales"},
+  {id:"fees", label:"Fees"},
+  {id:"tax", label:"Sales Tax"},
+  {id:"parts", label:"Part Revenue"},
+  {id:"inventory", label:"Inventory"},
+  {id:"service-types", label:"Service Types"},
+  {id:"internal", label:"Internal Fleet Costs"},
+];
+const DATE_FILTERED_TABS = ["dashboard","sales","fees","tax","parts","service-types"];
+
+function App(){
+  const [tab,setTab] = useState("dashboard");
+  const [range,setRange] = useState("this_month");
+  const [accentKey,setAccentKey] = useState("cyan");
+  const accent = ACCENTS[accentKey];
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Shop Analytics</h1>
+          <p className="text-sm text-white/50">Performance overview and insights</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {DATE_FILTERED_TABS.includes(tab) && <DateRangePicker value={range} onChange={setRange} />}
+          <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-lg p-1.5">
+            {Object.keys(ACCENTS).map(k=>(
+              <button key={k} onClick={()=>setAccentKey(k)} className={"w-5 h-5 rounded-full transition-transform "+(accentKey===k?"scale-110 ring-2 ring-white/40":"opacity-60 hover:opacity-100")} style={{background:ACCENTS[k]}}></button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-5 flex gap-1 overflow-x-auto scrollbar-hide border-b border-white/10">
+        {TABS.map(t=>(
+          <button key={t.id} type="button" onClick={()=>setTab(t.id)}
+            className={"px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px "+(tab===t.id?"text-white":"text-white/50 hover:text-white/80 border-transparent")}
+            style={tab===t.id ? {borderColor:accent} : undefined}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div>
+        {tab==="dashboard" && <DashboardTab range={range} accent={accent} />}
+        {tab==="sales" && <SalesTab />}
+        {tab==="fees" && <FeesTab />}
+        {tab==="tax" && <TaxTab />}
+        {tab==="parts" && <PartsTab />}
+        {tab==="inventory" && <InventoryTab />}
+        {tab==="service-types" && <ServiceTypesTab />}
+        {tab==="internal" && <InternalTab />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

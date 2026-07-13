@@ -333,6 +333,16 @@ function LaborLineEditor({
   const lineHours = parseFloat(line.hours) || 0
   const lineRate = parseFloat(line.hourly_rate) || 0
 
+  // Track each stepper's live (optimistic) value locally so the displayed
+  // total reflects what's on screen right now. The two steppers debounce
+  // their server writes independently, so `line.total_cost` (computed
+  // server-side from whichever field landed last) lags behind whenever
+  // duration and rate are both changed in the same interaction.
+  const [displayHours, setDisplayHours] = useState(lineHours)
+  const [displayRate, setDisplayRate] = useState(lineRate)
+  useEffect(() => setDisplayHours(lineHours), [lineHours])
+  useEffect(() => setDisplayRate(lineRate), [lineRate])
+
   return (
     <>
       <div className="mb-2 flex items-center gap-1.5">
@@ -354,6 +364,7 @@ function LaborLineEditor({
           <DurationStepper
             hours={lineHours}
             onChange={(h) => onUpdate({ hours: h })}
+            onLocalChange={setDisplayHours}
             stepMinutes={15}
             minMinutes={0}
             disabled={!canMutate}
@@ -368,8 +379,9 @@ function LaborLineEditor({
           <QuantityStepper
             value={lineRate}
             onChange={(r) => onUpdate({ hourly_rate: r })}
+            onLocalChange={setDisplayRate}
             min={0}
-            step={1}
+            step={25}
             unitLabel="/hr"
             disabled={!canMutate}
             ariaLabel="Labor hourly rate"
@@ -378,7 +390,7 @@ function LaborLineEditor({
           />
         </label>
         <span className="text-gray-400">=</span>
-        <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
+        <span className="font-semibold text-gray-900">${(displayHours * displayRate).toFixed(2)}</span>
       </div>
     </>
   )
