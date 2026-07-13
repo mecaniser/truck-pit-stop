@@ -25,7 +25,7 @@ from app.db.models.recommended_service import RecommendedService, RecommendedSer
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.description_library import DescriptionLibraryEntry
-from app.services.description_library_service import regenerate_description_library
+from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
@@ -523,29 +523,34 @@ async def get_description_suggestions(
 
 
 class DescriptionLibraryRegenerateResponse(BaseModel):
-    entries_written: int
+    queued: bool = True
 
 
-@router.post("/description-library/regenerate", response_model=DescriptionLibraryRegenerateResponse)
+@router.post(
+    "/description-library/regenerate",
+    response_model=DescriptionLibraryRegenerateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def regenerate_description_library_endpoint(
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Owner/admin-triggered rebuild of this tenant's canonical description
     library — sends distinct historical RO descriptions to Claude to split
     compound entries, fix typos, and dedupe into clean service names.
+
+    Runs as a background Celery task (the Claude call can take minutes for a
+    shop with a lot of history) — this endpoint enqueues the work and returns
+    immediately rather than blocking the request.
     """
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Shop owner/admin access required")
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    if not settings.ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ANTHROPIC_API_KEY is not configured")
 
-    try:
-        entries_written = await regenerate_description_library(db, current_user.tenant_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-
-    return DescriptionLibraryRegenerateResponse(entries_written=entries_written)
+    process_on_demand_library_regenerate.delay(str(current_user.tenant_id), "ro_description")
+    return DescriptionLibraryRegenerateResponse()
 
 
 @router.get("", response_model=List[RepairOrderResponse])

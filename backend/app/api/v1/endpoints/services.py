@@ -16,7 +16,8 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.service import Service, ServiceCategory, ServicePart
 from app.db.models.description_library import DescriptionLibraryEntry
-from app.services.description_library_service import regenerate_service_name_library
+from app.core.config import settings
+from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 
 router = APIRouter()
 
@@ -352,24 +353,29 @@ async def get_service_name_suggestions(
 
 
 class LibraryRegenerateResponse(BaseModel):
-    entries_written: int
+    queued: bool = True
 
 
-@router.post("/name-library/regenerate", response_model=LibraryRegenerateResponse)
+@router.post(
+    "/name-library/regenerate",
+    response_model=LibraryRegenerateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def regenerate_service_name_library_endpoint(
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_admin()),
 ):
     """Owner/admin-triggered rebuild of this tenant's canonical service-name
-    library from the current Services catalog.
+    library from the current Services catalog. Runs as a background Celery
+    task — enqueues and returns immediately rather than blocking on the
+    multi-minute Claude call.
     """
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
-    try:
-        entries_written = await regenerate_service_name_library(db, current_user.tenant_id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    return LibraryRegenerateResponse(entries_written=entries_written)
+    if not settings.ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ANTHROPIC_API_KEY is not configured")
+
+    process_on_demand_library_regenerate.delay(str(current_user.tenant_id), "service_name")
+    return LibraryRegenerateResponse()
 
 
 @router.post("", response_model=ServiceResponse, status_code=status.HTTP_201_CREATED)
