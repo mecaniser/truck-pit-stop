@@ -823,16 +823,21 @@ export default function RepairOrdersPage() {
   }
 
   const deleteRepairOrderMutation = useMutation({
+    // Capture the order number up front — after the delete the order is gone from
+    // the lists, so the toast has nothing to look it up from.
     mutationFn: async (orderId: string) => {
+      const orderNumber =
+        (orderDetail?.id === orderId ? orderDetail.order_number : undefined) ??
+        (selectedOrder?.id === orderId ? selectedOrder.order_number : undefined)
       await api.delete(`/repair-orders/${orderId}`)
-      return orderId
+      return { orderId, orderNumber }
     },
-    onSuccess: (orderId) => {
+    onSuccess: ({ orderId, orderNumber }) => {
       invalidateOrderBoards()
       if (selectedOrder?.id === orderId) {
         closeDetail()
       }
-      toast.success('Repair order deleted')
+      toast.success(orderNumber ? `Repair order ${orderNumber} deleted` : 'Repair order deleted')
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to delete repair order'))
