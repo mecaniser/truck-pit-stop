@@ -12,6 +12,12 @@ from app.core.pagination import paginated_or_list
 from app.core.default_catalog import DEFAULT_INVENTORY
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
+from app.db.models.description_library import DescriptionLibraryEntry
+from app.services.description_library_service import (
+    regenerate_part_name_library,
+    regenerate_part_category_library,
+    regenerate_part_description_library,
+)
 
 router = APIRouter()
 
@@ -83,6 +89,118 @@ def require_admin():
             )
         return current_user
     return role_checker
+
+
+class InventoryLibrarySuggestion(BaseModel):
+    text: str
+    times_used: int
+
+
+class InventoryLibraryRegenerateResponse(BaseModel):
+    part_names_written: int
+    part_categories_written: int
+
+
+async def _inventory_library_suggestions(db: AsyncSession, tenant_id, library_type: str, term: str, limit: int):
+    result = await db.execute(
+        select(
+            DescriptionLibraryEntry.canonical_text,
+            DescriptionLibraryEntry.source_count,
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text).label("score"),
+        )
+        .where(
+            DescriptionLibraryEntry.tenant_id == tenant_id,
+            DescriptionLibraryEntry.library_type == library_type,
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text) > 0.2,
+        )
+        .order_by(
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text).desc(),
+            DescriptionLibraryEntry.source_count.desc(),
+        )
+        .limit(limit)
+    )
+    return result.all()
+
+
+@router.get("/name-suggestions", response_model=List[InventoryLibrarySuggestion])
+async def get_inventory_name_suggestions(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(6, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Autocomplete for the new-part Name field, drawn from this tenant's
+    AI-canonicalized part-name library (see
+    app/services/description_library_service.py). A shop with no library yet
+    (never regenerated) simply gets no suggestions here.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    term = q.strip()
+    if not term:
+        return []
+    rows = await _inventory_library_suggestions(db, current_user.tenant_id, "part_name", term, limit)
+    return [InventoryLibrarySuggestion(text=text, times_used=count) for text, count, _score in rows]
+
+
+@router.get("/category-suggestions", response_model=List[InventoryLibrarySuggestion])
+async def get_inventory_category_suggestions(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(6, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Autocomplete for the Category field, drawn from this tenant's
+    AI-canonicalized part-category library.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    term = q.strip()
+    if not term:
+        return []
+    rows = await _inventory_library_suggestions(db, current_user.tenant_id, "part_category", term, limit)
+    return [InventoryLibrarySuggestion(text=text, times_used=count) for text, count, _score in rows]
+
+
+@router.get("/description-suggestions", response_model=List[InventoryLibrarySuggestion])
+async def get_inventory_description_suggestions(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(6, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Autocomplete for the part Description field, drawn from this tenant's
+    AI-canonicalized part-description library.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    term = q.strip()
+    if not term:
+        return []
+    rows = await _inventory_library_suggestions(db, current_user.tenant_id, "part_description", term, limit)
+    return [InventoryLibrarySuggestion(text=text, times_used=count) for text, count, _score in rows]
+
+
+@router.post("/library/regenerate", response_model=InventoryLibraryRegenerateResponse)
+async def regenerate_inventory_library_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Owner/admin-triggered rebuild of this tenant's canonical part-name,
+    part-category, and part-description libraries from the current Inventory
+    catalog.
+    """
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    try:
+        names_written = await regenerate_part_name_library(db, current_user.tenant_id)
+        categories_written = await regenerate_part_category_library(db, current_user.tenant_id)
+        await regenerate_part_description_library(db, current_user.tenant_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    return InventoryLibraryRegenerateResponse(
+        part_names_written=names_written, part_categories_written=categories_written
+    )
 
 
 @router.get("", response_model=List[InventoryResponse])

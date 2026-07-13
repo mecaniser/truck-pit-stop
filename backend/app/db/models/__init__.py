@@ -51,6 +51,7 @@ from app.db.models.fleet import (
     IncidentSeverity,
     IncidentStatus,
 )
+from app.db.models.description_library import DescriptionLibraryEntry
 
 __all__ = [
     "Tenant",
@@ -110,4 +111,5 @@ __all__ = [
     "InspectionItemResult",
     "IncidentSeverity",
     "IncidentStatus",
+    "DescriptionLibraryEntry",
 ]

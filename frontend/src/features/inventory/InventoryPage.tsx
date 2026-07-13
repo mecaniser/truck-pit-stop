@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
-import { ArrowRight, Download, PackageCheck, Pencil, Plus, Settings, Trash2 } from 'lucide-react'
+import { ArrowRight, Download, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2 } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
@@ -11,6 +11,8 @@ import QuantityStepper from '@/components/QuantityStepper'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
+import SuggestingInput from '@/components/SuggestingInput'
+import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { formatUSPhone } from '../../utils/phone'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
@@ -448,6 +450,27 @@ export default function InventoryPage() {
     },
   })
 
+  // AI-cleaned canonical part name/category/description library — powers the
+  // suggestion dropdowns on the add/edit part forms. Not part of the catalog
+  // data itself, but lives in the same "catalog options" menu.
+  const regeneratePartLibraryMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/inventory/library/regenerate')
+      return response.data as { part_names_written: number; part_categories_written: number }
+    },
+    onSuccess: (data) => {
+      setShowMenu(false)
+      setCatalogMessage(
+        `Suggestion library refreshed — ${data.part_names_written} names, ${data.part_categories_written} categories`
+      )
+      setTimeout(() => setCatalogMessage(null), 4000)
+    },
+    onError: () => {
+      setCatalogMessage('Failed to refresh suggestion library')
+      setTimeout(() => setCatalogMessage(null), 4000)
+    },
+  })
+
   const handleNewSupplierChange = (field: keyof typeof newSupplierForm, value: string) => {
     setNewSupplierForm((prev) => ({ ...prev, [field]: value }))
   }
@@ -539,18 +562,6 @@ export default function InventoryPage() {
     return `${basePattern}-${seq}`
   }
 
-  // Get name suggestions from existing inventory
-  const nameSuggestions = useMemo(() => {
-    if (!addForm.name.trim() || addForm.name.length < 2) return []
-    const query = addForm.name.toLowerCase()
-    const matches = inventory?.filter((item) =>
-      item.name.toLowerCase().includes(query)
-    ) || []
-    // Return unique names, max 5
-    const uniqueNames = [...new Set(matches.map((m) => m.name))]
-    return uniqueNames.slice(0, 5)
-  }, [addForm.name, inventory])
-
   // Auto-update SKU suggestion when name or category changes
   const skuSuggestion = useMemo(() => {
     if (addForm.sku) return '' // Don't suggest if user already entered something
@@ -625,7 +636,7 @@ export default function InventoryPage() {
           <Settings className="w-4 h-4" />
         </button>
         {showMenu && (
-          <div className="absolute left-0 top-full mt-1 w-44 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+          <div className="absolute left-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
             {showClearConfirm ? (
               <div className="p-2 space-y-1">
                 <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
@@ -648,10 +659,19 @@ export default function InventoryPage() {
                 <button
                   onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
                   disabled={preloadInventoryMutation.isPending}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                 >
                   <Download className="w-3.5 h-3.5 shrink-0" />
                   {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+                </button>
+                <button
+                  onClick={() => regeneratePartLibraryMutation.mutate()}
+                  disabled={regeneratePartLibraryMutation.isPending}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                  title="Rebuild part-name/category/description suggestions from your inventory"
+                >
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  {regeneratePartLibraryMutation.isPending ? 'Refreshing…' : 'Refresh part suggestions'}
                 </button>
                 <button
                   onClick={() => setShowClearConfirm(true)}
@@ -719,7 +739,7 @@ export default function InventoryPage() {
             <Settings className="w-4 h-4" />
           </button>
           {showMenu && (
-            <div className="absolute right-0 top-full mt-1 w-44 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
+            <div className="absolute right-0 top-full mt-1 w-56 bg-[#1a2030] border border-white/15 rounded-lg shadow-xl z-50 overflow-hidden">
               {showClearConfirm ? (
                 <div className="p-2 space-y-1">
                   <p className="text-xs text-gray-400 px-2 py-1">Clear all parts?</p>
@@ -1124,10 +1144,10 @@ export default function InventoryPage() {
             <p className="text-[11px] uppercase tracking-wide text-amber-800 font-semibold">Edit part details</p>
             <label className="text-sm text-gray-700 space-y-1 block">
               <span>Name</span>
-              <input
-                type="text"
+              <SuggestingInput
                 value={manageForm.name}
-                onChange={(e) => handleManageChange('name', e.target.value)}
+                onChange={(val) => handleManageChange('name', val)}
+                suggestUrl="/inventory/name-suggestions"
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
               />
             </label>
@@ -1143,10 +1163,10 @@ export default function InventoryPage() {
               </label>
               <label className="text-sm text-gray-700 space-y-1 block">
                 <span>Category</span>
-                <input
-                  type="text"
+                <SuggestingInput
                   value={manageForm.category}
-                  onChange={(e) => handleManageChange('category', e.target.value)}
+                  onChange={(val) => handleManageChange('category', val)}
+                  suggestUrl="/inventory/category-suggestions"
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
                   placeholder="e.g. Electrical"
                 />
@@ -1154,9 +1174,11 @@ export default function InventoryPage() {
             </div>
             <label className="text-sm text-gray-700 space-y-1 block">
               <span>Description</span>
-              <textarea
+              <SuggestingTextarea
                 value={manageForm.description}
-                onChange={(e) => handleManageChange('description', e.target.value)}
+                onChange={(val) => handleManageChange('description', val)}
+                suggestUrl="/inventory/description-suggestions"
+                variant="light"
                 rows={2}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-none"
                 placeholder="Optional description"
@@ -1390,47 +1412,23 @@ export default function InventoryPage() {
         ariaLabel="Add part"
       >
         {/* Name field with suggestions */}
-        <div className="space-y-1">
-          <label className="text-sm text-gray-700 space-y-1 block">
-            <span>Name *</span>
-            <input
-              type="text"
-              value={addForm.name}
-              onChange={(e) => handleAddFormChange('name', e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              placeholder="e.g. Brake Pads - Front"
-            />
-          </label>
-          {nameSuggestions.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              <span className="text-[10px] text-gray-400">Similar:</span>
-              {nameSuggestions.map((name) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => {
-                    const existing = inventory?.find((i) => i.name === name)
-                    if (existing) {
-                      handleAddFormChange('name', existing.name)
-                      handleAddFormChange('category', existing.category || '')
-                      handleAddFormChange('description', existing.description || '')
-                    }
-                  }}
-                  className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <label className="text-sm text-gray-700 space-y-1 block">
+          <span>Name *</span>
+          <SuggestingInput
+            value={addForm.name}
+            onChange={(val) => handleAddFormChange('name', val)}
+            suggestUrl="/inventory/name-suggestions"
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            placeholder="e.g. Brake Pads - Front"
+          />
+        </label>
 
         <label className="text-sm text-gray-700 space-y-1 block">
           <span>Category</span>
-          <input
-            type="text"
+          <SuggestingInput
             value={addForm.category}
-            onChange={(e) => handleAddFormChange('category', e.target.value)}
+            onChange={(val) => handleAddFormChange('category', val)}
+            suggestUrl="/inventory/category-suggestions"
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             placeholder="e.g. Brakes, Filters, Engine"
           />
@@ -1461,9 +1459,11 @@ export default function InventoryPage() {
 
         <label className="text-sm text-gray-700 space-y-1 block">
           <span>Description</span>
-          <textarea
+          <SuggestingTextarea
             value={addForm.description}
-            onChange={(e) => handleAddFormChange('description', e.target.value)}
+            onChange={(val) => handleAddFormChange('description', val)}
+            suggestUrl="/inventory/description-suggestions"
+            variant="light"
             rows={2}
             className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
             placeholder="Optional description..."

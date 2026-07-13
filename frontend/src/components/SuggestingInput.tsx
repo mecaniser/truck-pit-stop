@@ -1,34 +1,32 @@
 import { useSuggestions, type SuggestionVariant } from './useSuggestions'
 import SuggestionDropdown from './SuggestionDropdown'
 
-interface SuggestingTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
+interface SuggestingInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   value: string
   onChange: (value: string) => void
   /** Backend endpoint that returns [{ text, times_used }], filtered by ?q= */
-  suggestUrl?: string
+  suggestUrl: string
   /**
-   * 'dark' (default) styles the dropdown with the fleet module's CSS custom
-   * properties (--ink/--line/--text/...), which only exist inside fleet.css.
-   * 'light' uses plain Tailwind classes for use on white-background admin
-   * pages outside the fleet module.
+   * 'dark' styles the dropdown with the fleet module's CSS custom properties
+   * (--ink/--line/--text/...), which only resolve inside fleet.css. 'light'
+   * (default) uses plain colors for white-background admin pages.
    */
   variant?: SuggestionVariant
 }
 
 /**
- * A plain textarea with an autocomplete dropdown fed by the shop's own past
- * text in this field (e.g. repair order complaint/work-performed history) —
- * not a canned list, not an AI model, just "what has this shop typed
- * before that's close to what you're typing now."
+ * Single-line sibling of SuggestingTextarea — same "type freely, dropdown
+ * suggests from the shop's own history, never forces a choice" behavior,
+ * for short-label fields like a service name.
  */
-export default function SuggestingTextarea({
+export default function SuggestingInput({
   value,
   onChange,
-  suggestUrl = '/repair-orders/description-suggestions',
-  variant = 'dark',
+  suggestUrl,
+  variant = 'light',
   style,
-  ...textareaProps
-}: SuggestingTextareaProps) {
+  ...inputProps
+}: SuggestingInputProps) {
   const {
     isOpen, setIsOpen, highlightedIndex, setHighlightedIndex, containerRef,
     visibleSuggestions, applySuggestion, handleKeyDown, theme,
@@ -36,8 +34,9 @@ export default function SuggestingTextarea({
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
-      <textarea
-        {...textareaProps}
+      <input
+        {...inputProps}
+        type="text"
         value={value}
         onChange={(e) => {
           onChange(e.target.value)
@@ -45,9 +44,9 @@ export default function SuggestingTextarea({
         }}
         onFocus={(e) => {
           setIsOpen(true)
-          textareaProps.onFocus?.(e)
+          inputProps.onFocus?.(e)
         }}
-        onKeyDown={(e) => handleKeyDown(e, textareaProps.onKeyDown)}
+        onKeyDown={(e) => handleKeyDown(e, inputProps.onKeyDown)}
         style={style}
       />
       {isOpen && visibleSuggestions.length > 0 && (

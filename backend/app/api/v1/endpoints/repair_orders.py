@@ -24,6 +24,8 @@ from app.db.models.labor import Labor, LaborLineType
 from app.db.models.recommended_service import RecommendedService, RecommendedServicePriority
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
+from app.db.models.description_library import DescriptionLibraryEntry
+from app.services.description_library_service import regenerate_description_library
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
@@ -448,13 +450,14 @@ async def get_description_suggestions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Autocomplete for repair order complaint/work-performed text, drawn from
-    this tenant's own history — the shop's own recurring phrasing ("PM
-    service", "Replace tire", "Air leak on front brake chamber"), not a
-    generic canned list. Fuzzy-matched via pg_trgm (already indexed on
-    repair_orders.description) so a few typed words surface the closest past
-    descriptions, ranked by how often the shop has used that exact wording
-    and how recently.
+    """Autocomplete for repair order complaint/work-performed text.
+
+    Queries the AI-canonicalized description library first (clean, deduped,
+    typo-fixed service names — see app/services/description_library_service.py)
+    and falls back to raw repair_orders.description history for any tenant
+    that hasn't regenerated a library yet. Both paths use the same
+    pg_trgm word_similarity fuzzy match, ranked by how often the shop has
+    used that wording and how recently.
     """
     if not current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
@@ -464,6 +467,31 @@ async def get_description_suggestions(
     if not term:
         return []
 
+    library_result = await db.execute(
+        select(
+            DescriptionLibraryEntry.canonical_text,
+            DescriptionLibraryEntry.source_count,
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text).label("score"),
+        )
+        .where(
+            DescriptionLibraryEntry.tenant_id == tenant_id,
+            DescriptionLibraryEntry.library_type == "ro_description",
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text) > 0.2,
+        )
+        .order_by(
+            func.word_similarity(term, DescriptionLibraryEntry.canonical_text).desc(),
+            DescriptionLibraryEntry.source_count.desc(),
+        )
+        .limit(limit)
+    )
+    library_rows = library_result.all()
+    if library_rows:
+        return [
+            DescriptionSuggestion(text=text, times_used=source_count)
+            for text, source_count, _score in library_rows
+        ]
+
+    # No canonical library yet for this tenant — fall back to raw history.
     # word_similarity matches a short typed fragment against any substring of
     # a longer stored description (plain trigram similarity() penalizes
     # length differences too heavily for "brake" to match "Air leak on front
@@ -492,6 +520,32 @@ async def get_description_suggestions(
     )
     rows = result.all()
     return [DescriptionSuggestion(text=desc, times_used=times_used) for desc, _last_used, times_used, _score in rows]
+
+
+class DescriptionLibraryRegenerateResponse(BaseModel):
+    entries_written: int
+
+
+@router.post("/description-library/regenerate", response_model=DescriptionLibraryRegenerateResponse)
+async def regenerate_description_library_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Owner/admin-triggered rebuild of this tenant's canonical description
+    library — sends distinct historical RO descriptions to Claude to split
+    compound entries, fix typos, and dedupe into clean service names.
+    """
+    if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Shop owner/admin access required")
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+
+    try:
+        entries_written = await regenerate_description_library(db, current_user.tenant_id)
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+
+    return DescriptionLibraryRegenerateResponse(entries_written=entries_written)
 
 
 @router.get("", response_model=List[RepairOrderResponse])
