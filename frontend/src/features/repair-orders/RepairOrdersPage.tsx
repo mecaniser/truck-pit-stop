@@ -97,7 +97,9 @@ const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = [
   'paid',
 ]
 const LABOR_BREAKDOWN_STATUSES: RepairOrderStatus[] = ['pending_review', 'completed']
-const DANGER_ZONE_STATUSES: RepairOrderStatus[] = ['draft', 'quoted', 'cancelled']
+// Once invoiced/paid the order is a financial record — it can't be cancelled or
+// deleted. Every other status can. (Mirror of the backend rule.)
+const FINANCIALLY_PROTECTED_STATUSES: RepairOrderStatus[] = ['invoiced', 'paid']
 
 function RepairOrderLaborBreakdown({
   laborItems,
@@ -722,11 +724,10 @@ export default function RepairOrdersPage() {
   const isInternalOrder = !!(orderDetail ?? selectedOrder)?.is_internal
   const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
   const showInternalLineItems = isInternalOrder && detailStatus != null && !INTERNAL_FROZEN_STATUSES.includes(detailStatus)
-  // Internal fleet ROs can be deleted at any status (no customer invoice/payment
-  // to protect), so the danger zone stays available for them beyond draft/quoted.
-  const showDangerZone = (orderDetail ?? selectedOrder)?.is_internal
-    ? true
-    : (detailStatus ? DANGER_ZONE_STATUSES.includes(detailStatus) : false)
+  // An order can be cancelled/deleted at any status except once it's a financial
+  // record (invoiced/paid), which must stay in history. So the danger zone is
+  // available everywhere except those two states (internal orders never reach them).
+  const showDangerZone = detailStatus != null && !FINANCIALLY_PROTECTED_STATUSES.includes(detailStatus)
   const invoiceOptionSummary = useMemo(() => {
     if (invoiceDueDate) {
       const parsed = new Date(`${invoiceDueDate}T00:00:00`)

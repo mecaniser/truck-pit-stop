@@ -73,14 +73,15 @@ async def _create_order(db_session, *, tenant_id, customer_id, vehicle_id, statu
 
 
 @pytest.mark.asyncio
-async def test_cancel_repair_order_rejects_completed_status(db_session):
+async def test_cancel_repair_order_rejects_paid_status(db_session):
+    # Only financial records (invoiced/paid) are protected from cancel.
     user, customer, vehicle = await _seed_context(db_session)
     order = await _create_order(
         db_session,
         tenant_id=user.tenant_id,
         customer_id=customer.id,
         vehicle_id=vehicle.id,
-        status=RepairOrderStatus.COMPLETED,
+        status=RepairOrderStatus.PAID,
     )
 
     with pytest.raises(HTTPException) as exc:
@@ -92,14 +93,15 @@ async def test_cancel_repair_order_rejects_completed_status(db_session):
         )
 
     assert exc.value.status_code == 400
-    assert exc.value.detail == "Repair orders can only be cancelled when status is draft or quoted"
+    assert "can't be cancelled" in exc.value.detail
 
     stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
-    assert stored.status == RepairOrderStatus.COMPLETED
+    assert stored.status == RepairOrderStatus.PAID
 
 
 @pytest.mark.asyncio
-async def test_delete_repair_order_rejects_completed_status(db_session):
+async def test_cancel_repair_order_allows_completed_status(db_session):
+    # Completed (not yet invoiced) can now be cancelled.
     user, customer, vehicle = await _seed_context(db_session)
     order = await _create_order(
         db_session,
@@ -107,6 +109,29 @@ async def test_delete_repair_order_rejects_completed_status(db_session):
         customer_id=customer.id,
         vehicle_id=vehicle.id,
         status=RepairOrderStatus.COMPLETED,
+    )
+
+    await repair_orders.update_repair_order(
+        order.id,
+        RepairOrderUpdate(status=RepairOrderStatus.CANCELLED),
+        db=db_session,
+        current_user=user,
+    )
+
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    assert stored.status == RepairOrderStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_delete_repair_order_rejects_paid_status(db_session):
+    # Only financial records (invoiced/paid) are protected from delete.
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.INVOICED,
     )
 
     with pytest.raises(HTTPException) as exc:
@@ -117,11 +142,33 @@ async def test_delete_repair_order_rejects_completed_status(db_session):
         )
 
     assert exc.value.status_code == 400
-    assert exc.value.detail == "Repair orders can only be deleted when status is draft, quoted, or cancelled"
+    assert "can't be deleted" in exc.value.detail
 
     stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one_or_none()
     assert stored is not None
-    assert stored.status == RepairOrderStatus.COMPLETED
+    assert stored.deleted_at is None
+
+
+@pytest.mark.asyncio
+async def test_delete_repair_order_allows_completed_status(db_session, monkeypatch):
+    # Completed (not yet invoiced) can now be soft-deleted.
+    async def _noop_async(**_kwargs):
+        return None
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_async)
+
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.COMPLETED,
+    )
+
+    await repair_orders.delete_repair_order(order.id, db=db_session, current_user=user)
+
+    stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
+    assert stored.deleted_at is not None
 
 
 @pytest.mark.asyncio

@@ -85,6 +85,11 @@ DANGER_ACTION_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
 # Deleting is also allowed once an order is cancelled — cancelling doesn't
 # clean anything up, so customers need a way to remove cancelled clutter.
 DELETABLE_RO_STATUSES = DANGER_ACTION_RO_STATUSES + (RepairOrderStatus.CANCELLED,)
+# Once a customer has been invoiced or paid, the order is a financial record and
+# must stay in history — it can't be cancelled or deleted. Every other status
+# (approved, in_progress, completed, …) can be moved to cancelled/deleted so the
+# owner can clear stuck or wrong orders from the cockpit.
+FINANCIALLY_PROTECTED_STATUSES = (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)
 # Internal fleet WOs log labor/parts as work happens, so they stay editable
 # through the whole active flow — only terminal states freeze them.
 INTERNAL_FROZEN_RO_STATUSES = (
@@ -862,18 +867,25 @@ async def update_repair_order(
     )
     if cancelling_now:
         _require_cancelable_ro(order)
+        # Cancelling an *early* order (draft/quoted) means the work never happened,
+        # so give the parts' stock back and drop the part rows. But once the order
+        # is past quoting (approved / in_progress / completed) the parts were
+        # really consumed and are part of the job's history — cancelling just marks
+        # it cancelled and leaves parts + stock untouched.
+        work_never_started = order.status in DANGER_ACTION_RO_STATUSES
         order.cancelled_at = datetime.now(timezone.utc)
         order.cancelled_by_user_id = current_user.id
-        # Restore stock — cancelled work means parts were never consumed.
-        parts_result = await db.execute(
-            select(PartsUsage)
-            .where(PartsUsage.repair_order_id == order_id)
-            .options(selectinload(PartsUsage.inventory_item))
-        )
-        for pu in parts_result.scalars().all():
-            if pu.inventory_item is not None:
-                pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + pu.quantity
-            await db.delete(pu)
+        if work_never_started:
+            parts_result = await db.execute(
+                select(PartsUsage)
+                .where(PartsUsage.repair_order_id == order_id)
+                .options(selectinload(PartsUsage.inventory_item))
+            )
+            for pu in parts_result.scalars().all():
+                if pu.inventory_item is not None:
+                    # Restore the same whole-package count that was deducted on add.
+                    pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _packages_consumed(pu.quantity)
+                await db.delete(pu)
 
     # Update fields
     update_data = order_data.model_dump(exclude_unset=True)
@@ -2060,22 +2072,23 @@ def _check_ro_access(current_user: User, order: RepairOrder) -> None:
 
 
 def _require_cancelable_ro(order: RepairOrder) -> None:
-    if order.status not in DANGER_ACTION_RO_STATUSES:
+    # Any status can be cancelled except once it's a financial record
+    # (invoiced/paid), which must stay in history.
+    if order.status in FINANCIALLY_PROTECTED_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repair orders can only be cancelled when status is draft or quoted",
+            detail="Invoiced or paid orders can't be cancelled — they're kept as a financial record.",
         )
 
 
 def _require_deletable_ro(order: RepairOrder) -> None:
-    # Internal fleet work orders have no customer quote/invoice/payment, so they can
-    # be deleted at any status. Customer-facing ROs stay locked to draft/quoted/cancelled.
-    if order.is_internal:
-        return
-    if order.status not in DELETABLE_RO_STATUSES:
+    # Any status can be soft-deleted (and later restored) except once it's a
+    # financial record (invoiced/paid). Internal fleet WOs have no invoice/payment
+    # so they're never protected.
+    if order.status in FINANCIALLY_PROTECTED_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repair orders can only be deleted when status is draft, quoted, or cancelled",
+            detail="Invoiced or paid orders can't be deleted — they're kept as a financial record.",
         )
 
 
