@@ -25,6 +25,8 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
+import SuggestingInput from '@/components/SuggestingInput'
+import SuggestingTextarea from '@/components/SuggestingTextarea'
 
 interface NewCustomerForm {
   first_name: string
@@ -2344,15 +2346,24 @@ export default function RepairOrdersPage() {
 
                   <div className="space-y-3">
                     <div className="relative">
-                      <input
-                        type="text"
+                      <SuggestingInput
                         value={serviceSearch}
-                        onChange={(e) => setServiceSearch(e.target.value)}
+                        onChange={setServiceSearch}
+                        onSelect={(text) => {
+                          // A picked suggestion is a canonical service name from
+                          // history — it may not be a bookable Service yet, so
+                          // there's nothing to "select" here. Drop it straight
+                          // into the work description instead, and clear the
+                          // search box back to filtering the chips below.
+                          setDescription((prev) => (prev ? `${prev}\n${text}` : text))
+                          setServiceSearch('')
+                        }}
+                        suggestUrl="/services/name-suggestions"
                         placeholder="Search services (e.g., oil change, brake, diagnostics)"
                         className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors text-gray-900 placeholder-gray-400"
                       />
-                      <svg 
-                        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
+                      <svg
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -2527,9 +2538,11 @@ export default function RepairOrdersPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description / Work requested</label>
-                  <textarea
+                  <SuggestingTextarea
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={setDescription}
+                    suggestUrl="/repair-orders/description-suggestions"
+                    variant="light"
                     rows={3}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors resize-none"
                     placeholder="Briefly describe the repair work or concern..."

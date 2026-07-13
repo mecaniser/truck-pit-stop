@@ -334,7 +334,7 @@ async def get_service_name_suggestions(
     q: str = Query(..., min_length=1, max_length=200),
     limit: int = Query(6, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_admin()),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Autocomplete for the new-service Name field, drawn from this tenant's
     AI-canonicalized service-name library (see
