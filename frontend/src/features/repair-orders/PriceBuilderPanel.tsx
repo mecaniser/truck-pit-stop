@@ -140,6 +140,8 @@ type Props = {
   deletedAt?: string | null
   onRestoreOrder?: () => void
   restorePending?: boolean
+  onReopenWorkOrder?: () => void
+  reopenPending?: boolean
   recommendedServices?: RecommendedService[]
   showAddRecommendedService?: boolean
   recommendedServiceForm?: {
@@ -636,6 +638,8 @@ export default function PriceBuilderPanel({
   deletedAt,
   onRestoreOrder,
   restorePending = false,
+  onReopenWorkOrder,
+  reopenPending = false,
   recommendedServices,
   showAddRecommendedService,
   recommendedServiceForm,
@@ -702,7 +706,9 @@ export default function PriceBuilderPanel({
       const response = await api.get(`/repair-orders/${orderId}/price-build`)
       return response.data
     },
-    enabled: !!orderId,
+    // A soft-deleted order's work/labor endpoints 404 (the order is hidden from
+    // them), so don't fetch when deleted — the panel shows the Restore state.
+    enabled: !!orderId && !isDeleted,
   })
 
   const { data: partsUsed, refetch: refetchParts, isFetching: partsFetching } = useQuery<PartsUsage[]>({
@@ -711,7 +717,7 @@ export default function PriceBuilderPanel({
       const response = await api.get(`/repair-orders/${orderId}/parts`)
       return response.data
     },
-    enabled: !!orderId,
+    enabled: !!orderId && !isDeleted,
   })
 
   const { data: inventory, isFetching: inventoryFetching } = useQuery<InventoryItem[]>({
@@ -742,7 +748,7 @@ export default function PriceBuilderPanel({
       const response = await api.get(`/repair-orders/${orderId}/parts/suggestions`)
       return response.data
     },
-    enabled: !!orderId && addType === 'part',
+    enabled: !!orderId && !isDeleted && addType === 'part',
   })
 
   const laborBookSearchTerm = searchTerm.trim()
@@ -1305,13 +1311,14 @@ export default function PriceBuilderPanel({
   // a slow/rate-limited fetch actually finishes, so a real order would flash
   // $0.00 / "start by adding an operation" before its real total arrived.
   // Key this off the query's own state instead.
-  const isInitialSummaryLoad = isLoading && !summary
+  const isInitialSummaryLoad = isLoading && !summary && !isDeleted
   // A failed fetch (e.g. 429 from fast prev/next navigation outrunning the
   // rate limit) also leaves `summary` undefined once the query settles into
   // an error — without this, that renders identically to a real empty order
   // ($0.00, "start by adding an operation"), silently showing wrong totals
   // for an order that may have real line items the fetch never returned.
-  const summaryLoadFailed = summaryErrored && !summary
+  // Not a failure when the order is deleted — we intentionally don't fetch then.
+  const summaryLoadFailed = summaryErrored && !summary && !isDeleted
 
   useEffect(() => {
     if (!priceUpdating) return
@@ -2556,6 +2563,14 @@ export default function PriceBuilderPanel({
           />
         )
 
+        if (isDeleted) {
+          return (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
+              <p className="font-semibold text-gray-900">This order is deleted.</p>
+              <p className="mt-1 text-sm text-gray-500">Restore it from the Danger zone below to view and edit its work &amp; labor.</p>
+            </div>
+          )
+        }
         if (isLoading) {
           return <p className="text-sm text-gray-500">Loading…</p>
         }
@@ -3132,7 +3147,7 @@ export default function PriceBuilderPanel({
                 </span>
               )
             )}
-            {isInternalOrder && (
+            {isInternalOrder && !isDeleted && (
               ['draft', 'assigned', 'acknowledged'].includes(orderStatus) ? (
                 <button
                   type="button"
@@ -3153,8 +3168,20 @@ export default function PriceBuilderPanel({
                   Mark Completed
                 </button>
               ) : orderStatus === 'completed' ? (
-                <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
-                  <CheckCircle className="h-4 w-4" /> Completed
+                <span className="inline-flex items-center gap-3">
+                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
+                    <CheckCircle className="h-4 w-4" /> Completed
+                  </span>
+                  {/* Reopen an internal WO so more labor/parts can be added. */}
+                  <button
+                    type="button"
+                    disabled={reopenPending || !onReopenWorkOrder}
+                    onClick={onReopenWorkOrder}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {reopenPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    {reopenPending ? 'Reopening…' : 'Reopen'}
+                  </button>
                 </span>
               ) : null
             )}

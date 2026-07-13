@@ -1980,6 +1980,54 @@ async def restore_repair_order(
 
     order.deleted_at = None
     order.deleted_by_user_id = None
+
+    # A restored internal fleet WO that had been completed comes back workable:
+    # reopen it to in_progress so labor/parts can be (re)added. Otherwise a
+    # restored-but-completed WO is frozen with no way to edit it. Customer ROs
+    # keep their status (they have quotes/invoices tied to completion).
+    if order.is_internal and order.status == RepairOrderStatus.COMPLETED:
+        order.status = RepairOrderStatus.IN_PROGRESS
+        order.work_completed_at = None
+
+    await db.commit()
+    await db.refresh(order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+
+    return RepairOrderResponse.model_validate(order)
+
+
+@router.post("/{order_id}/reopen", response_model=RepairOrderResponse)
+async def reopen_repair_order(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    """Reopen a completed internal fleet work order back to in_progress so more
+    labor/parts can be added. Internal-only — customer ROs are locked once
+    completed because their quote/invoice/payment depends on it."""
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if not order.is_internal:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only internal fleet work orders can be reopened")
+    if order.status != RepairOrderStatus.COMPLETED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only completed work orders can be reopened")
+
+    order.status = RepairOrderStatus.IN_PROGRESS
+    order.work_completed_at = None
     await db.commit()
     await db.refresh(order)
 

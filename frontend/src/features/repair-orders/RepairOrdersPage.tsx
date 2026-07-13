@@ -823,11 +823,30 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
       setSelectedOrder(updated)
       toast.success(`Repair order ${updated.order_number} restored`)
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to restore repair order'))
+    },
+  })
+
+  // Reopen a completed internal fleet WO back to in_progress so more work can be added.
+  const reopenWorkOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const response = await api.post(`/repair-orders/${orderId}/reopen`)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
+      setSelectedOrder(updated)
+      toast.success(`Reopened ${updated.order_number} — add work below`)
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to reopen work order'))
     },
   })
 
@@ -3167,6 +3186,8 @@ export default function RepairOrdersPage() {
                     deletedAt={(orderDetail ?? selectedOrder).deleted_at}
                     onRestoreOrder={() => selectedOrder.id && restoreRepairOrderMutation.mutate(selectedOrder.id)}
                     restorePending={restoreRepairOrderMutation.isPending}
+                    onReopenWorkOrder={() => selectedOrder.id && reopenWorkOrderMutation.mutate(selectedOrder.id)}
+                    reopenPending={reopenWorkOrderMutation.isPending}
                     recommendedServices={['completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
                     showAddRecommendedService={showAddRecService}
                     recommendedServiceForm={recServiceForm}
