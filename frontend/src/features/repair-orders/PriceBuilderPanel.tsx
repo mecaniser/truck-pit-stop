@@ -324,24 +324,19 @@ function PartQtyStepper({
 const STEPPER_COMMIT_DEBOUNCE_MS = 500
 
 function LaborLineEditor({
-  line, canMutate, onUpdate,
+  line, canMutate, onUpdate, onLocalChange,
 }: {
   line: { id: string; description: string; hours: string; hourly_rate: string; total_cost: string }
   canMutate: boolean
   onUpdate: (body: { description?: string; hours?: number; hourly_rate?: number }) => void
+  // Fires with the optimistic hours/rate on every step, ahead of the
+  // debounced `onUpdate` write, so the parent can recompute rollups
+  // (operation card total, Labor chip, order total) live instead of only
+  // after the write lands and `line` is refetched.
+  onLocalChange: (patch: { hours?: number; hourly_rate?: number }) => void
 }) {
   const lineHours = parseFloat(line.hours) || 0
   const lineRate = parseFloat(line.hourly_rate) || 0
-
-  // Track each stepper's live (optimistic) value locally so the displayed
-  // total reflects what's on screen right now. The two steppers debounce
-  // their server writes independently, so `line.total_cost` (computed
-  // server-side from whichever field landed last) lags behind whenever
-  // duration and rate are both changed in the same interaction.
-  const [displayHours, setDisplayHours] = useState(lineHours)
-  const [displayRate, setDisplayRate] = useState(lineRate)
-  useEffect(() => setDisplayHours(lineHours), [lineHours])
-  useEffect(() => setDisplayRate(lineRate), [lineRate])
 
   return (
     <>
@@ -364,7 +359,7 @@ function LaborLineEditor({
           <DurationStepper
             hours={lineHours}
             onChange={(h) => onUpdate({ hours: h })}
-            onLocalChange={setDisplayHours}
+            onLocalChange={(h) => onLocalChange({ hours: h })}
             stepMinutes={15}
             minMinutes={0}
             disabled={!canMutate}
@@ -379,7 +374,7 @@ function LaborLineEditor({
           <QuantityStepper
             value={lineRate}
             onChange={(r) => onUpdate({ hourly_rate: r })}
-            onLocalChange={setDisplayRate}
+            onLocalChange={(r) => onLocalChange({ hourly_rate: r })}
             min={0}
             step={25}
             unitLabel="/hr"
@@ -390,7 +385,7 @@ function LaborLineEditor({
           />
         </label>
         <span className="text-gray-400">=</span>
-        <span className="font-semibold text-gray-900">${(displayHours * displayRate).toFixed(2)}</span>
+        <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
       </div>
     </>
   )
@@ -716,6 +711,53 @@ export default function PriceBuilderPanel({
     // them), so don't fetch when deleted — the panel shows the Restore state.
     enabled: !!orderId && !isDeleted,
   })
+
+  // Labor duration/rate steppers debounce their server writes and coalesce
+  // into a single PATCH, so `summary.lines[].total_cost` (and everything
+  // rolled up from it — the operation card total, the Labor chip, the order
+  // total) lags behind what the steppers show on screen while a write is
+  // pending. Track each line's live optimistic hours/rate here so those
+  // rollups can be recomputed from what's actually displayed instead of the
+  // stale server aggregate.
+  const [laborOverrides, setLaborOverrides] = useState<Record<string, { hours: number; hourly_rate: number }>>({})
+  const setLaborOverride = (lineId: string, patch: { hours?: number; hourly_rate?: number }) => {
+    setLaborOverrides((prev) => {
+      const base = prev[lineId] || {
+        hours: parseFloat(summary?.lines.find((l) => l.id === lineId)?.hours || '0') || 0,
+        hourly_rate: parseFloat(summary?.lines.find((l) => l.id === lineId)?.hourly_rate || '0') || 0,
+      }
+      return { ...prev, [lineId]: { ...base, ...patch } }
+    })
+  }
+  // Once the server value catches up to a line's override, drop the override
+  // so the line goes back to tracking `summary` directly (and doesn't get
+  // stuck showing a stale optimistic value forever if the write failed).
+  useEffect(() => {
+    if (!summary?.lines?.length || !Object.keys(laborOverrides).length) return
+    setLaborOverrides((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const line of summary.lines) {
+        const override = next[line.id]
+        if (!override) continue
+        const serverHours = parseFloat(line.hours) || 0
+        const serverRate = parseFloat(line.hourly_rate) || 0
+        if (Math.abs(serverHours - override.hours) < 0.001 && Math.abs(serverRate - override.hourly_rate) < 0.001) {
+          delete next[line.id]
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [summary?.lines, laborOverrides])
+
+  const effectiveLaborLines = (summary?.lines || []).map((line) => {
+    const override = laborOverrides[line.id]
+    if (!override) return line
+    const total_cost = (override.hours * override.hourly_rate).toFixed(2)
+    return { ...line, hours: String(override.hours), hourly_rate: String(override.hourly_rate), total_cost }
+  })
+  const effectiveLaborTotal = effectiveLaborLines.reduce((sum, l) => sum + (parseFloat(l.total_cost || '0') || 0), 0)
 
   const { data: partsUsed, refetch: refetchParts, isFetching: partsFetching } = useQuery<PartsUsage[]>({
     queryKey: ['price-build-parts', orderId],
@@ -1279,7 +1321,7 @@ export default function PriceBuilderPanel({
     0,
   )
   const customerSavesTotal = partsSavingsTotal + discountTotal
-  const laborLines = summary?.lines || []
+  const laborLines = effectiveLaborLines
   const footerParts = partsUsed || []
   const laborDiscountAmount = parseFloat(summary?.labor_discount_amount || '0') || 0
   const orderDiscountAmount = parseFloat(summary?.order_discount_amount || '0') || 0
@@ -1311,7 +1353,14 @@ export default function PriceBuilderPanel({
     updateLine.isPending ||
     removeLine.isPending
   )
-  const orderTotalValue = summary?.total_cost ?? '0'
+  // `summary.total_cost` bakes in the server's (possibly stale) labor_total;
+  // shift it by however far our optimistic labor total has diverged so the
+  // order total moves in lockstep with the steppers instead of waiting for
+  // the debounced write + refetch to land.
+  const serverLaborTotal = parseFloat(summary?.labor_total || '0') || 0
+  const orderTotalValue = summary
+    ? String((parseFloat(summary.total_cost || '0') || 0) + (effectiveLaborTotal - serverLaborTotal))
+    : '0'
   // Totals genuinely default to zero for a brand-new order, but they also
   // read as zero while `summary` hasn't loaded yet for a just-opened order —
   // those are different states. The old signal for "still loading" was a
@@ -2357,7 +2406,7 @@ export default function PriceBuilderPanel({
 
       {(() => {
         const allParts = partsUsed || []
-        const lines = summary?.lines || []
+        const lines = effectiveLaborLines
         const partsByService = new Map<string, typeof allParts>()
         const orphanParts: typeof allParts = []
         for (const pu of allParts) {
@@ -2567,6 +2616,7 @@ export default function PriceBuilderPanel({
           <LaborLineEditor
             line={line}
             canMutate={canMutate}
+            onLocalChange={(patch) => setLaborOverride(line.id, patch)}
             onUpdate={(body) => updateLine.mutate({ lineId: line.id, body })}
           />
         )
@@ -2875,7 +2925,7 @@ export default function PriceBuilderPanel({
             onClick={() => { setFooterDetailsOpen((open) => open === 'labor' ? null : 'labor'); setDiscountsOpen(false) }}
             className="rounded-full bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700 hover:bg-orange-100"
           >
-            Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(summary?.labor_total)}
+            Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(effectiveLaborTotal)}
           </button>
           <button
             type="button"
