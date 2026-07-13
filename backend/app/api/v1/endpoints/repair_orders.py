@@ -1955,6 +1955,18 @@ async def delete_repair_order(
     # Soft delete: hide the order (and keep its quote/parts/labor/invoice
     # history intact) rather than destroying it, so it can be restored and
     # so there's always a record of who deleted it and when.
+    #
+    # Stock: an order that never reached the shop floor (draft/quoted) was
+    # holding its parts reserved — deleting it must give that stock back, or the
+    # parts stay silently deducted for an order nobody will ever work. Past that
+    # point the parts were really consumed, so leave stock alone.
+    #
+    # We only adjust stock, never drop the PartsUsage rows: delete is
+    # *restorable*, and restore re-deducts (see restore_repair_order). Dropping
+    # the rows would make the undo lossy.
+    if order.status in DANGER_ACTION_RO_STATUSES:
+        await _release_reserved_stock(db, order.id)
+
     order.deleted_at = datetime.now(timezone.utc)
     order.deleted_by_user_id = current_user.id
     await db.commit()
@@ -1972,7 +1984,14 @@ async def delete_repair_order(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/{order_id}/restore", response_model=RepairOrderResponse)
+class RepairOrderRestoreResponse(BaseModel):
+    """The restored order, plus any parts that couldn't be re-reserved because
+    stock ran out while the order was deleted."""
+    order: RepairOrderResponse
+    stock_shortages: List[str] = []
+
+
+@router.post("/{order_id}/restore", response_model=RepairOrderRestoreResponse)
 async def restore_repair_order(
     order_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -1995,6 +2014,14 @@ async def restore_repair_order(
     order.deleted_at = None
     order.deleted_by_user_id = None
 
+    # Mirror the delete: if we released this order's reserved stock when it was
+    # deleted (draft/quoted only), take it back now. Another order may have
+    # consumed those parts in the meantime, so collect any shortfalls and hand
+    # them back to the caller instead of silently driving stock negative.
+    stock_shortages: list[str] = []
+    if order.status in DANGER_ACTION_RO_STATUSES:
+        stock_shortages = await _reserve_stock_again(db, order.id)
+
     # A restored internal fleet WO that had been completed comes back workable:
     # reopen it to in_progress so labor/parts can be (re)added. Otherwise a
     # restored-but-completed WO is frozen with no way to edit it. Customer ROs
@@ -2015,7 +2042,10 @@ async def restore_repair_order(
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
     )
 
-    return RepairOrderResponse.model_validate(order)
+    return RepairOrderRestoreResponse(
+        order=RepairOrderResponse.model_validate(order),
+        stock_shortages=stock_shortages,
+    )
 
 
 @router.post("/{order_id}/reopen", response_model=RepairOrderResponse)
@@ -2069,6 +2099,48 @@ def _check_ro_access(current_user: User, order: RepairOrder) -> None:
     # Fleet managers are scoped to the garage's own internal-fleet repairs only.
     if current_user.role == UserRole.FLEET_MANAGER and not order.is_internal:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+async def _release_reserved_stock(db: AsyncSession, order_id: UUID) -> None:
+    """Give back the stock an order's parts were holding, without dropping the
+    PartsUsage rows (soft delete is restorable — see _reserve_stock_again)."""
+    result = await db.execute(
+        select(PartsUsage)
+        .where(PartsUsage.repair_order_id == order_id)
+        .options(selectinload(PartsUsage.inventory_item))
+    )
+    for pu in result.scalars().all():
+        if pu.inventory_item is not None:
+            # Same whole-package count that was deducted when the part was added.
+            pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _packages_consumed(pu.quantity)
+
+
+async def _reserve_stock_again(db: AsyncSession, order_id: UUID) -> list[str]:
+    """Re-deduct the stock an order's parts need when it's restored.
+
+    While the order sat deleted its parts were back on the shelf, so another
+    order may have taken them. Re-deduct what's actually there and report the
+    shortfalls so the caller can warn the user rather than silently driving
+    stock negative.
+    """
+    result = await db.execute(
+        select(PartsUsage)
+        .where(PartsUsage.repair_order_id == order_id)
+        .options(selectinload(PartsUsage.inventory_item))
+    )
+    shortages: list[str] = []
+    for pu in result.scalars().all():
+        inv = pu.inventory_item
+        if inv is None:
+            continue
+        needed = _packages_consumed(pu.quantity)
+        available = inv.stock_quantity or 0
+        if available < needed:
+            shortages.append(f"{inv.name} (need {needed}, {available} in stock)")
+            inv.stock_quantity = 0
+        else:
+            inv.stock_quantity = available - needed
+    return shortages
 
 
 def _require_cancelable_ro(order: RepairOrder) -> None:
