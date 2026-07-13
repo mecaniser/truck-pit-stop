@@ -17,6 +17,24 @@ import type {
 } from './types'
 import { fmtDate, money, fmt } from './helpers'
 import { formatHoursMinutes } from '@/lib/durationFormat'
+import type { QueryClient } from '@tanstack/react-query'
+
+/**
+ * Fleet work orders ARE repair orders — creating/completing/deleting one changes
+ * the owner's Shop Cockpit work queue too, not just the fleet board. Invalidate
+ * both.
+ *
+ * refetchType 'all' matters: the cockpit is unmounted while the user is over in
+ * Fleet, so its ['dashboard-stats'] query is *inactive* — a default invalidate
+ * only refetches active queries, and that query sets refetchOnMount:false, so it
+ * would serve stale data on the way back (missing the WO we just created).
+ */
+export function invalidateFleetAndCockpit(qc: QueryClient) {
+  invalidateFleetAndCockpit(qc)
+  for (const key of ['dashboard-stats', 'repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
+    qc.invalidateQueries({ queryKey: [key], refetchType: 'all' })
+  }
+}
 
 /* shared modal shell (fleet design system) */
 export function Modal({ title, icon, onClose, children, width = 480 }: {
@@ -154,7 +172,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     onSuccess: () => {
       toast.success('Truck updated')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
-      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      invalidateFleetAndCockpit(qc)
       onClose()
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
@@ -203,11 +221,20 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
 }) {
   const [description, setDescription] = useState('')
 
+  const qc = useQueryClient()
   const create = useMutation({
+    // Returns the BoardTruck; its work_order.id IS the order number.
     mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {
       description: description.trim(),
-    })).data,
-    onSuccess: () => { toast.success('Work order created'); onCreated(); onClose() },
+    })).data as BoardTruck,
+    onSuccess: (truck) => {
+      const num = truck?.work_order?.id
+      toast.success(num ? `Work order ${num} created` : 'Work order created')
+      // A fleet WO is a repair order — refresh the owner's cockpit queue too.
+      invalidateFleetAndCockpit(qc)
+      onCreated()
+      onClose()
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create work order'),
   })
 
@@ -290,11 +317,17 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       create_work_order: createWO,
       service_ids: selected,
       save_as_default: saveAsDefault,
-    })).data,
-    onSuccess: () => {
-      toast.success(createMode ? 'PM work order created' : (rescheduling ? 'PM rescheduled' : 'PM scheduled'))
+    })).data as BoardTruck,
+    onSuccess: (updated) => {
+      // Response is the BoardTruck; the PM work order's id IS the order number.
+      const num = updated?.pm_work_order?.id || updated?.work_order?.id
+      toast.success(
+        createMode
+          ? (num ? `PM work order ${num} created` : 'PM work order created')
+          : (rescheduling ? 'PM rescheduled' : 'PM scheduled')
+      )
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
-      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      invalidateFleetAndCockpit(qc)
       onDone(); onClose()
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to schedule PM'),
@@ -693,7 +726,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['fleet-wo', repairOrderId] })
     qc.invalidateQueries({ queryKey: ['fleet-wo-pm-services', repairOrderId] })
-    qc.invalidateQueries({ queryKey: ['fleet-board'] })
+    invalidateFleetAndCockpit(qc)
     onChanged()
   }
 
@@ -709,7 +742,12 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   })
   const del = useMutation({
     mutationFn: async () => (await api.delete(`/repair-orders/${repairOrderId}`)).data,
-    onSuccess: () => { toast.success('Work order deleted'); qc.invalidateQueries({ queryKey: ['fleet-board'] }); onChanged(); onClose() },
+    onSuccess: () => {
+      toast.success(wo?.order_number ? `Work order ${wo.order_number} deleted` : 'Work order deleted')
+      invalidateFleetAndCockpit(qc)
+      onChanged()
+      onClose()
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete work order'),
   })
   const startWO = useMutation({
@@ -721,7 +759,11 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     mutationFn: async (mileageOut?: number | null) =>
       (await api.post(`/fleet/work-orders/${repairOrderId}/complete`,
         { mileage_out: mileageOut ?? null })).data,
-    onSuccess: () => { toast.success('Work order completed'); refresh(); onClose() },
+    onSuccess: () => {
+      toast.success(wo?.order_number ? `Work order ${wo.order_number} completed` : 'Work order completed')
+      refresh()
+      onClose()
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to complete work order'),
   })
 
@@ -919,7 +961,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
     onSuccess: () => {
       toast.success(name.trim() ? 'Driver assigned' : 'Driver removed')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
-      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      invalidateFleetAndCockpit(qc)
       onClose()
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to save driver'),
@@ -974,7 +1016,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
     onSuccess: () => {
       toast.success('Incident logged')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
-      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      invalidateFleetAndCockpit(qc)
       onClose()
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
@@ -1038,7 +1080,7 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
     onSuccess: () => {
       toast.success('Incident updated')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
-      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      invalidateFleetAndCockpit(qc)
       onClose()
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
@@ -1111,7 +1153,7 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
       setConfirmDelete(null)
       qc.invalidateQueries({ queryKey: ['fleet-inspections', vehicleId] })
       qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
-      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      invalidateFleetAndCockpit(qc)
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete'),
   })
@@ -1210,7 +1252,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
   const refreshLists = () => {
     qc.invalidateQueries({ queryKey: ['fleet-inspections', vehicleId] })
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
-    qc.invalidateQueries({ queryKey: ['fleet-board'] })
+    invalidateFleetAndCockpit(qc)
   }
   const patchItem = useMutation({
     mutationFn: async ({ itemId, result, note }: { itemId: string; result?: InspectionItemResult; note?: string }) =>
