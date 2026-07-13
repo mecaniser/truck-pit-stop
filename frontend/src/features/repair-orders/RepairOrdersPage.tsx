@@ -213,6 +213,10 @@ export default function RepairOrdersPage() {
   const [showPartComposer, setShowPartComposer] = useState(false)
   const [customerSectionExpanded, setCustomerSectionExpanded] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  // The order currently being deleted — used to fade+collapse its list card on
+  // the way out (kept briefly after success so the exit animation can play
+  // before the refetch drops the row).
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const [showResendInvoice, setShowResendInvoice] = useState(false)
   const [resendCustomEmail, setResendCustomEmail] = useState('')
   const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false)
@@ -816,14 +820,22 @@ export default function RepairOrdersPage() {
       await api.delete(`/repair-orders/${orderId}`)
       return { orderId, orderNumber }
     },
+    // Mark the card as deleting the moment the (possibly slow) request starts, so
+    // the list shows a clear in-flight state instead of appearing frozen.
+    onMutate: (orderId: string) => setDeletingOrderId(orderId),
     onSuccess: ({ orderId, orderNumber }) => {
-      invalidateOrderBoards()
       if (selectedOrder?.id === orderId) {
         closeDetail()
       }
       toast.success(orderNumber ? `Repair order ${orderNumber} deleted` : 'Repair order deleted')
+      // Let the card play its fade+collapse exit before the refetch drops it.
+      window.setTimeout(() => {
+        setDeletingOrderId(null)
+        invalidateOrderBoards()
+      }, 320)
     },
     onError: (error: unknown) => {
+      setDeletingOrderId(null)
       toast.error(getErrorDetail(error, 'Failed to delete repair order'))
     },
   })
@@ -1831,7 +1843,7 @@ export default function RepairOrdersPage() {
                   <div
                     key={order.id}
                     onClick={() => openDetail(order)}
-                    className="flex items-center gap-3 px-4 py-3 cursor-pointer active:bg-white/5 transition-colors"
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer active:bg-white/5 transition-colors overflow-hidden ${deletingOrderId === order.id ? 'ro-row-deleting' : ''}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
@@ -1890,7 +1902,7 @@ export default function RepairOrdersPage() {
                       <tr
                         key={order.id}
                         onClick={() => openDetail(order)}
-                        className="hover:bg-white/5 cursor-pointer transition-colors"
+                        className={`hover:bg-white/5 cursor-pointer transition-all duration-300 ${deletingOrderId === order.id ? 'opacity-30 pointer-events-none' : ''}`}
                       >
                         <td className="px-4 py-3">
                           <span className="text-white font-mono text-xs">{order.order_number}</span>
@@ -1953,10 +1965,10 @@ export default function RepairOrdersPage() {
                 const showEstimate = serviceTotal > 0
                 const showMechanic = ['quoted', 'in_progress', 'paid'].includes(order.status) && order.assigned_mechanic_id
                 return (
-                  <div 
+                  <div
                     key={order.id}
                     onClick={() => openDetail(order)}
-                    className="aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-shadow cursor-pointer"
+                    className={`aspect-square bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col justify-between hover:shadow-xl transition-all duration-300 cursor-pointer ${deletingOrderId === order.id ? 'opacity-25 scale-95 pointer-events-none' : ''}`}
                   >
                     <div>
                       <div className="flex items-center justify-between mb-2">
