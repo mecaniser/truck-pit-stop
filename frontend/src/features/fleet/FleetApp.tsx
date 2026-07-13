@@ -15,7 +15,7 @@ import { STATUS_META, fmt, pmState, initials } from './helpers'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
-import { SchedulePMModal, WorkOrderPanel } from './FleetModals'
+import { SchedulePMModal, WorkOrderPanel, invalidateFleetAndCockpit } from './FleetModals'
 import './fleet.css'
 
 type View = 'board' | 'map' | 'schedule' | 'orders' | 'drivers' | 'detail'
@@ -249,7 +249,9 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
   const ucls = pm.cls === 'pm-over' ? 'u-over' : pm.cls === 'pm-soon' ? 'u-soon' : 'u-ok'
   const stage = pmStage(t)
   const stageMeta = STAGE_META[stage]
-  const refresh = () => { qc.invalidateQueries({ queryKey: ['fleet-board'] }); qc.invalidateQueries({ queryKey: ['fleet-truck', t.id] }) }
+  // Starting/completing a PM changes the owner's cockpit queue too, not just the
+  // fleet board — refresh both.
+  const refresh = () => { invalidateFleetAndCockpit(qc); qc.invalidateQueries({ queryKey: ['fleet-truck', t.id] }) }
 
   const startPM = useMutation({
     mutationFn: async () => (await api.post(`/fleet/work-orders/${t.pm_work_order!.repair_order_id}/start`)).data,

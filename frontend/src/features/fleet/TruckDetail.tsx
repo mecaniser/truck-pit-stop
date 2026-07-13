@@ -9,7 +9,7 @@ import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
-import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal } from './FleetModals'
+import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, invalidateFleetAndCockpit } from './FleetModals'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -49,7 +49,8 @@ export default function TruckDetail({
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
-    qc.invalidateQueries({ queryKey: ['fleet-board'] })
+    // Fleet WOs are repair orders — keep the owner's cockpit queue in sync too.
+    invalidateFleetAndCockpit(qc)
   }
   const resolveIncident = useMutation({
     mutationFn: async (id: string) => (await api.patch(`/fleet/incidents/${id}`, { status: 'resolved' })).data,

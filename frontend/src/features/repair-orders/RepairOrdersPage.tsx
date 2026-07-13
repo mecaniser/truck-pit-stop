@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Loader2, Plus, TriangleAlert, Trash2, OctagonX, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
+import { ArrowRight, Loader2, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -783,22 +783,6 @@ export default function RepairOrdersPage() {
     },
   })
 
-  const cancelRepairOrderMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      const response = await api.put(`/repair-orders/${orderId}`, { status: 'cancelled' })
-      return response.data as RepairOrder
-    },
-    onSuccess: (updated) => {
-      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      setSelectedOrder(updated)
-      toast.success(`Repair order ${updated.order_number} — Status: Cancelled`)
-    },
-    onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to cancel repair order'))
-    },
-  })
-
   // Delete/restore/reopen change whether an order shows on the owner's floor
   // board and dashboard, not just the RO lists — invalidate those too so the
   // board updates without a manual reload.
@@ -847,14 +831,24 @@ export default function RepairOrdersPage() {
   const restoreRepairOrderMutation = useMutation({
     mutationFn: async (orderId: string) => {
       const response = await api.post(`/repair-orders/${orderId}/restore`)
-      return response.data as RepairOrder
+      return response.data as { order: RepairOrder; stock_shortages: string[] }
     },
-    onSuccess: (updated) => {
+    onSuccess: ({ order: updated, stock_shortages }) => {
       invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
       setSelectedOrder(updated)
       toast.success(`Repair order ${updated.order_number} restored`)
+      // While the order sat deleted its parts went back on the shelf and may
+      // have been used elsewhere — say so rather than letting stock go silently
+      // short.
+      if (stock_shortages?.length) {
+        toast.error(
+          `Restored, but these parts are no longer in stock: ${stock_shortages.join('; ')}`,
+          { duration: 8000 },
+        )
+      }
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to restore repair order'))
@@ -2688,17 +2682,9 @@ export default function RepairOrdersPage() {
                 ) : (
                 <div className="flex flex-wrap gap-2 justify-end">
                   <div className="w-full text-sm leading-5 text-red-600">
-                    Cancel stops work without deleting history. Delete removes it from your active list — it can be restored later from the Deleted filter.
+                    Delete removes this order from your active lists. Nothing is destroyed —
+                    it can be restored later from the Deleted filter.
                   </div>
-                  <button
-                    type="button"
-                    disabled={cancelRepairOrderMutation.isPending || deleteRepairOrderMutation.isPending || (orderDetail ?? selectedOrder).status === 'cancelled'}
-                    onClick={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 border border-red-200 rounded-lg hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <OctagonX className="w-4 h-4" />
-                    {cancelRepairOrderMutation.isPending ? 'Cancelling...' : 'Cancel order'}
-                  </button>
                   <button
                     type="button"
                     disabled={deleteRepairOrderMutation.isPending}
@@ -3216,11 +3202,8 @@ export default function RepairOrdersPage() {
                     nextDisabled={!hasNext}
                     showDangerActions={showDangerActions}
                     onToggleDangerActions={() => setShowDangerActions((prev) => !prev)}
-                    onCancelOrder={() => selectedOrder.id && cancelRepairOrderMutation.mutate(selectedOrder.id)}
                     onDeleteOrder={() => setShowDeleteConfirm(true)}
-                    cancelPending={cancelRepairOrderMutation.isPending}
                     deletePending={deleteRepairOrderMutation.isPending}
-                    cancelDisabled={(orderDetail ?? selectedOrder).status === 'cancelled'}
                     isDeleted={!!(orderDetail ?? selectedOrder).deleted_at}
                     deletedByName={(orderDetail ?? selectedOrder).deleted_by_name}
                     deletedAt={(orderDetail ?? selectedOrder).deleted_at}
