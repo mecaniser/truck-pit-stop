@@ -126,6 +126,41 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
+/* Repair-order row being deleted. While the request is in flight the row dims
+   and stops taking clicks; on success it fades + collapses out of the list
+   before the refetch drops it. */
+.ro-row-deleting {
+  opacity: 0.55;
+  pointer-events: none;
+  animation: ro-row-remove 0.32s ease-in forwards;
+}
+@keyframes ro-row-remove {
+  0% {
+    opacity: 0.55;
+    transform: translateX(0);
+  }
+  40% {
+    opacity: 0.2;
+    transform: translateX(-8px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-16px) scale(0.98);
+    max-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ro-row-deleting {
+    animation: none;
+    opacity: 0.4;
+    pointer-events: none;
+  }
+}
+
 /* Custom scrollbar for dark theme */
 .scrollbar-dark {
   scrollbar-width: thin;
