@@ -759,10 +759,19 @@ export default function InventoryPage() {
                   <button
                     onClick={() => { preloadInventoryMutation.mutate(); setShowMenu(false) }}
                     disabled={preloadInventoryMutation.isPending}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
                   >
                     <Download className="w-3.5 h-3.5 shrink-0" />
                     {preloadInventoryMutation.isPending ? 'Loading…' : 'Load defaults'}
+                  </button>
+                  <button
+                    onClick={() => regeneratePartLibraryMutation.mutate()}
+                    disabled={regeneratePartLibraryMutation.isPending}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-gray-200 hover:bg-white/10 disabled:opacity-50 whitespace-nowrap"
+                    title="Rebuild part-name/category/description suggestions from your inventory"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                    {regeneratePartLibraryMutation.isPending ? 'Queuing…' : 'Refresh part suggestions'}
                   </button>
                   <button
                     onClick={() => setShowClearConfirm(true)}
