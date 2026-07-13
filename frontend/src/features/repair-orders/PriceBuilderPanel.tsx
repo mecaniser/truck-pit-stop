@@ -130,11 +130,8 @@ type Props = {
   nextDisabled?: boolean
   showDangerActions?: boolean
   onToggleDangerActions?: () => void
-  onCancelOrder?: () => void
   onDeleteOrder?: () => void
-  cancelPending?: boolean
   deletePending?: boolean
-  cancelDisabled?: boolean
   isDeleted?: boolean
   deletedByName?: string | null
   deletedAt?: string | null
@@ -628,11 +625,8 @@ export default function PriceBuilderPanel({
   nextDisabled,
   showDangerActions,
   onToggleDangerActions,
-  onCancelOrder,
   onDeleteOrder,
-  cancelPending,
   deletePending,
-  cancelDisabled,
   isDeleted = false,
   deletedByName,
   deletedAt,
@@ -3225,17 +3219,10 @@ export default function PriceBuilderPanel({
               ) : (
                 <>
                   <p className="mb-3 text-sm text-red-700">
-                    Cancel stops work without deleting history. Delete removes it from the active list — it can be restored later.
+                    Delete removes this order from your active lists. Nothing is destroyed —
+                    it can be restored later from the Deleted filter.
                   </p>
                   <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      disabled={cancelPending || deletePending || cancelDisabled}
-                      onClick={onCancelOrder}
-                      className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
-                    >
-                      {cancelPending ? 'Cancelling...' : 'Cancel order'}
-                    </button>
                     <button
                       type="button"
                       disabled={deletePending}

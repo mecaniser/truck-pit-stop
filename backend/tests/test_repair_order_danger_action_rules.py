@@ -307,7 +307,9 @@ async def test_restore_repair_order(db_session, monkeypatch):
 
     restored = await repair_orders.restore_repair_order(order.id, db=db_session, current_user=user)
 
-    assert restored.status == RepairOrderStatus.DRAFT
+    # Restore now returns {order, stock_shortages}.
+    assert restored.order.status == RepairOrderStatus.DRAFT
+    assert restored.stock_shortages == []
     stored = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order.id))).scalar_one()
     assert stored.deleted_at is None
     assert stored.deleted_by_user_id is None
