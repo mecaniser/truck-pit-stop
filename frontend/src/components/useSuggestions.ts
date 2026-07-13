@@ -8,7 +8,7 @@ export interface Suggestion {
   times_used: number
 }
 
-export type SuggestionVariant = 'dark' | 'light'
+export type SuggestionVariant = 'dark' | 'light' | 'blueNoir'
 
 export interface SuggestionTheme {
   background: string
@@ -36,6 +36,16 @@ const THEMES: Record<SuggestionVariant, SuggestionTheme> = {
     itemHoverBg: 'var(--line)',
     text: 'var(--text)',
     mutedText: 'var(--muted-2)',
+  },
+  blueNoir: {
+    // Concrete hex matching the main dashboard's BlueNoir theme
+    // (tailwind.config blueNoir.800/700) — no CSS var dependency.
+    background: '#101820',
+    border: '1px solid rgba(255,255,255,0.1)',
+    shadow: '0 12px 28px rgba(0,0,0,0.45)',
+    itemHoverBg: '#182028',
+    text: '#ffffff',
+    mutedText: '#9ca3af',
   },
 }
 

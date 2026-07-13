@@ -29,6 +29,7 @@ import { useNotificationManager } from '../../hooks/useNotificationManager'
 import NotificationBanner from '../../components/NotificationBanner'
 import AlertsBanner from '../../components/AlertsBanner'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
+import SuggestingInput from '@/components/SuggestingInput'
 import RecentActivityFeed from './RecentActivityFeed'
 
 interface StatusCount {
@@ -770,18 +771,19 @@ export default function DashboardHome() {
             </div>
             {/* Description - Required */}
             <div className="flex-1">
-              <input
-                type="text"
+              <SuggestingInput
                 value={quickComplaint}
-                onChange={(e) => {
-                  setQuickComplaint(e.target.value)
+                onChange={(val) => {
+                  setQuickComplaint(val)
                   if (quickTouched) {
                     setQuickErrors((prev) => ({
                       ...prev,
-                      complaint: e.target.value.trim() ? undefined : 'Description required',
+                      complaint: val.trim() ? undefined : 'Description required',
                     }))
                   }
                 }}
+                suggestUrl="/repair-orders/description-suggestions"
+                variant="blueNoir"
                 placeholder="Issue (e.g. engine overheating) *"
                 className={`w-full px-3 py-2 bg-white/5 border rounded-lg text-white text-base placeholder-gray-500 focus:outline-none focus:ring-1 ${
                   quickTouched && quickErrors.complaint
