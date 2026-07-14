@@ -158,6 +158,22 @@ class FleetIncident(BaseModel):
     vehicle = relationship("Vehicle")
     reported_by = relationship("User", foreign_keys=[reported_by_id])
     repair_order = relationship("RepairOrder")
+    photos = relationship("FleetIncidentPhoto", back_populates="incident", cascade="all, delete-orphan")
+
+
+class FleetIncidentPhoto(BaseModel):
+    __tablename__ = "fleet_incident_photos"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("fleet_incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    uploaded_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
+    image_url = Column(String(500), nullable=False)
+    cloudinary_public_id = Column(String(255), nullable=True)
+    caption = Column(String(500), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), nullable=False)
+
+    incident = relationship("FleetIncident", back_populates="photos")
+    uploaded_by = relationship("User", foreign_keys=[uploaded_by_id])
 
 
 class VehiclePMService(BaseModel):

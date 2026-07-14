@@ -78,6 +78,14 @@ class InspectionDetailResponse(InspectionResponse):
 
 # ---- Incidents ----
 
+class FleetPhotoResponse(BaseModel):
+    id: UUID
+    image_url: str
+    caption: Optional[str] = None
+    uploaded_at: datetime
+    uploader_name: str = "Unknown"
+
+
 class IncidentCreate(BaseModel):
     vehicle_id: UUID
     occurred_at: datetime
@@ -107,6 +115,7 @@ class IncidentResponse(BaseModel):
     resolved_at: Optional[datetime] = None
     repair_order_id: Optional[UUID] = None
     created_at: datetime
+    photos: List[FleetPhotoResponse] = []
     # Denormalized vehicle summary
     vehicle_make: str = ""
     vehicle_model: str = ""
@@ -251,6 +260,7 @@ class IncidentEntry(BaseModel):
     location: Optional[str] = None
     note: Optional[str] = None
     repair_order_id: Optional[UUID] = None
+    photos: List[FleetPhotoResponse] = []
 
 
 class NearestUnit(BaseModel):

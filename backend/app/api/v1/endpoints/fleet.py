@@ -4,11 +4,12 @@ Scoped to the garage's own internal fleet (the house-account customer). Accessib
 to the fleet manager and the garage owner/admin who own the fleet.
 """
 import math
+import base64
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,6 +26,7 @@ from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
     FleetIncident,
+    FleetIncidentPhoto,
     VehiclePMService,
     RepairOrderPMService,
     InspectionStatus,
@@ -66,10 +68,14 @@ from app.schemas.fleet import (
     FleetManagerOption,
     FleetMechanicOption,
     FleetSettingsResponse,
+    FleetPhotoResponse,
 )
+from app.core.logging import get_logger
 from app.services.internal_fleet import ensure_internal_fleet_customer, project_pm_due_date
+from app.services.cloudinary_service import is_cloudinary_configured, upload_work_photo
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 FLEET_ROLES = (UserRole.FLEET_MANAGER, UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
 
@@ -85,6 +91,8 @@ PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
 PM_DUE_SOON_DAYS = 14      # date-based PM "due soon" window
 # Operator-set idle statuses (no open work order). "active" = on the road.
 VALID_STATUS_OVERRIDES = {"active", "yard", "available", "out_of_service"}
+ALLOWED_FLEET_PHOTO_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+MAX_FLEET_PHOTO_BYTES = 6 * 1024 * 1024
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
@@ -160,14 +168,45 @@ def _inspection_response(insp: FleetInspection) -> InspectionResponse:
 
 
 def _incident_response(inc: FleetIncident) -> IncidentResponse:
+    photos = inc.__dict__.get("photos") or []
     return IncidentResponse(
         **{k: getattr(inc, k) for k in (
             "id", "vehicle_id", "reported_by_id", "occurred_at", "location",
             "severity", "status", "description", "resolution_notes",
             "resolved_at", "repair_order_id", "created_at",
         )},
+        photos=[_incident_photo_response(photo) for photo in sorted(photos, key=lambda p: p.uploaded_at, reverse=True)],
         **_vehicle_fields(inc.vehicle),
     )
+
+
+def _uploader_name(user: Optional[User]) -> str:
+    if not user:
+        return "Unknown"
+    return f"{user.first_name} {user.last_name}".strip() or user.email or "Unknown"
+
+
+def _incident_photo_response(photo: FleetIncidentPhoto) -> FleetPhotoResponse:
+    return FleetPhotoResponse(
+        id=photo.id,
+        image_url=photo.image_url,
+        caption=photo.caption,
+        uploaded_at=photo.uploaded_at,
+        uploader_name=_uploader_name(getattr(photo, "uploaded_by", None)),
+    )
+
+
+async def _read_validated_fleet_image(image: UploadFile) -> tuple[str, str]:
+    content_type = (image.content_type or "").lower()
+    if content_type not in ALLOWED_FLEET_PHOTO_CONTENT_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a JPEG, PNG, WebP, HEIC, or HEIF image")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
+    if len(image_bytes) > MAX_FLEET_PHOTO_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large. Max 6MB")
+    data_uri = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    return data_uri, content_type
 
 
 # ---------------------------------------------------------------------------
@@ -564,7 +603,10 @@ async def list_incidents(
     query = (
         select(FleetIncident)
         .where(FleetIncident.tenant_id == current_user.tenant_id)
-        .options(selectinload(FleetIncident.vehicle))
+        .options(
+            selectinload(FleetIncident.vehicle),
+            selectinload(FleetIncident.photos).selectinload(FleetIncidentPhoto.uploaded_by),
+        )
         .order_by(FleetIncident.occurred_at.desc())
     )
     if vehicle_id:
@@ -599,11 +641,56 @@ async def create_incident(
     return _incident_response(incident)
 
 
+@router.post("/incidents/{incident_id}/photos", response_model=FleetPhotoResponse, status_code=status.HTTP_201_CREATED)
+async def upload_incident_photo(
+    incident_id: UUID,
+    image: UploadFile = File(...),
+    caption: Optional[str] = Form(None, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    if not is_cloudinary_configured():
+        raise HTTPException(status_code=424, detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.")
+    data_uri, _content_type = await _read_validated_fleet_image(image)
+    try:
+        image_url = await upload_work_photo(
+            base64_image=data_uri,
+            repair_order_id=f"fleet_incidents/{incident.id}",
+            mechanic_id=str(current_user.id),
+        )
+    except Exception as exc:
+        logger.error(
+            "fleet_incident_photo_upload_failed",
+            incident_id=str(incident.id),
+            tenant_id=str(current_user.tenant_id),
+            user_id=str(current_user.id),
+            error=str(exc),
+        )
+        raise HTTPException(status_code=424, detail="Photo upload service failed. Check the Cloudinary settings and try again.") from exc
+    photo = FleetIncidentPhoto(
+        id=uuid4(),
+        tenant_id=current_user.tenant_id,
+        incident_id=incident.id,
+        uploaded_by_id=current_user.id,
+        image_url=image_url,
+        caption=caption.strip() if caption else None,
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo, attribute_names=["uploaded_by"])
+    return _incident_photo_response(photo)
+
+
 async def _load_incident(db: AsyncSession, tenant_id: UUID, incident_id: UUID) -> FleetIncident:
     result = await db.execute(
         select(FleetIncident)
         .where(and_(FleetIncident.id == incident_id, FleetIncident.tenant_id == tenant_id))
-        .options(selectinload(FleetIncident.vehicle))
+        .options(
+            selectinload(FleetIncident.vehicle),
+            selectinload(FleetIncident.photos).selectinload(FleetIncidentPhoto.uploaded_by),
+        )
     )
     incident = result.scalar_one_or_none()
     if not incident:
@@ -1060,7 +1147,10 @@ async def truck_detail(
 
     # Incidents for this truck.
     inc_result = await db.execute(
-        select(FleetIncident).where(FleetIncident.vehicle_id == vehicle_id).order_by(FleetIncident.occurred_at.desc())
+        select(FleetIncident)
+        .where(FleetIncident.vehicle_id == vehicle_id)
+        .options(selectinload(FleetIncident.photos).selectinload(FleetIncidentPhoto.uploaded_by))
+        .order_by(FleetIncident.occurred_at.desc())
     )
     incident_rows = list(inc_result.scalars().all())
     incidents = [
@@ -1073,6 +1163,7 @@ async def truck_detail(
             location=i.location,
             note=i.description,
             repair_order_id=i.repair_order_id,
+            photos=[_incident_photo_response(photo) for photo in sorted(i.photos or [], key=lambda p: p.uploaded_at, reverse=True)],
         )
         for i in incident_rows
     ]
