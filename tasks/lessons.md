@@ -194,3 +194,6 @@
 - Correction: User clarified Labor Book Time entries should have their own My Garage management tab instead of being treated as Services or hidden inside the price-builder add bar.
 - Rule: When a workflow persists reusable shop knowledge separately from the customer-facing service catalog, expose that data through a dedicated management surface rather than overloading the nearest existing list.
 - Prevention: Before adding reusable catalog UI, identify the backing table/model and record whether it is an operational library, customer service, inventory item, or repair-order line in `tasks/todo.md`.
+- Correction: User reported a database error while sending quotes after nearby photo work, and the root issue was a swallowed optional price-refresh failure leaving the database transaction unusable.
+- Rule: When intentionally continuing after any database-backed optional step fails, always rollback the session and reload the ORM objects needed by the rest of the request.
+- Prevention: Add regression coverage for rollback/reload behavior on non-blocking database failures, especially in request handlers that catch broad exceptions around SQLAlchemy work.

@@ -1,3 +1,24 @@
+# Quote Send Database Error Investigation (2026-07-14)
+
+## Plan
+- [x] Confirm whether quote sending itself touches the new repair-photo implementation.
+- [x] Check local database migration/table state for `work_photos`.
+- [x] Isolate background repair-photo fetch failures from the quote-send action if they can surface on the same screen.
+- [x] Run focused quote/photo verification and document results.
+
+## Progress Notes
+- [x] Confirmed the local database is at Alembic `076` and `public.work_photos` exists.
+- [x] Confirmed the quote-send endpoint does not query `WorkPhoto` directly.
+- [x] Re-ran focused quote-send tests; all existing quote-send coverage passed.
+- [x] Found a quote-send transaction handling bug: if optional price-builder refresh hits a database error, the broad catch continued without rolling back, leaving PostgreSQL in an aborted transaction for the rest of the request.
+- [x] Added rollback/reload behavior so quote sending can continue from persisted totals after an optional price-refresh failure.
+- [x] Added regression coverage for quote send after a failed price refresh.
+
+## Review
+- The reported quote-send database error is not caused by repair photos directly. The quote endpoint does not touch `WorkPhoto`, and the local database has the photo table. The fix addresses a real quote-send transaction bug: optional price refresh failures now rollback/reload before the send flow continues, preventing PostgreSQL aborted-transaction errors from surfacing as quote-send database failures.
+
+---
+
 # Fleet Incident Photo Upload Visibility Fix (2026-07-14)
 
 ## Plan
