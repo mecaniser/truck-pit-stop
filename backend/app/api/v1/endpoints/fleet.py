@@ -1193,6 +1193,7 @@ async def _create_internal_invoice(
     """Generate the internal invoice (cost record) for a completed work order.
     No customer billing/tax/markup; idempotent (one invoice per RO).
     created_by_user_id is the staff member who completed the work order, if known."""
+    from datetime import datetime, timezone
     from decimal import Decimal
     from app.db.models.invoice import Invoice, InvoiceStatus
     from app.api.v1.endpoints.invoices import generate_invoice_number
@@ -1205,12 +1206,17 @@ async def _create_internal_invoice(
     total = ro.total_cost or Decimal("0.00")
 
     async def _create(invoice_number: str) -> Invoice:
+        # Internal invoices are a cost record for work already completed on the
+        # garage's own fleet — there's no customer to bill and no pending
+        # payment, so DRAFT never has anything to graduate to. Mark them PAID
+        # (the cost was incurred) at creation time.
+        now = datetime.now(timezone.utc)
         inv = Invoice(
             tenant_id=tenant_id, repair_order_id=ro.id, invoice_number=invoice_number,
-            status=InvoiceStatus.DRAFT, is_internal=True,
+            status=InvoiceStatus.PAID, is_internal=True,
             subtotal=total, shop_supplies_amount=Decimal("0.00"), service_fee_amount=Decimal("0.00"),
             tax_amount=Decimal("0.00"), discount_amount=Decimal("0.00"), total_amount=total,
-            due_date=None, paid_at=None, notes="Internal fleet work order",
+            due_date=None, paid_at=now, notes="Internal fleet work order",
             created_by_user_id=created_by_user_id,
         )
         db.add(inv)

@@ -733,6 +733,127 @@ async def get_reports_service_types(
     )
 
 
+# ---------------------------------------------------------------------------
+# Internal Fleet Costs tab: most-billed internal service, per-invoice detail
+# ---------------------------------------------------------------------------
+
+class InternalServiceRow(BaseModel):
+    name: str
+    quantity: int
+    total_charged: str
+
+
+class InternalInvoiceRow(BaseModel):
+    id: str
+    invoice_number: str
+    repair_order_id: str
+    order_number: str
+    vehicle_label: str
+    unit_number: Optional[str]
+    total_amount: str
+    paid_at: Optional[str]
+
+
+class ReportsInternalResponse(BaseModel):
+    range_start: date
+    range_end: date
+    invoice_count: int
+    total_cost: str
+    average_cost: str
+    service_rows: List[InternalServiceRow]
+    invoice_rows: List[InternalInvoiceRow]
+
+
+@router.get("/internal", response_model=ReportsInternalResponse)
+async def get_reports_internal(
+    range: str = Query("this_month"),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Internal fleet cost report: most-billed internal service (labor/PM
+    line items on the shop's own trucks) plus the per-invoice detail list
+    that used to be a bare unfiltered list with no date-range or drill-in."""
+    _require_manager(current_user)
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must belong to a tenant")
+    tenant_id = current_user.tenant_id
+    rng = await _resolve_range(db, tenant_id, range, from_date, to_date)
+
+    from app.db.models.vehicle import Vehicle
+    from app.core.vehicle_display import vehicle_display_label
+
+    invoice_result = await db.execute(
+        select(Invoice, RepairOrder, Vehicle)
+        .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.is_internal.is_(True),
+            func.date(Invoice.created_at) >= rng.start,
+            func.date(Invoice.created_at) <= rng.end,
+        )
+        .order_by(Invoice.created_at.desc())
+    )
+    invoice_triples = invoice_result.all()
+
+    invoice_rows = [
+        InternalInvoiceRow(
+            id=str(inv.id),
+            invoice_number=inv.invoice_number,
+            repair_order_id=str(ro.id),
+            order_number=ro.order_number,
+            vehicle_label=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, include_year=True),
+            unit_number=vehicle.unit_number,
+            total_amount=str(_money(inv.total_amount)),
+            paid_at=inv.paid_at.isoformat() if inv.paid_at else None,
+        )
+        for inv, ro, vehicle in invoice_triples
+    ]
+
+    invoice_count = len(invoice_rows)
+    total_cost = sum((Decimal(r.total_amount) for r in invoice_rows), Decimal("0.00"))
+    average_cost = (total_cost / invoice_count) if invoice_count else Decimal("0.00")
+
+    labor_result = await db.execute(
+        select(Labor, Service.name)
+        .join(RepairOrder, Labor.repair_order_id == RepairOrder.id)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .outerjoin(Service, Labor.source_service_id == Service.id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.is_internal.is_(True),
+            func.date(Invoice.created_at) >= rng.start,
+            func.date(Invoice.created_at) <= rng.end,
+        )
+    )
+    labor_rows = labor_result.all()
+
+    grouped: Dict[str, Dict[str, object]] = {}
+    for labor, service_name in labor_rows:
+        name = service_name or labor.description or "Other"
+        bucket = grouped.setdefault(name, {"quantity": 0, "charged": Decimal("0.00")})
+        bucket["quantity"] += 1
+        bucket["charged"] += _money(labor.total_cost)
+
+    service_rows = [
+        InternalServiceRow(name=name, quantity=vals["quantity"], total_charged=str(vals["charged"]))
+        for name, vals in grouped.items()
+    ]
+    service_rows.sort(key=lambda r: Decimal(r.total_charged), reverse=True)
+
+    return ReportsInternalResponse(
+        range_start=rng.start,
+        range_end=rng.end,
+        invoice_count=invoice_count,
+        total_cost=str(total_cost),
+        average_cost=str(_money(average_cost)),
+        service_rows=service_rows,
+        invoice_rows=invoice_rows,
+    )
+
+
 # ===========================================================================
 # Analytics charts — the richer visualisations for the Analytics dashboard.
 # Only aggregations backed by existing data are implemented here; charts that
