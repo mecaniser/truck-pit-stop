@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024  # 10MB
+    MAX_REQUEST_BODY_BYTES: int = 15 * 1024 * 1024  # 15MB, allows 10MB photos plus multipart overhead
     IDEMPOTENCY_MAX_CACHED_RESPONSE_BYTES: int = 1 * 1024 * 1024  # 1MB
     RATE_LIMIT_TOKEN_CACHE_TTL_SECONDS: int = 30
     RATE_LIMIT_INVALID_TOKEN_CACHE_TTL_SECONDS: int = 5

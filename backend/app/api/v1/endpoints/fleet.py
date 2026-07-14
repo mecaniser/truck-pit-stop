@@ -92,7 +92,7 @@ PM_DUE_SOON_DAYS = 14      # date-based PM "due soon" window
 # Operator-set idle statuses (no open work order). "active" = on the road.
 VALID_STATUS_OVERRIDES = {"active", "yard", "available", "out_of_service"}
 ALLOWED_FLEET_PHOTO_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
-MAX_FLEET_PHOTO_BYTES = 6 * 1024 * 1024
+MAX_FLEET_PHOTO_BYTES = 10 * 1024 * 1024
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
@@ -204,7 +204,7 @@ async def _read_validated_fleet_image(image: UploadFile) -> tuple[str, str]:
     if not image_bytes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
     if len(image_bytes) > MAX_FLEET_PHOTO_BYTES:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large. Max 6MB")
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large. Max 10MB")
     data_uri = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
     return data_uri, content_type
 

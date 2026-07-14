@@ -1097,7 +1097,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
                 e.target.value = ''
                 if (!file) return
                 if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return }
-                if (file.size > 6 * 1024 * 1024) { toast.error('Image too large. Max 6MB'); return }
+                if (file.size > 10 * 1024 * 1024) { toast.error('Image too large. Max 10MB'); return }
                 if (photoPreview) URL.revokeObjectURL(photoPreview)
                 setPhotoFile(file)
                 setPhotoPreview(URL.createObjectURL(file))

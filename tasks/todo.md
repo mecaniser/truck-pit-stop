@@ -51,6 +51,26 @@
 
 ---
 
+# Fleet Incident Photo Size Limit (2026-07-14)
+
+## Plan
+- [x] Raise fleet incident photo validation from 6 MB to 10 MB in frontend and backend.
+- [x] Raise backend request-body headroom for multipart uploads.
+- [x] Run focused backend/frontend verification.
+- [ ] Commit and push the follow-up to the existing PR branch.
+
+## Progress Notes
+- [x] Updated frontend incident card and log-incident modal messages/limits to 10 MB.
+- [x] Updated backend fleet image validation to 10 MB.
+- [x] Updated global request body limit to 15 MB to leave multipart overhead for 10 MB photos.
+- [x] Added explicit backend rejection coverage for images over 10 MB.
+- [x] Passed focused backend tests, frontend TypeScript, backend compile checks, and `git diff --check`.
+
+## Review
+- Fleet incident uploads now allow photos up to 10 MB, and the backend request size ceiling has enough headroom for multipart overhead.
+
+---
+
 # Internal Fleet Costs, Soft-Delete Audit Trail, and Recent Activity Feed (2026-07-07)
 
 ## Plan
