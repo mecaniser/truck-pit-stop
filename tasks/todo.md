@@ -30,6 +30,26 @@
 
 ---
 
+# Fleet Incident Pending Photo State (2026-07-14)
+
+## Plan
+- [x] Add immediate visual feedback when adding a photo to an existing incident.
+- [x] Keep pending photo previews scoped to the matching incident.
+- [x] Replace pending preview with the uploaded photo response without waiting on a full screen refresh.
+- [x] Run frontend verification.
+
+## Progress Notes
+- [x] Added local object URL preview tiles with a spinner overlay for in-flight incident photo uploads.
+- [x] Inserted successful upload responses into the `fleet-truck` query cache so the thumbnail appears immediately after upload completes.
+- [x] Added object URL cleanup after upload settle and on component unmount.
+- [x] Passed frontend TypeScript and `git diff --check`.
+- [x] Passed delayed browser smoke: pending preview appears during a held upload and is replaced by the uploaded thumbnail after response.
+
+## Review
+- Existing incident photo uploads now show immediate in-card feedback instead of leaving the screen static while the request is in flight.
+
+---
+
 # Fleet Incident Photo Upload Error Handling (2026-07-14)
 
 ## Plan
