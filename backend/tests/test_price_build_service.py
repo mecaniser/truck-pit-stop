@@ -164,9 +164,13 @@ async def test_add_repair_operation_and_override_line(db_session):
     )
     refreshed = await svc.load_order(db_session, order.id)
     refreshed_line = next(li for li in refreshed.labor_items if li.id == line.id)
-    assert updated.order.total_labor_cost == Decimal("300.00")
+    # A manual rate edit is a deliberate override of the tenant default — it
+    # must survive the recalculate_order() that runs at the end of update_line,
+    # not get silently reset back to the shop rate.
+    assert updated.order.total_labor_cost == Decimal("450.00")
     assert Decimal(str(refreshed_line.hours)) == Decimal("3.00")
-    assert Decimal(str(refreshed_line.hourly_rate)) == Decimal("100.00")
+    assert Decimal(str(refreshed_line.hourly_rate)) == Decimal("150.00")
+    assert refreshed_line.auto_recalc_enabled is False
     assert refreshed.total_cost == refreshed.total_labor_cost + refreshed.total_parts_cost
 
 
