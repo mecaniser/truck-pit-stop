@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
@@ -6,7 +6,7 @@ import {
   Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
 } from 'lucide-react'
 import api from '../../lib/api'
-import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry } from './types'
+import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
 import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, invalidateFleetAndCockpit } from './FleetModals'
@@ -49,6 +49,12 @@ const incidentMenuItemStyle: React.CSSProperties = {
   textAlign: 'left',
 }
 const MAX_FLEET_PHOTO_BYTES = 10 * 1024 * 1024
+
+interface PendingIncidentPhoto {
+  id: string
+  incidentId: string
+  previewUrl: string
+}
 
 function validFleetPhoto(file: File) {
   if (!file.type.startsWith('image/')) {
@@ -106,21 +112,41 @@ export default function TruckDetail({
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
   })
   const uploadIncidentPhoto = useMutation({
-    mutationFn: async ({ incidentId, file }: { incidentId: string; file: File }) => {
+    mutationFn: async ({ incidentId, file }: { incidentId: string; file: File; pendingId: string; previewUrl: string }) => {
       const formData = new FormData()
       formData.append('image', file)
-      return (await api.post(`/fleet/incidents/${incidentId}/photos`, formData, {
+      return (await api.post<FleetPhoto>(`/fleet/incidents/${incidentId}/photos`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })).data
     },
-    onSuccess: () => { toast.success('Photo uploaded'); refresh() },
+    onSuccess: (photo, variables) => {
+      toast.success('Photo uploaded')
+      qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => {
+        if (!current) return current
+        return {
+          ...current,
+          incidents: current.incidents.map((inc) => {
+            if (inc.id !== variables.incidentId) return inc
+            return { ...inc, photos: [photo, ...(inc.photos || [])] }
+          }),
+        }
+      })
+      refresh()
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to upload photo'),
+    onSettled: (_data, _error, variables) => {
+      if (!variables) return
+      setPendingIncidentPhotos((photos) => photos.filter((photo) => photo.id !== variables.pendingId))
+      URL.revokeObjectURL(variables.previewUrl)
+    },
   })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
   const [armedDeleteIncidentId, setArmedDeleteIncidentId] = useState<string | null>(null)
   const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
+  const [pendingIncidentPhotos, setPendingIncidentPhotos] = useState<PendingIncidentPhoto[]>([])
+  const pendingIncidentPhotosRef = useRef<PendingIncidentPhoto[]>([])
   const [newWOOpen, setNewWOOpen] = useState(false)
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
@@ -132,6 +158,14 @@ export default function TruckDetail({
     onSuccess: () => { toast.success('Status updated'); setStatusMenuOpen(false); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to set status'),
   })
+
+  useEffect(() => {
+    pendingIncidentPhotosRef.current = pendingIncidentPhotos
+  }, [pendingIncidentPhotos])
+
+  useEffect(() => () => {
+    pendingIncidentPhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
+  }, [])
 
   if (isLoading || !data) return <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
 
@@ -260,21 +294,33 @@ export default function TruckDetail({
           >
             {data.incidents.length ? (
               <div className="inc-list">
-                {data.incidents.map((inc) => (
+                {data.incidents.map((inc) => {
+                  const pendingPhotos = pendingIncidentPhotos.filter((photo) => photo.incidentId === inc.id)
+                  const visiblePhotos = (inc.photos || []).slice(0, Math.max(0, 4 - pendingPhotos.length))
+                  const hiddenPhotoCount = Math.max(0, (inc.photos?.length || 0) - visiblePhotos.length)
+                  return (
                   <div key={inc.id} className={'inc ' + sevClass[inc.severity]}>
                     <div className="inc-sev" />
                     <div className="inc-body">
                       <div className="inc-row1"><b>{inc.type}</b><span className="inc-date">{fmtDate(inc.date)}</span></div>
                       {inc.location && <div className="inc-loc"><MapIcon size={12} /> {inc.location}</div>}
                       <div className="inc-note">{inc.note}</div>
-                      {!!inc.photos?.length && (
+                      {(pendingPhotos.length > 0 || !!inc.photos?.length) && (
                         <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
-                          {inc.photos.slice(0, 4).map((photo) => (
+                          {pendingPhotos.map((photo) => (
+                            <div key={photo.id} style={{ position: 'relative', width: 54, height: 54, borderRadius: 9, overflow: 'hidden', border: '1px solid var(--line)', background: 'var(--surface-2)' }}>
+                              <img src={photo.previewUrl} alt="Incident upload pending" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.45, filter: 'saturate(.6)' }} />
+                              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,.28)' }}>
+                                <Loader2 size={17} className="animate-spin" style={{ color: 'var(--yellow)' }} />
+                              </div>
+                            </div>
+                          ))}
+                          {visiblePhotos.map((photo) => (
                             <a key={photo.id} href={photo.image_url} target="_blank" rel="noreferrer">
                               <img src={photo.image_url} alt="Incident" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--line)' }} />
                             </a>
                           ))}
-                          {inc.photos.length > 4 && <span className="dsec-count">+{inc.photos.length - 4}</span>}
+                          {hiddenPhotoCount > 0 && <span className="dsec-count">+{hiddenPhotoCount}</span>}
                         </div>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 9 }}>
@@ -327,7 +373,10 @@ export default function TruckDetail({
                                       const file = e.target.files?.[0]
                                       e.target.value = ''
                                       if (file && validFleetPhoto(file)) {
-                                        uploadIncidentPhoto.mutate({ incidentId: inc.id, file })
+                                        const previewUrl = URL.createObjectURL(file)
+                                        const pendingId = `${inc.id}-${Date.now()}`
+                                        setPendingIncidentPhotos((photos) => [...photos, { id: pendingId, incidentId: inc.id, previewUrl }])
+                                        uploadIncidentPhoto.mutate({ incidentId: inc.id, file, pendingId, previewUrl })
                                         setIncidentMenuOpenId(null)
                                       }
                                     }}
@@ -389,7 +438,8 @@ export default function TruckDetail({
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
