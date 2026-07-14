@@ -369,8 +369,12 @@ function LaborLineEditor({
             commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
           />
         </label>
-        <span className="text-gray-400">×</span>
-        <label className="inline-flex items-center gap-1.5">
+        {/* When the rate is fixed (customer orders past draft/quoted), its
+            stepper adds nothing and just crowds the narrow mobile row — hide the
+            whole Rate control on mobile and let duration be the only field. It
+            still shows from sm: up where there's room. */}
+        <span className={`text-gray-400 ${canMutate ? '' : 'hidden sm:inline'}`}>×</span>
+        <label className={`items-center gap-1.5 ${canMutate ? 'inline-flex' : 'hidden sm:inline-flex'}`}>
           <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
           <span className="text-gray-500">$</span>
           <QuantityStepper
@@ -1924,15 +1928,18 @@ export default function PriceBuilderPanel({
 
       <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
         <div className="flex flex-wrap items-center gap-3">
-          <div className={`${addBarReadOnly ? 'grid grid-cols-1' : 'grid grid-cols-4'} shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200`}>
-            {(addBarReadOnly ? ([
-              ['history', History, 'History'],
-            ] as const) : ([
+          {/* Read-only orders only have History — the single tab switches to
+              nothing, and on mobile it wraps above the panel wasting a row. Drop
+              the tab strip entirely; the History panel below carries its own
+              header. */}
+          {!addBarReadOnly && (
+          <div className="grid grid-cols-4 shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
+            {([
               ['operation', Wrench, 'Operation'],
               ['part', Box, 'Part'],
               ['saved_labor', Tag, 'Labor Book Time'],
               ['history', History, 'History'],
-            ] as const)).map(([key, Icon, label]) => (
+            ] as const).map(([key, Icon, label]) => (
               <button
                 key={key}
                 type="button"
@@ -1949,6 +1956,7 @@ export default function PriceBuilderPanel({
               </button>
             ))}
           </div>
+          )}
           {addType !== 'history' && (
           <div className="relative min-w-[240px] flex-1 basis-[240px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -3024,20 +3032,27 @@ export default function PriceBuilderPanel({
           >
             Labor {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(effectiveLaborTotal)}
           </button>
-          <button
-            type="button"
-            onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
-            className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
-          >
-            Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
-            className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
-          >
-            Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
-          </button>
+          {/* Discounts / Customer saves add noise at $0 — only show them once
+              they carry a value. While still loading, keep them (showing "…") so
+              the footer doesn't reflow when the numbers land. */}
+          {(isInitialSummaryLoad || summaryLoadFailed || discountTotal > 0.005) && (
+            <button
+              type="button"
+              onClick={() => { setFooterDetailsOpen((open) => open === 'discounts' ? null : 'discounts'); setDiscountsOpen(false) }}
+              className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-100"
+            >
+              Discounts -{isInitialSummaryLoad || summaryLoadFailed ? '…' : money(discountTotal)}
+            </button>
+          )}
+          {(isInitialSummaryLoad || summaryLoadFailed || customerSavesTotal > 0.005) && (
+            <button
+              type="button"
+              onClick={() => { setFooterDetailsOpen((open) => open === 'savings' ? null : 'savings'); setDiscountsOpen(false) }}
+              className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+            >
+              Customer saves {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(customerSavesTotal)}
+            </button>
+          )}
           {footerDetailsOpen && (
             <div className="absolute bottom-full left-0 z-20 mb-2 w-[min(380px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 shadow-[0_10px_30px_rgba(20,25,35,.10)]">
               {renderFooterDetails(footerDetailsOpen)}
