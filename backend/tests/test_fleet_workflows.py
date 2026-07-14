@@ -362,6 +362,34 @@ async def test_incident_photo_upload_reports_provider_failure(db_session, monkey
 
 
 @pytest.mark.asyncio
+async def test_incident_photo_upload_rejects_images_over_10mb(db_session, monkeypatch):
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            severity=IncidentSeverity.MEDIUM,
+            description="Roadside air leak",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+    monkeypatch.setattr(fleet, "is_cloudinary_configured", lambda: True)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.upload_incident_photo(
+            incident.id,
+            image=_upload_file("incident.jpg", "image/jpeg", b"x" * (10 * 1024 * 1024 + 1)),
+            caption=None,
+            db=db_session,
+            current_user=user,
+        )
+
+    assert exc.value.status_code == 413
+    assert exc.value.detail == "Image too large. Max 10MB"
+
+
+@pytest.mark.asyncio
 async def test_incident_resolve_sets_resolved_at(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     incident = await fleet.create_incident(

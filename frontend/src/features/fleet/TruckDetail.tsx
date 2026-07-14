@@ -48,7 +48,7 @@ const incidentMenuItemStyle: React.CSSProperties = {
   fontSize: 12.5,
   textAlign: 'left',
 }
-const MAX_FLEET_PHOTO_BYTES = 6 * 1024 * 1024
+const MAX_FLEET_PHOTO_BYTES = 10 * 1024 * 1024
 
 function validFleetPhoto(file: File) {
   if (!file.type.startsWith('image/')) {
@@ -56,7 +56,7 @@ function validFleetPhoto(file: File) {
     return false
   }
   if (file.size > MAX_FLEET_PHOTO_BYTES) {
-    toast.error('Image too large. Max 6MB')
+    toast.error('Image too large. Max 10MB')
     return false
   }
   return true
