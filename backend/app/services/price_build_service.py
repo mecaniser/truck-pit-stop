@@ -505,6 +505,12 @@ class PriceBuildService:
             line.hours = hours
         if hourly_rate is not None:
             line.hourly_rate = hourly_rate
+            # A manual rate edit is the user overriding the shop default —
+            # stop auto-recalc from reapplying that default on the very next
+            # recalculate_order() call below (and on every later edit to this
+            # line), unless the caller explicitly says otherwise.
+            if auto_recalc_enabled is None:
+                line.auto_recalc_enabled = False
         if auto_recalc_enabled is not None:
             line.auto_recalc_enabled = auto_recalc_enabled
         if hours is not None or hourly_rate is not None:
