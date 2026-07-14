@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -8,7 +8,6 @@ import { ReactNode } from 'react'
 import { Download, Loader2, Lightbulb } from 'lucide-react'
 import api from '../../lib/api'
 import { useTheme } from '../../contexts/ThemeContext'
-import InternalInvoiceList from './InternalInvoiceList'
 import {
   ChartCard, ProfitabilityScatter, QuoteFunnel, RankedBar, ParetoChart,
 } from '../analytics/ChartKit'
@@ -148,6 +147,31 @@ interface ReportsServiceTypesResponse {
   hours_billed: string
   total_charged: string
   rows: ServiceTypeRow[]
+}
+
+interface InternalServiceRow {
+  name: string
+  quantity: number
+  total_charged: string
+}
+
+interface InternalInvoiceRow {
+  id: string
+  invoice_number: string
+  repair_order_id: string
+  order_number: string
+  vehicle_label: string
+  unit_number: string | null
+  total_amount: string
+  paid_at: string | null
+}
+
+interface ReportsInternalResponse {
+  invoice_count: number
+  total_cost: string
+  average_cost: string
+  service_rows: InternalServiceRow[]
+  invoice_rows: InternalInvoiceRow[]
 }
 
 // ============ HELPERS ============
@@ -916,6 +940,106 @@ function ServiceTypesTab({ range }: { range: DateRangePreset }) {
   )
 }
 
+// ============ TAB: INTERNAL FLEET COSTS ============
+
+function InternalFleetCostsTab({ range }: { range: DateRangePreset }) {
+  const navigate = useNavigate()
+  const { data, isLoading } = useQuery<ReportsInternalResponse>({
+    queryKey: ['reports-internal', range],
+    queryFn: async () => (await api.get('/reports/internal', { params: { range } })).data,
+  })
+
+  if (isLoading || !data) return <LoadingBlock />
+
+  const handleExport = () => {
+    exportRowsToCsv(
+      'internal-fleet-costs-report.csv',
+      ['Invoice', 'Order #', 'Vehicle', 'Unit', 'Total', 'Paid At'],
+      data.invoice_rows.map((r) => [
+        r.invoice_number, r.order_number, r.vehicle_label, r.unit_number || '',
+        r.total_amount, r.paid_at ? new Date(r.paid_at).toLocaleDateString() : '',
+      ])
+    )
+  }
+
+  const accent = TAB_ACCENT.fleet
+  const ranked = [...data.service_rows].sort((a, b) => parseFloat(b.total_charged) - parseFloat(a.total_charged))
+  const top = ranked[0]
+  const goToOrder = (repairOrderId: string) => navigate(`/dashboard/repair-orders?selected=${repairOrderId}`)
+
+  return (
+    <div className="space-y-4">
+      <Hero
+        label="Most-billed Internal Service"
+        value={top ? top.name : '—'}
+        sub={top ? `${fmtMoney(top.total_charged)} charged internally` : undefined}
+        accent={accent}
+        insight="Your own fleet's most common repair — worth watching for recurring failures that a preventive-maintenance schedule could catch earlier."
+      >
+        {ranked.length > 0 && (
+          <div>
+            <RankedBar
+              accent={accent}
+              data={ranked.slice(0, 8).map((r) => ({ label: r.name, value: parseFloat(r.total_charged) }))}
+              dataKey="value" nameKey="label"
+              tickFormatter={(v) => '$' + v.toFixed(0)}
+            />
+          </div>
+        )}
+      </Hero>
+
+      <StatStrip stats={[
+        { label: 'Internal Invoices', value: fmtNumber(data.invoice_count) },
+        { label: 'Total Cost', value: fmtMoney(data.total_cost) },
+        { label: 'Average Cost', value: fmtMoney(data.average_cost) },
+      ]} />
+
+      <DetailTable title="All internal invoices" count={data.invoice_rows.length} onExport={handleExport}>
+        <div className="max-h-[32rem] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="text-white/35 text-[11px] uppercase tracking-wider sticky top-0 bg-[#12161d]">
+              <tr>
+                <th className="px-4 py-2.5 text-left font-medium">Invoice</th>
+                <th className="px-4 py-2.5 text-left font-medium">Vehicle</th>
+                <th className="px-4 py-2.5 text-left font-medium">Paid</th>
+                <th className="px-4 py-2.5 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.06]">
+              {data.invoice_rows.map((row) => (
+                <tr
+                  key={row.id}
+                  onClick={() => goToOrder(row.repair_order_id)}
+                  className="hover:bg-white/[0.03] cursor-pointer"
+                  title="Open this repair order"
+                >
+                  <td className="px-4 py-2.5 text-[13px] text-white/85 font-medium">
+                    {row.invoice_number}
+                    <span className="block text-[11px] text-white/40 font-normal">{row.order_number}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-[13px] text-white/55">
+                    {row.vehicle_label}
+                    {row.unit_number && <span className="text-white/35"> · {row.unit_number}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-[13px] text-white/55">
+                    {row.paid_at ? new Date(row.paid_at).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">
+                    {fmtMoney(row.total_amount)}
+                  </td>
+                </tr>
+              ))}
+              {data.invoice_rows.length === 0 && (
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-white/40">No internal invoices in this range</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </DetailTable>
+    </div>
+  )
+}
+
 // ============ MAIN PAGE ============
 
 type ReportTab = 'dashboard' | 'sales' | 'fees' | 'tax' | 'parts' | 'inventory' | 'service-types' | 'internal'
@@ -931,7 +1055,7 @@ const TABS: { id: ReportTab; label: string }[] = [
   { id: 'internal', label: 'Internal Fleet Costs' },
 ]
 
-const DATE_FILTERED_TABS: ReportTab[] = ['dashboard', 'sales', 'fees', 'tax', 'parts', 'service-types']
+const DATE_FILTERED_TABS: ReportTab[] = ['dashboard', 'sales', 'fees', 'tax', 'parts', 'service-types', 'internal']
 
 export default function GarageAnalyticsPage() {
   const { accentColors } = useTheme()
@@ -982,7 +1106,7 @@ export default function GarageAnalyticsPage() {
         {activeTab === 'parts' && <PartsTab range={range} />}
         {activeTab === 'inventory' && <InventoryTab />}
         {activeTab === 'service-types' && <ServiceTypesTab range={range} />}
-        {activeTab === 'internal' && <InternalInvoiceList />}
+        {activeTab === 'internal' && <InternalFleetCostsTab range={range} />}
       </div>
     </div>
   )
