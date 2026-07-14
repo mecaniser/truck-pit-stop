@@ -30,7 +30,7 @@ import type { QueryClient } from '@tanstack/react-query'
  * would serve stale data on the way back (missing the WO we just created).
  */
 export function invalidateFleetAndCockpit(qc: QueryClient) {
-  invalidateFleetAndCockpit(qc)
+  qc.invalidateQueries({ queryKey: ['fleet-board'] })
   for (const key of ['dashboard-stats', 'repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
     qc.invalidateQueries({ queryKey: [key], refetchType: 'all' })
   }
