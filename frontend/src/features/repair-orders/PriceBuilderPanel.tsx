@@ -340,6 +340,26 @@ function LaborLineEditor({
   const lineHours = parseFloat(line.hours) || 0
   const lineRate = parseFloat(line.hourly_rate) || 0
 
+  // Read-only order (invoiced / paid / any customer order past quoted): the labor
+  // can't be changed, so show a clean static read-out instead of disabled
+  // steppers and a greyed input that look broken.
+  if (!canMutate) {
+    return (
+      <div className="space-y-1">
+        {line.description && (
+          <p className="text-sm font-medium text-gray-800">{line.description}</p>
+        )}
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <span className="tabular-nums">{formatHoursMinutes(lineHours)}</span>
+          <span className="text-gray-400">×</span>
+          <span className="tabular-nums">${lineRate.toFixed(2)}/hr</span>
+          <span className="text-gray-400">=</span>
+          <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="mb-2 flex items-center gap-1.5">
@@ -349,8 +369,7 @@ function LaborLineEditor({
             const value = e.target.value.trim()
             if (value !== line.description) onUpdate({ description: value })
           }}
-          disabled={!canMutate}
-          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:bg-gray-100"
+          className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm"
         />
       </div>
       {/* Duration + rate use the shared steppers (step time by 15m, rate by $1).
@@ -364,17 +383,12 @@ function LaborLineEditor({
             onLocalChange={(h) => onLocalChange({ hours: h })}
             stepMinutes={15}
             minMinutes={0}
-            disabled={!canMutate}
             ariaLabel="Labor duration"
             commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
           />
         </label>
-        {/* When the rate is fixed (customer orders past draft/quoted), its
-            stepper adds nothing and just crowds the narrow mobile row — hide the
-            whole Rate control on mobile and let duration be the only field. It
-            still shows from sm: up where there's room. */}
-        <span className={`text-gray-400 ${canMutate ? '' : 'hidden sm:inline'}`}>×</span>
-        <label className={`items-center gap-1.5 ${canMutate ? 'inline-flex' : 'hidden sm:inline-flex'}`}>
+        <span className="text-gray-400">×</span>
+        <label className="inline-flex items-center gap-1.5">
           <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Rate</span>
           <span className="text-gray-500">$</span>
           <QuantityStepper
@@ -384,7 +398,6 @@ function LaborLineEditor({
             min={0}
             step={25}
             unitLabel="/hr"
-            disabled={!canMutate}
             ariaLabel="Labor hourly rate"
             align="start"
             commitDebounceMs={STEPPER_COMMIT_DEBOUNCE_MS}
@@ -1926,7 +1939,10 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3">
+      {/* Editable orders get the dashed "add" shell around the tab strip + search.
+          Read-only orders only surface History, so drop the shell entirely and let
+          the History card stand on its own (styled like the invoice card). */}
+      <div className={addBarReadOnly ? '' : 'rounded-2xl border border-dashed border-gray-300 bg-gray-50/70 p-3'}>
         <div className="flex flex-wrap items-center gap-3">
           {/* Read-only orders only have History — the single tab switches to
               nothing, and on mobile it wraps above the panel wasting a row. Drop
@@ -1995,26 +2011,32 @@ export default function PriceBuilderPanel({
         </div>
 
         {addType === 'history' && (
-          <div className="mt-3 rounded-[14px] border border-gray-200 bg-white">
+          // Same card shape as the invoice display (icon circle · title/subtitle ·
+          // chevron), so a read-only order shows History and Invoice as two
+          // matching buttons.
+          <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-3">
             <button
               type="button"
               onClick={() => {
                 setHistoryOpen((open) => !open)
                 setHistoryVisibleCount(5)
               }}
-              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+              className="flex w-full items-center justify-between gap-3 text-left"
               aria-expanded={historyOpen}
             >
-              <span>
-                <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">
-                  Repair order history
-                </span>
-                <span className="mt-0.5 block text-sm font-semibold text-gray-800">
-                  {historyEvents.length ? `${historyEvents.length} recorded events` : 'No recorded events'}
-                </span>
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-500">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-600">
+                  <History className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-gray-900">Repair order history</p>
+                  <p className="text-sm text-gray-500">
+                    {historyEvents.length ? `${historyEvents.length} recorded events` : 'No recorded events'}
+                  </p>
+                </div>
+              </div>
+              <span className="flex shrink-0 items-center gap-3">
+                <span className="rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-bold text-gray-600">
                   {historyEvents.length} events
                 </span>
                 <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${historyOpen ? 'rotate-90' : ''}`} />
