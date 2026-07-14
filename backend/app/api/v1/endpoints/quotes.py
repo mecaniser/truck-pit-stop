@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 from html import escape
 from datetime import datetime, timedelta, timezone
@@ -54,6 +55,7 @@ from app.services.quote_access_service import (
 
 router = APIRouter()
 price_build_service = PriceBuildService()
+logger = logging.getLogger(__name__)
 
 
 def _money(value: object) -> Decimal:
@@ -687,6 +689,8 @@ async def send_quote_to_customer(
 ):
     """Send quote to customer via email for approval"""
     _require_staff(current_user)
+    current_user_id = current_user.id
+    current_tenant_id = current_user.tenant_id
     
     result = await db.execute(
         select(Quote).where(Quote.id == quote_id)
@@ -714,7 +718,7 @@ async def send_quote_to_customer(
             detail="Repair order not found",
         )
     
-    if current_user.tenant_id != order.tenant_id:
+    if current_tenant_id != order.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
@@ -746,8 +750,42 @@ async def send_quote_to_customer(
         refreshed_order = refreshed_result.scalar_one_or_none()
         if refreshed_order:
             order = refreshed_order
-    except Exception:
-        pass
+    except Exception as exc:
+        # A database error during the optional price refresh leaves PostgreSQL
+        # transactions aborted until rollback. Quote sending should continue
+        # from the last persisted totals if the refresh cannot complete.
+        logger.warning(
+            "quote_price_refresh_failed",
+            extra={"quote_id": str(quote_id), "repair_order_id": str(order.id), "error": str(exc)},
+        )
+        await db.rollback()
+        refreshed_quote_result = await db.execute(select(Quote).where(Quote.id == quote_id))
+        refreshed_quote = refreshed_quote_result.scalar_one_or_none()
+        if not refreshed_quote:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Quote not found",
+            )
+        refreshed_order_result = await db.execute(
+            select(RepairOrder)
+            .where(RepairOrder.id == refreshed_quote.repair_order_id)
+            .options(
+                selectinload(RepairOrder.customer),
+                selectinload(RepairOrder.vehicle),
+                selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            )
+        )
+        refreshed_order = refreshed_order_result.scalar_one_or_none()
+        if not refreshed_order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Repair order not found",
+            )
+        quote = refreshed_quote
+        order = refreshed_order
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
+        shop_name = tenant.name if tenant and tenant.name else "Your repair shop"
     latest_total = get_order_total(order)
     if quote.total_amount != latest_total:
         quote.total_amount = latest_total
@@ -854,7 +892,7 @@ async def send_quote_to_customer(
     # Mark as sent and reset declined status if resending
     quote.sent_to_customer = True
     quote.sent_at = datetime.now(timezone.utc)
-    quote.sent_by_user_id = current_user.id
+    quote.sent_by_user_id = current_user_id
     if order.pricing_locked_at is None:
         order.pricing_locked_at = quote.sent_at
     order.pricing_lock_reason = "quote_sent"
@@ -877,13 +915,13 @@ async def send_quote_to_customer(
     await db.commit()
     await db.refresh(quote)
     if auto_approved:
-        record_quote(status="approved", tenant_id=str(current_user.tenant_id))
+        record_quote(status="approved", tenant_id=str(current_tenant_id))
     
     if auto_approved:
         # Send auto-approved confirmation instead of approval request
         await send_email(
             db=db,
-            tenant_id=str(current_user.tenant_id),
+            tenant_id=str(current_tenant_id),
             to=customer.email,
             subject=f"Quote {quote.quote_number} Auto-Approved - {shop_name}",
             body=f"""
@@ -908,7 +946,7 @@ async def send_quote_to_customer(
     else:
         await send_email(
             db=db,
-            tenant_id=str(current_user.tenant_id),
+            tenant_id=str(current_tenant_id),
             to=customer.email,
             subject=f"Quote {quote.quote_number} Ready for Approval - {shop_name}",
             body=html_body,
@@ -926,7 +964,7 @@ async def send_quote_to_customer(
         try:
             await send_sms(
                 db,
-                str(current_user.tenant_id),
+                str(current_tenant_id),
                 customer.phone,
                 sms_body,
                 template_name="quote_sent_sms",

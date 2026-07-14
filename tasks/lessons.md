@@ -13,6 +13,15 @@
 - Correction: The incident upload endpoint returned a 503 for missing Cloudinary, but the app's global HTTPException handler masks all 5xx details, so the frontend showed a generic internal server error.
 - Rule: Expected external-provider setup failures should not rely on masked 5xx HTTPException details when the user needs configuration guidance.
 - Prevention: For provider-backed features, test the live error body for missing credentials and provider failures, not just the happy path.
+- Correction: I assumed the mechanic work-photo upload path had been cleaned up, but the active checkout still returned masked-prone 5xx statuses.
+- Rule: When a related flow is said to be cleaned up, verify the exact active endpoint before treating the issue as resolved.
+- Prevention: For duplicated provider-backed upload flows, run a targeted `rg` on each endpoint for `status_code=500`/`503` and add focused tests for every active upload route.
+- Correction: The repair-photo panel was initially placed near the top of the Price Builder drawer and consumed the limited primary pricing workspace.
+- Rule: Secondary evidence/attachment panels in dense work drawers should live below the core pricing/workflow controls unless the user explicitly asks for them to be primary.
+- Prevention: When adding a new drawer section, decide whether it is primary workflow or supporting evidence before placing it above the main line-item editor.
+- Correction: Moving the repair-photo panel lower still left it fully expanded, taking too much vertical space when photos existed.
+- Rule: Supporting drawer sections with media should default to a compact summary with thumbnails and reveal full-size controls only after expansion.
+- Prevention: For attachment/photo sections inside constrained drawers, design collapsed and expanded states before implementing the gallery.
 
 ## 2026-07-07
 - Correction: Calling a FastAPI endpoint function directly in a test (bypassing dependency injection) with a new `Optional[X] = Query(None)` parameter left unset left the parameter holding the `Query(...)` sentinel object instead of `None`, since only real HTTP request handling resolves `Query(...)` into its default — silently broke `list_repair_orders` and `list_activity` filtering (an `is not None` check on the sentinel is always true).
@@ -185,3 +194,6 @@
 - Correction: User clarified Labor Book Time entries should have their own My Garage management tab instead of being treated as Services or hidden inside the price-builder add bar.
 - Rule: When a workflow persists reusable shop knowledge separately from the customer-facing service catalog, expose that data through a dedicated management surface rather than overloading the nearest existing list.
 - Prevention: Before adding reusable catalog UI, identify the backing table/model and record whether it is an operational library, customer service, inventory item, or repair-order line in `tasks/todo.md`.
+- Correction: User reported a database error while sending quotes after nearby photo work, and the root issue was a swallowed optional price-refresh failure leaving the database transaction unusable.
+- Rule: When intentionally continuing after any database-backed optional step fails, always rollback the session and reload the ORM objects needed by the rest of the request.
+- Prevention: Add regression coverage for rollback/reload behavior on non-blocking database failures, especially in request handlers that catch broad exceptions around SQLAlchemy work.

@@ -3,14 +3,14 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
-import { Customer, Vehicle, RepairOrder, RepairOrderDetail, Quote, Invoice } from '../../types'
+import { Customer, Vehicle, RepairOrder, RepairOrderDetail, Quote, Invoice, RepairOrderPhoto } from '../../types'
 import { format } from 'date-fns'
 import ServicesPage from '../services/ServicesPage'
 import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
-import { CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Download } from 'lucide-react'
+import { Camera, CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Download } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -49,11 +49,51 @@ const CUSTOMER_ACTIVE_REPAIR_STATUSES = [
   'completed',
 ]
 
+const CUSTOMER_PHOTO_REPAIR_STATUSES = [
+  'approved',
+  'assigned',
+  'acknowledged',
+  'in_progress',
+  'pending_review',
+  'completed',
+  'invoiced',
+  'paid',
+]
+
 interface ZelleInfoResponse {
   zelle_email: string | null
   zelle_phone: string | null
   zelle_qr_image: string | null
   garage_name: string
+}
+
+function CustomerRepairPhotos({ photos }: { photos: RepairOrderPhoto[] }) {
+  if (!photos.length) return null
+
+  return (
+    <div className="mb-4">
+      <div className="mb-2 flex items-center gap-2">
+        <Camera className="h-4 w-4 text-amber-300" />
+        <h3 className="text-sm font-medium text-gray-300">Repair photos</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {photos.map((photo) => (
+          <a
+            key={photo.id}
+            href={photo.image_url}
+            target="_blank"
+            rel="noreferrer"
+            className="group relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-white/5"
+          >
+            <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover transition group-hover:scale-105" />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2">
+              <p className="line-clamp-2 text-[11px] font-semibold text-white">{photo.caption || 'Repair photo'}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 const getSelectedServicesTotal = (order: RepairOrder | RepairOrderDetail): number => {
@@ -651,6 +691,15 @@ function CustomerRepairs() {
     enabled: !!selectedOrder?.id,
   })
 
+  const { data: repairPhotos = [] } = useQuery<RepairOrderPhoto[]>({
+    queryKey: ['repair-order-photos-customer', selectedOrder?.id],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/photos`)
+      return response.data
+    },
+    enabled: !!selectedOrder?.id && CUSTOMER_PHOTO_REPAIR_STATUSES.includes(selectedOrder.status),
+  })
+
   // Handle navigation state to auto-select an order
   useEffect(() => {
     const state = location.state as { selectedOrderId?: string } | null
@@ -954,6 +1003,8 @@ function CustomerRepairs() {
               <p className="text-white">{selectedOrder.customer_notes}</p>
             </div>
           )}
+
+          <CustomerRepairPhotos photos={repairPhotos} />
 
           <div className="border-t border-white/10 pt-4 mt-4">
             <div className="space-y-2 mb-3">

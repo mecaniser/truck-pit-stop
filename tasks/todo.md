@@ -1,3 +1,45 @@
+# Photo Removal for Uploads (2026-07-14)
+
+## Plan
+- [x] Audit photo upload surfaces for existing delete support.
+- [x] Add missing fleet incident photo delete API and card-level UI control.
+- [x] Add focused backend coverage for deleting an incident photo.
+- [x] Run frontend/backend verification and push the PR update.
+
+## Progress Notes
+- [x] Confirmed repair-order photos already have `DELETE /repair-orders/{order_id}/photos/{photo_id}` and a trash control in the expanded drawer photo gallery.
+- [x] Confirmed mechanic work photos already have `DELETE /mechanics/my-jobs/{job_id}/photos/{photo_id}` and a delete control in the expanded job photo gallery.
+- [x] Confirmed fleet incident photos can be uploaded and viewed, but lack photo-level delete API/UI.
+- [x] Added `DELETE /fleet/incidents/{incident_id}/photos/{photo_id}` for fleet incident photos.
+- [x] Added a thumbnail-level remove button on fleet incident photo previews.
+- [x] Added backend coverage proving incident photo deletion removes the row.
+
+## Review
+- Fleet incident photos now match the other upload surfaces: each visible incident thumbnail has a remove control, and the backend deletes the matching tenant-scoped photo row through `DELETE /fleet/incidents/{incident_id}/photos/{photo_id}`.
+
+---
+
+# Quote Send Database Error Investigation (2026-07-14)
+
+## Plan
+- [x] Confirm whether quote sending itself touches the new repair-photo implementation.
+- [x] Check local database migration/table state for `work_photos`.
+- [x] Isolate background repair-photo fetch failures from the quote-send action if they can surface on the same screen.
+- [x] Run focused quote/photo verification and document results.
+
+## Progress Notes
+- [x] Confirmed the local database is at Alembic `076` and `public.work_photos` exists.
+- [x] Confirmed the quote-send endpoint does not query `WorkPhoto` directly.
+- [x] Re-ran focused quote-send tests; all existing quote-send coverage passed.
+- [x] Found a quote-send transaction handling bug: if optional price-builder refresh hits a database error, the broad catch continued without rolling back, leaving PostgreSQL in an aborted transaction for the rest of the request.
+- [x] Added rollback/reload behavior so quote sending can continue from persisted totals after an optional price-refresh failure.
+- [x] Added regression coverage for quote send after a failed price refresh.
+
+## Review
+- The reported quote-send database error is not caused by repair photos directly. The quote endpoint does not touch `WorkPhoto`, and the local database has the photo table. The fix addresses a real quote-send transaction bug: optional price refresh failures now rollback/reload before the send flow continues, preventing PostgreSQL aborted-transaction errors from surfacing as quote-send database failures.
+
+---
+
 # Fleet Incident Photo Upload Visibility Fix (2026-07-14)
 
 ## Plan
@@ -88,6 +130,52 @@
 
 ## Review
 - Fleet incident uploads now allow photos up to 10 MB, and the backend request size ceiling has enough headroom for multipart overhead.
+
+---
+
+# Mechanic Work Photo Upload Error Handling (2026-07-14)
+
+## Plan
+- [x] Verify whether the mechanics photo upload cleanup is present in the active working tree.
+- [x] Align mechanic work-photo storage setup/provider failures with fleet incident photo behavior.
+- [x] Add focused backend tests for missing Cloudinary configuration and provider failure.
+- [x] Run focused verification and document results.
+
+## Progress Notes
+- [x] Confirmed `backend/app/api/v1/endpoints/mechanics.py` still returned `503` for missing Cloudinary config and `500` for provider upload failures in the active checkout.
+- [x] Changed mechanic work-photo upload to return `424 Failed Dependency` with actionable Cloudinary setup/provider messages.
+- [x] Added focused tests for missing photo service and provider upload failure in `backend/tests/test_mechanic_job_scope.py`.
+- [x] Passed focused backend verification: mechanic missing service, mechanic provider failure, fleet missing service, and fleet provider failure.
+- [x] Passed backend syntax check for the mechanics endpoint and focused test file.
+
+## Review
+- Mechanic work-photo uploads now match fleet incident photos for expected storage-service failures, avoiding generic internal-server-error masking when Cloudinary is missing or rejects the upload.
+
+---
+
+# Repair Order Photo Evidence (2026-07-14)
+
+## Plan
+- [x] Confirm current customer portal and invoice pages do not display repair photo evidence.
+- [x] Add repair-order-owned photo API routes using existing `WorkPhoto` storage and Cloudinary upload service.
+- [x] Add staff repair-order UI to upload, view, and delete photos from the main repair-order drawer.
+- [x] Add read-only customer portal/invoice photo evidence views.
+- [x] Run focused backend/frontend verification and document results.
+
+## Progress Notes
+- [x] Confirmed existing photo evidence is only surfaced in the mechanic portal; customer portal/invoice pages only render shop logo/Zelle QR image assets.
+- [x] Confirmed `work_photos` already belongs to `repair_order_id`, so no new photo table is needed.
+- [x] Added `GET/POST/DELETE /repair-orders/{order_id}/photos` routes using `WorkPhoto`, 10 MB image validation, and Cloudinary-backed uploads.
+- [x] Added clear `424 Failed Dependency` responses for missing Cloudinary config and provider upload failures.
+- [x] Added a staff repair-photo panel in the Price Builder repair-order drawer with caption input, multipart upload, delete action, thumbnails, and an in-flight upload placeholder.
+- [x] Added read-only repair-photo galleries to customer repair detail and the authenticated customer invoice page.
+- [x] Passed focused backend tests: repair-order photo stored, missing service, provider failure, customer active-order visibility, quoted-order hiding, plus mechanic upload error parity.
+- [x] Passed backend syntax checks, frontend TypeScript, and `git diff --check`.
+- [x] Correction: moved the staff repair-photo panel from the top of the Price Builder drawer to the lower drawer area above Danger Zone so it does not consume the limited primary pricing workspace.
+- [x] Correction: made the lower staff repair-photo panel collapsible, with compact thumbnail previews in the collapsed header and larger photos/upload controls only in the expanded state.
+
+## Review
+- Repair orders now own a first-class photo evidence workflow while reusing the existing `work_photos` table and Cloudinary storage service. Staff can upload/view/delete photos from the main repair-order drawer; customers can view photo evidence in their portal and invoice surfaces once the order is active or later.
 
 ---
 

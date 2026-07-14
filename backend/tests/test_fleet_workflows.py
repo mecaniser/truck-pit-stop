@@ -8,6 +8,7 @@ import os
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 from starlette.datastructures import Headers, UploadFile
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
@@ -17,6 +18,7 @@ os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 from app.api.v1.endpoints import fleet
 from app.db.models.customer import Customer
 from app.db.models.fleet import (
+    FleetIncidentPhoto,
     InspectionResult,
     InspectionStatus,
     InspectionItemResult,
@@ -253,9 +255,6 @@ async def test_incident_create_and_spawn_internal_repair(db_session):
 
 @pytest.mark.asyncio
 async def test_incident_photo_upload_is_stored(db_session, monkeypatch):
-    from sqlalchemy import select
-    from app.db.models.fleet import FleetIncidentPhoto
-
     _, vehicle, user = await _seed_fleet(db_session)
     incident = await fleet.create_incident(
         body=IncidentCreate(
@@ -298,6 +297,43 @@ async def test_incident_photo_upload_is_stored(db_session, monkeypatch):
 
     stored = (await db_session.execute(select(FleetIncidentPhoto).where(FleetIncidentPhoto.incident_id == incident.id))).scalar_one()
     assert stored.image_url == photo.image_url
+
+
+@pytest.mark.asyncio
+async def test_incident_photo_delete_removes_photo(db_session):
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            severity=IncidentSeverity.MEDIUM,
+            description="Roadside air leak",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+    photo = FleetIncidentPhoto(
+        id=uuid4(),
+        tenant_id=user.tenant_id,
+        incident_id=incident.id,
+        uploaded_by_id=user.id,
+        image_url="https://res.cloudinary.com/demo/incident.jpg",
+        caption="Roadside",
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    db_session.add(photo)
+    await db_session.commit()
+
+    response = await fleet.delete_incident_photo(
+        incident_id=incident.id,
+        photo_id=photo.id,
+        db=db_session,
+        current_user=user,
+    )
+
+    assert response == {"message": "Photo deleted"}
+    stored = (await db_session.execute(select(FleetIncidentPhoto).where(FleetIncidentPhoto.id == photo.id))).scalar_one_or_none()
+    assert stored is None
 
 
 @pytest.mark.asyncio

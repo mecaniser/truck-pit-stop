@@ -1,3 +1,4 @@
+import base64
 import math
 import re
 import traceback
@@ -5,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 from datetime import date, datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, literal_column
 from sqlalchemy.orm import selectinload
@@ -25,7 +26,7 @@ from app.db.models.recommended_service import RecommendedService, RecommendedSer
 from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.description_library import DescriptionLibraryEntry
-from app.tasks.description_library_refresh import process_on_demand_library_regenerate
+from app.db.models.work_photo import WorkPhoto
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
@@ -42,6 +43,7 @@ from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
+from app.services.cloudinary_service import is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
 from app.schemas.repair_order import (
     RepairOrderCreate,
@@ -67,6 +69,7 @@ from app.schemas.repair_order import (
     PriceBuildSummaryResponse,
     PriceBuildWarning,
     RepairOperationCandidate,
+    RepairOrderPhotoResponse,
     RecommendedServiceCreate,
     RecommendedServiceUpdate,
     RecommendedServiceResponse,
@@ -111,6 +114,24 @@ RO_MANAGE_ROLES = (
     UserRole.RECEPTIONIST,
     UserRole.MECHANIC,
     UserRole.FLEET_MANAGER,
+)
+ALLOWED_REPAIR_PHOTO_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+}
+MAX_REPAIR_PHOTO_BYTES = 10 * 1024 * 1024
+CUSTOMER_VISIBLE_PHOTO_STATUSES = (
+    RepairOrderStatus.APPROVED,
+    RepairOrderStatus.ASSIGNED,
+    RepairOrderStatus.ACKNOWLEDGED,
+    RepairOrderStatus.IN_PROGRESS,
+    RepairOrderStatus.PENDING_REVIEW,
+    RepairOrderStatus.COMPLETED,
+    RepairOrderStatus.INVOICED,
+    RepairOrderStatus.PAID,
 )
 
 
@@ -187,6 +208,36 @@ def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageRespon
         source_service_id=pu.source_service_id,
         created_at=pu.created_at,
     )
+
+
+def _uploader_name(user: Optional[User]) -> str:
+    if not user:
+        return "Unknown"
+    return f"{user.first_name} {user.last_name}".strip() or user.email or "Unknown"
+
+
+def _work_photo_response(photo: WorkPhoto) -> "RepairOrderPhotoResponse":
+    return RepairOrderPhotoResponse(
+        id=photo.id,
+        repair_order_id=photo.repair_order_id,
+        image_url=photo.image_url,
+        caption=photo.caption,
+        uploaded_at=photo.uploaded_at,
+        uploader_name=_uploader_name(getattr(photo, "mechanic", None)),
+    )
+
+
+async def _read_validated_repair_image(image: UploadFile) -> tuple[str, str]:
+    content_type = (image.content_type or "").lower()
+    if content_type not in ALLOWED_REPAIR_PHOTO_CONTENT_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a JPEG, PNG, WebP, HEIC, or HEIF image")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
+    if len(image_bytes) > MAX_REPAIR_PHOTO_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large. Max 10MB")
+    data_uri = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
+    return data_uri, content_type
 
 
 def _map_price_build_error(exc: Exception) -> HTTPException:
@@ -554,6 +605,7 @@ async def regenerate_description_library_endpoint(
     if not settings.ANTHROPIC_API_KEY:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ANTHROPIC_API_KEY is not configured")
 
+    from app.tasks.description_library_refresh import process_on_demand_library_regenerate
     process_on_demand_library_regenerate.delay(str(current_user.tenant_id), "ro_description")
     return DescriptionLibraryRegenerateResponse()
 
@@ -795,6 +847,116 @@ async def get_repair_order_detail(
         labor_items=labor_resp,
         pm_services=pm_services_resp,
     )
+
+
+@router.get("/{order_id}/photos", response_model=List[RepairOrderPhotoResponse])
+async def list_repair_order_photos(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+    if current_user.role == UserRole.CUSTOMER and order.status not in CUSTOMER_VISIBLE_PHOTO_STATUSES:
+        return []
+
+    photo_result = await db.execute(
+        select(WorkPhoto)
+        .where(WorkPhoto.repair_order_id == order.id)
+        .options(selectinload(WorkPhoto.mechanic))
+        .order_by(WorkPhoto.uploaded_at.desc())
+    )
+    return [_work_photo_response(photo) for photo in photo_result.scalars().all()]
+
+
+@router.post("/{order_id}/photos", response_model=RepairOrderPhotoResponse, status_code=status.HTTP_201_CREATED)
+async def upload_repair_order_photo(
+    order_id: UUID,
+    image: UploadFile = File(...),
+    caption: Optional[str] = Form(None, max_length=500),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+
+    if not is_cloudinary_configured():
+        raise HTTPException(
+            status_code=424,
+            detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.",
+        )
+
+    data_uri, _content_type = await _read_validated_repair_image(image)
+    try:
+        image_url = await upload_work_photo(
+            base64_image=data_uri,
+            repair_order_id=str(order.id),
+            mechanic_id=str(current_user.id),
+        )
+    except Exception as exc:
+        logger.error(
+            "repair_order_photo_upload_failed",
+            repair_order_id=str(order.id),
+            tenant_id=str(current_user.tenant_id),
+            user_id=str(current_user.id),
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=424,
+            detail="Photo upload service failed. Check the Cloudinary settings and try again.",
+        ) from exc
+
+    photo = WorkPhoto(
+        repair_order_id=order.id,
+        mechanic_id=current_user.id,
+        image_url=image_url,
+        caption=caption,
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+    await db.refresh(photo, attribute_names=["mechanic"])
+    return _work_photo_response(photo)
+
+
+@router.delete("/{order_id}/photos/{photo_id}")
+async def delete_repair_order_photo(
+    order_id: UUID,
+    photo_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    result = await db.execute(
+        select(WorkPhoto, RepairOrder)
+        .join(RepairOrder, WorkPhoto.repair_order_id == RepairOrder.id)
+        .where(
+            WorkPhoto.id == photo_id,
+            WorkPhoto.repair_order_id == order_id,
+            RepairOrder.deleted_at.is_(None),
+        )
+    )
+    row = result.one_or_none()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
+    photo, order = row
+    _check_ro_access(current_user, order)
+
+    if current_user.role == UserRole.MECHANIC and photo.mechanic_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Can only delete your own photos")
+
+    await db.delete(photo)
+    await db.commit()
+    return {"message": "Photo deleted"}
 
 
 @router.get("/{order_id}", response_model=RepairOrderResponse)

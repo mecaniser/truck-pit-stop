@@ -205,6 +205,46 @@ async def test_quote_send_locks_order_pricing(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_quote_send_rolls_back_failed_price_refresh(db_session, monkeypatch):
+    staff_user, _order, _service, quote = await _seed_quote_context(db_session)
+    rolled_back = False
+    original_rollback = db_session.rollback
+
+    async def _failed_recalculate(*_args, **_kwargs):
+        raise RuntimeError("price refresh failed")
+
+    async def _spy_rollback():
+        nonlocal rolled_back
+        rolled_back = True
+        await original_rollback()
+
+    async def _noop_email(**_kwargs):
+        return None
+
+    async def _noop_sms(*_args, **_kwargs):
+        return None
+
+    async def _noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(quotes_endpoint.price_build_service, "recalculate_order", _failed_recalculate)
+    monkeypatch.setattr(db_session, "rollback", _spy_rollback)
+    monkeypatch.setattr(quotes_endpoint, "send_email", _noop_email)
+    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
+
+    response = await quotes_endpoint.send_quote_to_customer(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    assert rolled_back is True
+    assert response.sent_to_customer is True
+
+
+@pytest.mark.asyncio
 async def test_quote_send_uses_discounted_order_total(db_session, monkeypatch):
     staff_user, order, service, quote = await _seed_quote_context(db_session)
 

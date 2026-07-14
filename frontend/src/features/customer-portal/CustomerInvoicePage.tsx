@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { CreditCard, FileText, Download, Printer } from 'lucide-react'
+import { Camera, CreditCard, FileText, Download, Printer } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { getStripeForAccount } from '../../lib/stripe'
-import type { InvoiceDetail } from '../../types'
+import type { InvoiceDetail, RepairOrderPhoto } from '../../types'
 import { formatUSPhone } from '../../utils/phone'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { useAuthStore } from '../../stores/authStore'
@@ -132,6 +132,35 @@ function InvoicePaymentForm({
   )
 }
 
+function InvoiceRepairPhotos({ photos }: { photos: RepairOrderPhoto[] }) {
+  if (!photos.length) return null
+
+  return (
+    <div className="mt-4 border-t border-white/10 pt-4">
+      <div className="mb-2 flex items-center gap-2">
+        <Camera className="h-4 w-4 text-purple-300" />
+        <h3 className="text-sm font-medium text-gray-300">Repair photos</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {photos.map((photo) => (
+          <a
+            key={photo.id}
+            href={photo.image_url}
+            target="_blank"
+            rel="noreferrer"
+            className="group relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-white/5"
+          >
+            <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover transition group-hover:scale-105" />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2">
+              <p className="line-clamp-2 text-[11px] font-semibold text-white">{photo.caption || 'Repair photo'}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 interface ZelleInfoResponse {
   zelle_email: string | null
   zelle_phone: string | null
@@ -168,6 +197,15 @@ export default function CustomerInvoicePage() {
       return response.data as ZelleInfoResponse
     },
     enabled: !!invoice && invoice.status !== 'paid',
+  })
+
+  const { data: repairPhotos = [] } = useQuery<RepairOrderPhoto[]>({
+    queryKey: ['invoice-repair-photos', invoice?.repair_order_id],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${invoice!.repair_order_id}/photos`)
+      return response.data
+    },
+    enabled: !!invoice?.repair_order_id,
   })
 
   const zelleAmount = invoice
@@ -331,6 +369,8 @@ export default function CustomerInvoicePage() {
             <span className="font-bold text-xl text-white">${parseFloat(invoice.total_amount).toFixed(2)}</span>
           </div>
         </div>
+
+        <InvoiceRepairPhotos photos={repairPhotos} />
 
         {isPaid ? (
           <div className="bg-green-500/15 border border-green-500/30 rounded-lg p-4 text-green-200">
