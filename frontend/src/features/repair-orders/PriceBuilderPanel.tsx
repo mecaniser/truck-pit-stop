@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Box,
   Building2,
+  Camera,
   CheckCircle,
   ChevronDown,
   ChevronRight,
@@ -41,6 +42,7 @@ import {
   Invoice,
   RecommendedService,
   RecommendedServicePriority,
+  RepairOrderPhoto,
   RepairOperationCandidate,
   RepairOrderStatus,
 } from '@/types'
@@ -674,6 +676,9 @@ export default function PriceBuilderPanel({
   const totalMotionTimerRef = useRef<number | null>(null)
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
+  const [photosOpen, setPhotosOpen] = useState(false)
+  const [photoCaption, setPhotoCaption] = useState('')
+  const [pendingPhotoName, setPendingPhotoName] = useState<string | null>(null)
   const [armWoComplete, setArmWoComplete] = useState(false)
   const [woMileageOut, setWoMileageOut] = useState('')
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
@@ -711,6 +716,72 @@ export default function PriceBuilderPanel({
     // them), so don't fetch when deleted — the panel shows the Restore state.
     enabled: !!orderId && !isDeleted,
   })
+
+  const { data: repairPhotos = [] } = useQuery<RepairOrderPhoto[]>({
+    queryKey: ['repair-order-photos', orderId],
+    queryFn: async () => {
+      const response = await api.get(`/repair-orders/${orderId}/photos`)
+      return response.data
+    },
+    enabled: !!orderId && !isDeleted,
+  })
+
+  const uploadPhotoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.append('image', file)
+      if (photoCaption.trim()) formData.append('caption', photoCaption.trim())
+      const response = await api.post<RepairOrderPhoto>(`/repair-orders/${orderId}/photos`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return response.data
+    },
+    onMutate: (file) => {
+      setPendingPhotoName(file.name)
+    },
+    onSuccess: () => {
+      toast.success('Photo uploaded')
+      setPhotoCaption('')
+      queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to upload photo')
+    },
+    onSettled: () => {
+      setPendingPhotoName(null)
+    },
+  })
+
+  const deletePhotoMutation = useMutation({
+    mutationFn: async (photoId: string) => {
+      await api.delete(`/repair-orders/${orderId}/photos/${photoId}`)
+    },
+    onSuccess: () => {
+      toast.success('Photo deleted')
+      queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to delete photo')
+    },
+  })
+
+  const handleRepairPhotoSelect = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image too large. Max 10MB')
+      return
+    }
+    uploadPhotoMutation.mutate(file)
+  }
+
+  const visiblePhotoThumbs = repairPhotos.slice(0, 5)
+  const hiddenPhotoThumbCount = Math.max(0, repairPhotos.length - visiblePhotoThumbs.length)
 
   // Labor duration/rate steppers debounce their server writes and coalesce
   // into a single PATCH, so `summary.lines[].total_cost` (and everything
@@ -3245,6 +3316,113 @@ export default function PriceBuilderPanel({
             )}
           </div>
         </div>
+        {!isDeleted && (
+          <div className="-mx-5 mt-4 border-t border-gray-100 bg-gray-50/70 px-5 py-4">
+            <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setPhotosOpen((open) => !open)}
+                className="flex w-full flex-wrap items-center justify-between gap-3 text-left"
+                aria-expanded={photosOpen}
+              >
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">Repair photos</span>
+                  <span className="mt-0.5 block text-sm font-semibold text-gray-900">
+                    {repairPhotos.length ? `${repairPhotos.length} photo${repairPhotos.length === 1 ? '' : 's'} attached` : 'No photos attached'}
+                  </span>
+                </span>
+                <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                  {uploadPhotoMutation.isPending && (
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-orange-300 bg-orange-50">
+                      <Loader2 className="h-4 w-4 animate-spin text-orange-600" />
+                    </span>
+                  )}
+                  {visiblePhotoThumbs.length > 0 && (
+                    <span className="flex min-w-0 items-center justify-end gap-1">
+                      {visiblePhotoThumbs.map((photo) => (
+                        <span key={photo.id} className="block h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+                          <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
+                        </span>
+                      ))}
+                      {hiddenPhotoThumbCount > 0 && (
+                        <span className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 px-2 text-xs font-bold text-gray-600">
+                          +{hiddenPhotoThumbCount}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                    <ChevronDown className={`h-4 w-4 transition-transform ${photosOpen ? 'rotate-180' : ''}`} />
+                  </span>
+                </span>
+              </button>
+              {photosOpen && (
+                <div className="mt-3 border-t border-gray-100 pt-3">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="text"
+                      value={photoCaption}
+                      onChange={(event) => setPhotoCaption(event.target.value)}
+                      maxLength={500}
+                      placeholder="Optional photo note"
+                      className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    />
+                    <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold text-gray-700 transition hover:border-orange-300 hover:bg-orange-50">
+                      <Camera className="h-4 w-4 text-orange-600" />
+                      Upload photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadPhotoMutation.isPending}
+                        onChange={handleRepairPhotoSelect}
+                      />
+                    </label>
+                  </div>
+                  {(repairPhotos.length > 0 || uploadPhotoMutation.isPending) ? (
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {uploadPhotoMutation.isPending && (
+                        <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
+                          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-orange-100 via-white to-orange-50" />
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
+                            <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
+                            <p className="line-clamp-2 text-xs font-semibold text-orange-800">
+                              {pendingPhotoName || 'Uploading photo'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {repairPhotos.map((photo) => (
+                        <div key={photo.id} className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+                          <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
+                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2 text-white opacity-100">
+                            <p className="line-clamp-2 text-[11px] font-semibold">{photo.caption || 'Repair photo'}</p>
+                            <p className="mt-0.5 text-[10px] text-white/75">{photo.uploader_name}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => deletePhotoMutation.mutate(photo.id)}
+                            disabled={deletePhotoMutation.isPending}
+                            className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition hover:bg-red-600 disabled:opacity-50 group-hover:opacity-100"
+                            aria-label="Delete repair photo"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-center">
+                      <Camera className="mx-auto h-5 w-5 text-gray-400" />
+                      <p className="mt-2 text-sm font-semibold text-gray-800">No repair photos yet.</p>
+                      <p className="mt-0.5 text-xs text-gray-500">Add evidence photos for this repair order.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         <div className="-mx-5 -mb-4 mt-4 border-t border-red-100 bg-red-50/60">
           <button
             type="button"

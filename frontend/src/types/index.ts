@@ -257,6 +257,15 @@ export interface Labor {
   created_at: string
 }
 
+export interface RepairOrderPhoto {
+  id: string
+  repair_order_id: string
+  image_url: string
+  caption: string | null
+  uploaded_at: string
+  uploader_name: string
+}
+
 export interface RepairOrder {
   id: string
   tenant_id: string

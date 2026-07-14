@@ -1740,7 +1740,10 @@ async def upload_job_photo(
         raise HTTPException(status_code=403, detail="Only mechanics can upload work photos")
     
     if not is_cloudinary_configured():
-        raise HTTPException(status_code=503, detail="Photo upload service not configured")
+        raise HTTPException(
+            status_code=424,
+            detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.",
+        )
     
     # Verify job belongs to this mechanic and is in active status
     result = await db.execute(
@@ -1801,7 +1804,10 @@ async def upload_job_photo(
         
     except Exception as e:
         logger.error("Failed to upload work photo", error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to upload photo")
+        raise HTTPException(
+            status_code=424,
+            detail="Photo upload service failed. Check the Cloudinary settings and try again.",
+        ) from e
 
 
 @router.get("/my-jobs/{job_id}/photos", response_model=List[WorkPhotoResponse])

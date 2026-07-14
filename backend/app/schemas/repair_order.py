@@ -121,6 +121,18 @@ class LaborResponse(BaseModel):
         from_attributes = True
 
 
+class RepairOrderPhotoResponse(BaseModel):
+    id: UUID
+    repair_order_id: UUID
+    image_url: str
+    caption: Optional[str] = None
+    uploaded_at: datetime
+    uploader_name: str = "Unknown"
+
+    class Config:
+        from_attributes = True
+
+
 class RepairOrderBase(BaseModel):
     description: Optional[str] = None
     customer_notes: Optional[str] = None
