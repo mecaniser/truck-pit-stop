@@ -683,6 +683,41 @@ async def upload_incident_photo(
     return _incident_photo_response(photo)
 
 
+@router.delete("/incidents/{incident_id}/photos/{photo_id}")
+async def delete_incident_photo(
+    incident_id: UUID,
+    photo_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    result = await db.execute(
+        select(FleetIncidentPhoto, FleetIncident)
+        .join(FleetIncident, FleetIncidentPhoto.incident_id == FleetIncident.id)
+        .where(
+            and_(
+                FleetIncidentPhoto.id == photo_id,
+                FleetIncidentPhoto.incident_id == incident_id,
+                FleetIncident.tenant_id == current_user.tenant_id,
+            )
+        )
+    )
+    row = result.one_or_none()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
+
+    photo, incident = row
+    await db.delete(photo)
+    await db.commit()
+    logger.info(
+        "fleet_incident_photo_deleted",
+        photo_id=str(photo_id),
+        incident_id=str(incident.id),
+        tenant_id=str(current_user.tenant_id),
+        deleted_by=str(current_user.id),
+    )
+    return {"message": "Photo deleted"}
+
+
 async def _load_incident(db: AsyncSession, tenant_id: UUID, incident_id: UUID) -> FleetIncident:
     result = await db.execute(
         select(FleetIncident)

@@ -140,6 +140,27 @@ export default function TruckDetail({
       URL.revokeObjectURL(variables.previewUrl)
     },
   })
+  const deleteIncidentPhoto = useMutation({
+    mutationFn: async ({ incidentId, photoId }: { incidentId: string; photoId: string }) => {
+      await api.delete(`/fleet/incidents/${incidentId}/photos/${photoId}`)
+      return { incidentId, photoId }
+    },
+    onSuccess: ({ incidentId, photoId }) => {
+      toast.success('Photo removed')
+      qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => {
+        if (!current) return current
+        return {
+          ...current,
+          incidents: current.incidents.map((inc) => {
+            if (inc.id !== incidentId) return inc
+            return { ...inc, photos: (inc.photos || []).filter((photo) => photo.id !== photoId) }
+          }),
+        }
+      })
+      refresh()
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to remove photo'),
+  })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
@@ -316,9 +337,34 @@ export default function TruckDetail({
                             </div>
                           ))}
                           {visiblePhotos.map((photo) => (
-                            <a key={photo.id} href={photo.image_url} target="_blank" rel="noreferrer">
-                              <img src={photo.image_url} alt="Incident" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--line)' }} />
-                            </a>
+                            <div key={photo.id} style={{ position: 'relative', width: 54, height: 54 }}>
+                              <a href={photo.image_url} target="_blank" rel="noreferrer" title="Open photo">
+                                <img src={photo.image_url} alt="Incident" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--line)' }} />
+                              </a>
+                              <button
+                                type="button"
+                                aria-label="Remove incident photo"
+                                title="Remove photo"
+                                disabled={deleteIncidentPhoto.isPending}
+                                onClick={() => deleteIncidentPhoto.mutate({ incidentId: inc.id, photoId: photo.id })}
+                                style={{
+                                  position: 'absolute',
+                                  top: -6,
+                                  right: -6,
+                                  width: 22,
+                                  height: 22,
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  borderRadius: 999,
+                                  border: '1px solid rgba(248,113,113,.55)',
+                                  background: 'rgba(15,17,21,.94)',
+                                  color: 'var(--red)',
+                                  boxShadow: '0 6px 14px rgba(0,0,0,.35)',
+                                }}
+                              >
+                                {deleteIncidentPhoto.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                              </button>
+                            </div>
                           ))}
                           {hiddenPhotoCount > 0 && <span className="dsec-count">+{hiddenPhotoCount}</span>}
                         </div>

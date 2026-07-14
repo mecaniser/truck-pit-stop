@@ -1,3 +1,24 @@
+# Photo Removal for Uploads (2026-07-14)
+
+## Plan
+- [x] Audit photo upload surfaces for existing delete support.
+- [x] Add missing fleet incident photo delete API and card-level UI control.
+- [x] Add focused backend coverage for deleting an incident photo.
+- [x] Run frontend/backend verification and push the PR update.
+
+## Progress Notes
+- [x] Confirmed repair-order photos already have `DELETE /repair-orders/{order_id}/photos/{photo_id}` and a trash control in the expanded drawer photo gallery.
+- [x] Confirmed mechanic work photos already have `DELETE /mechanics/my-jobs/{job_id}/photos/{photo_id}` and a delete control in the expanded job photo gallery.
+- [x] Confirmed fleet incident photos can be uploaded and viewed, but lack photo-level delete API/UI.
+- [x] Added `DELETE /fleet/incidents/{incident_id}/photos/{photo_id}` for fleet incident photos.
+- [x] Added a thumbnail-level remove button on fleet incident photo previews.
+- [x] Added backend coverage proving incident photo deletion removes the row.
+
+## Review
+- Fleet incident photos now match the other upload surfaces: each visible incident thumbnail has a remove control, and the backend deletes the matching tenant-scoped photo row through `DELETE /fleet/incidents/{incident_id}/photos/{photo_id}`.
+
+---
+
 # Quote Send Database Error Investigation (2026-07-14)
 
 ## Plan
