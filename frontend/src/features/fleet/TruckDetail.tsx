@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
-  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2,
+  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry } from './types'
@@ -23,6 +23,44 @@ const STATUS_OPTIONS: { value: string; label: string; dot: string }[] = [
   { value: 'yard', label: 'In the yard', dot: '#64748b' },
   { value: 'out_of_service', label: 'Out of service', dot: '#ef4444' },
 ]
+const incidentStatePillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  height: 30,
+  padding: '0 10px',
+  fontSize: 12,
+  color: 'var(--st-active)',
+}
+const incidentMenuItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  width: '100%',
+  minHeight: 34,
+  padding: '8px 10px',
+  background: 'transparent',
+  border: 'none',
+  borderRadius: 7,
+  color: 'var(--text)',
+  cursor: 'pointer',
+  font: 'inherit',
+  fontSize: 12.5,
+  textAlign: 'left',
+}
+const MAX_FLEET_PHOTO_BYTES = 6 * 1024 * 1024
+
+function validFleetPhoto(file: File) {
+  if (!file.type.startsWith('image/')) {
+    toast.error('Please select an image file')
+    return false
+  }
+  if (file.size > MAX_FLEET_PHOTO_BYTES) {
+    toast.error('Image too large. Max 6MB')
+    return false
+  }
+  return true
+}
 
 function Section({ title, icon, count, right, children }: {
   title: string; icon: React.ReactNode; count?: number; right?: React.ReactNode; children: React.ReactNode
@@ -67,10 +105,22 @@ export default function TruckDetail({
     onSuccess: () => { toast.success('Incident deleted'); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
   })
+  const uploadIncidentPhoto = useMutation({
+    mutationFn: async ({ incidentId, file }: { incidentId: string; file: File }) => {
+      const formData = new FormData()
+      formData.append('image', file)
+      return (await api.post(`/fleet/incidents/${incidentId}/photos`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })).data
+    },
+    onSuccess: () => { toast.success('Photo uploaded'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to upload photo'),
+  })
   const [editing, setEditing] = useState(false)
   const [logging, setLogging] = useState(false)
   const [editingIncident, setEditingIncident] = useState<IncidentEntry | null>(null)
   const [armedDeleteIncidentId, setArmedDeleteIncidentId] = useState<string | null>(null)
+  const [incidentMenuOpenId, setIncidentMenuOpenId] = useState<string | null>(null)
   const [newWOOpen, setNewWOOpen] = useState(false)
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [assigningDriver, setAssigningDriver] = useState(false)
@@ -217,53 +267,125 @@ export default function TruckDetail({
                       <div className="inc-row1"><b>{inc.type}</b><span className="inc-date">{fmtDate(inc.date)}</span></div>
                       {inc.location && <div className="inc-loc"><MapIcon size={12} /> {inc.location}</div>}
                       <div className="inc-note">{inc.note}</div>
-                      <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
-                        <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                          onClick={() => setEditingIncident(inc)}>
-                          <Pencil size={12} /> Edit
-                        </button>
+                      {!!inc.photos?.length && (
+                        <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
+                          {inc.photos.slice(0, 4).map((photo) => (
+                            <a key={photo.id} href={photo.image_url} target="_blank" rel="noreferrer">
+                              <img src={photo.image_url} alt="Incident" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 9, border: '1px solid var(--line)' }} />
+                            </a>
+                          ))}
+                          {inc.photos.length > 4 && <span className="dsec-count">+{inc.photos.length - 4}</span>}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 9 }}>
                         {inc.repair_order_id ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--st-active)' }}>
+                          <span style={incidentStatePillStyle}>
                             <Wrench size={12} /> Repair linked
                           </span>
-                        ) : (
-                          <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                            onClick={() => repairFromIncident.mutate(inc.id)} disabled={repairFromIncident.isPending}>
-                            <Wrench size={12} /> Create repair
-                          </button>
-                        )}
-                        {inc.status !== 'resolved' && (
-                          <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                            onClick={() => resolveIncident.mutate(inc.id)} disabled={resolveIncident.isPending}>
-                            <CheckCircle2 size={12} /> Resolve
-                          </button>
-                        )}
+                        ) : null}
                         {inc.status === 'resolved' && (
-                          <span style={{ fontSize: 12, color: 'var(--st-active)' }}>Resolved</span>
+                          <span style={incidentStatePillStyle}>
+                            <CheckCircle2 size={12} /> Resolved
+                          </span>
                         )}
-                        {/* Delete is only available when no repair order was spawned
-                            from this incident; the backend blocks it otherwise. */}
-                        {!inc.repair_order_id && (
-                          armedDeleteIncidentId === inc.id ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>Delete this incident?</span>
-                              <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12 }}
-                                disabled={deleteIncident.isPending} onClick={() => setArmedDeleteIncidentId(null)}>
-                                Cancel
-                              </button>
-                              <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12, color: 'var(--red)' }}
-                                disabled={deleteIncident.isPending}
-                                onClick={() => deleteIncident.mutate(inc.id, { onSuccess: () => setArmedDeleteIncidentId(null) })}>
-                                {deleteIncident.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
-                              </button>
-                            </span>
-                          ) : (
-                            <button className="dbtn dbtn-ghost" style={{ height: 30, fontSize: 12, color: 'var(--red)' }}
-                              onClick={() => setArmedDeleteIncidentId(inc.id)}>
-                              <Trash2 size={12} /> Delete
-                            </button>
-                          )
-                        )}
+                        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                          <button
+                            className="dbtn dbtn-ghost"
+                            style={{ height: 38, width: 46, padding: 0, justifyContent: 'center' }}
+                            onClick={() => {
+                              setArmedDeleteIncidentId(null)
+                              setIncidentMenuOpenId((openId) => openId === inc.id ? null : inc.id)
+                            }}
+                            aria-label="Incident actions"
+                            aria-expanded={incidentMenuOpenId === inc.id}
+                            title="Actions"
+                          >
+                            <MoreHorizontal size={19} />
+                          </button>
+                          {incidentMenuOpenId === inc.id && (
+                            <>
+                              <div onClick={() => { setIncidentMenuOpenId(null); setArmedDeleteIncidentId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                              <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 41, minWidth: 190, padding: 6, background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 10px 28px rgba(0,0,0,.45)' }}>
+                                <button
+                                  style={incidentMenuItemStyle}
+                                  onClick={() => {
+                                    setEditingIncident(inc)
+                                    setIncidentMenuOpenId(null)
+                                  }}
+                                >
+                                  <Pencil size={13} /> Edit
+                                </button>
+                                <label style={{ ...incidentMenuItemStyle, cursor: uploadIncidentPhoto.isPending ? 'not-allowed' : 'pointer' }}>
+                                  {uploadIncidentPhoto.isPending ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} Upload photo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    capture="environment"
+                                    disabled={uploadIncidentPhoto.isPending}
+                                    style={{ display: 'none' }}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0]
+                                      e.target.value = ''
+                                      if (file && validFleetPhoto(file)) {
+                                        uploadIncidentPhoto.mutate({ incidentId: inc.id, file })
+                                        setIncidentMenuOpenId(null)
+                                      }
+                                    }}
+                                  />
+                                </label>
+                                {!inc.repair_order_id && (
+                                  <button
+                                    style={incidentMenuItemStyle}
+                                    onClick={() => {
+                                      repairFromIncident.mutate(inc.id)
+                                      setIncidentMenuOpenId(null)
+                                    }}
+                                    disabled={repairFromIncident.isPending}
+                                  >
+                                    <Wrench size={13} /> Create repair
+                                  </button>
+                                )}
+                                {inc.status !== 'resolved' && (
+                                  <button
+                                    style={incidentMenuItemStyle}
+                                    onClick={() => {
+                                      resolveIncident.mutate(inc.id)
+                                      setIncidentMenuOpenId(null)
+                                    }}
+                                    disabled={resolveIncident.isPending}
+                                  >
+                                    <CheckCircle2 size={13} /> Resolve
+                                  </button>
+                                )}
+                                {!inc.repair_order_id && (
+                                  armedDeleteIncidentId === inc.id ? (
+                                    <div style={{ padding: '7px 8px 4px' }}>
+                                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 7 }}>Delete this incident?</div>
+                                      <div style={{ display: 'flex', gap: 6 }}>
+                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12 }}
+                                          disabled={deleteIncident.isPending} onClick={() => setArmedDeleteIncidentId(null)}>
+                                          Cancel
+                                        </button>
+                                        <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)' }}
+                                          disabled={deleteIncident.isPending}
+                                          onClick={() => deleteIncident.mutate(inc.id, { onSuccess: () => { setArmedDeleteIncidentId(null); setIncidentMenuOpenId(null) } })}>
+                                          {deleteIncident.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      style={{ ...incidentMenuItemStyle, color: 'var(--red)' }}
+                                      onClick={() => setArmedDeleteIncidentId(inc.id)}
+                                    >
+                                      <Trash2 size={13} /> Delete
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

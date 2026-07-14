@@ -1,5 +1,19 @@
 # Lessons
 
+## 2026-07-14
+- Correction: After implementing fleet incident photo upload, the visible incident card still showed only Edit/Create repair/Resolve/Delete and no photo affordance because the UI change was not present on disk.
+- Rule: For visible workflow changes, verify the exact rendered component file still contains the new affordance after implementation, not just that backend endpoints/tests exist.
+- Prevention: Before final handoff for UI upload features, run a targeted `rg` for the user-facing label (for example `Upload photo` / `Attach photo`) in the active route component and verify TypeScript against that same working tree.
+- Correction: Resolving an incident replaced a button with plain text, which shifted the `Resolved` label out of alignment with the `Repair linked` state in the same row.
+- Rule: When an action becomes a read-only state in an existing control row, preserve the same control height, inline-flex alignment, icon sizing, and row centering as the button it replaces.
+- Prevention: For state transitions that swap buttons for labels, verify the before/after row in the actual component and normalize both the parent row alignment and replacement label geometry.
+- Correction: The backend upload test passed, but the real React upload sent `{"image":{}}` as JSON because the shared Axios default `Content-Type: application/json` overrode `FormData`.
+- Rule: File-upload features need a browser-level or client-level multipart assertion; backend-only upload tests do not prove the UI is submitting a file.
+- Prevention: For every new `FormData` POST through the shared API client, verify the outgoing request content type includes `multipart/form-data` and the expected form field name.
+- Correction: The incident upload endpoint returned a 503 for missing Cloudinary, but the app's global HTTPException handler masks all 5xx details, so the frontend showed a generic internal server error.
+- Rule: Expected external-provider setup failures should not rely on masked 5xx HTTPException details when the user needs configuration guidance.
+- Prevention: For provider-backed features, test the live error body for missing credentials and provider failures, not just the happy path.
+
 ## 2026-07-07
 - Correction: Calling a FastAPI endpoint function directly in a test (bypassing dependency injection) with a new `Optional[X] = Query(None)` parameter left unset left the parameter holding the `Query(...)` sentinel object instead of `None`, since only real HTTP request handling resolves `Query(...)` into its default — silently broke `list_repair_orders` and `list_activity` filtering (an `is not None` check on the sentinel is always true).
 - Rule: Any test that calls an endpoint function directly must pass every `Query(...)`-defaulted parameter explicitly, even ones that look optional.

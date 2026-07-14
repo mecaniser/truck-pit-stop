@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+from tempfile import SpooledTemporaryFile
 from uuid import uuid4
 import os
 
 import pytest
 from fastapi import HTTPException
+from starlette.datastructures import Headers, UploadFile
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
 os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
@@ -36,6 +38,13 @@ from app.schemas.fleet import (
     WorkOrderComplete,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
+
+
+def _upload_file(name: str, content_type: str, data: bytes) -> UploadFile:
+    file_obj = SpooledTemporaryFile()
+    file_obj.write(data)
+    file_obj.seek(0)
+    return UploadFile(filename=name, file=file_obj, headers=Headers({"content-type": content_type}))
 
 
 async def _seed_fleet(db_session, *, role=UserRole.FLEET_MANAGER):
@@ -240,6 +249,116 @@ async def test_incident_create_and_spawn_internal_repair(db_session):
     )).scalar_one()
     assert ro.is_internal is True
     assert ro.vehicle_id == vehicle.id
+
+
+@pytest.mark.asyncio
+async def test_incident_photo_upload_is_stored(db_session, monkeypatch):
+    from sqlalchemy import select
+    from app.db.models.fleet import FleetIncidentPhoto
+
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            location="I-85",
+            severity=IncidentSeverity.MEDIUM,
+            description="Roadside air leak",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+    captured = {}
+
+    async def fake_upload_work_photo(*, base64_image, repair_order_id, mechanic_id):
+        captured.update(
+            {
+                "base64_image": base64_image,
+                "repair_order_id": repair_order_id,
+                "mechanic_id": mechanic_id,
+            }
+        )
+        return "https://res.cloudinary.com/demo/incident.jpg"
+
+    monkeypatch.setattr(fleet, "is_cloudinary_configured", lambda: True)
+    monkeypatch.setattr(fleet, "upload_work_photo", fake_upload_work_photo)
+
+    photo = await fleet.upload_incident_photo(
+        incident.id,
+        image=_upload_file("incident.jpg", "image/jpeg", b"incident-bytes"),
+        caption="Roadside",
+        db=db_session,
+        current_user=user,
+    )
+
+    assert photo.image_url == "https://res.cloudinary.com/demo/incident.jpg"
+    assert photo.caption == "Roadside"
+    assert captured["base64_image"].startswith("data:image/jpeg;base64,")
+    assert captured["repair_order_id"] == f"fleet_incidents/{incident.id}"
+
+    stored = (await db_session.execute(select(FleetIncidentPhoto).where(FleetIncidentPhoto.incident_id == incident.id))).scalar_one()
+    assert stored.image_url == photo.image_url
+
+
+@pytest.mark.asyncio
+async def test_incident_photo_upload_reports_missing_photo_service(db_session, monkeypatch):
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            severity=IncidentSeverity.MEDIUM,
+            description="Roadside air leak",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+    monkeypatch.setattr(fleet, "is_cloudinary_configured", lambda: False)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.upload_incident_photo(
+            incident.id,
+            image=_upload_file("incident.jpg", "image/jpeg", b"incident-bytes"),
+            caption=None,
+            db=db_session,
+            current_user=user,
+        )
+
+    assert exc.value.status_code == 424
+    assert "Photo upload service is not configured" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_incident_photo_upload_reports_provider_failure(db_session, monkeypatch):
+    _, vehicle, user = await _seed_fleet(db_session)
+    incident = await fleet.create_incident(
+        body=IncidentCreate(
+            vehicle_id=vehicle.id,
+            occurred_at=datetime.now(timezone.utc),
+            severity=IncidentSeverity.MEDIUM,
+            description="Roadside air leak",
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+    async def fail_upload_work_photo(*, base64_image, repair_order_id, mechanic_id):
+        raise RuntimeError("bad cloudinary credentials")
+
+    monkeypatch.setattr(fleet, "is_cloudinary_configured", lambda: True)
+    monkeypatch.setattr(fleet, "upload_work_photo", fail_upload_work_photo)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.upload_incident_photo(
+            incident.id,
+            image=_upload_file("incident.jpg", "image/jpeg", b"incident-bytes"),
+            caption=None,
+            db=db_session,
+            current_user=user,
+        )
+
+    assert exc.value.status_code == 424
+    assert "Photo upload service failed" in exc.value.detail
 
 
 @pytest.mark.asyncio

@@ -187,6 +187,15 @@ export interface IncidentEntry {
   location?: string | null
   note?: string | null
   repair_order_id?: string | null
+  photos?: FleetPhoto[]
+}
+
+export interface FleetPhoto {
+  id: string
+  image_url: string
+  caption?: string | null
+  uploaded_at: string
+  uploader_name: string
 }
 
 export interface NearestUnit {

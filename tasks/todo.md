@@ -1,3 +1,56 @@
+# Fleet Incident Photo Upload Visibility Fix (2026-07-14)
+
+## Plan
+- [x] Confirm whether the prior fleet upload changes were removed/stashed from the active working tree.
+- [x] Restore backend storage/API for incident photos without pulling unrelated stashed changes.
+- [x] Add a clearly visible `Upload photo` control directly on each incident card.
+- [x] Add an `Attach photo` control to the Log incident modal for photos at incident creation.
+- [x] Align resolved/read-only incident states with the action pills after resolution.
+- [x] Collapse incident actions into a single menu trigger instead of showing every action all the time.
+- [x] Add focused backend/frontend verification and document results.
+
+## Progress Notes
+- [x] Confirmed `stash@{Tue Jul 14 01:35:41 2026}` contains the earlier larger change set, including fleet upload work and unrelated files.
+- [x] Reapplied a minimal incident-photo slice directly: `FleetIncidentPhoto`, schema photo fields, `/fleet/incidents/{incident_id}/photos`, incident-card thumbnails, and visible upload controls.
+- [x] Added `test_incident_photo_upload_is_stored` for the upload endpoint.
+- [x] Added correction lesson to `tasks/lessons.md`: visible UI features must be verified by checking the active route file for the user-facing label.
+- [x] Verified active labels with `rg`: `Upload photo` in `TruckDetail.tsx` and `Attach photo` in `FleetModals.tsx`.
+- [x] Passed focused backend test: `./.venv/bin/python -m pytest backend/tests/test_fleet_workflows.py::test_incident_photo_upload_is_stored -q`.
+- [x] Passed frontend TypeScript: `npx tsc --noEmit --pretty false`.
+- [x] Fixed the resolved incident row alignment by giving `Repair linked` and `Resolved` the same 30px inline-flex pill geometry as action controls, and centering the action row.
+- [x] Replaced the inline incident action button strip with a compact actions menu containing Edit, Upload photo, Create repair, Resolve, and Delete when applicable.
+- [x] Ran an actual browser upload smoke through the React app; it initially exposed the UI was sending `{"image":{}}` as JSON because Axios kept the default content type.
+- [x] Fixed both incident upload UI paths to send `multipart/form-data`.
+- [x] Re-ran the browser smoke: the menu opens, a PNG file input sends multipart `image`, the detail refresh renders the incident thumbnail, and the inline action strip stays hidden.
+- [x] Passed backend compile check for changed fleet modules.
+- [x] Passed `git diff --check`.
+
+## Review
+- The screenshot issue was caused by the previous UI changes not being present in the active working tree. The active incident card now has a collapsible actions menu with `Upload photo`, the Log incident modal has an `Attach photo` picker, the UI sends real multipart uploads, and resolved/read-only incident states stay aligned with the rest of the action row.
+
+---
+
+# Fleet Incident Photo Upload Error Handling (2026-07-14)
+
+## Plan
+- [x] Inspect whether the live local backend has the new incident photo table and current migration.
+- [x] Check whether the photo provider is configured in the running backend environment.
+- [x] Fix expected photo-provider setup/failure errors so the frontend does not show a masked internal server error.
+- [x] Verify with focused tests and a live multipart API request.
+
+## Progress Notes
+- [x] Confirmed live local database is at Alembic `076` and `fleet_incident_photos` exists.
+- [x] Confirmed local Cloudinary settings are empty, so actual hosted photo upload cannot work until `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` are set.
+- [x] Found the global HTTPException handler masks all 5xx details, so the endpoint's previous 503 appeared as `Internal server error`.
+- [x] Changed expected photo-service setup/provider failures to return `424 Failed Dependency` with a visible message.
+- [x] Added focused tests for missing photo service and provider upload failure.
+- [x] Live API check now returns `424` with `Photo upload service is not configured. Add Cloudinary settings before uploading photos.`
+
+## Review
+- The upload failure is because the photo hosting service is not configured locally, not because the incident photo table is missing. The UI should now show the real setup problem instead of a generic internal server error.
+
+---
+
 # Internal Fleet Costs, Soft-Delete Audit Trail, and Recent Activity Feed (2026-07-07)
 
 ## Plan

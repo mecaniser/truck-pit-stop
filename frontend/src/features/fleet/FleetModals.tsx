@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
-  Check, Minus, RotateCcw, Wrench,
+  Check, Minus, RotateCcw, Wrench, Camera,
 } from 'lucide-react'
 import api from '../../lib/api'
 import BaseSelect from '@/components/BaseSelect'
@@ -1005,14 +1005,32 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
   const [location, setLocation] = useState('')
   const [severity, setSeverity] = useState<IncidentSeverity>('medium')
   const [attempted, setAttempted] = useState(false)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview)
+    }
+  }, [photoPreview])
 
   const descError = description.trim() === '' ? 'Describe what happened before logging the incident.' : null
 
   const create = useMutation({
-    mutationFn: async () => (await api.post('/fleet/incidents', {
-      vehicle_id: vehicleId, occurred_at: new Date().toISOString(),
-      location: location || undefined, severity, description,
-    })).data,
+    mutationFn: async () => {
+      const incident = (await api.post('/fleet/incidents', {
+        vehicle_id: vehicleId, occurred_at: new Date().toISOString(),
+        location: location || undefined, severity, description,
+      })).data as IncidentEntry
+      if (photoFile) {
+        const formData = new FormData()
+        formData.append('image', photoFile)
+        await api.post(`/fleet/incidents/${incident.id}/photos`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      }
+      return incident
+    },
     onSuccess: () => {
       toast.success('Incident logged')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
@@ -1052,6 +1070,40 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
           placeholder="Describe the incident" />
         {attempted && descError && (
           <span style={{ display: 'block', marginTop: 5, fontSize: 12, color: 'var(--red)' }}>{descError}</span>
+        )}
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Photo</span>
+        {photoPreview ? (
+          <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 8, background: 'var(--ink)' }}>
+            <div style={{ position: 'relative' }}>
+              <img src={photoPreview} alt="Incident upload preview" style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 9 }} />
+              <button className={ghostBtn} style={{ position: 'absolute', top: 8, right: 8, height: 30, padding: '0 10px' }} onClick={() => { if (photoPreview) URL.revokeObjectURL(photoPreview); setPhotoPreview(null); setPhotoFile(null) }} disabled={create.isPending}>
+                <X size={13} /> Remove
+              </button>
+            </div>
+          </div>
+        ) : (
+          <label className={ghostBtn} style={{ height: 38, justifyContent: 'center', width: '100%', cursor: create.isPending ? 'not-allowed' : 'pointer' }}>
+            <Camera size={14} /> Attach photo
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              disabled={create.isPending}
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (!file) return
+                if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return }
+                if (file.size > 6 * 1024 * 1024) { toast.error('Image too large. Max 6MB'); return }
+                if (photoPreview) URL.revokeObjectURL(photoPreview)
+                setPhotoFile(file)
+                setPhotoPreview(URL.createObjectURL(file))
+              }}
+            />
+          </label>
         )}
       </div>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
