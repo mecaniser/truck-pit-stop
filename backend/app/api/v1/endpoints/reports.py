@@ -410,13 +410,13 @@ async def get_reports_fees(
 
     categories = {
         "Shop Supplies": [],
-        "Service Fee": [],
+        "Card Processing Fee": [],
     }
     for shop_supplies, service_fee in rows:
         if shop_supplies and shop_supplies > 0:
             categories["Shop Supplies"].append(_money(shop_supplies))
         if service_fee and service_fee > 0:
-            categories["Service Fee"].append(_money(service_fee))
+            categories["Card Processing Fee"].append(_money(service_fee))
 
     fee_rows = []
     grand_total = Decimal("0.00")

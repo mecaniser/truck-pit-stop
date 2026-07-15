@@ -353,7 +353,7 @@ export default function CustomerInvoicePage() {
             <span className="text-white">${parseFloat(invoice.shop_supplies_amount || '0').toFixed(2)}</span>
           </div>
           <div className="flex justify-between mb-2">
-            <span className="text-gray-400">Service Fee</span>
+            <span className="text-gray-400">Card Processing Fee</span>
             <span className="text-white">${parseFloat(invoice.service_fee_amount || '0').toFixed(2)}</span>
           </div>
           <div className="flex justify-between mb-2">

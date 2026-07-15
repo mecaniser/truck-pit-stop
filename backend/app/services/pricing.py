@@ -50,8 +50,9 @@ def get_order_total(order: Any) -> Decimal:
 def get_order_checkout_breakdown(order: Any, tenant: Any) -> dict[str, Decimal]:
     """Return customer-facing checkout estimates using the same repair net total.
 
-    Card total includes service fee and tax on that fee. Zelle total excludes
-    service fee and the tax attributable to the service fee.
+    Card total includes the card processing fee (stored as service_fee_amount)
+    and tax on that fee. Zelle total excludes the card processing fee and the
+    tax attributable to it, since Zelle has no card processing cost.
     """
     parts_total = get_order_parts_total(order)
     labor_total = get_order_labor_total(order)
