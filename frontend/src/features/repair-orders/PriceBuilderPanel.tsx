@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useRef, useState } from 'react'
+import { type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -11,6 +11,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   CreditCard,
   FileText,
   Gauge,
@@ -46,6 +47,16 @@ import {
   RepairOperationCandidate,
   RepairOrderStatus,
 } from '@/types'
+
+// Human labels for the Payment.method enum (stripe/cash/check/ach/zelle/other).
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  stripe: 'Card',
+  cash: 'Cash',
+  check: 'Check',
+  ach: 'ACH transfer',
+  zelle: 'Zelle',
+  other: 'Other',
+}
 
 type TechnicianOption = {
   mechanic_id: string
@@ -407,6 +418,77 @@ function LaborLineEditor({
         <span className="font-semibold text-gray-900">${parseFloat(line.total_cost || '0').toFixed(2)}</span>
       </div>
     </>
+  )
+}
+
+/**
+ * Order number in the panel header. On mobile the value is truncated to fit
+ * the narrow header; tapping it reveals the full number in a small popover so
+ * it stays reachable. Desktop hover also gets a native title.
+ */
+function OrderNumberHeader({ value }: { value: string }) {
+  const [open, setOpen] = useState(false)
+  const [truncated, setTruncated] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const h3Ref = useRef<HTMLHeadingElement>(null)
+
+  useEffect(() => {
+    const el = h3Ref.current
+    if (!el) return
+    const check = () => setTruncated(el.scrollWidth > el.clientWidth + 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [value])
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('pointerdown', close)
+    window.addEventListener('resize', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('pointerdown', close)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [open])
+
+  const toggle = (e: ReactMouseEvent) => {
+    e.stopPropagation()
+    const el = h3Ref.current
+    if (el) {
+      const r = el.getBoundingClientRect()
+      setPos({ top: r.bottom + 8, left: r.left })
+    }
+    setOpen((v) => !v)
+  }
+
+  return (
+    <div className="min-w-0">
+      <h3
+        ref={h3Ref}
+        title={truncated ? value : undefined}
+        onClick={truncated ? toggle : undefined}
+        className={`truncate font-['Barlow_Condensed',sans-serif] text-3xl font-extrabold leading-none tracking-wide${
+          truncated ? ' cursor-pointer' : ''
+        }`}
+      >
+        {value}
+      </h3>
+      {open && pos &&
+        createPortal(
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', top: pos.top, left: pos.left }}
+            className="z-[70] max-w-[calc(100vw-1rem)] break-all rounded-lg bg-white px-3 py-2 font-['JetBrains_Mono',monospace] text-sm font-semibold text-gray-900 shadow-xl ring-1 ring-black/10"
+          >
+            {value}
+          </div>,
+          document.body,
+        )}
+    </div>
   )
 }
 
@@ -920,6 +1002,10 @@ export default function PriceBuilderPanel({
   const addBarReadOnly = !canEdit || isLocked || !isEditableStatus || completionMode || hasInvoice || orderStatus === 'completed'
   const hasQuoteDraft = !!quoteNumber
   const hasAssignedTechnician = !!assignedTechnicianName
+  // A finalized order is closed: the work is done and billed/settled. No more
+  // photo uploads, and the quote pipeline is just clutter (the single status
+  // chip already says it all).
+  const isFinalized = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
   const canManageTechnician = !isInternalOrder && quoteIsApproved && !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
   const availableTechnicians = technicianOptions
     .filter((tech) => tech.mechanic_id !== assignedTechnicianId)
@@ -1584,7 +1670,7 @@ export default function PriceBuilderPanel({
   }, [defaultLaborRate, canMutate])
 
   return (
-    <div className="flex h-full min-h-full flex-col overflow-hidden bg-white">
+    <div className="relative flex h-full min-h-full flex-col overflow-hidden bg-white">
       <div
         className="px-5 py-4 text-white"
         style={{
@@ -1595,12 +1681,19 @@ export default function PriceBuilderPanel({
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-white/75">
-              {isInternalOrder ? 'Internal Fleet Order' : 'Repair Order'}
-            </p>
-            <h3 className="truncate font-['Barlow_Condensed',sans-serif] text-3xl font-extrabold leading-none tracking-wide">
-              #{orderNumber || orderId.slice(0, 8)}
-            </h3>
+            {/* Internal fleet gets a small qualifier; a plain repair order needs
+                no label — the #number is self-evidently the order. */}
+            {isInternalOrder && (
+              <p className="hidden text-[11px] font-bold uppercase tracking-[0.18em] text-white/75 sm:block">
+                Internal Fleet Order
+              </p>
+            )}
+            <OrderNumberHeader value={`#${orderNumber || orderId.slice(0, 8)}`} />
+            {quoteNumber && (
+              <p className="mt-1 truncate font-['JetBrains_Mono',monospace] text-[11px] font-semibold text-white/70">
+                {quoteNumber}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {onPrev && (
@@ -1615,7 +1708,7 @@ export default function PriceBuilderPanel({
               </button>
             )}
             {navigationLabel && (
-              <span className="rounded-full bg-white/14 px-3 py-1 font-['JetBrains_Mono',monospace] text-xs font-semibold text-white/90">
+              <span className="whitespace-nowrap rounded-full bg-white/14 px-3.5 py-1.5 font-['JetBrains_Mono',monospace] text-sm font-semibold tabular-nums text-white/90">
                 {navigationLabel}
               </span>
             )}
@@ -1648,17 +1741,22 @@ export default function PriceBuilderPanel({
             <Building2 className="h-3.5 w-3.5" />
             {customerName || 'Customer'}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
+          {/* Vehicle chip is the least critical here — hide it on mobile so the
+              status + company stay on one tidy row. */}
+          <span className="hidden items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20 sm:inline-flex">
             <Truck className="h-3.5 w-3.5" />
             {[vehicleUnit, vehicleLabel].filter(Boolean).join(' · ') || 'Truck'}
           </span>
         </div>
       </div>
 
-      {!isInternalOrder && (
+      {/* Quote pipeline (Draft → Send → Approved → Technician) is only useful
+          while the order is progressing. On a finalized order it just repeats
+          the status chip above — hide it. */}
+      {!isInternalOrder && !isFinalized && (
         <>
-        <div className="flex items-center justify-between gap-3 border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 text-xs">
-          <div className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
+        <div className="flex items-center border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 text-xs">
+          <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
             <span className={`rounded-full px-2.5 py-1 font-semibold ${
               hasQuoteDraft ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-500 text-white'
             }`}>
@@ -1695,9 +1793,6 @@ export default function PriceBuilderPanel({
               {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : quoteIsApproved ? 'Assign technician' : 'Technician'}
             </span>
           </div>
-          <span className="shrink-0 font-['JetBrains_Mono',monospace] text-[11px] font-semibold text-gray-500">
-            {quoteNumber || 'Q-pending'}
-          </span>
         </div>
         {canManageTechnician && onAssignTechnician && availableTechnicians.length > 0 && (
           <div className="border-t border-orange-100 bg-white px-5 py-3">
@@ -1825,7 +1920,7 @@ export default function PriceBuilderPanel({
             )}
             {parseFloat(invoice.service_fee_amount || '0') > 0 && (
               <div className="flex items-center justify-between">
-                <span className="text-gray-500">Service fee</span>
+                <span className="text-gray-500">Card processing fee</span>
                 <span className="font-semibold text-gray-900">{money(invoice.service_fee_amount)}</span>
               </div>
             )}
@@ -1845,6 +1940,21 @@ export default function PriceBuilderPanel({
               <span className="font-semibold text-purple-950">Invoice total</span>
               <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold text-purple-950">{money(invoice.total_amount)}</span>
             </div>
+            {invoice.payment && (
+              <div className="mt-2 flex items-start justify-between gap-3 rounded-xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Paid</p>
+                  <p className="text-xs text-emerald-800">
+                    {PAYMENT_METHOD_LABELS[invoice.payment.method] || invoice.payment.method}
+                    {invoice.payment.paid_at && ` · ${new Date(invoice.payment.paid_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                    {invoice.payment.recorded_by_name && ` · by ${invoice.payment.recorded_by_name}`}
+                  </p>
+                </div>
+                <span className="shrink-0 font-['Barlow_Condensed',sans-serif] text-xl font-extrabold text-emerald-700">
+                  {money(invoice.payment.amount)}
+                </span>
+              </div>
+            )}
           </div>
           )}
         </div>
@@ -1949,11 +2059,11 @@ export default function PriceBuilderPanel({
               the tab strip entirely; the History panel below carries its own
               header. */}
           {!addBarReadOnly && (
-          <div className="grid grid-cols-4 shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200">
+          <div className="grid w-full grid-cols-4 shrink-0 rounded-xl bg-white p-1 text-xs font-bold shadow-sm ring-1 ring-gray-200 sm:w-auto">
             {([
               ['operation', Wrench, 'Operation'],
               ['part', Box, 'Part'],
-              ['saved_labor', Tag, 'Labor Book Time'],
+              ['saved_labor', Tag, 'Labor'],
               ['history', History, 'History'],
             ] as const).map(([key, Icon, label]) => (
               <button
@@ -1963,12 +2073,12 @@ export default function PriceBuilderPanel({
                   setAddType(key)
                   setPaletteOpen(key !== 'history')
                 }}
-                className={`inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-2 ${
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 ${
                   addType === key ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{label}</span>
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span>{label}</span>
               </button>
             ))}
           </div>
@@ -3035,6 +3145,122 @@ export default function PriceBuilderPanel({
             )}
           </div>
         )}
+
+        {/* Repair photos sit in the body (near Customer & Vehicle), above the
+            Order Total footer. Adding is only allowed while the order is open;
+            on a finalized order with no photos there's nothing to show, so the
+            whole section is hidden. */}
+        {!isDeleted && !(isFinalized && repairPhotos.length === 0) && (
+          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setPhotosOpen((open) => !open)}
+              className="flex w-full flex-wrap items-center justify-between gap-3 text-left"
+              aria-expanded={photosOpen}
+            >
+              <span className="min-w-0">
+                <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">Repair photos</span>
+                <span className="mt-0.5 block text-sm font-semibold text-gray-900">
+                  {repairPhotos.length ? `${repairPhotos.length} photo${repairPhotos.length === 1 ? '' : 's'} attached` : 'No photos attached'}
+                </span>
+              </span>
+              <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                {uploadPhotoMutation.isPending && (
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-orange-300 bg-orange-50">
+                    <Loader2 className="h-4 w-4 animate-spin text-orange-600" />
+                  </span>
+                )}
+                {visiblePhotoThumbs.length > 0 && (
+                  <span className="flex min-w-0 items-center justify-end gap-1">
+                    {visiblePhotoThumbs.map((photo) => (
+                      <span key={photo.id} className="block h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+                        <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
+                      </span>
+                    ))}
+                    {hiddenPhotoThumbCount > 0 && (
+                      <span className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 px-2 text-xs font-bold text-gray-600">
+                        +{hiddenPhotoThumbCount}
+                      </span>
+                    )}
+                  </span>
+                )}
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                  <ChevronDown className={`h-4 w-4 transition-transform ${photosOpen ? 'rotate-180' : ''}`} />
+                </span>
+              </span>
+            </button>
+            {photosOpen && (
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                {/* Upload only while the order is open — a finalized order's photos
+                    are a fixed record; they should have been added before closing. */}
+                {!isFinalized && (
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="text"
+                      value={photoCaption}
+                      onChange={(event) => setPhotoCaption(event.target.value)}
+                      maxLength={500}
+                      placeholder="Optional photo note"
+                      className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    />
+                    <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold text-gray-700 transition hover:border-orange-300 hover:bg-orange-50">
+                      <Camera className="h-4 w-4 text-orange-600" />
+                      Upload photo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadPhotoMutation.isPending}
+                        onChange={handleRepairPhotoSelect}
+                      />
+                    </label>
+                  </div>
+                )}
+                {(repairPhotos.length > 0 || uploadPhotoMutation.isPending) ? (
+                  <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${isFinalized ? '' : 'mt-3'}`}>
+                    {uploadPhotoMutation.isPending && (
+                      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
+                        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-orange-100 via-white to-orange-50" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
+                          <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
+                          <p className="line-clamp-2 text-xs font-semibold text-orange-800">
+                            {pendingPhotoName || 'Uploading photo'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {repairPhotos.map((photo) => (
+                      <div key={photo.id} className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+                        <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2 text-white opacity-100">
+                          <p className="line-clamp-2 text-[11px] font-semibold">{photo.caption || 'Repair photo'}</p>
+                          <p className="mt-0.5 text-[10px] text-white/75">{photo.uploader_name}</p>
+                        </div>
+                        {!isFinalized && (
+                          <button
+                            type="button"
+                            onClick={() => deletePhotoMutation.mutate(photo.id)}
+                            disabled={deletePhotoMutation.isPending}
+                            className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition hover:bg-red-600 disabled:opacity-50 group-hover:opacity-100"
+                            aria-label="Delete repair photo"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-center">
+                    <Camera className="mx-auto h-5 w-5 text-gray-400" />
+                    <p className="mt-2 text-sm font-semibold text-gray-800">No repair photos yet.</p>
+                    <p className="mt-0.5 text-xs text-gray-500">Add evidence photos for this repair order.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       </div>
 
@@ -3305,10 +3531,11 @@ export default function PriceBuilderPanel({
                       type="button"
                       onClick={onDeleteInvoice}
                       disabled={invoiceActionPending}
-                      className="inline-flex h-11 items-center justify-center rounded-xl border border-red-200 bg-red-50 px-3 text-red-700 hover:bg-red-100 disabled:opacity-50"
-                      aria-label="Delete invoice"
+                      className="inline-flex h-11 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      title="Void this invoice and return the order to Completed so you can re-issue it"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <RotateCcw className="h-4 w-4" />
+                      Reset invoice
                     </button>
                   )}
                 </div>
@@ -3379,127 +3606,47 @@ export default function PriceBuilderPanel({
             )}
           </div>
         </div>
-        {!isDeleted && (
-          <div className="-mx-5 mt-4 border-t border-gray-100 bg-gray-50/70 px-5 py-4">
-            <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setPhotosOpen((open) => !open)}
-                className="flex w-full flex-wrap items-center justify-between gap-3 text-left"
-                aria-expanded={photosOpen}
-              >
-                <span className="min-w-0">
-                  <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">Repair photos</span>
-                  <span className="mt-0.5 block text-sm font-semibold text-gray-900">
-                    {repairPhotos.length ? `${repairPhotos.length} photo${repairPhotos.length === 1 ? '' : 's'} attached` : 'No photos attached'}
-                  </span>
-                </span>
-                <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
-                  {uploadPhotoMutation.isPending && (
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-orange-300 bg-orange-50">
-                      <Loader2 className="h-4 w-4 animate-spin text-orange-600" />
-                    </span>
-                  )}
-                  {visiblePhotoThumbs.length > 0 && (
-                    <span className="flex min-w-0 items-center justify-end gap-1">
-                      {visiblePhotoThumbs.map((photo) => (
-                        <span key={photo.id} className="block h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
-                          <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
-                        </span>
-                      ))}
-                      {hiddenPhotoThumbCount > 0 && (
-                        <span className="inline-flex h-10 min-w-10 shrink-0 items-center justify-center rounded-lg bg-gray-100 px-2 text-xs font-bold text-gray-600">
-                          +{hiddenPhotoThumbCount}
-                        </span>
-                      )}
-                    </span>
-                  )}
-                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-                    <ChevronDown className={`h-4 w-4 transition-transform ${photosOpen ? 'rotate-180' : ''}`} />
-                  </span>
-                </span>
-              </button>
-              {photosOpen && (
-                <div className="mt-3 border-t border-gray-100 pt-3">
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <input
-                      type="text"
-                      value={photoCaption}
-                      onChange={(event) => setPhotoCaption(event.target.value)}
-                      maxLength={500}
-                      placeholder="Optional photo note"
-                      className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
-                    />
-                    <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-bold text-gray-700 transition hover:border-orange-300 hover:bg-orange-50">
-                      <Camera className="h-4 w-4 text-orange-600" />
-                      Upload photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadPhotoMutation.isPending}
-                        onChange={handleRepairPhotoSelect}
-                      />
-                    </label>
-                  </div>
-                  {(repairPhotos.length > 0 || uploadPhotoMutation.isPending) ? (
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {uploadPhotoMutation.isPending && (
-                        <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
-                          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-orange-100 via-white to-orange-50" />
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
-                            <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
-                            <p className="line-clamp-2 text-xs font-semibold text-orange-800">
-                              {pendingPhotoName || 'Uploading photo'}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                      {repairPhotos.map((photo) => (
-                        <div key={photo.id} className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
-                          <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />
-                          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-2 text-white opacity-100">
-                            <p className="line-clamp-2 text-[11px] font-semibold">{photo.caption || 'Repair photo'}</p>
-                            <p className="mt-0.5 text-[10px] text-white/75">{photo.uploader_name}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => deletePhotoMutation.mutate(photo.id)}
-                            disabled={deletePhotoMutation.isPending}
-                            className="absolute right-1.5 top-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition hover:bg-red-600 disabled:opacity-50 group-hover:opacity-100"
-                            aria-label="Delete repair photo"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-3 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-center">
-                      <Camera className="mx-auto h-5 w-5 text-gray-400" />
-                      <p className="mt-2 text-sm font-semibold text-gray-800">No repair photos yet.</p>
-                      <p className="mt-0.5 text-xs text-gray-500">Add evidence photos for this repair order.</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
         <div className="-mx-5 -mb-4 mt-4 border-t border-red-100 bg-red-50/60">
           <button
             type="button"
             onClick={onToggleDangerActions}
+            aria-expanded={showDangerActions}
             className="flex w-full items-center justify-between px-5 py-2.5 text-left text-xs font-semibold text-red-700"
           >
             <span className="inline-flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Danger zone</span>
-            <ChevronDown className={`h-4 w-4 transition-transform ${showDangerActions ? 'rotate-180' : ''}`} />
+            <ChevronUp className="h-4 w-4" />
           </button>
-          {showDangerActions && (
-            <div className="border-t border-red-100 px-5 py-3">
+        </div>
+      </div>
+
+      {/* Danger actions open as a bottom sheet on top of the panel so the page
+          geometry never shifts (no inline accordion pushing content down). */}
+      {showDangerActions && (
+        <div className="absolute inset-0 z-40 flex flex-col justify-end">
+          <button
+            type="button"
+            aria-label="Close danger zone"
+            onClick={onToggleDangerActions}
+            className="absolute inset-0 bg-gray-900/40"
+          />
+          <div className="animate-slide-in-bottom relative flex max-h-[80%] flex-col rounded-t-2xl border-t border-red-100 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-red-100 bg-red-50/60 px-5 py-3">
+              <span className="inline-flex items-center gap-2 text-sm font-semibold text-red-700">
+                <AlertTriangle className="h-4 w-4" /> Danger zone
+              </span>
+              <button
+                type="button"
+                onClick={onToggleDangerActions}
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-red-600 hover:bg-red-100"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
               {isDeleted ? (
                 <>
-                  <p className="mb-3 text-sm text-red-700">
+                  <p className="mb-4 text-sm text-red-700">
                     {(() => {
                       const when = deletedAt ? format(new Date(deletedAt), 'MMM d, yyyy h:mm a') : null
                       if (deletedByName && when) return `Deleted by ${deletedByName} on ${when}. Restore to bring it back.`
@@ -3507,40 +3654,36 @@ export default function PriceBuilderPanel({
                       return 'This order is deleted. Restore to bring it back.'
                     })()}
                   </p>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      disabled={restorePending}
-                      onClick={onRestoreOrder}
-                      className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      {restorePending ? 'Restoring...' : 'Restore order'}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={restorePending}
+                    onClick={onRestoreOrder}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {restorePending ? 'Restoring...' : 'Restore order'}
+                  </button>
                 </>
               ) : (
                 <>
-                  <p className="mb-3 text-sm text-red-700">
+                  <p className="mb-4 text-sm text-red-700">
                     Delete removes this order from your active lists. Nothing is destroyed —
                     it can be restored later from the Deleted filter.
                   </p>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      disabled={deletePending}
-                      onClick={onDeleteOrder}
-                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-                    >
-                      {deletePending ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={deletePending}
+                    onClick={onDeleteOrder}
+                    className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {deletePending ? 'Deleting...' : 'Delete'}
+                  </button>
                 </>
               )}
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

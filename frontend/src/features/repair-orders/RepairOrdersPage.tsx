@@ -12,7 +12,7 @@ import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
 import CustomerSelect from '../../components/CustomerSelect'
-import { customerDisplayName as customerNameOf } from '../../lib/customerName'
+import { customerDisplayName as customerNameOf, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { formatUSPhone } from '@/utils/phone'
 import { getServiceStockStatus } from '@/utils/serviceStock'
@@ -671,7 +671,6 @@ export default function RepairOrdersPage() {
   const customerDisplayName = selectedOrder?.is_internal
     ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
     : customerNameOf(selectedOrderCustomer)
-  const paymentCustomerName = customerDisplayName
 
   // Display name for an order in a list row: fleet company for internal ROs,
   // else the customer's company name (primary) / personal name (fallback).
@@ -685,6 +684,11 @@ export default function RepairOrdersPage() {
   const paymentVehicleLabel = selectedOrderVehicle
     ? vehicleDisplayLabel({ ...selectedOrderVehicle, unit_number: null })
     : 'Vehicle info unavailable'
+  // Contact person behind the company (distinct from the company name), shown
+  // in the Zelle "Payment For" block only when the company has a real contact.
+  const paymentContactPerson = selectedOrder?.is_internal ? '' : customerPersonalName(selectedOrderCustomer)
+  const paymentContactPhone = selectedOrder?.is_internal ? '' : (selectedOrderCustomer?.phone || '')
+  const hasPaymentContact = Boolean(paymentContactPerson || paymentContactPhone)
 
   const parseServiceNotes = (notes?: string | null) => {
     if (!notes) return null
@@ -1087,7 +1091,7 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-for-order'] })
       setSelectedOrder(prev => prev ? { ...prev, status: 'completed' } : null)
-      toast.success('Invoice deleted. You can now recreate it.')
+      toast.success('Invoice reset. Order is back to Completed — you can issue a new invoice.')
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to delete invoice'))
@@ -3970,12 +3974,11 @@ export default function RepairOrdersPage() {
                             type="button"
                             onClick={() => setShowDeleteInvoiceConfirm(true)}
                             disabled={deleteInvoiceMutation.isPending}
-                            className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-colors"
-                            title="Delete invoice"
+                            className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors"
+                            title="Void this invoice and return the order to Completed so you can re-issue it"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
+                            <RotateCcw className="w-4 h-4" />
+                            Reset
                           </button>
                         </div>
                         <button
@@ -4481,21 +4484,21 @@ export default function RepairOrdersPage() {
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 rounded-full bg-amber-100">
-                  <Trash2 className="w-6 h-6 text-amber-600" />
+                  <RotateCcw className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Delete Invoice</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Reset Invoice</h3>
                   <p className="text-sm text-gray-500">#{invoiceForOrder.invoice_number}</p>
                 </div>
               </div>
-              
+
               <p className="text-gray-600 mb-4">
-                Are you sure you want to delete this invoice?
+                Void this invoice and start over?
               </p>
-              
+
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6">
                 <p className="text-sm text-amber-800">
-                  The repair order will return to <strong>"completed"</strong> status and you can create a new invoice.
+                  The invoice will be voided and the repair order returns to <strong>"completed"</strong> status, so you can issue a new invoice. Nothing on the order is lost.
                 </p>
               </div>
               
@@ -4522,7 +4525,7 @@ export default function RepairOrdersPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Delete Invoice
+                  Reset Invoice
                 </button>
               </div>
             </div>
@@ -4599,12 +4602,17 @@ export default function RepairOrdersPage() {
                 </div>
               )}
 
-              {/* Amount Display */}
-              {invoiceForOrder && (
+              {/* Amount Display — this is the Zelle registration, so the amount
+                  excludes the card processing fee (Zelle has no card cost).
+                  Matches the backend zelle_amount = total - service_fee. */}
+              {invoiceForOrder && (() => {
+                const cardFee = parseMoney(invoiceForOrder.service_fee_amount)
+                const zelleTotal = parseMoney(invoiceForOrder.total_amount) - cardFee
+                return (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm text-green-800">
-                      Amount due: <span className="font-bold">{formatMoney(invoiceForOrder.total_amount)}</span>
+                      Amount due: <span className="font-bold">{formatMoney(zelleTotal)}</span>
                     </p>
                     <button
                       type="button"
@@ -4626,12 +4634,6 @@ export default function RepairOrdersPage() {
                           <span>{formatMoney(invoiceForOrder.shop_supplies_amount)}</span>
                         </div>
                       )}
-                      {parseMoney(invoiceForOrder.service_fee_amount) > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span>Service fee</span>
-                          <span>{formatMoney(invoiceForOrder.service_fee_amount)}</span>
-                        </div>
-                      )}
                       {parseMoney(invoiceForOrder.tax_amount) > 0 && (
                         <div className="flex items-center justify-between">
                           <span>Tax</span>
@@ -4644,14 +4646,21 @@ export default function RepairOrdersPage() {
                           <span>-{formatMoney(invoiceForOrder.discount_amount)}</span>
                         </div>
                       )}
+                      {cardFee > 0 && (
+                        <div className="flex items-center justify-between text-green-700">
+                          <span>Card processing fee waived</span>
+                          <span>-{formatMoney(cardFee)}</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between pt-2 border-t border-green-200 font-semibold">
                         <span>Total</span>
-                        <span>{formatMoney(invoiceForOrder.total_amount)}</span>
+                        <span>{formatMoney(zelleTotal)}</span>
                       </div>
                     </div>
                   )}
                 </div>
-              )}
+                )
+              })()}
 
               {zelleModalMode === 'collect' && isSelectedOrderWalkIn ? (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 space-y-3">
@@ -4702,10 +4711,6 @@ export default function RepairOrdersPage() {
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
-                      <p className="text-[11px] text-slate-500 uppercase tracking-wide">Customer</p>
-                      <p className="text-sm font-semibold text-slate-900 truncate">{paymentCustomerName}</p>
-                    </div>
-                    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
                       <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-1.5">Company / Truck Unit</p>
                       <p
                         className="text-sm font-semibold text-slate-900 truncate"
@@ -4714,6 +4719,24 @@ export default function RepairOrdersPage() {
                         {paymentCompanyNameShort} &middot; Unit: {paymentTruckUnit}
                       </p>
                     </div>
+                    {hasPaymentContact && (
+                      <div className="bg-white border border-slate-200 rounded-lg px-3 py-2">
+                        <p className="text-[11px] text-slate-500 uppercase tracking-wide mb-1.5">Contact</p>
+                        <div className="flex items-center justify-between gap-2">
+                          {paymentContactPerson && (
+                            <p className="text-sm font-semibold text-slate-900 truncate">{paymentContactPerson}</p>
+                          )}
+                          {paymentContactPhone && (
+                            <a
+                              href={`tel:${paymentContactPhone}`}
+                              className="text-sm font-semibold text-slate-700 whitespace-nowrap hover:text-slate-900"
+                            >
+                              {paymentContactPhone}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <p className="mt-2 text-xs text-slate-500 truncate">Vehicle: {paymentVehicleLabel}</p>
                 </div>
