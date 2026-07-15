@@ -136,7 +136,7 @@ def _build_quote_checkout_html(order: RepairOrder, tenant: Tenant) -> str:
     for label, key in (
         ("Repair total", "repair_total"),
         ("Shop supplies", "shop_supplies_amount"),
-        ("Service fee", "service_fee_amount"),
+        ("Card processing fee", "service_fee_amount"),
         ("Estimated tax", "tax_amount"),
     ):
         amount = breakdown[key]

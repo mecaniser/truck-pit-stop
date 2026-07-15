@@ -112,7 +112,7 @@ function AppToaster() {
           color: '#fff',
           borderRadius: '0.75rem',
           maxWidth: '480px',
-          width: '100%',
+          width: 'auto',
           padding: '12px 16px',
         },
         success: {
@@ -128,7 +128,7 @@ function AppToaster() {
           {({ icon, message }) => (
             <>
               {icon}
-              {message}
+              <span className="whitespace-nowrap">{message}</span>
               {t.type !== 'loading' && (
                 <button
                   type="button"

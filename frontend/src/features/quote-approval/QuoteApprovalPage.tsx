@@ -531,7 +531,7 @@ export default function QuoteApprovalPage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-wide text-amber-300">Estimated checkout total</p>
-                  <p className="text-xs text-gray-400">Includes estimated shop supplies, service fee, and tax.</p>
+                  <p className="text-xs text-gray-400">Includes estimated shop supplies, card processing fee, and tax.</p>
                 </div>
               </div>
               <div className="space-y-1 text-sm">
@@ -547,7 +547,7 @@ export default function QuoteApprovalPage() {
                 )}
                 {parseFloat(service_fee_amount || '0') > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Service fee</span>
+                    <span className="text-gray-400">Card processing fee</span>
                     <span className="text-white">${parseFloat(service_fee_amount || '0').toFixed(2)}</span>
                   </div>
                 )}

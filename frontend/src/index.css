@@ -93,6 +93,25 @@ html::-webkit-scrollbar-thumb:hover {
   animation: slide-in-right 0.3s ease-out;
 }
 
+@keyframes slide-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in-bottom {
+  animation: slide-in-bottom 0.28s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-slide-in-bottom {
+    animation: none;
+  }
+}
+
 /* Staggered fade-in animation for lists/grids */
 @keyframes fadeIn {
   from {

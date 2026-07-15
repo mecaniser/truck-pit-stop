@@ -1800,7 +1800,7 @@ function FeesSection() {
               {[
                 { label: 'Sales Tax', value: `${taxFeeSettings?.sales_tax_rate ?? 0}%` },
                 { label: 'Supplies', value: `${taxFeeSettings?.shop_supplies_rate ?? 0}%` },
-                { label: 'Service Fee', value: `${taxFeeSettings?.service_fee_rate ?? 0}%` },
+                { label: 'Card Processing Fee', value: `${taxFeeSettings?.service_fee_rate ?? 0}%` },
                 { label: 'Labor Rate', value: `$${taxFeeSettings?.labor_rate ?? 100}/hr` },
                 { label: 'Internal Fleet Labor', value: `$${taxFeeSettings?.internal_labor_rate ?? 0}/hr` },
               ].map((item, i) => (
@@ -1879,7 +1879,7 @@ function FeesSection() {
                 </div>
               </div>
               <div>
-                <label className={industrialStyles.label}>Service Fee (%)</label>
+                <label className={industrialStyles.label}>Card Processing Fee (%)</label>
                 <div className="relative">
                   <input
                     type="text"

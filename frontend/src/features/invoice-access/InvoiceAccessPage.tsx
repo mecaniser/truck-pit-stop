@@ -627,7 +627,7 @@ export default function InvoiceAccessPage() {
                 <span>{formatMoney(invoice.shop_supplies_amount)}</span>
               </div>
               <div className="flex items-center justify-between text-gray-700">
-                <span>Service Fee</span>
+                <span>Card Processing Fee</span>
                 <span>{formatMoney(invoice.service_fee_amount)}</span>
               </div>
               <div className="flex items-center justify-between text-gray-700">
