@@ -694,13 +694,17 @@ async def record_manual_payment(
     # Update repair order status
     invoice.repair_order.status = RepairOrderStatus.PAID
     
-    # Create payment record
+    # Create payment record. Manual methods (cash, zelle, check, ach, other) are
+    # not card payments, so they don't incur the card processing fee — the amount
+    # actually collected is the invoice total minus that fee. Only Stripe (card)
+    # collects the full total_amount.
+    collected_amount = invoice.total_amount - (invoice.service_fee_amount or Decimal("0.00"))
     payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
     payment = Payment(
         tenant_id=invoice.tenant_id,
         invoice_id=invoice.id,
         payment_number=payment_number,
-        amount=invoice.total_amount,
+        amount=collected_amount,
         method=method_map[body.method],
         status=PaymentStatus.COMPLETED,
         notes=body.notes,

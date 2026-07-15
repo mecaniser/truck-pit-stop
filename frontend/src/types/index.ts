@@ -550,8 +550,16 @@ export interface Invoice {
   zelle_pending_sender_phone?: string | null
   zelle_pending_last_reminder_at?: string | null
   zelle_pending_reminder_count?: number
+  payment?: InvoicePaymentSummary | null
   created_at: string
   updated_at: string
+}
+
+export interface InvoicePaymentSummary {
+  amount: string
+  method: string
+  paid_at: string | null
+  recorded_by_name?: string | null
 }
 
 export interface InvoiceDetail extends Invoice {

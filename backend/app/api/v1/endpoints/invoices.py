@@ -13,6 +13,7 @@ from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
@@ -181,7 +182,7 @@ def _build_invoice_email_html(
     if invoice.service_fee_amount and Decimal(str(invoice.service_fee_amount)) > 0:
         items_html += f"""
         <tr>
-          <td style="padding:6px 8px;color:#374151;border-bottom:1px solid #f3f4f6;">Processing Fee</td>
+          <td style="padding:6px 8px;color:#374151;border-bottom:1px solid #f3f4f6;">Card Processing Fee</td>
           <td style="padding:6px 8px;color:#6b7280;text-align:right;border-bottom:1px solid #f3f4f6;">1</td>
           <td style="padding:6px 8px;color:#6b7280;text-align:right;border-bottom:1px solid #f3f4f6;"></td>
           <td style="padding:6px 8px;color:#1f2937;font-weight:600;text-align:right;border-bottom:1px solid #f3f4f6;">${Decimal(str(invoice.service_fee_amount)):,.2f}</td>
@@ -304,6 +305,14 @@ class ResendInvoiceRequest(BaseModel):
     custom_email: Optional[str] = None
 
 
+class PaymentSummary(BaseModel):
+    """How a paid invoice was actually settled — surfaced on the order screen."""
+    amount: Decimal
+    method: str
+    paid_at: Optional[datetime]
+    recorded_by_name: Optional[str] = None
+
+
 class InvoiceResponse(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -311,6 +320,7 @@ class InvoiceResponse(BaseModel):
     invoice_number: str
     status: str
     is_internal: bool = False
+    payment: Optional[PaymentSummary] = None
     subtotal: Decimal
     shop_supplies_amount: Decimal = Decimal("0.00")
     service_fee_amount: Decimal = Decimal("0.00")
@@ -711,7 +721,41 @@ async def list_invoices(
 
     result = await db.execute(query)
     invoices = result.scalars().all()
-    items = [InvoiceResponse.model_validate(inv) for inv in invoices]
+
+    # Attach a payment summary (how it was actually settled) to paid invoices.
+    paid_ids = [inv.id for inv in invoices if inv.status == InvoiceStatus.PAID]
+    payments_by_invoice: dict[UUID, PaymentSummary] = {}
+    if paid_ids:
+        pay_result = await db.execute(
+            select(Payment)
+            .options(selectinload(Payment.recorded_by_user))
+            .where(
+                Payment.invoice_id.in_(paid_ids),
+                Payment.status == PaymentStatus.COMPLETED,
+            )
+            .order_by(Payment.created_at.desc())
+        )
+        for pay in pay_result.scalars().all():
+            # Keep the most recent completed payment per invoice (query is desc).
+            if pay.invoice_id in payments_by_invoice:
+                continue
+            recorder = pay.recorded_by_user
+            recorded_by_name = (
+                f"{recorder.first_name} {recorder.last_name}".strip()
+                if recorder else None
+            )
+            payments_by_invoice[pay.invoice_id] = PaymentSummary(
+                amount=pay.amount,
+                method=pay.method.value if hasattr(pay.method, "value") else str(pay.method),
+                paid_at=pay.created_at,
+                recorded_by_name=recorded_by_name or None,
+            )
+
+    items = []
+    for inv in invoices:
+        resp = InvoiceResponse.model_validate(inv)
+        resp.payment = payments_by_invoice.get(inv.id)
+        items.append(resp)
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
