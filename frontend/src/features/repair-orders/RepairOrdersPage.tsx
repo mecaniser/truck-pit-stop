@@ -1266,13 +1266,21 @@ export default function RepairOrdersPage() {
   // Placed before the isLoading early return below so this hook always runs
   // in the same order across renders — moving it after that guard broke the
   // Rules of Hooks (present on some renders, absent on others).
+  //
+  // Must also wait on !isPlaceholderData: react-query's placeholderData:
+  // keepPreviousData means `orders` briefly still holds the OUTGOING page's
+  // data the instant `page` changes (not empty, not undefined — just stale),
+  // so without this check the effect could fire on the previous page's last
+  // row instead of the new page's first row, landing on the wrong order or
+  // opening one whose detail/price-build queries then race against the
+  // still-in-flight real fetch and can settle into a false failure state.
   useEffect(() => {
-    if (!pendingPageNav || !orders || orders.length === 0) return
+    if (!pendingPageNav || !orders || orders.length === 0 || isPlaceholderData) return
     const target = pendingPageNav === 'first' ? orders[0] : orders[orders.length - 1]
     setPendingPageNav(null)
     openDetail(target)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingPageNav, orders])
+  }, [pendingPageNav, orders, isPlaceholderData])
 
   if (isLoading) {
     return (
@@ -1368,6 +1376,11 @@ export default function RepairOrdersPage() {
   const showNavigation = navigationOrders.length > 1 && currentNavIndex >= 0
   const hasPrev = (currentNavIndex > 0) || canCrossToPrevPage
   const hasNext = (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) || canCrossToNextPage
+  // Position within the current 25-row page, projected onto the true
+  // position across every page — otherwise crossing a page boundary reset
+  // the counter back to "1 / 25" instead of continuing "26 / <total>".
+  const globalNavPosition = currentNavIndex >= 0 ? page * RO_PAGE_SIZE + currentNavIndex + 1 : 0
+  const globalNavTotal = totalOrders || navigationOrders.length
 
   const goToNextOrder = () => {
     if (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) {
@@ -2701,7 +2714,7 @@ export default function RepairOrdersPage() {
         onNext={!priceBuilderOwnsShell && (showNavigation || hasNext) ? goToNextOrder : undefined}
         prevDisabled={!hasPrev}
         nextDisabled={!hasNext}
-        navigationLabel={!priceBuilderOwnsShell && showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
+        navigationLabel={!priceBuilderOwnsShell && showNavigation ? `${globalNavPosition} / ${globalNavTotal}` : undefined}
         headerExtra={
           !priceBuilderOwnsShell && selectedOrder && (() => {
             const detailOrder = orderDetail ?? selectedOrder
@@ -3185,7 +3198,7 @@ export default function RepairOrdersPage() {
                     defaultLaborRate={taxFeeSettings?.labor_rate}
                     description={selectedOrder.description}
                     orderNumber={selectedOrder.order_number}
-                    navigationLabel={showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
+                    navigationLabel={showNavigation ? `${globalNavPosition} / ${globalNavTotal}` : undefined}
                     customerName={customerDisplayName}
                     vehicleLabel={paymentVehicleLabel}
                     vehicleUnit={selectedOrderVehicle?.unit_number}
