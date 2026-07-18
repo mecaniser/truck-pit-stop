@@ -1622,20 +1622,19 @@ export default function RepairOrdersPage() {
 
   const canViewDeletedOrders = ['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
 
+  // Only the statuses this shop's workflow actually moves orders through. The
+  // technician-assignment states (assigned/acknowledged/pending_review) and
+  // cancelled are unused here, so they're dropped to keep the filter clean.
+  // approved/declined are kept as valid quote outcomes.
   const statusOptions = [
     { value: 'all', label: 'All' },
-    { value: 'draft', label: 'Draft' },
     { value: 'quoted', label: 'Quoted' },
     { value: 'declined', label: 'Declined' },
     { value: 'approved', label: 'Approved' },
-    { value: 'assigned', label: 'Assigned' },
-    { value: 'acknowledged', label: 'Acknowledged' },
     { value: 'in_progress', label: 'In Progress' },
-    { value: 'pending_review', label: 'Pending Review' },
     { value: 'completed', label: 'Completed' },
     { value: 'invoiced', label: 'Invoiced' },
     { value: 'paid', label: 'Paid' },
-    { value: 'cancelled', label: 'Cancelled' },
     ...(canViewDeletedOrders ? [{ value: 'deleted', label: 'Deleted' }] : []),
   ]
 
