@@ -575,6 +575,30 @@ export default function DashboardHome() {
     }
   }, [hasAttentionRequired])
 
+  // On mobile the attention pills eat scarce vertical space, so auto-dismiss
+  // them after a grace period: the first clears at 15s, then one more every 6s.
+  // Staff can still tap through to the linked view before then. Desktop keeps
+  // them until manually dismissed.
+  const activeAlertKeys = [
+    (stats?.low_stock_count ?? 0) > 0 && 'lowStock',
+    (stats?.overdue_approvals ?? 0) > 0 && 'overdueApprovals',
+    (stats?.declined_quotes ?? 0) > 0 && 'declinedQuotes',
+  ].filter(Boolean) as string[]
+  const activeAlertSignature = activeAlertKeys.join(',')
+
+  useEffect(() => {
+    if (isDesktop || !hasAttentionRequired) return
+    const pending = activeAlertKeys.filter(k => !dismissedAlertKeys.has(k))
+    if (pending.length === 0) return
+    // First pill clears at 15s, then one more every 6s, so they fade out one at
+    // a time rather than all at once.
+    const timers = pending.map((k, i) =>
+      setTimeout(() => handleDismissAlert(k), 15000 + i * 6000)
+    )
+    return () => timers.forEach(clearTimeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDesktop, hasAttentionRequired, activeAlertSignature])
+
 
   const validateQuickForm = () => {
     const errors: { phone?: string; complaint?: string } = {}
@@ -658,38 +682,41 @@ export default function DashboardHome() {
     >
       {/* Header */}
       <div className="flex-shrink-0">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+        <div className="flex flex-row items-start justify-between gap-3 lg:items-end">
+          <div className="min-w-0">
             <h1 className="text-2xl sm:text-3xl 2xl:text-[2.15rem] font-bold text-white">
               {isMechanic ? 'My Workbench' : 'Shop Cockpit'}
             </h1>
-            <p className="text-gray-400 mt-1 2xl:text-[1.02rem]">
+            <p className="text-gray-400 mt-1 2xl:text-[1.02rem] truncate">
               {isMechanic
                 ? `You have ${stats?.my_in_progress || 0} jobs in progress`
                 : `Welcome back, ${user?.first_name || user?.email}`}
             </p>
           </div>
 
-          {/* Manager CTA Buttons */}
+          {/* Manager CTA Buttons. On mobile they sit on the title's row and go
+              icon-only to save width; labels return at sm+. */}
           {isManager && (
-            <div className="flex flex-wrap items-center gap-3 lg:flex-nowrap lg:justify-end">
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2.5 sm:gap-3 lg:flex-nowrap">
               <button
                 onClick={() => setShowQuickForm(!showQuickForm)}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 font-semibold rounded-xl transition-colors text-white"
+                className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl px-3.5 font-semibold text-white transition-colors sm:px-4"
                 style={{
                   backgroundColor: showQuickForm ? accentColors[600] : accentColors[500],
                   boxShadow: `0 10px 15px -3px ${accentColors[500]}33`,
                 }}
+                aria-label="Lightning Order"
               >
-                <Zap className="w-4 h-4" />
-                <span>Lightning Order</span>
+                <Zap className="h-5 w-5" />
+                <span className="hidden sm:inline">Lightning Order</span>
               </button>
               <button
                 onClick={() => navigate('/dashboard/repair-orders?new=true')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-xl transition-colors border border-white/10"
+                className="flex h-12 min-w-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 font-semibold text-white transition-colors hover:bg-white/10 sm:px-4"
+                aria-label="Full Order"
               >
-                <Plus className="w-4 h-4" />
-                <span>Full Order</span>
+                <Plus className="h-5 w-5" />
+                <span className="hidden sm:inline">Full Order</span>
               </button>
             </div>
           )}
