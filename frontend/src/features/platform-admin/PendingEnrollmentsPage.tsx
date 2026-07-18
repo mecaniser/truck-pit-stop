@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { 
   Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, 
-  Calendar, FileText, Globe, Clock, AlertTriangle, Loader2, UserCheck 
+  Calendar, FileText, Globe, Clock, AlertTriangle, UserCheck 
 } from 'lucide-react'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
@@ -117,7 +118,7 @@ export default function PendingEnrollmentsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -347,7 +348,7 @@ export default function PendingEnrollmentsPage() {
                       disabled={rejectMutation.isPending}
                       className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
-                      {rejectMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {rejectMutation.isPending && <Spinner size="xs" />}
                       Confirm Rejection
                     </button>
                   </div>
@@ -362,7 +363,7 @@ export default function PendingEnrollmentsPage() {
                     disabled={approveMutation.isPending}
                     className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg text-sm transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
-                    {approveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {approveMutation.isPending && <Spinner size="xs" />}
                     <CheckCircle className="w-4 h-4" />
                     Approve
                   </button>

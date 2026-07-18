@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Download, Settings, Trash2, Wrench, Plus, X, Check, Loader2, Sparkles } from 'lucide-react'
+import { Download, Settings, Trash2, Wrench, Plus, X, Check, Sparkles } from 'lucide-react'
 import SearchAddBar from '@/components/SearchAddBar'
 import ViewToggle from '@/components/ViewToggle'
 import BaseSelect from '@/components/BaseSelect'
@@ -523,7 +524,7 @@ export default function ServicesManagementPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -1185,7 +1186,7 @@ export default function ServicesManagementPage() {
                 {editingService ? (
                   autoSaveState === 'saving' ? (
                     <span key="saving" className="animate-status-swap flex items-center gap-1.5 text-xs text-gray-500">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <Spinner size="xs" />
                       Saving…
                     </span>
                   ) : autoSaveState === 'saved' ? (

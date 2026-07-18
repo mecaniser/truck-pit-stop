@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, CalendarRange, ClipboardList, Users,
-  Bell, LogOut, Plus, Loader2, X, Wrench, ArrowLeft, Settings, UserRound, KeyRound, Eye, EyeOff,
+  Bell, LogOut, Plus, X, Wrench, ArrowLeft, Settings, UserRound, KeyRound, Eye, EyeOff,
   Calendar, Play, Flag, ClipboardCheck, ChevronsLeft, ChevronsRight, Pencil,
 } from 'lucide-react'
 import api from '../../lib/api'
@@ -145,7 +146,7 @@ export default function FleetApp() {
           <div className="scroll">
             <div className="page-pad">
               {isLoading || !data ? (
-                <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
+                <div className="loader"><Spinner size="md" /></div>
               ) : view === 'detail' && selId ? (
                 <TruckDetail truckId={selId} trucks={trucks} onBack={() => goView('board')} onOpen={openTruck} />
               ) : view === 'board' ? (
@@ -306,7 +307,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
               <Wrench size={14} /> Open WO
             </button>
             <button className="sbtn sbtn-yellow" disabled={startPM.isPending} onClick={() => startPM.mutate()}>
-              {startPM.isPending ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Start PM
+              {startPM.isPending ? <Spinner size="xs" /> : <Play size={14} />} Start PM
             </button>
           </>
         )}
@@ -447,7 +448,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                 placeholder="17-character VIN"
               />
               <button className="dbtn dbtn-ghost" type="button" onClick={() => decodeVin(form.vin)} disabled={decoding || form.vin.trim().length !== 17}>
-                {decoding ? <Loader2 size={14} className="animate-spin" /> : 'Decode'}
+                {decoding ? <Spinner size="xs" /> : 'Decode'}
               </button>
             </div>
           </div>
@@ -462,7 +463,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
         </div>
         <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
           disabled={!form.make.trim() || !form.model.trim() || create.isPending} onClick={() => create.mutate()}>
-          {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Add truck
+          {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Add truck
         </button>
       </div>
     </div>
@@ -657,7 +658,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
                 </button>
                 <button className="dbtn dbtn-yellow" style={{ flex: 1, justifyContent: 'center' }}
                   disabled={saving} onClick={save}>
-                  {saving ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />} Save changes
+                  {saving ? <Spinner size="sm" /> : <UserRound size={15} />} Save changes
                 </button>
               </div>
             </>

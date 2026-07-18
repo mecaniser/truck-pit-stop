@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { CheckCircle, XCircle, Truck, Wrench, AlertCircle, Loader2 } from 'lucide-react'
+import { CheckCircle, XCircle, Truck, Wrench, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import TenantBrandLogo from '../../components/brand/TenantBrandLogo'
@@ -151,7 +152,7 @@ export default function QuoteApprovalPage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-amber-500 animate-spin mx-auto" />
+          <Spinner size="xl" />
           <p className="text-gray-400 mt-4">Loading quote...</p>
         </div>
       </div>
@@ -625,7 +626,7 @@ export default function QuoteApprovalPage() {
                 >
                   {approveMutation.isPending ? (
                     <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <Spinner size="sm" />
                       Approving...
                     </>
                   ) : (

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { formatDistanceToNow, isToday, isYesterday, format } from 'date-fns'
 import {
-  FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, Loader2, AlertTriangle,
+  FileText, FilePlus, CheckCircle2, CreditCard, OctagonX, Trash2, ClipboardList, AlertTriangle,
 } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -252,7 +253,7 @@ export default function RecentActivityFeed({
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8 text-gray-400">
-          <Loader2 className="w-5 h-5 animate-spin" />
+          <Spinner size="sm" />
         </div>
       ) : dayGroups.length === 0 ? (
         <p className="text-sm text-gray-500 text-center py-8">No activity matches these filters.</p>

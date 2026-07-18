@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import type {
@@ -22,7 +23,6 @@ import {
   CheckCheck,
   Clock,
   Inbox,
-  Loader2,
   MessageSquare,
   Pencil,
   Send,
@@ -458,7 +458,7 @@ export default function MessagesInboxPage() {
             (!!selectedNewCustomer && !selectedNewCustomer.phone && !newCustomerPhone.trim())
           }
         >
-          {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+          {sending ? <Spinner size="xs" /> : <Send className="w-3.5 h-3.5" />}
           <span className="hidden sm:inline">Send</span>
         </button>
       </div>
@@ -493,7 +493,7 @@ export default function MessagesInboxPage() {
       <div className="flex border-b border-white/10 px-2">
         {tabButton('inbox', <Inbox className="w-3.5 h-3.5" />, 'Inbox', inboxUnread)}
         {tabButton('archived', <Archive className="w-3.5 h-3.5" />, 'Archived')}
-        {threadsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500 ml-auto self-center mr-2" />}
+        {threadsLoading && <Spinner size="xs" />}
       </div>
 
       {/* Thread list */}
@@ -646,7 +646,7 @@ export default function MessagesInboxPage() {
 
             {messagesLoading && messages.length === 0 && (
               <div className="flex justify-center py-8">
-                <Loader2 className="w-5 h-5 animate-spin text-gray-500" />
+                <Spinner size="sm" />
               </div>
             )}
 
@@ -717,7 +717,7 @@ export default function MessagesInboxPage() {
                 onClick={sendReply}
                 disabled={sending || !replyBody.trim()}
               >
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? <Spinner size="xs" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
           </div>
@@ -802,7 +802,7 @@ export default function MessagesInboxPage() {
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
                 {activeTab === 'inbox' ? 'Inbox' : 'Archived'}
               </span>
-              {threadsLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-500" />}
+              {threadsLoading && <Spinner size="xs" />}
             </div>
             <div className="flex-1 overflow-y-auto">
               {displayedThreads.length === 0 && !threadsLoading && (

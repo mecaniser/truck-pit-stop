@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Spinner, LoadingLine } from '@/components/ui'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { formatHoursMinutes } from '@/lib/durationFormat'
@@ -7,7 +8,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Loader2, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -131,7 +132,7 @@ function RepairOrderLaborBreakdown({
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-gray-500">Loading labor breakdown…</p>
+        <LoadingLine className="text-gray-500">Loading labor breakdown…</LoadingLine>
       ) : laborItems.length > 0 ? (
         <div className="space-y-2">
           {laborItems.map((line) => (
@@ -1313,7 +1314,7 @@ export default function RepairOrdersPage() {
           <div className="hidden lg:flex flex-shrink-0 items-center justify-between gap-4 px-4 py-3 border-b border-white/10">
             <div className="h-7 w-32 bg-white/10 rounded-lg animate-pulse" />
             <div className="flex items-center gap-2 text-sm text-white/50">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Spinner size="xs" />
               Loading repair orders…
             </div>
           </div>
@@ -1873,7 +1874,7 @@ export default function RepairOrdersPage() {
               skeleton; this covers subsequent batch fetches). */}
           {isFetching && !isLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-blueNoir-900/40 backdrop-blur-[1px] pointer-events-none">
-              <Loader2 className="w-6 h-6 text-white/80 animate-spin" />
+              <Spinner size="md" className="border-white/40 border-t-white" />
             </div>
           )}
           {isMobile ? (
@@ -2677,10 +2678,7 @@ export default function RepairOrdersPage() {
                       createRepairOrderMutation.isPending ||
                       createCustomerMutation.isPending ||
                       createVehicleMutation.isPending) && (
-                      <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
+                      <Spinner size="xs" className="border-white/40 border-t-white" />
                     )}
                     Create Repair Order
                   </button>
@@ -2790,7 +2788,7 @@ export default function RepairOrdersPage() {
         {selectedOrder && isOrderDetailLoading && !orderDetail && !priceBuilderOwnsShell && (
           <div className="p-6 space-y-6 animate-pulse">
             <div className="flex items-center gap-2 text-sm text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Spinner size="xs" />
               Loading repair order…
             </div>
             <div>
@@ -3872,10 +3870,7 @@ export default function RepairOrdersPage() {
                       className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
                       {approveCompletionMutation.isPending ? (
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
+                        <Spinner size="sm" className="border-white/40 border-t-white" />
                       ) : (
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -3964,10 +3959,7 @@ export default function RepairOrdersPage() {
                       className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
                     >
                       {createInvoiceMutation.isPending ? (
-                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
+                        <Spinner size="sm" className="border-white/40 border-t-white" />
                       ) : (
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -4117,10 +4109,7 @@ export default function RepairOrdersPage() {
                             className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {recordManualPaymentMutation.isPending ? (
-                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                              </svg>
+                              <Spinner size="xs" className="border-white/40 border-t-white" />
                             ) : (
                               selectedPaymentMethod === 'zelle' ? 'Use Zelle Modal' : 'Mark as Paid'
                             )}
@@ -4165,10 +4154,7 @@ export default function RepairOrdersPage() {
                             className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {resendInvoiceMutation.isPending ? (
-                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                              </svg>
+                              <Spinner size="xs" className="border-white/40 border-t-white" />
                             ) : (
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -4248,10 +4234,7 @@ export default function RepairOrdersPage() {
                             className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                           >
                             {resendInvoiceMutation.isPending ? (
-                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                              </svg>
+                              <Spinner size="xs" className="border-white/40 border-t-white" />
                             ) : (
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -4465,10 +4448,7 @@ export default function RepairOrdersPage() {
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteRepairOrderMutation.isPending && (
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
+                    <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete order
                 </button>
@@ -4590,10 +4570,7 @@ export default function RepairOrdersPage() {
                   className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteInvoiceMutation.isPending && (
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
+                    <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Reset Invoice
                 </button>

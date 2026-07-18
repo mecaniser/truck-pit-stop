@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, X, Mail, Phone, Shield, Plus, Pencil, Eye, EyeOff, Crown, MessageSquare } from 'lucide-react'
+import { Spinner } from '@/components/ui'
+import { X, Mail, Phone, Shield, Plus, Pencil, Eye, EyeOff, Crown, MessageSquare } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../../lib/api'
 import { GlassNoirButton, GlassNoirBadge } from '../../../components/ui/GlassNoirCard'
@@ -286,7 +287,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
 
               {loading ? (
                 <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-gold-500" />
+                  <Spinner size="lg" />
                 </div>
               ) : error ? (
                 <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
@@ -344,7 +345,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
                           onClick={() => toggleActive(u)}
                         >
                           <span className="inline-flex items-center gap-1">
-                            {rowBusyId === u.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                            {rowBusyId === u.id ? <Spinner size="xs" /> : null}
                             {u.is_active ? 'Deactivate' : 'Reactivate'}
                           </span>
                         </GlassNoirButton>
@@ -473,7 +474,7 @@ export default function GarageTeamModal({ garageId, garageName, onClose }: Garag
                 </GlassNoirButton>
                 <GlassNoirButton type="submit" size="sm" disabled={saving}>
                   <span className="inline-flex items-center gap-2">
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {saving ? <Spinner size="xs" /> : null}
                     {mode.kind === 'create' ? 'Add Member' : 'Save Changes'}
                   </span>
                 </GlassNoirButton>

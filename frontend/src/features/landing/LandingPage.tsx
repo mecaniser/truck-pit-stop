@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CheckCircle, ClipboardList, Globe, Loader2, MapPin, MapPinned, Wrench } from 'lucide-react'
+import { ArrowRight, CheckCircle, ClipboardList, Globe, MapPin, MapPinned, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import BrandLogo from '../../components/brand/BrandLogo'
@@ -248,7 +249,7 @@ export default function LandingPage() {
             <div className="partner-marquee-shell overflow-hidden rounded-lg border border-gray-800 bg-gray-950/50">
               {partnersLoading ? (
                 <div className="flex items-center gap-3 px-4 py-4 text-sm text-gray-400">
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  <Spinner size="xs" />
                   Loading approved partners...
                 </div>
               ) : partnerRail.length > 0 ? (

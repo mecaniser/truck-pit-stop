@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
@@ -56,7 +57,7 @@ export default function ServicesPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }

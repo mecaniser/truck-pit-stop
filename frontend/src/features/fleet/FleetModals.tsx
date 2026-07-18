@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  X, Loader2, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
+  X, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
   Check, Minus, RotateCcw, Wrench, Camera,
 } from 'lucide-react'
 import api from '../../lib/api'
@@ -74,7 +75,7 @@ export function ConfirmModal({ title, message, confirmLabel = 'Delete', pending,
             background: 'var(--red)', color: '#fff', cursor: 'pointer', opacity: pending ? 0.6 : 1,
           }}
         >
-          {pending ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} {confirmLabel}
+          {pending ? <Spinner size="sm" /> : <Trash2 size={15} />} {confirmLabel}
         </button>
       </div>
     </Modal>
@@ -117,7 +118,7 @@ function InlineConfirm({ renderTrigger, message, confirmLabel, onConfirm, pendin
         disabled={pending}
         onClick={onConfirm}
       >
-        {pending ? <Loader2 size={13} className="animate-spin" /> : null} {confirmLabel}
+        {pending ? <Spinner size="xs" /> : null} {confirmLabel}
       </button>
     </span>
   )
@@ -208,7 +209,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         Manual entry until a telematics provider is connected — then odometer & location sync automatically.
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <Pencil size={15} />} Save changes
+        {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
       </button>
     </Modal>
   )
@@ -257,7 +258,7 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
         disabled={create.isPending || !description.trim()} onClick={() => create.mutate()}>
-        {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <ClipboardList size={15} />} Create work order
+        {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />} Create work order
       </button>
     </Modal>
   )
@@ -416,7 +417,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           : "PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval."}
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create work order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create work order` : 'Save schedule')}
+        {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create work order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create work order` : 'Save schedule')}
       </button>
     </Modal>
   )
@@ -487,7 +488,7 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
         </span>
         {/* Labeled so it reads as "add this line" — not another stepper +. */}
         <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-          {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
+          {add.isPending ? <Spinner size="xs" /> : 'Add'}
         </button>
       </div>
       {internalRate <= 0 && (
@@ -553,7 +554,7 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
         />
       </div>
       <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={serviceId === '' || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
+        {add.isPending ? <Spinner size="xs" /> : 'Add'}
       </button>
     </div>
   )
@@ -603,7 +604,7 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
         disabled={invId === ''}
       />
       <button className={ghostBtn} style={{ height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }} disabled={!valid || add.isPending} onClick={() => add.mutate()}>
-        {add.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Add'}
+        {add.isPending ? <Spinner size="xs" /> : 'Add'}
       </button>
     </div>
   )
@@ -683,7 +684,7 @@ function PMServicesSection({ roId, onChanged }: { roId: string; onChanged: () =>
       {dirty && (
         <button className={yellowBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
           disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending ? <Loader2 size={13} className="animate-spin" /> : <ClipboardCheck size={14} />} Save PM services
+          {save.isPending ? <Spinner size="xs" /> : <ClipboardCheck size={14} />} Save PM services
         </button>
       )}
     </Field>
@@ -780,7 +781,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   return (
     <Modal title={title} icon={<ClipboardList size={17} />} onClose={onClose} width={560}>
       {isLoading || !wo ? (
-        <div className="loader"><Loader2 size={18} className="animate-spin" /></div>
+        <div className="loader"><Spinner size="sm" /></div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -792,7 +793,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               {['draft', 'assigned', 'acknowledged'].includes(wo.status) && (
                 <button className={ghostBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
                   disabled={startWO.isPending} onClick={() => startWO.mutate()}>
-                  {startWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Play size={14} />} Start work
+                  {startWO.isPending ? <Spinner size="xs" /> : <Play size={14} />} Start work
                 </button>
               )}
               {['in_progress', 'pending_review'].includes(wo.status) && !armComplete && (
@@ -833,7 +834,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
                 <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
                   disabled={completeWO.isPending}
                   onClick={() => completeWO.mutate(mileageOut.trim() === '' ? null : Number(mileageOut))}>
-                  {completeWO.isPending ? <Loader2 size={13} className="animate-spin" /> : <Flag size={14} />} Complete work order
+                  {completeWO.isPending ? <Spinner size="xs" /> : <Flag size={14} />} Complete work order
                 </button>
               </div>
             </div>
@@ -849,7 +850,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
             {descDirty && (
               <button className={ghostBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
                 disabled={saveDesc.isPending} onClick={() => saveDesc.mutate()}>
-                {saveDesc.isPending ? <Loader2 size={13} className="animate-spin" /> : null} Save description
+                {saveDesc.isPending ? <Spinner size="xs" /> : null} Save description
               </button>
             )}
           </Field>
@@ -985,7 +986,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
           </button>
         )}
         <button className={yellowBtn} style={{ flex: 1, justifyContent: 'center' }} disabled={save.isPending || !name.trim()} onClick={() => save.mutate()}>
-          {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
+          {save.isPending ? <Spinner size="sm" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
         </button>
       </div>
     </Modal>
@@ -1108,7 +1109,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       </div>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
         disabled={create.isPending} onClick={submit}>
-        {create.isPending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Log incident
+        {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Log incident
       </button>
     </Modal>
   )
@@ -1172,7 +1173,7 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
       </div>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
         disabled={save.isPending} onClick={submit}>
-        {save.isPending ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Save changes
+        {save.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Save changes
       </button>
     </Modal>
   )
@@ -1220,7 +1221,7 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
         <div className="dsec-title"><ClipboardCheck size={17} /><h3>Weekly inspections</h3>
           {inspections != null && <span className="dsec-count">{inspections.length}</span>}</div>
         <button className={ghostBtn + ' dsec-action'} style={{ height: 34 }} onClick={() => start.mutate()} disabled={start.isPending} title="Start inspection">
-          {start.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} <span className="dbtn-label">Start inspection</span>
+          {start.isPending ? <Spinner size="xs" /> : <Plus size={14} />} <span className="dbtn-label">Start inspection</span>
         </button>
       </div>
       {!inspections?.length ? (
@@ -1416,7 +1417,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     <div className="ip-overlay" onClick={onClose}>
       <div className="ip-frame" onClick={(e) => e.stopPropagation()}>
         {!insp ? (
-          <div className="loader" style={{ margin: 'auto' }}><Loader2 size={20} className="animate-spin" /></div>
+          <div className="loader" style={{ margin: 'auto' }}><Spinner size="md" /></div>
         ) : (
           <>
             <div className="ip-head">
@@ -1553,7 +1554,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                     </span>
                   ) : failCount > 0 ? (
                     <button className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
-                      {createWO.isPending ? <Loader2 size={15} className="animate-spin" /> : <Wrench size={15} />} Create work order · {failCount} item{failCount === 1 ? '' : 's'}
+                      {createWO.isPending ? <Spinner size="sm" /> : <Wrench size={15} />} Create work order · {failCount} item{failCount === 1 ? '' : 's'}
                     </button>
                   ) : null}
                   <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
@@ -1576,7 +1577,7 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="ip-cta ip-cta-ghost" style={{ flex: 1 }} disabled={complete.isPending} onClick={() => setConfirming(false)}>Back</button>
                     <button className="ip-cta" style={{ flex: 2 }} disabled={complete.isPending} onClick={() => complete.mutate()}>
-                      {complete.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={3} />} Confirm &amp; submit
+                      {complete.isPending ? <Spinner size="sm" /> : <Check size={16} strokeWidth={3} />} Confirm &amp; submit
                     </button>
                   </div>
                 </>

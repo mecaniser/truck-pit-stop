@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Loader2, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, User } from 'lucide-react'
+import { ArrowLeft, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, User } from 'lucide-react'
 import api from '@/lib/api'
 import { MISC_WORK_OPTIONS, formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
@@ -728,7 +728,7 @@ export default function MechanicBoardDetailPage() {
                     : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800/50'
                 }`}
               >
-                {attendanceToggleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {attendanceToggleMutation.isPending ? <Spinner size="xs" /> : null}
                 {m.attendance_active ? 'Clock Out Technician' : 'Clock In Technician'}
               </button>
             </Card>
@@ -754,7 +754,7 @@ export default function MechanicBoardDetailPage() {
                     : 'bg-amber-950/80 hover:bg-amber-900 text-amber-400 border border-amber-800/50'
                 }`}
               >
-                {breakToggleMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {breakToggleMutation.isPending ? <Spinner size="xs" /> : null}
                 {m.break_active ? 'End Break' : 'Start Break'}
               </button>
             </Card>
@@ -825,7 +825,7 @@ export default function MechanicBoardDetailPage() {
                 disabled={!startReason.trim() || startTimerMutation.isPending || (sessionType === 'repair_order' && !repairOrderId.trim())}
                 className="w-full flex items-center justify-center gap-2 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold rounded-xl px-4 py-2.5 text-sm border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
-                {startTimerMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+                {startTimerMutation.isPending ? <Spinner size="xs" /> : <PlayCircle className="w-4 h-4" />}
                 Start Timer
               </button>
             </div>
@@ -860,7 +860,7 @@ export default function MechanicBoardDetailPage() {
                 disabled={!stopReason.trim() || stopTimerMutation.isPending}
                 className="w-full flex items-center justify-center gap-2 bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold rounded-xl px-4 py-2.5 text-sm border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {stopTimerMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                {stopTimerMutation.isPending ? <Spinner size="xs" /> : <Square className="w-4 h-4" />}
                 Stop Active Timer
               </button>
             </div>

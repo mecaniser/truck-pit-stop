@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { LoadingLine } from '@/components/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -590,7 +591,7 @@ function GarageProfileSection() {
             <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
             <span>Shop Profile</span>
           </div>
-          <p className="text-sm text-zinc-400">Loading shop profile...</p>
+          <LoadingLine className="text-zinc-400">Loading shop profile…</LoadingLine>
         </IndustrialCard>
       </div>
     )

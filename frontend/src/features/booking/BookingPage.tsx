@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Spinner, LoadingLine } from '@/components/ui'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { format, addDays } from 'date-fns'
@@ -103,7 +104,7 @@ export default function BookingPage() {
   if (serviceLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -249,7 +250,7 @@ export default function BookingPage() {
             <div>
               <label className="text-sm text-gray-400 mb-2 block">Select Time</label>
               {slotsLoading ? (
-                <div className="text-gray-400">Loading available times...</div>
+                <LoadingLine className="text-gray-400">Loading available times…</LoadingLine>
               ) : (
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {timeSlots?.map((slot) => (

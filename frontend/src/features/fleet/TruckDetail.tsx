@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   ArrowLeft, Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
-  Shield, Phone, ClipboardList, Loader2, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
+  Shield, Phone, ClipboardList, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
 } from 'lucide-react'
 import api from '../../lib/api'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto } from './types'
@@ -188,7 +189,7 @@ export default function TruckDetail({
     pendingIncidentPhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
   }, [])
 
-  if (isLoading || !data) return <div className="loader"><Loader2 size={20} className="animate-spin" /></div>
+  if (isLoading || !data) return <div className="loader"><Spinner size="md" /></div>
 
   const t = data.truck
   const meta = STATUS_META[t.status]
@@ -332,7 +333,7 @@ export default function TruckDetail({
                             <div key={photo.id} style={{ position: 'relative', width: 54, height: 54, borderRadius: 9, overflow: 'hidden', border: '1px solid var(--line)', background: 'var(--surface-2)' }}>
                               <img src={photo.previewUrl} alt="Incident upload pending" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.45, filter: 'saturate(.6)' }} />
                               <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,.28)' }}>
-                                <Loader2 size={17} className="animate-spin" style={{ color: 'var(--yellow)' }} />
+                                <Spinner size="sm" />
                               </div>
                             </div>
                           ))}
@@ -362,7 +363,7 @@ export default function TruckDetail({
                                   boxShadow: '0 6px 14px rgba(0,0,0,.35)',
                                 }}
                               >
-                                {deleteIncidentPhoto.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                                {deleteIncidentPhoto.isPending ? <Spinner size="xs" /> : <Trash2 size={12} />}
                               </button>
                             </div>
                           ))}
@@ -408,7 +409,7 @@ export default function TruckDetail({
                                   <Pencil size={13} /> Edit
                                 </button>
                                 <label style={{ ...incidentMenuItemStyle, cursor: uploadIncidentPhoto.isPending ? 'not-allowed' : 'pointer' }}>
-                                  {uploadIncidentPhoto.isPending ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />} Upload photo
+                                  {uploadIncidentPhoto.isPending ? <Spinner size="xs" /> : <Camera size={13} />} Upload photo
                                   <input
                                     type="file"
                                     accept="image/*"
@@ -464,7 +465,7 @@ export default function TruckDetail({
                                         <button className="dbtn dbtn-ghost" style={{ height: 30, flex: 1, fontSize: 12, color: 'var(--red)' }}
                                           disabled={deleteIncident.isPending}
                                           onClick={() => deleteIncident.mutate(inc.id, { onSuccess: () => { setArmedDeleteIncidentId(null); setIncidentMenuOpenId(null) } })}>
-                                          {deleteIncident.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />} Delete
+                                          {deleteIncident.isPending ? <Spinner size="xs" /> : <Trash2 size={12} />} Delete
                                         </button>
                                       </div>
                                     </div>

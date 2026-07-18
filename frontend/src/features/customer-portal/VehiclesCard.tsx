@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -218,7 +219,7 @@ export default function VehiclesCard() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+          <Spinner size="lg" />
         </div>
       ) : editingVehicle ? (
         <EditVehicleForm vehicle={editingVehicle} onClose={() => setEditingVehicle(null)} />

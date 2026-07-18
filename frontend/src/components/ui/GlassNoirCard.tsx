@@ -366,16 +366,8 @@ export function Toggle({ enabled, onChange, disabled = false }: ToggleProps) {
 }
 
 // ============ SPINNER ============
-export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const sizes = {
-    sm: 'w-4 h-4',
-    md: 'w-6 h-6',
-    lg: 'w-8 h-8',
-  }
-  return (
-    <div className={`${sizes[size]} border-2 border-zinc-600 border-t-[var(--accent-400)] rounded-full animate-spin`} />
-  )
-}
+// Spinner moved to ./Spinner.tsx (the shared, size-scaled loading indicator).
+// Re-exported from ./index.ts so existing `import { Spinner } from '@/components/ui'` keeps working.
 
 // ============ DIVIDER ============
 export function Divider({ className = '' }: { className?: string }) {

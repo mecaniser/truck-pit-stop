@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Spinner } from '@/components/ui'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -497,7 +498,7 @@ function CustomerVehicles() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -634,7 +635,7 @@ function PaymentForm({
       >
         {isProcessing ? (
           <>
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            <Spinner size="sm" className="border-white/40 border-t-white" />
             Processing...
           </>
         ) : (
@@ -891,7 +892,7 @@ function CustomerRepairs() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -1213,7 +1214,7 @@ function CustomerRepairs() {
                 </Elements>
               ) : (
                 <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                  <Spinner size="lg" />
                 </div>
               )}
             </div>

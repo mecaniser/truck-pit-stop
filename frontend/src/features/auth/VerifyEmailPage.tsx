@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { CheckCircle, XCircle, Loader2, Mail } from 'lucide-react'
+import { CheckCircle, XCircle, Mail } from 'lucide-react'
 import api from '../../lib/api'
 
 export default function VerifyEmailPage() {
@@ -52,7 +53,7 @@ export default function VerifyEmailPage() {
           {status === 'loading' && (
             <div className="text-center">
               <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+                <Spinner size="lg" />
               </div>
               <h1 className="text-2xl font-bold text-white mb-2">Verifying Email...</h1>
               <p className="text-gray-400">Please wait while we verify your email address</p>

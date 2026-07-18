@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Loader2 } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
 export interface BaseSelectOption {
@@ -207,10 +208,7 @@ export default function BaseSelect({
             style={{ borderColor: accentColors[500], ['--tw-ring-color' as string]: accentColors[500] }}
           />
           {loading && (
-            <Loader2
-              className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin ${dark ? 'text-gray-400' : 'text-gray-400'}`}
-              aria-label="Searching"
-            />
+            <Spinner size="sm" />
           )}
         </div>
       )}
@@ -296,7 +294,7 @@ export default function BaseSelect({
               key="searching"
               className={`animate-status-swap flex items-center gap-2 px-4 py-2 text-sm ${dark ? 'text-gray-500' : 'text-gray-500'}`}
             >
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Spinner size="xs" />
               Searching…
             </div>
           )}

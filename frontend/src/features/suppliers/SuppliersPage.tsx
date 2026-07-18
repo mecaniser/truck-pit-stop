@@ -1,9 +1,10 @@
 import { useEffect, useState, Fragment } from 'react'
+import { Spinner, LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Phone, MapPin, FileText, Loader2, Pencil, Trash2, UserRound } from 'lucide-react'
+import { Phone, MapPin, FileText, Pencil, Trash2, UserRound } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import api from '@/lib/api'
 import { Supplier } from '@/types'
@@ -238,7 +239,7 @@ export default function SuppliersPage() {
               <ViewToggle value={activeViewMode} onChange={setViewMode} />
             </div>
             {isLoading ? (
-              <div className="p-6 text-sm text-gray-300">Loading suppliers...</div>
+              <div className="p-6"><LoadingLine className="text-gray-300">Loading suppliers…</LoadingLine></div>
             ) : filteredSuppliers.length === 0 ? (
               <div className="p-6 text-sm text-gray-300">
                 No suppliers match your search. {suppliers && suppliers.length === 0 ? 'Add your first supplier with the button above.' : 'Try a different filter.'}
@@ -665,7 +666,7 @@ export default function SuppliersPage() {
                 disabled={!isAdmin || isSaving}
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-60"
               >
-                {(isSaving || deleteMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                {(isSaving || deleteMutation.isPending) && <Spinner size="xs" />}
                 {editing ? 'Save changes' : 'Add supplier'}
               </button>
             </div>

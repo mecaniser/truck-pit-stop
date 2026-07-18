@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
+import { Spinner, LoadingLine } from '@/components/ui'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { Check, Clock3, Loader2, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Check, Clock3, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { isAxiosError } from 'axios'
 import api from '@/lib/api'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
@@ -437,7 +438,7 @@ export default function LaborBookTimePage() {
                   disabled={decodeVinMutation.isPending}
                   className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-zinc-700 px-4 text-sm font-semibold text-zinc-200 transition hover:border-[var(--accent-400)] hover:text-white disabled:opacity-50"
                 >
-                  {decodeVinMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {decodeVinMutation.isPending ? <Spinner size="xs" /> : <Search className="h-4 w-4" />}
                   Decode
                 </button>
               </div>
@@ -549,7 +550,7 @@ export default function LaborBookTimePage() {
                   disabled={createMutation.isPending}
                   className="inline-flex items-center gap-2 rounded-lg bg-[var(--accent-500)] px-4 py-2 text-sm font-bold text-white transition hover:bg-[var(--accent-600)] disabled:opacity-50"
                 >
-                  {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  {createMutation.isPending ? <Spinner size="xs" /> : <Plus className="h-4 w-4" />}
                   Save book time
                 </button>
               </div>
@@ -568,7 +569,7 @@ export default function LaborBookTimePage() {
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-sm text-zinc-500">Loading labor book time...</div>
+          <div className="p-8 flex justify-center"><LoadingLine className="text-zinc-500">Loading labor book time…</LoadingLine></div>
         ) : entries.length === 0 ? (
           <div className="p-8 text-center">
             <Clock3 className="mx-auto mb-3 h-8 w-8 text-zinc-600" />

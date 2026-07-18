@@ -1,5 +1,6 @@
 import { FormEvent, ReactNode } from 'react'
-import { X, Loader2 } from 'lucide-react'
+import { Spinner } from '@/components/ui'
+import { X } from 'lucide-react'
 import { useTheme } from '../contexts/ThemeContext'
 
 interface SlidePanelFormProps {
@@ -104,7 +105,7 @@ export default function SlidePanelForm({
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-70"
         style={{ backgroundColor: accentColors[500] }}
       >
-        {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+        {isSubmitting && <Spinner size="xs" />}
         {submitLabel}
       </button>
     </div>

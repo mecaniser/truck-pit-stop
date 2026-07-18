@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -9,7 +10,6 @@ import {
   Building2,
   CheckCircle,
   FileText,
-  Loader2,
   ShieldCheck,
   User,
 } from 'lucide-react'
@@ -1008,7 +1008,7 @@ export default function GarageEnrollmentPage() {
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Spinner size="xs" />
                         Submitting...
                       </>
                     ) : (

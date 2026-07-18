@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { LoadingLine } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
-import { ArrowRight, Camera, Download, ImageOff, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
+import { ArrowRight, Camera, Download, ImageOff, MapPin, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
 import Lightbox from '@/components/Lightbox'
 import BaseSelect from '../../components/BaseSelect'
@@ -791,7 +792,7 @@ export default function InventoryPage() {
   }
 
   if (isLoading) {
-    return <div className="text-white">Loading...</div>
+    return <div className="p-6"><LoadingLine className="text-white">Loading…</LoadingLine></div>
   }
 
   return (
@@ -1059,15 +1060,17 @@ export default function InventoryPage() {
                 <span
                   className={`shrink-0 whitespace-nowrap px-2 py-1 rounded-full text-[11px] font-semibold ${stockStatus.bg} ${stockStatus.text}`}
                 >
-                  {stockStatus.label}
+                  {stockStatus.label} · {item.stock_quantity}
                 </span>
               </div>
 
               <div className="flex items-center justify-between text-xs text-gray-200 flex-wrap gap-2">
-                <div className="flex items-center gap-1">
-                  <span className="text-gray-400">Stock</span>
-                  <span className="font-semibold text-white">{item.stock_quantity}</span>
-                </div>
+                {item.location && (
+                  <div className="flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-gray-400" />
+                    <span className="font-semibold text-white">{item.location}</span>
+                  </div>
+                )}
                 {item.on_order_quantity > 0 && (
                   <div className="flex items-center gap-1">
                     <span className="text-gray-400">On Order</span>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Spinner } from '@/components/ui'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -147,7 +148,7 @@ function PaymentMethodsList() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+        <Spinner size="lg" />
       </div>
     )
   }

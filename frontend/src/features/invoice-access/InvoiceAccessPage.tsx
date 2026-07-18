@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -140,7 +141,7 @@ function GuestPaymentForm({
       >
         {isProcessing ? (
           <>
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            <Spinner size="sm" className="border-white/40 border-t-white" />
             Processing...
           </>
         ) : (
@@ -386,7 +387,7 @@ export default function InvoiceAccessPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -731,7 +732,7 @@ export default function InvoiceAccessPage() {
                       </Elements>
                     ) : (
                       <div className="flex items-center justify-center py-4">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                        <Spinner size="lg" />
                       </div>
                     )}
                   </section>

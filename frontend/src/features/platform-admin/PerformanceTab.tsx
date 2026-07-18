@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Spinner } from '@/components/ui'
 import { 
   Activity, Server, Database, Zap, 
   Clock, AlertTriangle, RefreshCw, Users,
@@ -141,7 +142,7 @@ export default function PerformanceTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }

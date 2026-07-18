@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -127,7 +128,7 @@ function ProfileSection() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+        <Spinner size="lg" />
       </div>
     )
   }
@@ -568,7 +569,7 @@ function ShopsSection() {
   }
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500" /></div>
+    return <div className="flex items-center justify-center py-12"><Spinner size="lg" /></div>
   }
 
   return (
@@ -621,7 +622,7 @@ function ShopsSection() {
                   className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border border-white/20 text-gray-300 hover:text-white hover:border-white/40 hover:bg-white/10 transition-colors disabled:opacity-50 flex-shrink-0"
                 >
                   {isSwitching ? (
-                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b border-white" />
+                    <Spinner size="xs" className="border-white/40 border-t-white" />
                   ) : (
                     <ArrowRightLeft className="w-3.5 h-3.5" />
                   )}

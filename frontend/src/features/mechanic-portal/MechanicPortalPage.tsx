@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -20,7 +21,6 @@ import {
   CheckCircle, 
   PlayCircle, 
   ArrowLeft,
-  Loader2,
   History,
   Trophy,
   Star,
@@ -1004,7 +1004,7 @@ export default function MechanicPortalPage() {
                 disabled={isPending}
                 className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_32px_var(--accent-500)]"
               >
-                {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
+                {isPending ? <Spinner size="lg" /> : <PlayCircle className="w-7 h-7" />}
                 ACCEPT & START
               </button>
             )}
@@ -1023,7 +1023,7 @@ export default function MechanicPortalPage() {
                     disabled={isPending}
                     className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                   >
-                    {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
+                    {isPending ? <Spinner size="lg" /> : <PlayCircle className="w-7 h-7" />}
                     RESUME
                   </button>
                   <button
@@ -1031,7 +1031,7 @@ export default function MechanicPortalPage() {
                     disabled={isPending}
                     className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                   >
-                    {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
+                    {isPending ? <Spinner size="lg" /> : <CheckCircle className="w-7 h-7" />}
                     JOB DONE
                   </button>
                 </div>
@@ -1084,7 +1084,7 @@ export default function MechanicPortalPage() {
                           disabled={isPending}
                           className="w-full py-5 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                         >
-                          {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <PlayCircle className="w-7 h-7" />}
+                          {isPending ? <Spinner size="lg" /> : <PlayCircle className="w-7 h-7" />}
                           RESUME
                         </button>
                       )}
@@ -1100,7 +1100,7 @@ export default function MechanicPortalPage() {
                         disabled={isPending}
                         className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xl font-bold rounded-2xl transition-all flex items-center justify-center gap-3 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                       >
-                        {isPending ? <Loader2 className="w-7 h-7 animate-spin" /> : <CheckCircle className="w-7 h-7" />}
+                        {isPending ? <Spinner size="lg" /> : <CheckCircle className="w-7 h-7" />}
                         DONE
                       </button>
                     </div>
@@ -1150,7 +1150,7 @@ export default function MechanicPortalPage() {
         <div className="p-4">
           {historyLoading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 text-[var(--accent-500)] animate-spin" />
+              <Spinner size="lg" />
             </div>
           ) : history && history.length > 0 ? (
             <div className="space-y-3">
@@ -1495,7 +1495,7 @@ export default function MechanicPortalPage() {
                 disabled={!canRequestPTO || !ptoStartDate || !ptoEndDate || ptoPointsNeeded > availablePoints || createRequestMutation.isPending}
                 className="w-full py-4 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
               >
-                {createRequestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
+                {createRequestMutation.isPending ? <Spinner size="sm" /> : <Calendar className="w-5 h-5" />}
                 Request PTO
               </button>
             </div>
@@ -1535,7 +1535,7 @@ export default function MechanicPortalPage() {
                 disabled={availablePoints <= 0 || createRequestMutation.isPending}
                 className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
               >
-                {createRequestMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <DollarSign className="w-5 h-5" />}
+                {createRequestMutation.isPending ? <Spinner size="sm" /> : <DollarSign className="w-5 h-5" />}
                 Request Cash Out
               </button>
             </div>
@@ -1800,7 +1800,7 @@ export default function MechanicPortalPage() {
                     disabled={updateProfileMutation.isPending}
                     className="flex-1 py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                   >
-                    {updateProfileMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                    {updateProfileMutation.isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                     Save
                   </button>
                 </div>
@@ -1896,7 +1896,7 @@ export default function MechanicPortalPage() {
                     disabled={changePasswordMutation.isPending || !currentPassword || !newPassword || !confirmPassword}
                     className="flex-1 py-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-amber-400/50 hover:shadow-[0_0_24px_rgba(251,191,36,0.4)]"
                   >
-                    {changePasswordMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                    {changePasswordMutation.isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                     Change
                   </button>
                 </div>
@@ -2039,7 +2039,7 @@ export default function MechanicPortalPage() {
 
         {!daySummary ? (
           <div className="flex items-center justify-center py-10">
-            <Loader2 className="w-7 h-7 text-amber-500 animate-spin" />
+            <Spinner size="lg" />
           </div>
         ) : null}
 
@@ -2291,7 +2291,7 @@ export default function MechanicPortalPage() {
 
         {isClockedIn && !isOnBreak && (isLoading ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="w-8 h-8 text-[var(--accent-500)] animate-spin" />
+            <Spinner size="lg" />
           </div>
         ) : activeJobs.length === 0 && pendingReview.length === 0 ? (
           <>
@@ -2437,7 +2437,7 @@ export default function MechanicPortalPage() {
                     <div className="px-4 pb-4 space-y-3 border-t border-zinc-700/50 pt-3">
                       {expandedJobLoading ? (
                         <div className="flex justify-center py-6">
-                          <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
+                          <Spinner size="md" />
                         </div>
                       ) : detail ? (
                         <>
@@ -2519,7 +2519,7 @@ export default function MechanicPortalPage() {
                                     disabled={isUploadingPhoto}
                                     className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.4)]"
                                   >
-                                    {isUploadingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                                    {isUploadingPhoto ? <Spinner size="xs" /> : <Camera className="w-3.5 h-3.5" />}
                                     Upload
                                   </button>
                                 </div>
@@ -2569,7 +2569,7 @@ export default function MechanicPortalPage() {
                                 disabled={isPending}
                                 className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                               >
-                                {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
+                                {isPending ? <Spinner size="sm" /> : <PlayCircle className="w-5 h-5" />}
                                 ACCEPT & START
                               </button>
                             )}
@@ -2591,7 +2591,7 @@ export default function MechanicPortalPage() {
                                     disabled={isPending}
                                     className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                                   >
-                                    {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
+                                    {isPending ? <Spinner size="sm" /> : <PlayCircle className="w-5 h-5" />}
                                     RESUME
                                   </button>
                                   <button
@@ -2602,7 +2602,7 @@ export default function MechanicPortalPage() {
                                     disabled={isPending}
                                     className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                                   >
-                                    {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                    {isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                                     JOB DONE
                                   </button>
                                 </div>
@@ -2657,7 +2657,7 @@ export default function MechanicPortalPage() {
                                         disabled={isPending}
                                         className="w-full py-3 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)]"
                                       >
-                                        {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlayCircle className="w-5 h-5" />}
+                                        {isPending ? <Spinner size="sm" /> : <PlayCircle className="w-5 h-5" />}
                                         RESUME
                                       </button>
                                     )}
@@ -2679,7 +2679,7 @@ export default function MechanicPortalPage() {
                                       disabled={isPending}
                                       className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-emerald-400/50 hover:shadow-[0_0_24px_rgba(16,185,129,0.5)]"
                                     >
-                                      {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                                      {isPending ? <Spinner size="sm" /> : <CheckCircle className="w-5 h-5" />}
                                       DONE
                                     </button>
                                   </div>

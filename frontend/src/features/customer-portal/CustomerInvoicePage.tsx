@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -118,7 +119,7 @@ function InvoicePaymentForm({
       >
         {isProcessing ? (
           <>
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            <Spinner size="sm" className="border-white/40 border-t-white" />
             Processing...
           </>
         ) : (
@@ -284,7 +285,7 @@ export default function CustomerInvoicePage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -414,7 +415,7 @@ export default function CustomerInvoicePage() {
                 >
                   {createIntentMutation.isPending ? (
                     <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <Spinner size="sm" className="border-white/40 border-t-white" />
                       Preparing checkout...
                     </>
                   ) : (
@@ -430,7 +431,7 @@ export default function CustomerInvoicePage() {
                 </Elements>
               ) : (
                 <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                  <Spinner size="lg" />
                 </div>
               )}
             </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Spinner } from '@/components/ui'
 import {
   AlertTriangle,
   ChevronDown,
@@ -627,7 +628,7 @@ export default function DashboardHome() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: accentColors[500] }}></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -817,7 +818,7 @@ export default function DashboardHome() {
               style={{ backgroundColor: accentColors[500] }}
             >
               {quickSubmitting ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                <Spinner size="sm" className="border-white/40 border-t-white" />
               ) : (
                 <Send className="w-4 h-4" />
               )}

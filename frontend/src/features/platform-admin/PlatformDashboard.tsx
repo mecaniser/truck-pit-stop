@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { Building2, Users, TrendingUp, Crown, DollarSign, Wrench, UserCog, ChevronRight, Gauge } from 'lucide-react'
 import api from '../../lib/api'
 import { GlassNoirCard, GlassNoirHeader } from '../../components/ui/GlassNoirCard'
@@ -62,7 +63,7 @@ export default function PlatformDashboard() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }

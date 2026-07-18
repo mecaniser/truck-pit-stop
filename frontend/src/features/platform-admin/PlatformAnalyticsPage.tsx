@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useSearchParams } from 'react-router-dom'
 import { 
   Building2, Users, DollarSign,
@@ -88,7 +89,7 @@ export default function PlatformAnalyticsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }

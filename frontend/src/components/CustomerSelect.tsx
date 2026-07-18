@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react'
+import { Spinner } from '@/components/ui'
 import BaseSelect from './BaseSelect'
 import { Customer } from '../types'
 import { formatUSPhone } from '../utils/phone'
@@ -57,7 +57,7 @@ export default function CustomerSelect({
               : 'border-gray-300 bg-gray-50 text-gray-500'
           }`}
         >
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Spinner size="xs" />
           Loading customers…
         </div>
       ) : (

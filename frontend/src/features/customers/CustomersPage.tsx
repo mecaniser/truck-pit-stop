@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react'
+import { Spinner, LoadingLine } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -6,7 +7,7 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Loader2, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -1453,10 +1454,7 @@ export default function CustomersPage() {
                 />
                 {isLookingUpZip && (
                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <svg className="animate-spin w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <Spinner size="xs" />
                   </div>
                 )}
               </div>
@@ -1578,7 +1576,7 @@ export default function CustomersPage() {
                     className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
                   >
                     {isDecodingVin ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Spinner size="xs" />
                     ) : (
                       <Search className="w-4 h-4" />
                     )}
@@ -1758,10 +1756,7 @@ export default function CustomersPage() {
           style={{ backgroundColor: accentColors[500] }}
         >
           {(createMutation.isPending || updateMutation.isPending) && (
-            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
+            <Spinner size="xs" className="border-white/40 border-t-white" />
           )}
           {editingCustomer ? 'Save Changes' : 'Add Customer'}
         </button>
@@ -1851,7 +1846,7 @@ export default function CustomersPage() {
             className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors flex items-center gap-2"
           >
             {isDecodingVehicleVin ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Spinner size="xs" />
             ) : (
               <Search className="w-4 h-4" />
             )}
@@ -1930,10 +1925,7 @@ export default function CustomersPage() {
           style={{ backgroundColor: accentColors[500] }}
         >
           {(createVehicleMutation.isPending || updateVehicleMutation.isPending) && (
-            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <Spinner size="xs" className="border-white/40 border-t-white" />
           )}
           {editingVehicle ? 'Save Changes' : 'Add Vehicle'}
         </button>
@@ -2049,10 +2041,7 @@ export default function CustomersPage() {
           style={{ backgroundColor: accentColors[500] }}
         >
           {(createContactMutation.isPending || updateContactMutation.isPending) && (
-            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+            <Spinner size="xs" className="border-white/40 border-t-white" />
           )}
           {editingContact ? 'Save Changes' : 'Add Contact'}
         </button>
@@ -2102,7 +2091,7 @@ export default function CustomersPage() {
           <div className="hidden lg:flex items-center justify-between px-4 py-3 border-b border-white/10 flex-shrink-0">
             <div className="h-7 w-32 bg-white/10 rounded-lg animate-pulse" />
             <div className="flex items-center gap-2 text-sm text-white/50">
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Spinner size="xs" />
               Loading customers…
             </div>
           </div>
@@ -2189,7 +2178,7 @@ export default function CustomersPage() {
               full skeleton below; this covers subsequent batch fetches). */}
           {isFetching && !isLoading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-blueNoir-900/40 backdrop-blur-[1px] pointer-events-none">
-              <Loader2 className="w-6 h-6 text-white/80 animate-spin" />
+              <Spinner size="md" className="border-white/40 border-t-white" />
             </div>
           )}
           {activeViewMode === 'list' ? (
@@ -2749,7 +2738,7 @@ export default function CustomersPage() {
                       <div>
                         <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Repair Orders</h3>
                         {isLoadingHistory ? (
-                          <p className="text-sm text-gray-400">Loading…</p>
+                          <LoadingLine className="text-gray-400">Loading…</LoadingLine>
                         ) : !customerHistory?.items.length ? (
                           <div className="bg-gray-50 rounded-xl p-6 text-center border border-gray-100">
                             <Wrench className="w-8 h-8 text-gray-300 mx-auto mb-2" />
@@ -3259,10 +3248,7 @@ export default function CustomersPage() {
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteMutation.isPending && (
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete Customer
                 </button>
@@ -3385,10 +3371,7 @@ export default function CustomersPage() {
                         className="px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                       >
                         {mergeMutation.isPending && (
-                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                          </svg>
+                          <Spinner size="xs" className="border-white/40 border-t-white" />
                         )}
                         Merge Customers
                       </button>
@@ -3484,10 +3467,7 @@ export default function CustomersPage() {
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteVehicleMutation.isPending && (
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete Vehicle
                 </button>
@@ -3579,10 +3559,7 @@ export default function CustomersPage() {
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
                   {deleteContactMutation.isPending && (
-                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                    <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
                   Delete Contact
                 </button>

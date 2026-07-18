@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { ReactNode } from 'react'
-import { Download, Loader2, Lightbulb } from 'lucide-react'
+import { Download, Lightbulb } from 'lucide-react'
 import api from '../../lib/api'
 import { useTheme } from '../../contexts/ThemeContext'
 import {
@@ -255,7 +256,7 @@ function DateRangePicker({
 function LoadingBlock() {
   return (
     <div className="flex items-center justify-center gap-2 text-white/50 text-sm py-16">
-      <Loader2 className="w-4 h-4 animate-spin" />
+      <Spinner size="xs" />
       Loading report…
     </div>
   )
@@ -458,7 +459,7 @@ function InsightsSection({ range }: { range: DateRangePreset }) {
 function EmptyChart({ loading }: { loading: boolean }) {
   return (
     <div className="flex h-full items-center justify-center text-sm text-white/40">
-      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'No data for this range yet'}
+      {loading ? <Spinner size="xs" /> : 'No data for this range yet'}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { useParams, Link } from 'react-router-dom'
 import { 
   Users, DollarSign, 
@@ -134,7 +135,7 @@ export default function GarageAnalyticsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }

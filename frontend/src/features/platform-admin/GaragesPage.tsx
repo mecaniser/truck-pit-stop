@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar, MessageSquare, Loader2, X } from 'lucide-react'
+import { Spinner } from '@/components/ui'
+import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar, MessageSquare, X } from 'lucide-react'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
 import { GlassNoirCard, GlassNoirButton, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
@@ -252,7 +253,7 @@ export default function GaragesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold-500"></div>
+        <Spinner size="xl" />
       </div>
     )
   }
@@ -297,7 +298,7 @@ export default function GaragesPage() {
         <div className="ml-auto flex items-center gap-2">
           {refreshing && (
             <span className="inline-flex items-center gap-2 text-xs text-gold-300 bg-gold-500/10 border border-gold-500/20 rounded-lg px-3 py-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <Spinner size="xs" />
               Refreshing...
             </span>
           )}
@@ -468,7 +469,7 @@ export default function GaragesPage() {
                     onClick={() => handleSetSMSEnabled(garage, true)}
                   >
                     <span className="inline-flex items-center gap-2">
-                      {smsStateUpdatingGarageId === garage.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {smsStateUpdatingGarageId === garage.id ? <Spinner size="xs" /> : null}
                       Enable SMS
                     </span>
                   </GlassNoirButton>
@@ -482,7 +483,7 @@ export default function GaragesPage() {
                     onClick={() => handleSetSMSEnabled(garage, false)}
                   >
                     <span className="inline-flex items-center gap-2">
-                      {smsStateUpdatingGarageId === garage.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {smsStateUpdatingGarageId === garage.id ? <Spinner size="xs" /> : null}
                       Disable SMS
                     </span>
                   </GlassNoirButton>
@@ -701,7 +702,7 @@ export default function GaragesPage() {
                   <span className="inline-flex items-center gap-2">
                     {smsProvisioning ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Spinner size="xs" />
                         {smsModalMode === 'attach' ? 'Attaching...' : 'Provisioning...'}
                       </>
                     ) : smsModalMode === 'attach' ? (

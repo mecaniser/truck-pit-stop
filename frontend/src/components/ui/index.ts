@@ -27,14 +27,13 @@ export {
   GlassNoirStat,
   Stat,
   StatusLED,
-  
-  // Feedback
-  Spinner,
-  
+
   // Utilities
   staggeredReveal,
   designStyles,
 } from './GlassNoirCard'
 
-// Re-export types for convenience
-export type { } from './GlassNoirCard'
+// Feedback — the single shared loading indicator (replaces the old
+// GlassNoirCard Spinner and the scattered hand-rolled/border/Loader2 spinners).
+export { Spinner, LoadingLine, default as SpinnerDefault } from './Spinner'
+export type { SpinnerSize, SpinnerProps, LoadingLineProps } from './Spinner'

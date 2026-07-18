@@ -1,4 +1,5 @@
 import { type ChangeEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -16,7 +17,6 @@ import {
   FileText,
   Gauge,
   History,
-  Loader2,
   Mail,
   Plane,
   Play,
@@ -2009,7 +2009,7 @@ export default function PriceBuilderPanel({
               onClick={() => onCompleteWorkOrder?.(woMileageOut.trim() === '' ? null : Number(woMileageOut))}
               className="inline-flex h-9 items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
             >
-              {completeWorkOrderPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+              {completeWorkOrderPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
               {completeWorkOrderPending ? 'Completing…' : 'Complete work order'}
             </button>
           </div>
@@ -2239,7 +2239,7 @@ export default function PriceBuilderPanel({
               <>
                 {searchOps.isPending && (
                   <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                    <Spinner size="xs" />
                     Searching operations…
                   </p>
                 )}
@@ -2317,7 +2317,7 @@ export default function PriceBuilderPanel({
               <>
                 {laborBookEntriesFetching && (
                   <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                    <Spinner size="xs" />
                     Searching labor book time…
                   </p>
                 )}
@@ -2474,7 +2474,7 @@ export default function PriceBuilderPanel({
                         >
                           {decodeLaborBookVin.isPending ? (
                             <>
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Decoding…
+                              <Spinner size="xs" /> Decoding…
                             </>
                           ) : vinDecodeStatus?.ok ? (
                             <>
@@ -2516,7 +2516,7 @@ export default function PriceBuilderPanel({
               <>
                 {(inventoryFetching || partSuggestionsFetching) && (
                   <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                    <Spinner size="xs" />
                     Loading parts…
                   </p>
                 )}
@@ -3217,7 +3217,7 @@ export default function PriceBuilderPanel({
               <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
                 {uploadPhotoMutation.isPending && (
                   <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-orange-300 bg-orange-50">
-                    <Loader2 className="h-4 w-4 animate-spin text-orange-600" />
+                    <Spinner size="xs" />
                   </span>
                 )}
                 {visiblePhotoThumbs.length > 0 && (
@@ -3272,7 +3272,7 @@ export default function PriceBuilderPanel({
                       <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
                         <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-orange-100 via-white to-orange-50" />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
-                          <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
+                          <Spinner size="sm" />
                           <p className="line-clamp-2 text-xs font-semibold text-orange-800">
                             {pendingPhotoName || 'Uploading photo'}
                           </p>
@@ -3453,7 +3453,7 @@ export default function PriceBuilderPanel({
                   }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
                 >
-                  {discountsSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {discountsSaving && <Spinner size="xs" />}
                   {discountsSaving ? 'Applying…' : 'Apply'}
                 </button>
               </div>
@@ -3467,7 +3467,7 @@ export default function PriceBuilderPanel({
                 <p className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${
                   summaryLoadFailed ? 'text-red-600' : totalMotionActive || isInitialSummaryLoad ? 'text-orange-700' : 'text-gray-400'
                 }`}>
-                  {(totalMotionActive || isInitialSummaryLoad) && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {(totalMotionActive || isInitialSummaryLoad) && <Spinner size="xs" />}
                   {summaryLoadFailed ? 'Failed to load' : isInitialSummaryLoad ? 'Loading' : totalMotionActive ? 'Calculating' : 'Order Total'}
                   {summaryLoadFailed && (
                     <button
@@ -3497,7 +3497,7 @@ export default function PriceBuilderPanel({
                     disabled={invoiceCreatePending}
                     className="inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(79,70,229,.26)] hover:bg-indigo-700 disabled:bg-gray-300"
                   >
-                    {invoiceCreatePending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    {invoiceCreatePending ? <Spinner size="xs" /> : <FileText className="h-4 w-4" />}
                     {invoiceCreatePending ? 'Creating...' : 'Create Invoice'}
                   </button>
                   {showInvoiceCreateOptions && (
@@ -3546,7 +3546,7 @@ export default function PriceBuilderPanel({
                             disabled={invoiceCreatePending || !invoiceDueDateValue}
                             className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:bg-gray-300"
                           >
-                            {invoiceCreatePending && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {invoiceCreatePending && <Spinner size="xs" />}
                             Create invoice with due date
                           </button>
                         </div>
@@ -3596,7 +3596,7 @@ export default function PriceBuilderPanel({
                   disabled={completionPending || !onApproveCompletion}
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
                 >
-                  {completionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  {completionPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
                   {completionPending ? 'Approving...' : 'Approve Completion'}
                 </button>
               ) : (
@@ -3610,7 +3610,7 @@ export default function PriceBuilderPanel({
                     disabled={!canMutate || quoteActionDisabled || quoteActionPending || !onQuoteAction}
                     className="inline-flex h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:bg-gray-300"
                   >
-                    {quoteActionPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plane className="h-4 w-4" />}
+                    {quoteActionPending ? <Spinner size="xs" /> : <Plane className="h-4 w-4" />}
                     {quoteActionPending ? 'Working...' : quoteActionLabel}
                   </button>
                 </span>
@@ -3624,7 +3624,7 @@ export default function PriceBuilderPanel({
                   onClick={onStartWorkOrder}
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-amber-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(245,158,11,.28)] hover:bg-amber-600 disabled:bg-gray-300"
                 >
-                  {startWorkOrderPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  {startWorkOrderPending ? <Spinner size="xs" /> : <Play className="h-4 w-4" />}
                   {startWorkOrderPending ? 'Starting...' : 'Start Work'}
                 </button>
               ) : ['in_progress', 'pending_review'].includes(orderStatus) && !armWoComplete ? (
@@ -3648,7 +3648,7 @@ export default function PriceBuilderPanel({
                     onClick={onReopenWorkOrder}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {reopenPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                    {reopenPending ? <Spinner size="xs" /> : <RotateCcw className="h-3.5 w-3.5" />}
                     {reopenPending ? 'Reopening…' : 'Reopen'}
                   </button>
                 </span>
