@@ -11,6 +11,12 @@ type CurrencyInputProps = {
   /** When set, renders −/+ buttons that nudge the amount by this many dollars
    *  (e.g. 1 for $1.00 steps). Typing an exact value still works. */
   step?: number
+  /** Unit symbol shown inside the input. Defaults to '$' (prefixed). */
+  symbol?: string
+  /** Render the symbol after the number (e.g. '15 %') instead of before. */
+  symbolSuffix?: boolean
+  /** Decimal places the value is formatted to on blur/nudge. Default 2. */
+  decimals?: number
 }
 
 export default function CurrencyInput({
@@ -21,6 +27,9 @@ export default function CurrencyInput({
   disabled = false,
   required = false,
   step,
+  symbol = '$',
+  symbolSuffix = false,
+  decimals = 2,
 }: CurrencyInputProps) {
   const [displayValue, setDisplayValue] = useState(value)
 
@@ -31,7 +40,7 @@ export default function CurrencyInput({
   const formatCurrency = (val: string): string => {
     const num = parseFloat(val)
     if (isNaN(num)) return ''
-    return num.toFixed(2)
+    return num.toFixed(decimals)
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -51,14 +60,16 @@ export default function CurrencyInput({
     const current = parseFloat(displayValue)
     const base = Number.isFinite(current) ? current : 0
     const next = Math.max(0, base + delta)
-    const formatted = next.toFixed(2)
+    const formatted = next.toFixed(decimals)
     setDisplayValue(formatted)
     onChange(formatted)
   }
 
   const input = (
     <div className="relative flex-1">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+      <span className={`absolute ${symbolSuffix ? 'right-3' : 'left-3'} top-1/2 -translate-y-1/2 text-gray-400 text-sm`}>
+        {symbol}
+      </span>
       <input
         type="number"
         step="0.01"
@@ -68,7 +79,7 @@ export default function CurrencyInput({
         onBlur={handleBlur}
         disabled={disabled}
         required={required}
-        className={`w-full rounded-lg border border-gray-200 pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+        className={`w-full rounded-lg border border-gray-200 ${symbolSuffix ? 'pl-3 pr-8' : 'pl-7 pr-3'} py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
         placeholder={placeholder}
       />
     </div>
