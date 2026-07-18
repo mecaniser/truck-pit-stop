@@ -463,6 +463,21 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
         return
 
     parts = json.loads(PARTS_FILE.read_text())
+
+    # Guard against placeholder images: a real part photo is unique to its part.
+    # If the same image URL is shared across many parts it's a generic
+    # "no image" placeholder, not a real photo — never re-host those.
+    _img_counts: Dict[str, int] = {}
+    for _p in parts:
+        u = _p.get("imageUrl")
+        if u:
+            _img_counts[u] = _img_counts.get(u, 0) + 1
+    PLACEHOLDER_THRESHOLD = 3
+    placeholder_urls = {u for u, n in _img_counts.items() if n >= PLACEHOLDER_THRESHOLD}
+    if placeholder_urls:
+        print(f"NOTE: ignoring {len(placeholder_urls)} image URL(s) shared by "
+              f">={PLACEHOLDER_THRESHOLD} parts (treated as placeholders).")
+
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         "SELECT id, sku, image_url, created_at, updated_at FROM inventory "
@@ -472,7 +487,8 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
 
     now = datetime.utcnow()
     w = conn.cursor()
-    stats = {"ins": 0, "upd": 0, "skip_edited": 0, "img_rehosted": 0, "no_sku": 0}
+    stats = {"ins": 0, "upd": 0, "skip_edited": 0, "img_rehosted": 0,
+             "no_sku": 0, "img_placeholder_skipped": 0}
 
     for part in parts:
         raw_pn = (part.get("partNumber") or "").strip()
@@ -489,6 +505,9 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
         price = parse_money(part.get("price"))
         stock = part.get("stock") if isinstance(part.get("stock"), int) else 0
         src_img = part.get("imageUrl")
+        if src_img and src_img in placeholder_urls:
+            stats["img_placeholder_skipped"] += 1
+            src_img = None
 
         ex = existing.get(sku)
         if ex:
