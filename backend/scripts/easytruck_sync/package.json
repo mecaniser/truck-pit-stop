@@ -1,0 +1,19 @@
+{
+  "name": "easytruck-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright scraper + resync tooling for pulling data from easytruck.shop into TruckPitStop",
+  "scripts": {
+    "scrape:ids": "node 01_scrape_customer_ids.js",
+    "scrape:details": "node 02_scrape_customer_details.js",
+    "scrape:parts-usage": "node 03_scrape_parts_usage.js",
+    "scrape:parts-inventory": "node 04_scrape_parts_inventory.js",
+    "scrape:invoices": "node 05_scrape_invoices.js",
+    "scrape:attachments": "node 06_scrape_attachments.js",
+    "scrape:mc-qb": "node 07_scrape_mc_qb.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "playwright": "^1.45.0"
+  }
+}
