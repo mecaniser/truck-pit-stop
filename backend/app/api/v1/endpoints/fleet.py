@@ -4,7 +4,6 @@ Scoped to the garage's own internal fleet (the house-account customer). Accessib
 to the fleet manager and the garage owner/admin who own the fleet.
 """
 import math
-import base64
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -15,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.image_validation import read_validated_image
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage, Inventory
@@ -91,8 +91,6 @@ PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
 PM_DUE_SOON_DAYS = 14      # date-based PM "due soon" window
 # Operator-set idle statuses (no open work order). "active" = on the road.
 VALID_STATUS_OVERRIDES = {"active", "yard", "available", "out_of_service"}
-ALLOWED_FLEET_PHOTO_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
-MAX_FLEET_PHOTO_BYTES = 10 * 1024 * 1024
 
 # RepairOrder status -> shop-floor work-order label (design vocabulary).
 WO_STATUS_LABELS = {
@@ -196,17 +194,7 @@ def _incident_photo_response(photo: FleetIncidentPhoto) -> FleetPhotoResponse:
     )
 
 
-async def _read_validated_fleet_image(image: UploadFile) -> tuple[str, str]:
-    content_type = (image.content_type or "").lower()
-    if content_type not in ALLOWED_FLEET_PHOTO_CONTENT_TYPES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a JPEG, PNG, WebP, HEIC, or HEIF image")
-    image_bytes = await image.read()
-    if not image_bytes:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
-    if len(image_bytes) > MAX_FLEET_PHOTO_BYTES:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image too large. Max 10MB")
-    data_uri = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode('ascii')}"
-    return data_uri, content_type
+_read_validated_fleet_image = read_validated_image
 
 
 # ---------------------------------------------------------------------------

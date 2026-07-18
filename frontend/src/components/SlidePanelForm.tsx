@@ -30,6 +30,8 @@ interface SlidePanelFormProps {
   ariaLabel?: string
   /** Optional action rendered in the header, left of the close button (e.g. edit toggle) */
   headerAction?: ReactNode
+  /** Optional avatar/thumbnail rendered left of the category/title text */
+  titleIcon?: ReactNode
 }
 
 export default function SlidePanelForm({
@@ -48,21 +50,25 @@ export default function SlidePanelForm({
   width = 'sm:w-[520px]',
   ariaLabel,
   headerAction,
+  titleIcon,
 }: SlidePanelFormProps) {
   const { accentColors } = useTheme()
-  
+
   if (!isOpen) return null
 
   const header = (
     <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-2">
-      <div className="min-w-0">
-        {category && (
-          <p className="text-xs uppercase text-gray-500 font-semibold">{category}</p>
-        )}
-        <p className="text-lg font-semibold text-slate-800">{title}</p>
-        {subtitle && (
-          <p className="text-sm text-gray-500">{subtitle}</p>
-        )}
+      <div className="flex items-center gap-3 min-w-0">
+        {titleIcon}
+        <div className="min-w-0">
+          {category && (
+            <p className="text-xs uppercase text-gray-500 font-semibold">{category}</p>
+          )}
+          <p className="text-lg font-semibold text-slate-800">{title}</p>
+          {subtitle && (
+            <p className="text-sm text-gray-500">{subtitle}</p>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {headerAction}

@@ -52,6 +52,8 @@ export interface User {
   core_hours_target_minutes_override?: number | null
   shift_start_local_override?: string | null
   shift_end_local_override?: string | null
+  // Settings grants for garage admins (payments/taxes_fees/workforce)
+  permissions?: Record<string, boolean>
 }
 
 export interface TenantBranding {
@@ -408,6 +410,8 @@ export interface InventoryItem {
   unit_type: UnitType
   supplier_name: string | null
   supplier_contact: string | null
+  image_url: string | null
+  location: string | null
   created_at: string
   updated_at: string
 }
