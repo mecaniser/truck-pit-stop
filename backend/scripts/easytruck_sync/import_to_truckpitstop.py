@@ -68,7 +68,10 @@ STATUS_MAP = {"paid": "paid", "invoiced": "invoiced", "completed": "completed"}
 def parse_money(s):
     if not s:
         return Decimal("0.00")
-    cleaned = re.sub(r"[^0-9.\-]", "", s)
+    # Some price cells carry a trailing discount, e.g. "$55.35 30%". Take only
+    # the first monetary token so the "30" can't merge into the amount.
+    token = s.strip().split()[0] if s.strip().split() else s
+    cleaned = re.sub(r"[^0-9.\-]", "", token)
     if not cleaned:
         return Decimal("0.00")
     try:
