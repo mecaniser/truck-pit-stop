@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum, Integer
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
 from app.db.base import BaseModel
 
@@ -36,6 +36,11 @@ class User(BaseModel):
     # have it by default (notably fleet managers). Owner/admin/receptionist/
     # mechanic always have messaging regardless of this flag.
     can_access_messaging = Column(Boolean, default=False, nullable=False)
+
+    # Per-user grants for owner-only settings surfaces (keys: payments,
+    # taxes_fees, workforce). Only consulted for GARAGE_ADMIN — owners and
+    # super admins always pass regardless of this column.
+    permissions = Column(JSONB, nullable=False, default=dict, server_default="{}")
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
     tenant = relationship("Tenant", foreign_keys=[tenant_id], backref="users")
