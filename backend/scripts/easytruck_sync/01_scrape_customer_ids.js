@@ -17,7 +17,11 @@ const FAIL_FILE = path.join(__dirname, 'data', 'customer_ids_failures.json');
   const seen = new Set(results.map(r => r.id));
   const failures = [];
 
-  const listUrl = `${BASE}/${SHOP}/customers`;
+  // IMPORTANT: use a stable sort. The unsorted /customers list reorders rows
+  // between page loads (pagination instability), which caused a re-navigate-
+  // per-row scraper like this one to revisit the same customers and never reach
+  // others (311 of 542 collected). Sorting by name pins the order.
+  const listUrl = `${BASE}/${SHOP}/customers?sort=name&direction=asc`;
   await page.goto(listUrl, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
   const bodyText = await page.locator('body').innerText();
@@ -28,7 +32,7 @@ const FAIL_FILE = path.join(__dirname, 'data', 'customer_ids_failures.json');
   console.log(`Total customers: ${total}, pages: ${totalPages}`);
 
   for (let p = 1; p <= totalPages; p++) {
-    const url = p === 1 ? listUrl : `${listUrl}?page=${p}`;
+    const url = `${listUrl}&page=${p}`;
     await page.goto(url, { waitUntil: 'networkidle' });
     await page.waitForTimeout(500);
     const rowCount = await page.locator('table tbody tr').count();

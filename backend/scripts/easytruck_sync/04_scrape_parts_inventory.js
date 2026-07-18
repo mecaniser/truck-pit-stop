@@ -27,8 +27,17 @@ async function scrapePartImage(page, partId) {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
   await page.waitForTimeout(300);
   return page.evaluate(() => {
+    // Only accept real uploaded attachments. Easy Truck Shop serves genuine
+    // part photos under .../attachments/... on its CDN; anything else (logo,
+    // avatar, or a static "no image" placeholder) must not be treated as a
+    // part photo — otherwise we'd re-host the same placeholder hundreds of times.
     const imgs = Array.from(document.querySelectorAll('img')).filter(img =>
-      img.src && !img.src.includes('logo') && !img.src.includes('avatar') && !img.src.startsWith('data:')
+      img.src &&
+      img.src.includes('cdn.easytruck.shop') &&
+      img.src.includes('/attachments/') &&
+      !img.src.includes('logo') &&
+      !img.src.includes('avatar') &&
+      !img.src.startsWith('data:')
     );
     return imgs.length ? imgs[0].src : null;
   });

@@ -76,6 +76,24 @@ python3 import_to_truckpitstop.py --tenant-id <TENANT_UUID> --only-parts --commi
 python3 import_to_truckpitstop.py --tenant-id <TENANT_UUID> --only-parts --no-rehost-images --commit
 ```
 
+#### Running against a remote DB behind a flaky proxy (e.g. Railway)
+
+Long-lived connections through a proxy can be dropped mid-run. To make image
+re-hosting robust, split it into two phases:
+
+```bash
+# Phase 1 — DB-free: upload all part images to Cloudinary, cached to
+# data/part_image_cache.json (resumable, safe to re-run). No DB connection.
+python3 import_to_truckpitstop.py --upload-images-only
+
+# Phase 2 — fast DB pass that only READS the cache (no network I/O inside the
+# transaction). Commits in batches of 50 with TCP keepalives, so a dropped
+# connection loses at most one batch and the run can simply be re-run.
+DATABASE_URL="<prod-url>" python3 import_to_truckpitstop.py --tenant-id <TENANT_UUID> --only-parts --commit
+```
+
+Both phases are idempotent and resumable.
+
 ### Parts inventory
 
 Matched on `sku` (= Easy Truck Shop part number) scoped to the tenant + import
