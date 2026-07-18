@@ -213,7 +213,7 @@ html::-webkit-scrollbar-thumb:hover {
   scrollbar-width: none;
 }
 
-/* Attention Required banner enter/exit animations */
+/* Attention pill enter/exit animations */
 @keyframes attention-enter {
   from {
     opacity: 0;
@@ -236,11 +236,11 @@ html::-webkit-scrollbar-thumb:hover {
   }
 }
 
-.attention-banner-enter {
+.attention-pill-enter {
   animation: attention-enter 0.25s ease-out forwards;
 }
 
-.attention-banner-exit {
+.attention-pill-exit {
   animation: attention-exit 0.2s ease-in forwards;
 }
 

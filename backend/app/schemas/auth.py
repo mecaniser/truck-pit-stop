@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, field_serializer
-from typing import Optional, List
+from typing import Dict, Optional, List
 from uuid import UUID
 from app.db.models.user import UserRole
 
@@ -53,6 +53,8 @@ class UserResponse(BaseModel):
     role: UserRole
     is_active: bool
     can_access_messaging: bool = False
+    # Settings grants for garage admins (payments/taxes_fees/workforce)
+    permissions: Dict[str, bool] = {}
     # Shop-wide switch for the Messages feature; defaults on. The frontend ANDs
     # this with role/grant access to decide whether to show Messaging.
     messaging_enabled: bool = True

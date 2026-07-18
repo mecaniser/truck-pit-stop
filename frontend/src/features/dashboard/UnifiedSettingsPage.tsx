@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
+import type { User as UserType } from '../../types'
 import api from '../../lib/api'
 import { tenantBrandingQueryKey } from '@/hooks/useTenantBranding'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
@@ -2616,19 +2617,30 @@ const PROFILE_SECTIONS = [
   { id: 'appearance' as const, label: 'Appearance', shortLabel: 'Theme', icon: Palette },
 ]
 
+// gatedKey: owner-only sections that a garage admin can access only with an
+// explicit grant in user.permissions. Hiding here is UX only — the backend
+// permission checks are the actual security boundary.
 const GARAGE_SECTIONS = [
-  { id: 'garageProfile' as const, label: 'Shop Profile', shortLabel: 'Profile', icon: Building2 },
-  { id: 'payments' as const, label: 'Stripe Payments', shortLabel: 'Stripe', icon: CreditCard },
-  { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode },
-  { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell },
-  { id: 'fees' as const, label: 'Tax & Fees', shortLabel: 'Fees', icon: Percent },
-  { id: 'fleet' as const, label: 'Fleet', shortLabel: 'Fleet', icon: Truck },
-  { id: 'workforce' as const, label: 'Workforce', shortLabel: 'Workforce', icon: Globe },
+  { id: 'garageProfile' as const, label: 'Shop Profile', shortLabel: 'Profile', icon: Building2, gatedKey: undefined },
+  { id: 'payments' as const, label: 'Stripe Payments', shortLabel: 'Stripe', icon: CreditCard, gatedKey: 'payments' as const },
+  { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode, gatedKey: 'payments' as const },
+  { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell, gatedKey: undefined },
+  { id: 'fees' as const, label: 'Tax & Fees', shortLabel: 'Fees', icon: Percent, gatedKey: 'taxes_fees' as const },
+  { id: 'fleet' as const, label: 'Fleet', shortLabel: 'Fleet', icon: Truck, gatedKey: undefined },
+  { id: 'workforce' as const, label: 'Workforce', shortLabel: 'Workforce', icon: Globe, gatedKey: 'workforce' as const },
 ]
 
-function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean }) {
-  const allSections = isGarageUser 
-    ? [...PROFILE_SECTIONS, ...GARAGE_SECTIONS]
+function canSeeSection(user: UserType | null, gatedKey?: string): boolean {
+  if (!gatedKey) return true
+  if (user?.role === 'garage_owner') return true
+  if (user?.role === 'garage_admin') return !!user.permissions?.[gatedKey]
+  return false
+}
+
+function SidebarLayout({ activeSection, setActiveSection, isGarageUser, user }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean, user: UserType | null }) {
+  const garageSections = GARAGE_SECTIONS.filter((s) => canSeeSection(user, s.gatedKey))
+  const allSections = isGarageUser
+    ? [...PROFILE_SECTIONS, ...garageSections]
     : PROFILE_SECTIONS
 
   return (
@@ -2695,7 +2707,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser }: { acti
                 Shop
               </h3>
               <nav className="space-y-1">
-                {GARAGE_SECTIONS.map((section, i) => (
+                {garageSections.map((section, i) => (
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
@@ -2744,8 +2756,17 @@ export default function UnifiedSettingsPage() {
 
   const isGarageUser = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
+  // If the active section becomes inaccessible (e.g. the owner revoked a
+  // grant), fall back to the profile section instead of a blank pane.
+  useEffect(() => {
+    const gated = GARAGE_SECTIONS.find((s) => s.id === activeSection)
+    if (gated && !canSeeSection(user ?? null, gated.gatedKey)) {
+      setActiveSection('profile')
+    }
+  }, [activeSection, user])
+
   return (
-    <SidebarLayout activeSection={activeSection} setActiveSection={setActiveSection} isGarageUser={isGarageUser} />
+    <SidebarLayout activeSection={activeSection} setActiveSection={setActiveSection} isGarageUser={isGarageUser} user={user ?? null} />
   )
 }
 

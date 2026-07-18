@@ -2,7 +2,7 @@
 Super Admin endpoints for platform management.
 Only accessible by users with SUPER_ADMIN role.
 """
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -13,7 +13,7 @@ from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
 from app.core.config import settings
-from app.core.dependencies import get_db, get_current_active_user
+from app.core.dependencies import get_db, get_current_active_user, require_permission
 from app.core.phone import normalize_phone
 from app.core.unique_id import derive_order_number_prefix
 from app.core.pagination import paginated_or_list
@@ -1140,7 +1140,7 @@ async def import_garage_profile_logo(
 @router.get("/zelle-settings", response_model=ZelleSettingsResponse)
 async def get_zelle_settings(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("payments")),
 ):
     """Get Zelle payment settings for the garage"""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -1160,7 +1160,7 @@ async def get_zelle_settings(
 async def update_zelle_settings(
     body: ZelleSettingsRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("payments")),
 ):
     """Update Zelle payment settings for the garage"""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -1319,7 +1319,7 @@ async def trigger_invoice_reminders(
 @router.get("/tax-fee-settings", response_model=TaxFeeSettingsResponse)
 async def get_tax_fee_settings(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("taxes_fees")),
 ):
     """Get tax and fee settings for the garage"""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -1342,7 +1342,7 @@ async def get_tax_fee_settings(
 async def update_tax_fee_settings(
     body: TaxFeeSettingsRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("taxes_fees")),
 ):
     """Update tax and fee settings for the garage"""
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -1394,7 +1394,7 @@ async def update_tax_fee_settings(
 @router.get("/workforce-settings", response_model=WorkforceSettingsResponse)
 async def get_workforce_settings(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("workforce")),
 ):
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = result.scalar_one_or_none()
@@ -1413,7 +1413,7 @@ async def get_workforce_settings(
 async def update_workforce_settings(
     body: WorkforceSettingsRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_garage_owner()),
+    current_user: User = Depends(require_permission("workforce")),
 ):
     result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = result.scalar_one_or_none()
@@ -2011,6 +2011,8 @@ class StaffUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     password: Optional[str] = None  # owner/admin sets a new password (reset)
+    # Settings grants (payments/taxes_fees/workforce); owner-only, admins-only targets
+    permissions: Optional[Dict[str, bool]] = None
 
 
 class StaffMember(BaseModel):
@@ -2021,6 +2023,7 @@ class StaffMember(BaseModel):
     phone: Optional[str] = None
     role: UserRole
     is_active: bool
+    permissions: Dict[str, bool] = {}
 
     class Config:
         from_attributes = True
@@ -2129,6 +2132,26 @@ async def update_staff(
     if body.password:
         validate_password(body.password)
         user.hashed_password = get_password_hash(body.password)
+    if body.permissions is not None:
+        if current_user.role != UserRole.GARAGE_OWNER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the shop owner can grant settings access",
+            )
+        if user.role != UserRole.GARAGE_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Permission grants only apply to shop admins",
+            )
+        allowed_keys = {"payments", "taxes_fees", "workforce"}
+        unknown = set(body.permissions) - allowed_keys
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown permission keys: {sorted(unknown)}",
+            )
+        # Merge so a partial toggle payload doesn't wipe other grants
+        user.permissions = {**(user.permissions or {}), **body.permissions}
     await db.commit()
     await db.refresh(user)
     return StaffMember.model_validate(user)

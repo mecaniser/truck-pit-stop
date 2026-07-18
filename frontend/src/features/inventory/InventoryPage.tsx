@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../../lib/api'
 import { InventoryItem, Supplier, UnitType } from '../../types'
-import { ArrowRight, Download, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowRight, Camera, Download, ImageOff, PackageCheck, Pencil, Plus, Settings, Sparkles, Trash2, X } from 'lucide-react'
 import SlidePanelForm from '@/components/SlidePanelForm'
+import Lightbox from '@/components/Lightbox'
 import BaseSelect from '../../components/BaseSelect'
 import CurrencyInput from '../../components/CurrencyInput'
 import QuantityStepper from '@/components/QuantityStepper'
@@ -16,22 +17,161 @@ import SuggestingTextarea from '@/components/SuggestingTextarea'
 import { formatUSPhone } from '../../utils/phone'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useTheme } from '../../contexts/ThemeContext'
+import useTenantBranding from '@/hooks/useTenantBranding'
+
+// Category ↔ unit linkage: fluid parts are dispensed by volume, so setting one
+// side fills in the other and saves a second click. Only defaults get touched —
+// a category typed as "Fluids" flips the unit to gallons only while it's still
+// "each" (a deliberate quart/liter choice survives), and picking a fluid unit
+// fills the category only when it's empty.
+const FLUID_UNITS_SET = new Set<string>(['gallon', 'quart', 'liter'])
+function fluidLinkPatch(
+  prev: { category: string; unit_type: UnitType },
+  field: string,
+  value: string
+): Partial<{ category: string; unit_type: UnitType }> {
+  if (field === 'category' && /fluid/i.test(value) && prev.unit_type === 'each') {
+    return { unit_type: 'gallon' }
+  }
+  if (field === 'unit_type' && FLUID_UNITS_SET.has(value) && !prev.category.trim()) {
+    return { category: 'Fluids' }
+  }
+  return {}
+}
+
+// Selling-price field with a $/% toggle beside its label. '$' types the price
+// directly; '%' types a markup over cost — 15 on a $16.00 cost yields $18.40
+// (cost × 1.15). Form state always holds the resolved dollar amount, so the
+// save path never changes: percent is an input method, not a stored value.
+function SellingPriceField({
+  label,
+  cost,
+  value,
+  onChange,
+}: {
+  label: React.ReactNode
+  cost: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [mode, setMode] = useState<'$' | '%'>('$')
+  const [pct, setPct] = useState('')
+  const costNum = parseFloat(cost)
+  const costValid = Number.isFinite(costNum) && costNum > 0
+
+  const applyPct = (p: string, c: number) => {
+    const pn = parseFloat(p)
+    if (!Number.isFinite(pn) || !Number.isFinite(c) || c <= 0) return
+    onChange((c * (1 + pn / 100)).toFixed(2))
+  }
+
+  // Cost edits while in % mode keep the markup constant and move the price.
+  useEffect(() => {
+    if (mode === '%') applyPct(pct, parseFloat(cost))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cost])
+
+  const switchMode = (m: '$' | '%') => {
+    if (m === mode) return
+    if (m === '%') {
+      // Seed the markup from the current cost/price pair so toggling is lossless.
+      const s = parseFloat(value)
+      if (costValid && Number.isFinite(s)) {
+        setPct((((s - costNum) / costNum) * 100).toFixed(1))
+      }
+    }
+    setMode(m)
+  }
+
+  const sellingNum = parseFloat(value)
+
+  return (
+    <label className="text-sm text-gray-700 space-y-1">
+      {/* h-5 pins this row to the height of a plain one-line label (text-sm
+          line-height), so the sibling Cost field's input stays aligned with
+          ours in the two-column grid. The toggle fits inside that 20px. */}
+      <span className="flex h-5 items-center justify-between gap-2">
+        <span className="truncate">{label}</span>
+        <span className="inline-flex h-5 overflow-hidden rounded-md border border-gray-200">
+          {(['$', '%'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              // preventDefault: inside a <label>, a plain click would also
+              // activate the label's form control and steal focus.
+              onClick={(e) => {
+                e.preventDefault()
+                switchMode(m)
+              }}
+              className={`flex items-center px-2 text-[10px] font-semibold leading-none whitespace-nowrap transition-colors ${
+                mode === m ? 'bg-amber-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+              }`}
+              aria-pressed={mode === m}
+              aria-label={m === '$' ? 'Enter selling price in dollars' : 'Enter selling price as % markup over cost'}
+            >
+              {m}
+            </button>
+          ))}
+        </span>
+      </span>
+      {/* Keyed so the $↔% input swap cross-fades instead of hard-flipping. */}
+      <div key={mode} className="animate-status-swap">
+        {mode === '$' ? (
+          <CurrencyInput value={value} onChange={onChange} step={1} />
+        ) : (
+          <>
+            <CurrencyInput
+              value={pct}
+              onChange={(p) => {
+                setPct(p)
+                applyPct(p, costNum)
+              }}
+              step={1}
+              symbol="%"
+              symbolSuffix
+              decimals={1}
+              placeholder="0"
+              disabled={!costValid}
+            />
+            <p className="mt-1 text-xs">
+              {costValid ? (
+                Number.isFinite(sellingNum) && pct !== '' ? (
+                  <span className="text-gray-500">
+                    = <span className="font-semibold text-gray-700">${sellingNum.toFixed(2)}</span> selling price
+                  </span>
+                ) : (
+                  <span className="text-gray-500">Type a markup % over cost</span>
+                )
+              ) : (
+                <span className="text-amber-600">Set a cost first — % is a markup over cost</span>
+              )}
+            </p>
+          </>
+        )}
+      </div>
+    </label>
+  )
+}
 
 export default function InventoryPage() {
   const { accentColors } = useTheme()
+  const { data: tenantBranding } = useTenantBranding()
+  const fallbackPartImageUrl = tenantBranding?.logo_url || null
   const [searchParams, setSearchParams] = useSearchParams()
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchType, setSearchType] = useState<'all' | 'sku' | 'name' | 'category'>('all')
   const [showLowStock, setShowLowStock] = useState(false)
   const [stockSort, setStockSort] = useState<'none' | 'low-high' | 'high-low'>('none')
   const [viewMode, setViewMode] = useViewPreference('inventory')
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
   const [isAddingPart, setIsAddingPart] = useState(false)
   const [addForm, setAddForm] = useState({
     sku: '',
     name: '',
     description: '',
     category: '',
+    location: '',
     stock_quantity: '',
     reorder_level: '',
     cost: '',
@@ -54,6 +194,7 @@ export default function InventoryPage() {
     name: '',
     category: '',
     description: '',
+    location: '',
     stock_quantity: '',
     on_order_quantity: '',
     reorder_level: '',
@@ -90,14 +231,31 @@ export default function InventoryPage() {
 
   const queryClient = useQueryClient()
 
+  // Debounce the search box so each keystroke doesn't fire a server query.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
   const { data: inventory, isLoading } = useQuery<InventoryItem[]>({
-    queryKey: ['inventory'],
+    // Server-side search: ilike + separator-squashed + pg_trgm typo tolerance
+    // ("gaskit" finds "gasket"). Keyed on the debounced term so results and
+    // cache stay per-search.
+    queryKey: ['inventory', debouncedSearch],
     queryFn: async () => {
       const pageSize = 100
       let skip = 0
       const all: InventoryItem[] = []
       while (true) {
-        const response = await api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
+        const response = await api.get('/inventory', {
+          params: {
+            paginated: true,
+            skip,
+            limit: pageSize,
+            ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          },
+        })
         const data = response.data
         all.push(...data.items)
         if (!data.has_more || data.items.length === 0) break
@@ -105,6 +263,7 @@ export default function InventoryPage() {
       }
       return all
     },
+    placeholderData: keepPreviousData,
   })
 
   const { data: suppliers } = useQuery<Supplier[]>({
@@ -147,26 +306,10 @@ export default function InventoryPage() {
       filtered = filtered.filter((item) => item.stock_quantity <= item.reorder_level)
     }
 
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      filtered = filtered.filter((item) => {
-        const skuMatch = item.sku.toLowerCase().includes(query)
-        const nameMatch = item.name.toLowerCase().includes(query)
-        const categoryMatch = item.category?.toLowerCase().includes(query)
-
-        switch (searchType) {
-          case 'sku':
-            return skuMatch
-          case 'name':
-            return nameMatch
-          case 'category':
-            return categoryMatch
-          default:
-            return skuMatch || nameMatch || categoryMatch
-        }
-      })
-    }
+    // Search happens server-side (see the inventory query above): ilike +
+    // separator-squashed matching + pg_trgm typo tolerance. No client-side
+    // keyword filter here — it would reject fuzzy matches the server allowed
+    // (e.g. "gaskit" → "gasket").
 
     // Sort by stock
     if (stockSort !== 'none') {
@@ -193,22 +336,22 @@ export default function InventoryPage() {
     }
 
     return filtered
-  }, [inventory, searchQuery, searchType, showLowStock, stockSort])
-
-  const searchFilters = [
-    { value: 'all', label: 'All' },
-    { value: 'sku', label: 'SKU' },
-    { value: 'name', label: 'Name' },
-    { value: 'category', label: 'Category' },
-  ] as const
+  }, [inventory, showLowStock, stockSort])
 
   useEffect(() => {
     if (selectedItem) {
       setManageForm({
         sku: selectedItem.sku || '',
         name: selectedItem.name || '',
-        category: selectedItem.category || '',
+        // Backfill on open: a part already stored with a fluid unit but no
+        // category (predating the category↔unit linkage) gets "Fluids"
+        // prefilled here, so the next Save persists it. Visible in the form,
+        // so still overridable before saving.
+        category:
+          selectedItem.category ||
+          (FLUID_UNITS_SET.has(selectedItem.unit_type || '') ? 'Fluids' : ''),
         description: selectedItem.description || '',
+        location: selectedItem.location || '',
         stock_quantity: String(selectedItem.stock_quantity ?? ''),
         on_order_quantity: String(selectedItem.on_order_quantity ?? ''),
         reorder_level: String(selectedItem.reorder_level ?? ''),
@@ -286,14 +429,23 @@ export default function InventoryPage() {
         if (!trimmedName) throw new Error('Name cannot be empty')
         if (trimmedSku !== selectedItem.sku) payload.sku = trimmedSku
         if (trimmedName !== selectedItem.name) payload.name = trimmedName
-        const trimmedCategory = manageForm.category.trim()
-        if (trimmedCategory !== (selectedItem.category || '')) {
-          payload.category = trimmedCategory || null
-        }
         const trimmedDescription = manageForm.description.trim()
         if (trimmedDescription !== (selectedItem.description || '')) {
           payload.description = trimmedDescription || null
         }
+        const trimmedLocation = manageForm.location.trim()
+        if (trimmedLocation !== (selectedItem.location || '')) {
+          payload.location = trimmedLocation || null
+        }
+      }
+
+      // Category is diffed outside the identity-editing gate: the fluid
+      // category↔unit linkage (and the seed-on-open backfill) can change it
+      // even while the identity section stays closed, and that change must
+      // still persist on Save.
+      const trimmedCategory = manageForm.category.trim()
+      if (trimmedCategory !== (selectedItem.category || '')) {
+        payload.category = trimmedCategory || null
       }
 
       if (manageForm.supplier_name !== '') payload.supplier_name = manageForm.supplier_name
@@ -342,6 +494,44 @@ export default function InventoryPage() {
     },
   })
 
+  const uploadPhotoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedItem) return
+      const formData = new FormData()
+      formData.append('image', file)
+      const response = await api.post(`/inventory/${selectedItem.id}/photo`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return response.data as InventoryItem
+    },
+    onSuccess: (updated) => {
+      if (!updated) return
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setSelectedItem(updated)
+    },
+    onError: (err: any) => {
+      const message = err?.message || err?.response?.data?.detail || 'Failed to upload photo'
+      setError(Array.isArray(message) ? message.join(', ') : message)
+    },
+  })
+
+  const deletePhotoMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedItem) return
+      const response = await api.delete(`/inventory/${selectedItem.id}/photo`)
+      return response.data as InventoryItem
+    },
+    onSuccess: (updated) => {
+      if (!updated) return
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      setSelectedItem(updated)
+    },
+    onError: (err: any) => {
+      const message = err?.message || err?.response?.data?.detail || 'Failed to remove photo'
+      setError(Array.isArray(message) ? message.join(', ') : message)
+    },
+  })
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const payload: Record<string, any> = {
@@ -354,6 +544,7 @@ export default function InventoryPage() {
 
       if (addForm.description.trim()) payload.description = addForm.description.trim()
       if (addForm.category.trim()) payload.category = addForm.category.trim()
+      if (addForm.location.trim()) payload.location = addForm.location.trim()
       if (addForm.stock_quantity !== '') payload.stock_quantity = Number(addForm.stock_quantity)
       if (addForm.reorder_level !== '') payload.reorder_level = Number(addForm.reorder_level)
       if (addForm.supplier_name.trim()) payload.supplier_name = addForm.supplier_name.trim()
@@ -370,6 +561,7 @@ export default function InventoryPage() {
         name: '',
         description: '',
         category: '',
+        location: '',
         stock_quantity: '',
         reorder_level: '',
         cost: '',
@@ -496,6 +688,7 @@ export default function InventoryPage() {
       name: '',
       description: '',
       category: '',
+      location: '',
       stock_quantity: '',
       reorder_level: '',
       cost: '',
@@ -509,7 +702,7 @@ export default function InventoryPage() {
   }
 
   const handleAddFormChange = (field: keyof typeof addForm, value: string) => {
-    setAddForm((prev) => ({ ...prev, [field]: value }))
+    setAddForm((prev) => ({ ...prev, [field]: value, ...fluidLinkPatch(prev, field, value) }))
   }
 
   // Generate SKU suggestion from category + name
@@ -588,7 +781,7 @@ export default function InventoryPage() {
   }
 
   const handleManageChange = (field: keyof typeof manageForm, value: string) => {
-    setManageForm((prev) => ({ ...prev, [field]: value }))
+    setManageForm((prev) => ({ ...prev, [field]: value, ...fluidLinkPatch(prev, field, value) }))
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -609,7 +802,7 @@ export default function InventoryPage() {
           <SearchAddBar
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search parts by SKU, name, or category..."
+            placeholder="Search parts — SKU, name, description, location…"
             onAdd={openAddPart}
             addLabel="Add part"
             addLabelMobile="Add"
@@ -690,31 +883,13 @@ export default function InventoryPage() {
           <SearchAddBar
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search parts by SKU, name, or category..."
+            placeholder="Search parts — SKU, name, description, location…"
             onAdd={openAddPart}
             className="mb-0 min-w-[18rem] flex-1"
             inputWidthClass=""
             showAddButton={false}
           />
 
-          <div className="flex shrink-0 items-center">
-            <div className="inline-flex h-[42px] items-center rounded-lg border border-white/15 bg-white/10">
-              {searchFilters.map((filter) => (
-                <button
-                  key={filter.value}
-                  onClick={() => setSearchType(filter.value)}
-                  className={`h-full px-4 text-sm font-medium transition-colors whitespace-nowrap ${
-                    searchType === filter.value
-                      ? 'text-white'
-                      : 'text-white hover:bg-white/20'
-                  } ${filter.value === 'all' ? 'rounded-l-lg' : ''} ${filter.value === 'category' ? 'rounded-r-lg' : ''}`}
-                  style={searchType === filter.value ? { backgroundColor: accentColors[500] } : undefined}
-                >
-                  {filter.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         <button
@@ -848,21 +1023,41 @@ export default function InventoryPage() {
               className="rounded-lg p-3 flex flex-col gap-3 bg-white/10 border border-white/15 text-white"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="space-y-0.5">
-                  <div className="text-sm font-semibold leading-tight line-clamp-2">
-                    {item.name}
-                  </div>
-                  <div className="text-[11px] font-mono text-gray-300 bg-white/10 px-2 py-0.5 rounded border border-white/20 inline-flex">
-                    {item.sku}
-                  </div>
-                  {item.category && (
-                    <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[11px] text-gray-200">
-                      {item.category}
-                    </span>
+                <div className="flex items-start gap-2 min-w-0">
+                  {item.image_url || fallbackPartImageUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxSrc(item.image_url || fallbackPartImageUrl)}
+                      className={`shrink-0 w-11 h-11 rounded-md overflow-hidden border border-white/15 ${!item.image_url ? 'bg-white p-1' : ''}`}
+                      aria-label={`View photo of ${item.name}`}
+                    >
+                      <img
+                        src={item.image_url || fallbackPartImageUrl || ''}
+                        alt={item.name}
+                        className={item.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
+                      />
+                    </button>
+                  ) : (
+                    <div className="shrink-0 w-11 h-11 rounded-md border border-dashed border-white/15 flex items-center justify-center text-gray-500">
+                      <ImageOff className="w-4 h-4" />
+                    </div>
                   )}
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="text-sm font-semibold leading-tight line-clamp-2">
+                      {item.name}
+                    </div>
+                    <div className="text-[11px] font-mono text-gray-300 bg-white/10 px-2 py-0.5 rounded border border-white/20 inline-flex whitespace-nowrap">
+                      {item.sku}
+                    </div>
+                    {item.category && (
+                      <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[11px] text-gray-200">
+                        {item.category}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <span
-                  className={`px-2 py-1 rounded-full text-[11px] font-semibold ${stockStatus.bg} ${stockStatus.text}`}
+                  className={`shrink-0 whitespace-nowrap px-2 py-1 rounded-full text-[11px] font-semibold ${stockStatus.bg} ${stockStatus.text}`}
                 >
                   {stockStatus.label}
                 </span>
@@ -976,36 +1171,44 @@ export default function InventoryPage() {
                     className="bg-white/10 border border-white/15 rounded-xl p-4 sm:p-5 space-y-3 hover:border-amber-400/40 hover:bg-white/10 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="text-xs uppercase text-gray-400">Inventory</div>
-                        <h3 className="text-lg font-semibold text-white leading-tight line-clamp-2 flex items-center gap-2">
-                          <span className="text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
-                            {item.sku}
-                          </span>
-                          {item.name}
-                        </h3>
-                        <p className="text-xs text-gray-400 line-clamp-2">
-                          {item.description || item.category || 'No description'}
-                        </p>
+                      {item.image_url || fallbackPartImageUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setLightboxSrc(item.image_url || fallbackPartImageUrl)}
+                          className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-white/15 hover:border-amber-400/50 transition-colors ${!item.image_url ? 'bg-white p-1.5' : ''}`}
+                          aria-label={`View photo of ${item.name}`}
+                        >
+                          <img
+                            src={item.image_url || fallbackPartImageUrl || ''}
+                            alt={item.name}
+                            className={item.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
+                          />
+                        </button>
+                      ) : (
+                        <div className="shrink-0 w-14 h-14 rounded-lg border border-dashed border-white/15 flex items-center justify-center text-gray-500">
+                          <ImageOff className="w-5 h-5" />
+                        </div>
+                      )}
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className={`whitespace-nowrap px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
+                          {item.stock_quantity > 0 ? `${stockStatus.label} · ${item.stock_quantity}` : stockStatus.label}
+                        </span>
+                        <span className="whitespace-nowrap text-xs font-mono text-gray-200 bg-white/10 px-2 py-0.5 rounded border border-white/20">
+                          {item.sku}
+                        </span>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold text-center min-w-[88px] ${stockStatus.bg} ${stockStatus.text}`}>
-                        {stockStatus.label}
-                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <h3 className="text-base font-semibold text-white leading-tight line-clamp-2">
+                        {item.name}
+                      </h3>
+                      <p className="text-xs text-gray-400 line-clamp-1">
+                        {item.description || item.category || 'No description'}
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 text-sm text-gray-200">
-                      <div>
-                        <p className="text-gray-400 text-xs">In stock</p>
-                        <p className="font-semibold">{item.stock_quantity}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400 text-xs">On order</p>
-                        <p className={`font-semibold ${item.on_order_quantity > 0 ? 'text-blue-300' : ''}`}>{item.on_order_quantity}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400 text-xs">Reorder</p>
-                        <p className="font-semibold">{item.reorder_level}</p>
-                      </div>
                       <div>
                         <p className="text-gray-400 text-xs">Cost</p>
                         <p className="font-semibold">${parseFloat(item.cost).toFixed(2)}</p>
@@ -1018,7 +1221,7 @@ export default function InventoryPage() {
 
                     <button
                       onClick={() => openManage(item)}
-                      className="w-full px-3 py-2 text-sm font-medium rounded-lg transition inline-flex items-center justify-center gap-1"
+                      className="w-full px-3 py-2 text-sm font-medium rounded-lg transition inline-flex items-center justify-center gap-1 whitespace-nowrap"
                       style={{
                         color: accentColors[400],
                         backgroundColor: `${accentColors[500]}1a`,
@@ -1048,12 +1251,11 @@ export default function InventoryPage() {
             <table className="min-w-full divide-y divide-white/10">
               <thead className="bg-white/5 border-b border-white/10">
                 <tr className="text-left text-xs font-medium text-gray-400 uppercase tracking-wide bg-white/5 border-b border-white/10">
+                  <th className="px-4 py-3 w-16"><span className="sr-only">Photo</span></th>
                   <th className="px-4 py-3">SKU</th>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Stock</th>
-                  <th className="px-4 py-3">On Order</th>
-                  <th className="px-4 py-3">Reorder</th>
+                  <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Cost</th>
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -1064,6 +1266,26 @@ export default function InventoryPage() {
                   const stockStatus = getStockStatus(item)
                   return (
                     <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                      <td className="px-4 py-3">
+                        {item.image_url || fallbackPartImageUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setLightboxSrc(item.image_url || fallbackPartImageUrl)}
+                            className={`w-9 h-9 rounded-md overflow-hidden border border-white/15 hover:border-amber-400/50 transition-colors ${!item.image_url ? 'bg-white p-1' : ''}`}
+                            aria-label={`View photo of ${item.name}`}
+                          >
+                            <img
+                              src={item.image_url || fallbackPartImageUrl || ''}
+                              alt={item.name}
+                              className={item.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
+                            />
+                          </button>
+                        ) : (
+                          <div className="w-9 h-9 rounded-md border border-dashed border-white/15 flex items-center justify-center text-gray-500">
+                            <ImageOff className="w-4 h-4" />
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-semibold text-white">{item.sku}</td>
                       <td className="px-4 py-3">
                         <div className="font-semibold text-white">{item.name}</div>
@@ -1073,13 +1295,11 @@ export default function InventoryPage() {
                         <div className="space-y-1 text-center">
                           <div className="text-sm">{item.category || 'Uncategorized'}</div>
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${stockStatus.bg} ${stockStatus.text}`}>
-                            {stockStatus.label}
+                            {item.stock_quantity > 0 ? `${stockStatus.label} · ${item.stock_quantity}` : stockStatus.label}
                           </span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-200">{item.stock_quantity}</td>
-                      <td className={`px-4 py-3 ${item.on_order_quantity > 0 ? 'text-blue-300 font-semibold' : 'text-gray-200'}`}>{item.on_order_quantity}</td>
-                      <td className="px-4 py-3 text-gray-200">{item.reorder_level}</td>
+                      <td className="px-4 py-3 text-gray-200">{item.location || <span className="text-gray-500">—</span>}</td>
                       <td className="px-4 py-3 text-gray-200">${item.cost}</td>
                       <td className="px-4 py-3 text-gray-200">${item.selling_price}</td>
                       <td className="px-4 py-3 text-right">
@@ -1129,6 +1349,26 @@ export default function InventoryPage() {
         isSubmitting={updateMutation.isPending}
         submitDisabled={!selectedItem}
         ariaLabel="Manage inventory"
+        titleIcon={
+          (selectedItem?.image_url || fallbackPartImageUrl) ? (
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(selectedItem?.image_url || fallbackPartImageUrl)}
+              className={`shrink-0 w-11 h-11 rounded-lg overflow-hidden border border-gray-200 ${!selectedItem?.image_url ? 'bg-white p-1' : ''}`}
+              aria-label="View part photo"
+            >
+              <img
+                src={selectedItem?.image_url || fallbackPartImageUrl || ''}
+                alt={selectedItem?.name || ''}
+                className={selectedItem?.image_url ? 'w-full h-full object-cover' : 'w-full h-full object-contain'}
+              />
+            </button>
+          ) : (
+            <div className="shrink-0 w-11 h-11 rounded-lg border border-dashed border-gray-300 flex items-center justify-center text-gray-400">
+              <ImageOff className="w-4 h-4" />
+            </div>
+          )
+        }
         headerAction={
           <button
             type="button"
@@ -1139,7 +1379,7 @@ export default function InventoryPage() {
                 : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
             }`}
             aria-label="Edit part details"
-            title={editingIdentity ? 'Close part details editor' : 'Edit name, SKU, category, description'}
+            title={editingIdentity ? 'Close part details editor' : 'Edit name, SKU, category, description, and photo'}
           >
             <Pencil className="w-4 h-4" />
           </button>
@@ -1149,6 +1389,65 @@ export default function InventoryPage() {
         {editingIdentity && (
           <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
             <p className="text-[11px] uppercase tracking-wide text-amber-800 font-semibold">Edit part details</p>
+
+            {/* Part photo */}
+            <div className="flex items-center gap-3 pb-2">
+              {selectedItem?.image_url ? (
+                <button
+                  type="button"
+                  onClick={() => setLightboxSrc(selectedItem.image_url)}
+                  className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-gray-200"
+                  aria-label="View part photo"
+                >
+                  <img src={selectedItem.image_url} alt={selectedItem.name} className="w-full h-full object-cover" />
+                </button>
+              ) : (
+                <div className="shrink-0 w-16 h-16 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center overflow-hidden p-1">
+                  {fallbackPartImageUrl ? (
+                    <img src={fallbackPartImageUrl} alt="" className="w-full h-full object-contain" />
+                  ) : (
+                    <ImageOff className="w-5 h-5 text-gray-400" />
+                  )}
+                </div>
+              )}
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <p className="text-sm font-medium text-gray-700">Part photo</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadPhotoMutation.isPending}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    {uploadPhotoMutation.isPending ? 'Uploading…' : selectedItem?.image_url ? 'Replace' : 'Add photo'}
+                  </button>
+                  {selectedItem?.image_url && (
+                    <button
+                      type="button"
+                      onClick={() => deletePhotoMutation.mutate()}
+                      disabled={deletePhotoMutation.isPending}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors disabled:opacity-50 whitespace-nowrap"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) uploadPhotoMutation.mutate(file)
+                    e.target.value = ''
+                  }}
+                />
+              </div>
+            </div>
+
             <label className="text-sm text-gray-700 space-y-1 block">
               <span>Name</span>
               <SuggestingInput
@@ -1179,6 +1478,16 @@ export default function InventoryPage() {
                 />
               </label>
             </div>
+            <label className="text-sm text-gray-700 space-y-1 block">
+              <span>Warehouse location</span>
+              <input
+                type="text"
+                value={manageForm.location}
+                onChange={(e) => handleManageChange('location', e.target.value)}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
+                placeholder="e.g. Aisle 3, Shelf B"
+              />
+            </label>
             <label className="text-sm text-gray-700 space-y-1 block">
               <span>Description</span>
               <SuggestingTextarea
@@ -1246,14 +1555,12 @@ export default function InventoryPage() {
               step={1}
             />
           </label>
-          <label className="text-sm text-gray-700 space-y-1">
-            <span>Selling Price <span className="text-gray-400 font-normal">(per unit)</span></span>
-            <CurrencyInput
-              value={manageForm.selling_price}
-              onChange={(val) => handleManageChange('selling_price', val)}
-              step={1}
-            />
-          </label>
+          <SellingPriceField
+            label={<>Selling Price <span className="text-gray-400 font-normal">(per unit)</span></>}
+            cost={manageForm.cost}
+            value={manageForm.selling_price}
+            onChange={(val) => handleManageChange('selling_price', val)}
+          />
           <label className="text-sm text-gray-700 space-y-1">
             <span>Unit</span>
             <select
@@ -1441,6 +1748,17 @@ export default function InventoryPage() {
           />
         </label>
 
+        <label className="text-sm text-gray-700 space-y-1 block">
+          <span>Warehouse location</span>
+          <input
+            type="text"
+            value={addForm.location}
+            onChange={(e) => handleAddFormChange('location', e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+            placeholder="e.g. Aisle 3, Shelf B"
+          />
+        </label>
+
         {/* SKU field with auto-suggestion */}
         <div className="space-y-1">
           <label className="text-sm text-gray-700 space-y-1 block">
@@ -1512,14 +1830,12 @@ export default function InventoryPage() {
               step={1}
             />
           </label>
-          <label className="text-sm text-gray-700 space-y-1">
-            <span>Selling Price <span className="text-gray-400 font-normal">(per unit)</span> *</span>
-            <CurrencyInput
-              value={addForm.selling_price}
-              onChange={(val) => handleAddFormChange('selling_price', val)}
-              step={1}
-            />
-          </label>
+          <SellingPriceField
+            label={<>Selling Price <span className="text-gray-400 font-normal">(per unit)</span> *</>}
+            cost={addForm.cost}
+            value={addForm.selling_price}
+            onChange={(val) => handleAddFormChange('selling_price', val)}
+          />
           <label className="text-sm text-gray-700 space-y-1">
             <span>Unit</span>
             <select
@@ -1627,6 +1943,10 @@ export default function InventoryPage() {
 
         {addError && <div className="text-sm text-red-600">{addError}</div>}
       </SlidePanelForm>
+
+      {lightboxSrc && (
+        <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      )}
     </div>
   )
 }

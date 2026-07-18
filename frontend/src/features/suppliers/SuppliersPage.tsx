@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, Fragment } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState, Fragment } from 'react'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -49,14 +49,29 @@ export default function SuppliersPage() {
     setTimeout(() => setStatusMessage(null), 2800)
   }
 
+  // Debounced server-side search: ILIKE + squashed matching + pg_trgm typo
+  // tolerance, relevance-ranked (see backend suppliers endpoint).
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
-    queryKey: ['suppliers'],
+    queryKey: ['suppliers', debouncedSearch],
     queryFn: async () => {
       const pageSize = 100
       let skip = 0
       const all: Supplier[] = []
       while (true) {
-        const response = await api.get('/suppliers', { params: { paginated: true, skip, limit: pageSize } })
+        const response = await api.get('/suppliers', {
+          params: {
+            paginated: true,
+            skip,
+            limit: pageSize,
+            ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          },
+        })
         const data = response.data
         all.push(...data.items)
         if (!data.has_more || data.items.length === 0) break
@@ -64,6 +79,7 @@ export default function SuppliersPage() {
       }
       return all
     },
+    placeholderData: keepPreviousData,
   })
 
   const {
@@ -175,19 +191,9 @@ export default function SuppliersPage() {
     deleteMutation.mutate(supplier.id)
   }
 
-  const filteredSuppliers = useMemo(() => {
-    if (!suppliers) return []
-    if (!search.trim()) return suppliers
-    const q = search.toLowerCase().trim()
-    return suppliers.filter((s) => {
-      return (
-        s.name.toLowerCase().includes(q) ||
-        (s.contact_name || '').toLowerCase().includes(q) ||
-        (s.phone || '').toLowerCase().includes(q) ||
-        (s.address || '').toLowerCase().includes(q)
-      )
-    })
-  }, [search, suppliers])
+  // Search happens server-side (typo-tolerant, relevance-ranked); no local
+  // substring filter here — it would reject the server's fuzzy matches.
+  const filteredSuppliers = suppliers ?? []
 
   const activeViewMode = isMobile ? 'cards' : viewMode
 

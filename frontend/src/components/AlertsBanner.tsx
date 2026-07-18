@@ -1,12 +1,22 @@
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Boxes, Clock, X, XCircle } from 'lucide-react'
+import { Boxes, Clock, X, XCircle } from 'lucide-react'
 
 interface AlertsBannerProps {
   lowStockCount: number
   overdueApprovals?: number
   staleDrafts?: number
   declinedQuotes?: number
-  onDismiss?: () => void
+  dismissedKeys: Set<string>
+  exitingKey: string | null
+  onDismiss: (key: string) => void
+}
+
+type Pill = {
+  key: string
+  to: string
+  icon: typeof Boxes
+  label: string
+  tone: string
 }
 
 export default function AlertsBanner({
@@ -14,68 +24,66 @@ export default function AlertsBanner({
   overdueApprovals = 0,
   staleDrafts = 0,
   declinedQuotes = 0,
+  dismissedKeys,
+  exitingKey,
   onDismiss,
 }: AlertsBannerProps) {
-  const hasAlerts = lowStockCount > 0 || overdueApprovals > 0 || staleDrafts > 0 || declinedQuotes > 0
+  const pills: Pill[] = [
+    lowStockCount > 0 && {
+      key: 'lowStock',
+      to: '/dashboard/garage/inventory',
+      icon: Boxes,
+      label: `${lowStockCount} Low Stock`,
+      tone: 'bg-red-500/20 border-red-500/30 text-red-300 hover:bg-red-500/30',
+    },
+    overdueApprovals > 0 && {
+      key: 'overdueApprovals',
+      to: '/dashboard/repair-orders?status=quoted',
+      icon: Clock,
+      label: `${overdueApprovals} Overdue Approvals`,
+      tone: 'bg-amber-500/20 border-amber-500/30 text-amber-300 hover:bg-amber-500/30',
+    },
+    staleDrafts > 0 && {
+      key: 'staleDrafts',
+      to: '/dashboard/repair-orders?status=draft',
+      icon: Clock,
+      label: `${staleDrafts} Stale Drafts`,
+      tone: 'bg-gray-500/20 border-gray-500/30 text-gray-300 hover:bg-gray-500/30',
+    },
+    declinedQuotes > 0 && {
+      key: 'declinedQuotes',
+      to: '/dashboard/repair-orders?status=declined',
+      icon: XCircle,
+      label: `${declinedQuotes} Declined Quotes`,
+      tone: 'bg-red-500/20 border-red-500/30 text-red-300 hover:bg-red-500/30',
+    },
+  ].filter((p): p is Pill => Boolean(p))
 
-  if (!hasAlerts) return null
+  const visiblePills = pills.filter(p => !dismissedKeys.has(p.key) || p.key === exitingKey)
+
+  if (!visiblePills.length) return null
 
   return (
-    <div className="bg-gradient-to-r from-amber-500/10 via-red-500/10 to-amber-500/10 border border-amber-500/20 rounded-xl p-3 sm:p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-amber-400">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span className="text-sm font-medium">Attention Required</span>
-        </div>
-        <button
-          onClick={onDismiss}
-          className="text-gray-400 hover:text-white transition-colors"
+    <div className="flex flex-wrap gap-2">
+      {visiblePills.map(({ key, to, icon: Icon, label, tone }) => (
+        <div
+          key={key}
+          className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 border rounded-lg text-sm ${tone} ${key === exitingKey ? 'attention-pill-exit' : 'attention-pill-enter'}`}
         >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-3 mt-3">
-        {lowStockCount > 0 && (
-          <Link
-            to="/dashboard/garage/inventory"
-            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded-lg text-sm text-red-300 hover:bg-red-500/30 transition-colors"
-          >
-            <Boxes className="w-4 h-4" />
-            <span>{lowStockCount} Low Stock</span>
+          <Link to={to} className="flex items-center gap-2">
+            <Icon className="w-4 h-4" />
+            <span>{label}</span>
           </Link>
-        )}
-
-        {overdueApprovals > 0 && (
-          <Link
-            to="/dashboard/repair-orders?status=quoted"
-            className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/20 border border-amber-500/30 rounded-lg text-sm text-amber-300 hover:bg-amber-500/30 transition-colors"
+          <button
+            type="button"
+            aria-label={`Dismiss ${label}`}
+            onClick={() => onDismiss(key)}
+            className="ml-1 rounded p-0.5 text-current opacity-60 hover:opacity-100 transition-opacity"
           >
-            <Clock className="w-4 h-4" />
-            <span>{overdueApprovals} Overdue Approvals</span>
-          </Link>
-        )}
-
-        {staleDrafts > 0 && (
-          <Link
-            to="/dashboard/repair-orders?status=draft"
-            className="flex items-center gap-2 px-3 py-1.5 bg-gray-500/20 border border-gray-500/30 rounded-lg text-sm text-gray-300 hover:bg-gray-500/30 transition-colors"
-          >
-            <Clock className="w-4 h-4" />
-            <span>{staleDrafts} Stale Drafts</span>
-          </Link>
-        )}
-
-        {declinedQuotes > 0 && (
-          <Link
-            to="/dashboard/repair-orders?status=declined"
-            className="flex items-center gap-2 px-3 py-1.5 bg-red-500/20 border border-red-500/30 rounded-lg text-sm text-red-300 hover:bg-red-500/30 transition-colors"
-          >
-            <XCircle className="w-4 h-4" />
-            <span>{declinedQuotes} Declined Quotes</span>
-          </Link>
-        )}
-      </div>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
     </div>
   )
 }

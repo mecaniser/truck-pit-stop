@@ -121,3 +121,29 @@ async def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
     return current_user
+
+
+def user_has_permission(user: User, key: str) -> bool:
+    """True if the user can access a gated settings surface (payments,
+    taxes_fees, workforce). Owners and super admins always pass; garage
+    admins need an explicit grant in user.permissions; everyone else fails.
+    """
+    if user.role in (UserRole.SUPER_ADMIN, UserRole.GARAGE_OWNER):
+        return True
+    if user.role == UserRole.GARAGE_ADMIN:
+        return bool((user.permissions or {}).get(key, False))
+    return False
+
+
+def require_permission(key: str):
+    """Dependency factory gating an endpoint on a specific settings grant."""
+    async def checker(
+        current_user: User = Depends(get_current_active_user),
+    ) -> User:
+        if not user_has_permission(current_user, key):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this setting. Ask the shop owner to grant access.",
+            )
+        return current_user
+    return checker

@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.search import build_search
 from app.core.default_catalog import DEFAULT_CATEGORIES, DEFAULT_SERVICES
 from app.db.models.appointment import Appointment
 from app.db.models.inventory import Inventory
@@ -403,6 +404,7 @@ async def create_service(
 async def list_services(
     category_id: Optional[UUID] = Query(None),
     active_only: bool = Query(True),
+    search: Optional[str] = Query(None, description="Filter by service name or description"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
@@ -431,10 +433,25 @@ async def list_services(
         query = query.where(Service.category_id == category_id)
         count_query = count_query.where(Service.category_id == category_id)
 
+    order_by = [Service.sort_order, Service.name]
+    if search and search.strip():
+        # Shared search semantics (app/core/search.py): ILIKE + pg_trgm typo
+        # tolerance on the name, relevance-ranked so exact hits lead.
+        search_filter, relevance = build_search(
+            search,
+            primary=[Service.name],
+            squashed=[Service.name],
+            secondary=[Service.description],
+            similarity=[Service.name],
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
+        order_by = [relevance.desc(), Service.name, Service.id]
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    query = query.order_by(Service.sort_order, Service.name).offset(skip).limit(limit)
+    query = query.order_by(*order_by).offset(skip).limit(limit)
 
     result = await db.execute(query)
     services = result.scalars().all()

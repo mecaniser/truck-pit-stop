@@ -234,6 +234,8 @@ export default function MechanicsPage() {
     last_name: string
     role: string
     is_active: boolean
+    phone?: string | null
+    permissions?: Record<string, boolean>
   }
   const isGarageAdmin = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const { data: staffRoster } = useQuery<StaffMember[]>({
@@ -247,7 +249,7 @@ export default function MechanicsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['staff-roster'] }),
   })
   const editStaffMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string }) =>
+    mutationFn: async ({ id, ...data }: { id: string; first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string; permissions?: Record<string, boolean> }) =>
       (await api.patch(`/admin/staff/${id}`, data)).data,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['staff-roster'] }); setEditingStaff(null) },
   })
@@ -1220,6 +1222,7 @@ export default function MechanicsPage() {
       {editingStaff && (
         <StaffEditModal
           member={editingStaff}
+          isOwner={user?.role === 'garage_owner'}
           isPending={editStaffMutation.isPending}
           error={formError}
           onClose={() => setEditingStaff(null)}
@@ -1238,25 +1241,37 @@ export default function MechanicsPage() {
   )
 }
 
+const GRANT_OPTIONS: { key: string; label: string; hint: string }[] = [
+  { key: 'payments', label: 'Payments (Stripe & Zelle)', hint: 'Payment collection settings' },
+  { key: 'taxes_fees', label: 'Taxes & Fees', hint: 'Tax rates, shop fees, labor rates' },
+  { key: 'workforce', label: 'Workforce', hint: 'Shift and core-hours defaults' },
+]
+
 function StaffEditModal({
-  member, isPending, error, onClose, onSave,
+  member, isOwner, isPending, error, onClose, onSave,
 }: {
-  member: { id: string; first_name: string; last_name: string; email: string; phone?: string | null; role: string }
+  member: { id: string; first_name: string; last_name: string; email: string; phone?: string | null; role: string; permissions?: Record<string, boolean> }
+  isOwner: boolean
   isPending: boolean
   error: string | null
   onClose: () => void
-  onSave: (data: { first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string }) => void
+  onSave: (data: { first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string; permissions?: Record<string, boolean> }) => void
 }) {
   const [f, setF] = useState({
     first_name: member.first_name, last_name: member.last_name,
     email: member.email, phone: member.phone || '', role: member.role, password: '',
   })
+  const [grants, setGrants] = useState<Record<string, boolean>>(member.permissions || {})
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((p) => ({ ...p, [k]: e.target.value }))
   const input = 'w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors'
   const label = 'block text-sm font-medium text-gray-700 mb-1.5'
+  // Only the owner can grant, and grants only apply to shop admins (tracks the
+  // in-progress role so the block appears/disappears as the dropdown changes)
+  const canGrantPermissions = isOwner && f.role === 'garage_admin'
   const submit = () => onSave({
     first_name: f.first_name, last_name: f.last_name, email: f.email,
     phone: f.phone || undefined, role: f.role, password: f.password || undefined,
+    permissions: canGrantPermissions ? grants : undefined,
   })
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -1283,6 +1298,31 @@ function StaffEditModal({
             <label className={label}>New password</label>
             <input type="text" value={f.password} onChange={set('password')} className={input} placeholder="Leave blank to keep current" />
           </div>
+          {canGrantPermissions && (
+            <div className="border-t border-gray-100 pt-4">
+              <p className="text-sm font-medium text-gray-700 mb-1">Settings access</p>
+              <p className="text-xs text-gray-500 mb-3">Grant this admin access to owner-only settings areas.</p>
+              <div className="space-y-2.5">
+                {GRANT_OPTIONS.map((opt) => (
+                  <label key={opt.key} className="flex items-center justify-between gap-3 cursor-pointer">
+                    <span>
+                      <span className="block text-sm text-gray-800">{opt.label}</span>
+                      <span className="block text-xs text-gray-400">{opt.hint}</span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={!!grants[opt.key]}
+                      onClick={() => setGrants((p) => ({ ...p, [opt.key]: !p[opt.key] }))}
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${grants[opt.key] ? 'bg-amber-500' : 'bg-gray-200'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${grants[opt.key] ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex gap-3 px-5 py-4 border-t border-gray-100">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50">Cancel</button>

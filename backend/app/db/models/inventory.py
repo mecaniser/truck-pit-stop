@@ -30,7 +30,15 @@ class Inventory(BaseModel):
     
     supplier_name = Column(String(255), nullable=True)
     supplier_contact = Column(String(255), nullable=True)
+
+    # Physical spot in the warehouse (aisle/shelf/bin), e.g. "A3-S2" or "Back wall".
+    location = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
+
+    # Single reference photo for the part (Cloudinary). public_id is kept so the
+    # old asset can be deleted on replace/remove.
+    image_url = Column(String(500), nullable=True)
+    cloudinary_public_id = Column(String(255), nullable=True)
 
     parts_usage = relationship("PartsUsage", back_populates="inventory_item")
 

@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID, uuid4
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+
+from app.core.search import build_search
 from pydantic import BaseModel
 from decimal import Decimal
 
@@ -11,9 +13,15 @@ from app.core.config import settings
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.default_catalog import DEFAULT_INVENTORY
+from app.core.image_validation import read_validated_image
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
 from app.db.models.description_library import DescriptionLibraryEntry
+from app.services.cloudinary_service import (
+    is_cloudinary_configured,
+    upload_inventory_photo,
+    delete_cloudinary_image,
+)
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 
 router = APIRouter()
@@ -36,11 +44,36 @@ class InventoryResponse(BaseModel):
     unit_type: str
     supplier_name: Optional[str]
     supplier_contact: Optional[str]
+    image_url: Optional[str] = None
+    location: Optional[str] = None
     created_at: str
     updated_at: str
 
     class Config:
         from_attributes = True
+
+
+def _inventory_response(item: Inventory) -> InventoryResponse:
+    return InventoryResponse(
+        id=item.id,
+        tenant_id=item.tenant_id,
+        sku=item.sku,
+        name=item.name,
+        description=item.description,
+        category=item.category,
+        stock_quantity=item.stock_quantity,
+        on_order_quantity=item.on_order_quantity,
+        reorder_level=item.reorder_level,
+        cost=item.cost,
+        selling_price=item.selling_price,
+        unit_type=item.unit_type,
+        supplier_name=item.supplier_name,
+        supplier_contact=item.supplier_contact,
+        image_url=item.image_url,
+        location=item.location,
+        created_at=item.created_at.isoformat(),
+        updated_at=item.updated_at.isoformat(),
+    )
 
 
 class InventoryCreate(BaseModel):
@@ -56,6 +89,7 @@ class InventoryCreate(BaseModel):
     unit_type: str = "each"
     supplier_name: Optional[str] = None
     supplier_contact: Optional[str] = None
+    location: Optional[str] = None
 
 
 class InventoryUpdate(BaseModel):
@@ -71,6 +105,7 @@ class InventoryUpdate(BaseModel):
     unit_type: Optional[str] = None
     supplier_name: Optional[str] = None
     supplier_contact: Optional[str] = None
+    location: Optional[str] = None
 
 
 class ReceiveShipmentRequest(BaseModel):
@@ -208,6 +243,7 @@ async def list_inventory(
     current_user: User = Depends(get_current_active_user),
     category: Optional[str] = None,
     low_stock: Optional[bool] = None,
+    search: Optional[str] = None,
 ):
     query = select(Inventory).where(Inventory.deleted_at.is_(None))
     count_query = select(func.count(Inventory.id)).where(Inventory.deleted_at.is_(None))
@@ -220,6 +256,19 @@ async def list_inventory(
         query = query.where(Inventory.category == category)
         count_query = count_query.where(Inventory.category == category)
 
+    order_by = [Inventory.name]
+    if search and search.strip():
+        search_filter, relevance = build_search(
+            search,
+            primary=[Inventory.name, Inventory.sku],
+            squashed=[Inventory.name, Inventory.sku],
+            secondary=[Inventory.description, Inventory.location, Inventory.supplier_name],
+            similarity=[Inventory.name],
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
+        order_by = [relevance.desc(), Inventory.name, Inventory.id]
+
     # Keep low-stock semantics while making pagination consistent.
     if low_stock:
         low_stock_filter = Inventory.stock_quantity <= Inventory.reorder_level
@@ -229,30 +278,10 @@ async def list_inventory(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    result = await db.execute(query.order_by(Inventory.name).offset(skip).limit(limit))
+    result = await db.execute(query.order_by(*order_by).offset(skip).limit(limit))
     items = result.scalars().all()
 
-    serialized_items = [
-        InventoryResponse(
-            id=item.id,
-            tenant_id=item.tenant_id,
-            sku=item.sku,
-            name=item.name,
-            description=item.description,
-            category=item.category,
-            stock_quantity=item.stock_quantity,
-            on_order_quantity=item.on_order_quantity,
-            reorder_level=item.reorder_level,
-            cost=item.cost,
-            selling_price=item.selling_price,
-            unit_type=item.unit_type,
-            supplier_name=item.supplier_name,
-            supplier_contact=item.supplier_contact,
-            created_at=item.created_at.isoformat(),
-            updated_at=item.updated_at.isoformat(),
-        )
-        for item in items
-    ]
+    serialized_items = [_inventory_response(item) for item in items]
     return paginated_or_list(serialized_items, total, skip, limit, paginated)
 
 
@@ -273,24 +302,7 @@ async def create_inventory_item(
     await db.commit()
     await db.refresh(item)
 
-    return InventoryResponse(
-        id=item.id,
-        tenant_id=item.tenant_id,
-        sku=item.sku,
-        name=item.name,
-        description=item.description,
-        category=item.category,
-        stock_quantity=item.stock_quantity,
-        on_order_quantity=item.on_order_quantity,
-        reorder_level=item.reorder_level,
-        cost=item.cost,
-        selling_price=item.selling_price,
-        unit_type=item.unit_type,
-        supplier_name=item.supplier_name,
-        supplier_contact=item.supplier_contact,
-        created_at=item.created_at.isoformat(),
-        updated_at=item.updated_at.isoformat(),
-    )
+    return _inventory_response(item)
 
 
 class PreloadInventoryResult(BaseModel):
@@ -377,24 +389,7 @@ async def get_inventory_item(
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
-    return InventoryResponse(
-        id=item.id,
-        tenant_id=item.tenant_id,
-        sku=item.sku,
-        name=item.name,
-        description=item.description,
-        category=item.category,
-        stock_quantity=item.stock_quantity,
-        on_order_quantity=item.on_order_quantity,
-        reorder_level=item.reorder_level,
-        cost=item.cost,
-        selling_price=item.selling_price,
-        unit_type=item.unit_type,
-        supplier_name=item.supplier_name,
-        supplier_contact=item.supplier_contact,
-        created_at=item.created_at.isoformat(),
-        updated_at=item.updated_at.isoformat(),
-    )
+    return _inventory_response(item)
 
 
 @router.put("/{item_id}", response_model=InventoryResponse)
@@ -425,24 +420,7 @@ async def update_inventory_item(
     await db.commit()
     await db.refresh(item)
 
-    return InventoryResponse(
-        id=item.id,
-        tenant_id=item.tenant_id,
-        sku=item.sku,
-        name=item.name,
-        description=item.description,
-        category=item.category,
-        stock_quantity=item.stock_quantity,
-        on_order_quantity=item.on_order_quantity,
-        reorder_level=item.reorder_level,
-        cost=item.cost,
-        selling_price=item.selling_price,
-        unit_type=item.unit_type,
-        supplier_name=item.supplier_name,
-        supplier_contact=item.supplier_contact,
-        created_at=item.created_at.isoformat(),
-        updated_at=item.updated_at.isoformat(),
-    )
+    return _inventory_response(item)
 
 
 @router.post("/{item_id}/receive", response_model=InventoryResponse)
@@ -473,21 +451,69 @@ async def receive_shipment(
     await db.commit()
     await db.refresh(item)
 
-    return InventoryResponse(
-        id=item.id,
-        tenant_id=item.tenant_id,
-        sku=item.sku,
-        name=item.name,
-        description=item.description,
-        category=item.category,
-        stock_quantity=item.stock_quantity,
-        on_order_quantity=item.on_order_quantity,
-        reorder_level=item.reorder_level,
-        cost=item.cost,
-        selling_price=item.selling_price,
-        unit_type=item.unit_type,
-        supplier_name=item.supplier_name,
-        supplier_contact=item.supplier_contact,
-        created_at=item.created_at.isoformat(),
-        updated_at=item.updated_at.isoformat(),
+    return _inventory_response(item)
+
+
+async def _get_owned_inventory_item(db: AsyncSession, item_id: UUID, current_user: User) -> Inventory:
+    query = select(Inventory).where(
+        Inventory.id == item_id,
+        Inventory.deleted_at.is_(None),
     )
+    if current_user.tenant_id:
+        query = query.where(Inventory.tenant_id == current_user.tenant_id)
+    result = await db.execute(query)
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+    return item
+
+
+@router.post("/{item_id}/photo", response_model=InventoryResponse)
+async def upload_inventory_item_photo(
+    item_id: UUID,
+    image: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    """Upload (or replace) the single reference photo for a part."""
+    if not is_cloudinary_configured():
+        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail="Image uploads are not configured")
+
+    item = await _get_owned_inventory_item(db, item_id, current_user)
+    data_uri, _content_type = await read_validated_image(image)
+
+    old_public_id = item.cloudinary_public_id
+    try:
+        image_url, public_id = await upload_inventory_photo(data_uri, str(item_id))
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_424_FAILED_DEPENDENCY, detail="Photo upload failed. Please try again.")
+
+    item.image_url = image_url
+    item.cloudinary_public_id = public_id
+    await db.commit()
+    await db.refresh(item)
+
+    if old_public_id:
+        await delete_cloudinary_image(old_public_id)
+
+    return _inventory_response(item)
+
+
+@router.delete("/{item_id}/photo", response_model=InventoryResponse)
+async def delete_inventory_item_photo(
+    item_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin()),
+):
+    item = await _get_owned_inventory_item(db, item_id, current_user)
+
+    old_public_id = item.cloudinary_public_id
+    item.image_url = None
+    item.cloudinary_public_id = None
+    await db.commit()
+    await db.refresh(item)
+
+    if old_public_id and is_cloudinary_configured():
+        await delete_cloudinary_image(old_public_id)
+
+    return _inventory_response(item)

@@ -84,10 +84,21 @@ export default function FleetBoard({
   let list = trucks
   if (filter !== 'all') list = list.filter((t) => t.status === filter)
   if (query.trim()) {
-    const q = query.toLowerCase()
-    list = list.filter((t) =>
-      `${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''}`
-        .toLowerCase().includes(q))
+    // Multi-keyword, separator-agnostic: every word must match somewhere, and
+    // squashed (alphanumeric-only) comparison lets "ABC1234" find "ABC-1234"
+    // plates/VINs regardless of dash/space formatting.
+    const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const words = query.toLowerCase().trim().split(/\s+/)
+    list = list.filter((t) => {
+      const haystack =
+        `${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''}`.toLowerCase()
+      const squashedHaystack = squash(haystack)
+      return words.every((word) => {
+        if (haystack.includes(word)) return true
+        const squashedWord = squash(word)
+        return squashedWord !== '' && squashedHaystack.includes(squashedWord)
+      })
+    })
   }
   const sorters: Record<Sort, (a: BoardTruck, b: BoardTruck) => number> = {
     attention: (a, b) => rank(b) - rank(a),

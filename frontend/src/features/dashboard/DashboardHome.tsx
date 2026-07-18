@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   AlertTriangle,
   ChevronDown,
@@ -379,9 +379,8 @@ export default function DashboardHome() {
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
-  const [isAttentionDismissed, setIsAttentionDismissed] = useState(false)
-  const [isAttentionDismissing, setIsAttentionDismissing] = useState(false)
-  const alertsBannerRef = useRef<HTMLDivElement | null>(null)
+  const [dismissedAlertKeys, setDismissedAlertKeys] = useState<Set<string>>(new Set())
+  const [exitingAlertKey, setExitingAlertKey] = useState<string | null>(null)
   const nowMs = useNow()
 
   const isMechanic = user?.role === 'mechanic'
@@ -559,20 +558,19 @@ export default function DashboardHome() {
     (stats?.overdue_approvals ?? 0) > 0 ||
     (stats?.declined_quotes ?? 0) > 0
   )
-  const showAttentionRequired = hasAttentionRequired && !isAttentionDismissed
-  // True while the banner is animating out — keeps it in the DOM during exit animation
-  const showBannerElement = showAttentionRequired || isAttentionDismissing
 
-  const handleAttentionDismiss = () => {
-    setIsAttentionDismissing(true)
-    setIsAttentionDismissed(true) // immediately triggers work queue height recalc
-    setTimeout(() => setIsAttentionDismissing(false), 220)
+  const handleDismissAlert = (key: string) => {
+    setExitingAlertKey(key)
+    setTimeout(() => {
+      setDismissedAlertKeys(prev => new Set(prev).add(key))
+      setExitingAlertKey(null)
+    }, 200)
   }
 
   useEffect(() => {
     if (!hasAttentionRequired) {
-      setIsAttentionDismissed(false)
-      setIsAttentionDismissing(false)
+      setDismissedAlertKeys(new Set())
+      setExitingAlertKey(null)
     }
   }, [hasAttentionRequired])
 
@@ -829,19 +827,16 @@ export default function DashboardHome() {
         </form>
       )}
 
-      {/* Alerts Banner (managers only) — kept in DOM during exit animation via showBannerElement */}
-      {showBannerElement && (
-        <div
-          ref={alertsBannerRef}
-          className={isAttentionDismissing ? 'attention-banner-exit' : 'attention-banner-enter'}
-        >
-          <AlertsBanner
-            lowStockCount={stats?.low_stock_count || 0}
-            overdueApprovals={stats?.overdue_approvals || 0}
-            declinedQuotes={stats?.declined_quotes || 0}
-            onDismiss={handleAttentionDismiss}
-          />
-        </div>
+      {/* Attention pills (managers only) — each dismisses independently */}
+      {isManager && hasAttentionRequired && (
+        <AlertsBanner
+          lowStockCount={stats?.low_stock_count || 0}
+          overdueApprovals={stats?.overdue_approvals || 0}
+          declinedQuotes={stats?.declined_quotes || 0}
+          dismissedKeys={dismissedAlertKeys}
+          exitingKey={exitingAlertKey}
+          onDismiss={handleDismissAlert}
+        />
       )}
 
       <div className={`flex flex-1 min-h-0 flex-col ${isExpandedFont ? 'gap-4 2xl:gap-3' : 'gap-5 2xl:gap-4'}`}>

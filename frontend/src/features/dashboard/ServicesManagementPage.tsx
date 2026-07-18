@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -14,6 +14,7 @@ import QuantityStepper from '@/components/QuantityStepper'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
 import SuggestingInput from '@/components/SuggestingInput'
 import { useViewPreference } from '@/hooks/useViewPreference'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { getServiceStockStatus } from '@/utils/serviceStock'
 
 interface ServicePart {
@@ -64,6 +65,9 @@ interface InventoryOption {
   name: string
   selling_price: string
   stock_quantity: number
+  // "each" or a fluid unit (gallon/quart/liter) — drives the add-part
+  // stepper's decimal step for fluids.
+  unit_type?: string
 }
 
 const serviceSchema = z.object({
@@ -123,15 +127,28 @@ export default function ServicesManagementPage() {
 
   // Parts picker state (for editing an existing service)
   const [partPickerInventoryId, setPartPickerInventoryId] = useState('')
+  // Snapshot of the chosen part: once the search resets, the refetched
+  // (unsearched) inventory page may no longer contain it, so the select and
+  // the add-part toast need a copy that outlives the current options page.
+  const [pickedPart, setPickedPart] = useState<InventoryOption | null>(null)
   const [partPickerQty, setPartPickerQty] = useState(1)
   const [partError, setPartError] = useState<string | null>(null)
 
+  // Server-side service search: typo-tolerant + relevance-ranked (shared
+  // backend search semantics), debounced per keystroke.
+  const debouncedServiceSearch = useDebouncedValue(searchQuery.trim(), 300)
   const { data: services, isLoading } = useQuery<Service[]>({
-    queryKey: ['admin-services'],
+    queryKey: ['admin-services', debouncedServiceSearch],
     queryFn: async () => {
-      const response = await api.get('/services?active_only=false')
+      const response = await api.get('/services', {
+        params: {
+          active_only: false,
+          ...(debouncedServiceSearch ? { search: debouncedServiceSearch } : {}),
+        },
+      })
       return response.data
     },
+    placeholderData: keepPreviousData,
   })
 
   const { data: categories } = useQuery<ServiceCategory[]>({
@@ -142,13 +159,24 @@ export default function ServicesManagementPage() {
     },
   })
 
-  const { data: inventoryItems } = useQuery<InventoryOption[]>({
-    queryKey: ['inventory-options'],
+  // Server-side part search: the catalog can be far larger than one page
+  // (limit is capped at 100), so the typed query must go to the backend —
+  // client-side filtering of a truncated first page silently hides parts.
+  const [partSearch, setPartSearch] = useState('')
+  const debouncedPartSearch = useDebouncedValue(partSearch.trim(), 300)
+  const { data: inventoryItems, isFetching: inventoryFetching } = useQuery<InventoryOption[]>({
+    queryKey: ['inventory-options', debouncedPartSearch],
     queryFn: async () => {
-      const response = await api.get('/inventory?limit=100')
+      const response = await api.get('/inventory', {
+        params: { limit: 100, ...(debouncedPartSearch ? { search: debouncedPartSearch } : {}) },
+      })
       return response.data
     },
+    placeholderData: keepPreviousData,
   })
+  // Loading covers the debounce gap too — the moment the user types, before
+  // the request even fires, results on screen are already stale.
+  const partSearchLoading = partSearch.trim() !== debouncedPartSearch || inventoryFetching
 
   const {
     register,
@@ -349,6 +377,7 @@ export default function ServicesManagementPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-services'] })
       setEditingService(svc)
       setPartPickerInventoryId('')
+      setPickedPart(null)
       setPartPickerQty(1)
       setPartError(null)
       toast.success(`Added ${vars.quantity}× ${vars.partName}`)
@@ -393,6 +422,7 @@ export default function ServicesManagementPage() {
     setAutoSaveState('idle') // fresh panel — don't carry over the last service's "saved" check
     setPartError(null)
     setPartPickerInventoryId('')
+    setPickedPart(null)
     setPartPickerQty(1)
     reset({
       name: service.name,
@@ -459,14 +489,36 @@ export default function ServicesManagementPage() {
   const inventoryOptions = useMemo(() => {
     if (!inventoryItems) return []
     const attachedIds = new Set(editingService?.parts.map((p) => p.inventory_id) ?? [])
-    return inventoryItems
+    const toOption = (item: InventoryOption) => ({
+      value: item.id,
+      label: `${item.name} (${item.sku})`,
+      subLabel:
+        item.stock_quantity === 0
+          ? `$${Number(item.selling_price).toFixed(2)} ·`
+          : `$${Number(item.selling_price).toFixed(2)} · ${item.stock_quantity} in stock`,
+      // Zero-stock parts stay selectable (the bundle is a recipe, not a
+      // reservation) but get called out so nobody is surprised later.
+      ...(item.stock_quantity === 0
+        ? { flag: { text: 'Out of stock', tone: 'danger' as const } }
+        : {}),
+    })
+    const options = inventoryItems
       .filter((item) => !attachedIds.has(item.id))
-      .map((item) => ({
-        value: item.id,
-        label: `${item.name} (${item.sku})`,
-        subLabel: `$${Number(item.selling_price).toFixed(2)} · ${item.stock_quantity} in stock`,
-      }))
-  }, [inventoryItems, editingService])
+      .map(toOption)
+    // Keep the picked part visible even when the current (unsearched) page
+    // no longer includes it, so the closed select can still show its label.
+    // Skip while the user is actively searching for something else — the
+    // injected row must not pollute unrelated search results.
+    if (
+      pickedPart &&
+      !partSearch &&
+      !attachedIds.has(pickedPart.id) &&
+      !options.some((opt) => opt.value === pickedPart.id)
+    ) {
+      options.unshift(toOption(pickedPart))
+    }
+    return options
+  }, [inventoryItems, editingService, pickedPart, partSearch])
 
   if (isLoading) {
     return (
@@ -478,14 +530,9 @@ export default function ServicesManagementPage() {
 
   const activeViewMode = isMobile ? 'cards' : viewMode
 
-  const filteredServices = services?.filter((svc) => {
-    if (!searchQuery.trim()) return true
-    const q = searchQuery.toLowerCase()
-    return (
-      svc.name.toLowerCase().includes(q) ||
-      (svc.description || '').toLowerCase().includes(q)
-    )
-  })
+  // Search happens server-side (typo-tolerant, relevance-ranked); a local
+  // substring filter here would reject the server's fuzzy matches.
+  const filteredServices = services
 
   const displayedPrice = (svc: Service) => Number(svc.computed_total_price)
 
@@ -1010,6 +1057,13 @@ export default function ServicesManagementPage() {
                                 <p className="text-sm font-medium text-gray-800 truncate">{part.name}</p>
                                 <p className="text-xs text-gray-500">
                                   {part.sku} · ${Number(part.unit_price).toFixed(2)}/{unit.unitLabel}
+                                  {part.stock_quantity === 0 ? (
+                                    <span className="ml-1.5 font-semibold text-red-600">Out of stock</span>
+                                  ) : part.stock_quantity < (parseFloat(part.quantity) || 0) ? (
+                                    <span className="ml-1.5 font-semibold text-amber-600">
+                                      Only {part.stock_quantity} in stock
+                                    </span>
+                                  ) : null}
                                 </p>
                               </div>
                               <QuantityStepper
@@ -1057,25 +1111,53 @@ export default function ServicesManagementPage() {
                         <BaseSelect
                           options={inventoryOptions}
                           value={partPickerInventoryId}
-                          onChange={(val) => setPartPickerInventoryId(val)}
-                          placeholder={inventoryOptions.length ? 'Pick from inventory…' : 'No parts left to add'}
-                          disabled={inventoryOptions.length === 0}
+                          onChange={(val) => {
+                            setPartPickerInventoryId(val)
+                            // Re-selecting the snapshot-only entry must not wipe the
+                            // snapshot: it may be absent from the current page.
+                            const next =
+                              inventoryItems?.find((i) => i.id === val) ??
+                              (pickedPart?.id === val ? pickedPart : null)
+                            setPickedPart(next)
+                            // A fractional qty (fluid) doesn't fit a discrete part —
+                            // snap it to a whole number when switching to "each".
+                            const nextUnit = unitStepConfig(next?.unit_type)
+                            if (nextUnit.step === 1 && !Number.isInteger(partPickerQty)) {
+                              setPartPickerQty(Math.max(1, Math.round(partPickerQty)))
+                            }
+                          }}
+                          onQueryChange={setPartSearch}
+                          hideSelectedOption
+                          loading={partSearchLoading}
+                          placeholder={inventoryOptions.length || partSearch ? 'Pick from inventory…' : 'No parts left to add'}
+                          disabled={inventoryOptions.length === 0 && !partSearch}
                         />
                         <div className="flex items-center gap-2">
                           <label className="text-xs text-gray-600">Qty</label>
-                          <QuantityStepper
-                            ariaLabel="Part quantity"
-                            value={partPickerQty}
-                            onChange={(n) => setPartPickerQty(Math.max(1, n))}
-                            min={1}
-                            unitLabel=""
-                            align="start"
-                          />
+                          {(() => {
+                            // Fluids (gallon/quart/liter) step by 0.25 and accept typed
+                            // decimals like 9.2; discrete parts stay whole-numbered.
+                            const pickerUnit = unitStepConfig(pickedPart?.unit_type)
+                            return (
+                              <QuantityStepper
+                                ariaLabel="Part quantity"
+                                value={partPickerQty}
+                                onChange={(n) => setPartPickerQty(Math.max(pickerUnit.min, n))}
+                                min={pickerUnit.min}
+                                step={pickerUnit.step}
+                                unitLabel={pickedPart ? pickerUnit.unitLabel : ''}
+                                align="start"
+                              />
+                            )
+                          })()}
                           <button
                             type="button"
                             onClick={() => {
                               if (!partPickerInventoryId) return
-                              const picked = inventoryItems?.find((i) => i.id === partPickerInventoryId)
+                              const picked =
+                                pickedPart?.id === partPickerInventoryId
+                                  ? pickedPart
+                                  : inventoryItems?.find((i) => i.id === partPickerInventoryId)
                               addPartMutation.mutate({
                                 serviceId: editingService.id,
                                 inventoryId: partPickerInventoryId,

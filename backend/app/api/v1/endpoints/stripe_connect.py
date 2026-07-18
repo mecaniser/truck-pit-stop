@@ -5,7 +5,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 import stripe
 
-from app.core.dependencies import get_db, get_current_active_user
+from app.core.dependencies import get_db, get_current_active_user, user_has_permission
 from app.core.config import settings
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
@@ -32,11 +32,16 @@ class DashboardLinkResponse(BaseModel):
 
 
 def _require_garage_admin(current_user: User) -> None:
-    """Only garage admins can manage Stripe Connect"""
+    """Only the owner, or admins granted the payments permission, can manage Stripe Connect"""
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only shop administrators can manage Stripe settings",
+        )
+    if not user_has_permission(current_user, "payments"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to Stripe settings. Ask the shop owner to grant access.",
         )
 
 

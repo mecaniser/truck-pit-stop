@@ -132,22 +132,73 @@ async def upload_tenant_logo(
     return result["secure_url"]
 
 
-async def delete_work_photo(public_id: str) -> bool:
+async def upload_inventory_photo(
+    data_uri: str,
+    inventory_item_id: str,
+) -> tuple[str, str]:
     """
-    Delete a work photo from Cloudinary.
-    
+    Upload an inventory part photo to Cloudinary.
+
+    Returns:
+        (secure_url, public_id) of the uploaded image
+
+    Raises:
+        ValueError: If Cloudinary is not configured
+        Exception: If upload fails
+    """
+    if not is_cloudinary_configured():
+        raise ValueError("Cloudinary is not configured. Please set CLOUDINARY_* environment variables.")
+
+    try:
+        result = cloudinary.uploader.upload(
+            data_uri,
+            folder=f"inventory_parts/{inventory_item_id}",
+            resource_type="image",
+            transformation=[
+                {"quality": "auto:good"},
+                {"fetch_format": "auto"},
+            ],
+            context={"inventory_item_id": inventory_item_id},
+        )
+
+        logger.info(
+            "Inventory photo uploaded",
+            inventory_item_id=inventory_item_id,
+            public_id=result.get("public_id"),
+        )
+
+        return result["secure_url"], result["public_id"]
+
+    except Exception as e:
+        logger.error(
+            "Failed to upload inventory photo",
+            inventory_item_id=inventory_item_id,
+            error=str(e),
+        )
+        raise
+
+
+async def delete_cloudinary_image(public_id: str) -> bool:
+    """
+    Delete any Cloudinary image by public ID. Resource-agnostic — used for
+    work photos, inventory photos, and any other feature storing a public_id.
+
     Args:
         public_id: Cloudinary public ID of the image
-        
+
     Returns:
         True if deleted successfully
     """
     if not is_cloudinary_configured():
         raise ValueError("Cloudinary is not configured.")
-    
+
     try:
         result = cloudinary.uploader.destroy(public_id)
         return result.get("result") == "ok"
     except Exception as e:
-        logger.error("Failed to delete work photo", public_id=public_id, error=str(e))
+        logger.error("Failed to delete Cloudinary image", public_id=public_id, error=str(e))
         return False
+
+
+# Back-compat alias — existing callers reference this name.
+delete_work_photo = delete_cloudinary_image

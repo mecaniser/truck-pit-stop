@@ -133,6 +133,7 @@ const MATCH_FIELD_LABELS: Record<string, string> = {
   phone: 'Phone',
   usdot: 'DOT',
   mc: 'MC',
+  similar: 'Similar match',
 }
 
 function MatchBadges({ matchedFields, variant = 'dark' }: { matchedFields?: string[]; variant?: 'dark' | 'light' }) {

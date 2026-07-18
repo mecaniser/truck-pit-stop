@@ -171,6 +171,9 @@ export default function RepairOrdersPage() {
   const [page, setPage] = useState(0)
   // Reset to the first page whenever the search term or status filter changes.
   useEffect(() => { setPage(0) }, [debouncedSearch, statusFilter])
+  // Set by the drawer's Next/Prev when it crosses a list-page boundary;
+  // consumed once the new page's orders load to auto-open the right one.
+  const [pendingPageNav, setPendingPageNav] = useState<'first' | 'last' | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
@@ -1236,25 +1239,39 @@ export default function RepairOrdersPage() {
   // is simply the current page returned by the API.
   const filteredOrders = orders
 
-  // Keyboard left/right arrow navigation between orders when detail panel is open
+  // Keyboard left/right arrow navigation between orders when detail panel is
+  // open. Delegates to goToNextOrder/goToPrevOrder (defined below, but
+  // already in scope by the time this effect runs post-render) so arrow keys
+  // cross a list-page boundary the same way the drawer's Next/Prev buttons do.
   useEffect(() => {
     if (!isDetailOpen || !filteredOrders || !selectedOrder) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
       const target = e.target as HTMLElement
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) return
-      const idx = filteredOrders.findIndex(o => o.id === selectedOrder.id)
-      let next: RepairOrder | null = null
-      if (e.key === 'ArrowLeft' && idx > 0) next = filteredOrders[idx - 1]
-      if (e.key === 'ArrowRight' && idx >= 0 && idx < filteredOrders.length - 1) next = filteredOrders[idx + 1]
-      if (next) {
-        openDetail(next)
-      }
+      if (e.key === 'ArrowLeft') goToPrevOrder()
+      if (e.key === 'ArrowRight') goToNextOrder()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDetailOpen, filteredOrders, selectedOrder])
+
+  // Once a page change triggered by goToNextOrder/goToPrevOrder (defined
+  // below, in scope by the time this runs) resolves, land on that page's
+  // first (Next) or last (Prev) order. The target page is normally already
+  // prefetched (see the prefetch effect above), so this fires as soon as the
+  // new `orders` array is in the cache rather than waiting on a fresh fetch.
+  // Placed before the isLoading early return below so this hook always runs
+  // in the same order across renders — moving it after that guard broke the
+  // Rules of Hooks (present on some renders, absent on others).
+  useEffect(() => {
+    if (!pendingPageNav || !orders || orders.length === 0) return
+    const target = pendingPageNav === 'first' ? orders[0] : orders[orders.length - 1]
+    setPendingPageNav(null)
+    openDetail(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPageNav, orders])
 
   if (isLoading) {
     return (
@@ -1333,14 +1350,46 @@ export default function RepairOrdersPage() {
     )
   }
 
-  // Navigation state for prev/next browsing in the detail panel
+  // Navigation state for prev/next browsing in the detail panel. This only
+  // has the current server-fetched page (25 orders) to walk — crossing into
+  // the next/previous page is handled by goToNextOrder/goToPrevOrder below,
+  // which flip `page` and land on the new page's first/last order once it
+  // loads (already prefetched by the effect above in the common case, so it
+  // resolves near-instantly rather than stalling on a fresh fetch).
   const navigationOrders = filteredOrders ?? []
   const currentNavIndex = selectedOrder
     ? navigationOrders.findIndex(o => o.id === selectedOrder.id)
     : -1
+  const isAtLastOnPage = currentNavIndex >= 0 && currentNavIndex === navigationOrders.length - 1
+  const isAtFirstOnPage = currentNavIndex === 0
+  const canCrossToNextPage = isAtLastOnPage && !!orderPage?.has_more
+  const canCrossToPrevPage = isAtFirstOnPage && page > 0
   const showNavigation = navigationOrders.length > 1 && currentNavIndex >= 0
-  const hasPrev = currentNavIndex > 0
-  const hasNext = currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1
+  const hasPrev = (currentNavIndex > 0) || canCrossToPrevPage
+  const hasNext = (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) || canCrossToNextPage
+
+  const goToNextOrder = () => {
+    if (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) {
+      openDetail(navigationOrders[currentNavIndex + 1])
+      return
+    }
+    if (canCrossToNextPage) {
+      setPendingPageNav('first')
+      setPage((p) => p + 1)
+    }
+  }
+
+  const goToPrevOrder = () => {
+    if (currentNavIndex > 0) {
+      openDetail(navigationOrders[currentNavIndex - 1])
+      return
+    }
+    if (canCrossToPrevPage) {
+      setPendingPageNav('last')
+      setPage((p) => Math.max(0, p - 1))
+    }
+  }
+
   const quoteActionPending = createQuoteMutation.isPending || updateQuoteMutation.isPending || sendQuoteMutation.isPending
   const quoteOrder = orderDetail ?? selectedOrder
   const quoteOrderStatus = quoteOrder?.status
@@ -2397,7 +2446,20 @@ export default function RepairOrdersPage() {
 
                     <div className="flex flex-wrap gap-2">
                       {(services || [])
-                        .filter((svc) => !serviceSearch || svc.name.toLowerCase().includes(serviceSearch.toLowerCase()))
+                        .filter((svc) => {
+                          if (!serviceSearch.trim()) return true
+                          // Multi-keyword, separator-agnostic: every word must
+                          // match in name or description ("oil chg" word order
+                          // doesn't matter, "a/c" matches "AC").
+                          const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+                          const haystack = `${svc.name} ${svc.description || ''}`.toLowerCase()
+                          const squashedHaystack = squash(haystack)
+                          return serviceSearch.toLowerCase().trim().split(/\s+/).every((word) => {
+                            if (haystack.includes(word)) return true
+                            const squashedWord = squash(word)
+                            return squashedWord !== '' && squashedHaystack.includes(squashedWord)
+                          })
+                        })
                         .slice(0, 8)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
@@ -2417,11 +2479,19 @@ export default function RepairOrdersPage() {
                               )}
                               <button
                                 type="button"
-                                onClick={() =>
+                                onClick={() => {
+                                  const adding = !selectedServiceIds.includes(svc.id)
                                   setSelectedServiceIds((prev) =>
                                     prev.includes(svc.id) ? prev.filter((id) => id !== svc.id) : [...prev, svc.id]
                                   )
-                                }
+                                  // The bundle is still addable — parts get ordered all the
+                                  // time — but call out the shortage at the moment of use.
+                                  if (adding && stockStatus.level === 'out') {
+                                    toast(`Parts for ${svc.name} are out of stock`, { icon: '⚠️' })
+                                  } else if (adding && stockStatus.level === 'low') {
+                                    toast(`Low stock on parts for ${svc.name}`, { icon: '⚠️' })
+                                  }
+                                }}
                                 className="focus:outline-none"
                               >
                                 {svc.name}
@@ -2629,8 +2699,8 @@ export default function RepairOrdersPage() {
         subtitle="Repair Order"
         width="max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]"
         hideHeader={priceBuilderOwnsShell}
-        onPrev={!priceBuilderOwnsShell && showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
-        onNext={!priceBuilderOwnsShell && showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
+        onPrev={!priceBuilderOwnsShell && (showNavigation || hasPrev) ? goToPrevOrder : undefined}
+        onNext={!priceBuilderOwnsShell && (showNavigation || hasNext) ? goToNextOrder : undefined}
         prevDisabled={!hasPrev}
         nextDisabled={!hasNext}
         navigationLabel={!priceBuilderOwnsShell && showNavigation ? `${currentNavIndex + 1} / ${navigationOrders.length}` : undefined}
@@ -3212,8 +3282,8 @@ export default function RepairOrdersPage() {
                     onDeleteInvoice={() => setShowDeleteInvoiceConfirm(true)}
                     historyEvents={priceBuilderHistoryEvents}
                     onClose={closeDetail}
-                    onPrev={showNavigation ? () => openDetail(navigationOrders[currentNavIndex - 1]) : undefined}
-                    onNext={showNavigation ? () => openDetail(navigationOrders[currentNavIndex + 1]) : undefined}
+                    onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
+                    onNext={showNavigation || hasNext ? goToNextOrder : undefined}
                     prevDisabled={!hasPrev}
                     nextDisabled={!hasNext}
                     showDangerActions={showDangerActions}
