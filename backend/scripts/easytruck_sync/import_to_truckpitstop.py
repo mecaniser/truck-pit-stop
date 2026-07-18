@@ -475,10 +475,14 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
     stats = {"ins": 0, "upd": 0, "skip_edited": 0, "img_rehosted": 0, "no_sku": 0}
 
     for part in parts:
-        sku = (part.get("partNumber") or "").strip()[:100]
-        if not sku:
+        raw_pn = (part.get("partNumber") or "").strip()
+        if not raw_pn:
             stats["no_sku"] += 1
             continue
+        # The original import stored part SKUs with an "ETS-" prefix. Match that
+        # convention so the resync updates existing rows instead of duplicating
+        # them. Tolerate a part number that already carries the prefix.
+        sku = (raw_pn if raw_pn.startswith("ETS-") else f"ETS-{raw_pn}")[:100]
         name = (part.get("description") or sku)[:255]
         location = (part.get("location") or None)
         cost = parse_money(part.get("cost"))
