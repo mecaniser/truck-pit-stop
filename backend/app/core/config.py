@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # .env carries values for standalone scripts outside this Settings
+        # model (e.g. ETS_EMAIL/ETS_PASSWORD for the Easy Truck Shop import
+        # tooling, which reads os.environ directly) — don't fail app/CLI
+        # startup just because .env has keys this model doesn't declare.
+        extra = "ignore"
 
 
 settings = Settings()
