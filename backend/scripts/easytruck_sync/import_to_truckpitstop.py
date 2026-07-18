@@ -50,8 +50,70 @@ psycopg2.extras.register_uuid()
 
 DATA_FILE = Path(__file__).parent / "data" / "customer_details.json"
 PARTS_FILE = Path(__file__).parent / "data" / "parts_inventory.json"
+IMAGE_CACHE_FILE = Path(__file__).parent / "data" / "part_image_cache.json"
 ORDER_NUMBER_PREFIX = "ETS"
 IMPORT_SOURCE = "easy_truck_shop_import"
+# Commit the DB in batches so a dropped connection loses at most one batch and
+# the run is safely resumable (important over the Railway proxy).
+COMMIT_BATCH = 50
+
+
+def _norm_sku(raw_pn):
+    pn = (raw_pn or "").strip()
+    if not pn:
+        return None
+    return (pn if pn.startswith("ETS-") else f"ETS-{pn}")[:100]
+
+
+def _load_image_cache():
+    if IMAGE_CACHE_FILE.exists():
+        try:
+            return json.loads(IMAGE_CACHE_FILE.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_image_cache(cache):
+    IMAGE_CACHE_FILE.write_text(json.dumps(cache, indent=2))
+
+
+def _placeholder_urls(parts, threshold=3):
+    counts = {}
+    for p in parts:
+        u = p.get("imageUrl")
+        if u:
+            counts[u] = counts.get(u, 0) + 1
+    return {u for u, n in counts.items() if n >= threshold}
+
+
+def upload_all_images():
+    """DB-free image pre-upload: host every non-placeholder part image to
+    Cloudinary, caching results to disk (resumable). Run this before the DB
+    commit so the DB pass makes no slow network calls — essential over a flaky
+    proxy that kills long-lived connections."""
+    parts = json.loads(PARTS_FILE.read_text())
+    placeholders = _placeholder_urls(parts)
+    cache = _load_image_cache()
+    srcs = []
+    for p in parts:
+        u = p.get("imageUrl")
+        if u and u not in placeholders and u not in cache:
+            srcs.append(u)
+    srcs = list(dict.fromkeys(srcs))
+    if not srcs:
+        print(f"All part images already cached ({sum(1 for v in cache.values() if v[0])} hosted).")
+        return
+    print(f"Uploading {len(srcs)} image(s) to Cloudinary ({len(cache)} already cached)...")
+    for i, src in enumerate(srcs, 1):
+        url, pid = _rehost_part_image(src, uuid.uuid4())
+        cache[src] = [url, pid]
+        if i % 20 == 0:
+            _save_image_cache(cache)
+            print(f"  {i}/{len(srcs)}")
+    _save_image_cache(cache)
+    print(f"Done: {sum(1 for v in cache.values() if v[0])} images hosted, "
+          f"{sum(1 for v in cache.values() if not v[0])} failed.")
 
 LOCAL_DEV_DSN = "host=localhost port=5432 dbname=truckpitstop user=truckpitstop password=truckpitstop_dev"
 
@@ -250,8 +312,14 @@ def dsn_from_env():
     if not url:
         return LOCAL_DEV_DSN
     # normalize SQLAlchemy async URL to plain postgres for psycopg2
-    return (url.replace("postgresql+asyncpg://", "postgresql://")
-               .replace("postgresql+psycopg://", "postgresql://"))
+    url = (url.replace("postgresql+asyncpg://", "postgresql://")
+              .replace("postgresql+psycopg://", "postgresql://"))
+    # TCP keepalives keep the connection alive through proxies (e.g. Railway's
+    # shortline.proxy) that drop idle/long-running connections.
+    if "keepalives" not in url:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5"
+    return url
 
 
 def _untouched(created_at, updated_at):
@@ -485,10 +553,24 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
     existing = {r["sku"]: r for r in cur.fetchall()}
     cur.close()
 
+    # Images are uploaded ahead of time (see upload_all_images / --upload-images-
+    # only) and cached to disk. Here we only READ that cache, so the DB pass makes
+    # no slow network calls and won't hold the transaction open long enough for a
+    # flaky proxy to kill it. If an image isn't cached yet, upload it lazily.
+    image_cache = _load_image_cache()
+    if commit and rehost_images:
+        for part in parts:
+            src = part.get("imageUrl")
+            if src and src not in placeholder_urls and src not in image_cache:
+                url, pid = _rehost_part_image(src, uuid.uuid4())
+                image_cache[src] = [url, pid]
+        _save_image_cache(image_cache)
+
     now = datetime.utcnow()
     w = conn.cursor()
     stats = {"ins": 0, "upd": 0, "skip_edited": 0, "img_rehosted": 0,
              "no_sku": 0, "img_placeholder_skipped": 0}
+    processed = 0
 
     for part in parts:
         raw_pn = (part.get("partNumber") or "").strip()
@@ -498,7 +580,7 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
         # The original import stored part SKUs with an "ETS-" prefix. Match that
         # convention so the resync updates existing rows instead of duplicating
         # them. Tolerate a part number that already carries the prefix.
-        sku = (raw_pn if raw_pn.startswith("ETS-") else f"ETS-{raw_pn}")[:100]
+        sku = _norm_sku(raw_pn)
         name = (part.get("description") or sku)[:255]
         location = (part.get("location") or None)
         cost = parse_money(part.get("cost"))
@@ -516,9 +598,11 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
                 stats["skip_edited"] += 1
                 continue
             image_url, public_id = ex["image_url"], None
-            # only re-host if we don't already have an image locally
+            # only re-host if we don't already have an image locally. Uses the
+            # pre-uploaded cache (keyed by source URL) so no slow network call
+            # happens inside the DB transaction — critical over a flaky proxy.
             if rehost_images and src_img and not ex["image_url"] and commit:
-                image_url, public_id = _rehost_part_image(src_img, item_id)
+                image_url, public_id = image_cache.get(src_img, (None, None))
                 if image_url:
                     stats["img_rehosted"] += 1
             w.execute(
@@ -535,7 +619,7 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
             item_id = uuid.uuid4()
             image_url = public_id = None
             if rehost_images and src_img and commit:
-                image_url, public_id = _rehost_part_image(src_img, item_id)
+                image_url, public_id = image_cache.get(src_img, (None, None))
                 if image_url:
                     stats["img_rehosted"] += 1
             w.execute(
@@ -546,6 +630,12 @@ def resync_parts(conn, tenant_id, commit, rehost_images):
                 (item_id, tenant_id, sku, name, name, location, cost, price, stock,
                  IMPORT_SOURCE, image_url, public_id, now, now))
             stats["ins"] += 1
+
+        # Commit periodically so a dropped connection (e.g. Railway proxy) loses
+        # at most one batch, and the run can be safely re-run to finish.
+        processed += 1
+        if commit and processed % COMMIT_BATCH == 0:
+            conn.commit()
 
     w.close()
     print("=" * 70)
@@ -566,6 +656,9 @@ def main():
     grp = p.add_mutually_exclusive_group(required=True)
     grp.add_argument("--dry-run", action="store_true")
     grp.add_argument("--commit", action="store_true")
+    grp.add_argument("--upload-images-only", action="store_true",
+                     help="DB-free: pre-upload all part images to Cloudinary and cache "
+                          "them, so a later --commit does no network I/O in its DB pass")
     p.add_argument("--backfill-external-ids", action="store_true",
                    help="one-time: stamp ets_external_id onto pre-existing import rows")
     p.add_argument("--parts", action="store_true",
@@ -574,8 +667,20 @@ def main():
                    help="resync ONLY parts inventory, skip customers/vehicles/ROs")
     p.add_argument("--no-rehost-images", action="store_true",
                    help="with --parts: don't upload part images to Cloudinary")
-    p.add_argument("--tenant-id", required=True, help="target tenant UUID")
+    p.add_argument("--tenant-id", help="target tenant UUID (not needed for --upload-images-only)")
     args = p.parse_args()
+
+    # DB-free image pre-upload — no connection, no tenant required.
+    if args.upload_images_only:
+        if not PARTS_FILE.exists():
+            print(f"ERROR: {PARTS_FILE} not found. Run scraper 04 first.", file=sys.stderr)
+            sys.exit(1)
+        upload_all_images()
+        return
+
+    if not args.tenant_id:
+        print("ERROR: --tenant-id is required.", file=sys.stderr)
+        sys.exit(1)
 
     conn = psycopg2.connect(dsn_from_env())
     try:
