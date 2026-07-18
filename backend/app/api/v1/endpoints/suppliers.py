@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.search import build_search
 from app.db.models.user import User, UserRole
 from app.db.models.supplier import Supplier
 
@@ -57,6 +58,7 @@ async def list_suppliers(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     paginated: bool = Query(False),
+    search: Optional[str] = Query(None, description="Filter by name, contact, phone, or address"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -67,10 +69,26 @@ async def list_suppliers(
     count_query = select(func.count(Supplier.id)).where(Supplier.deleted_at.is_(None))
     if current_user.tenant_id:
         count_query = count_query.where(Supplier.tenant_id == current_user.tenant_id)
+
+    order_by = [Supplier.name]
+    if search and search.strip():
+        # Shared search semantics (app/core/search.py): ILIKE + squashed
+        # phone/name matching + pg_trgm typo tolerance, ranked by relevance.
+        search_filter, relevance = build_search(
+            search,
+            primary=[Supplier.name, Supplier.contact_name],
+            squashed=[Supplier.name, Supplier.phone],
+            secondary=[Supplier.address, Supplier.notes],
+            similarity=[Supplier.name],
+        )
+        query = query.where(search_filter)
+        count_query = count_query.where(search_filter)
+        order_by = [relevance.desc(), Supplier.name, Supplier.id]
+
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    paged_query = query.order_by(Supplier.name)
+    paged_query = query.order_by(*order_by)
     if paginated:
         paged_query = paged_query.offset(skip).limit(limit)
     result = await db.execute(paged_query)

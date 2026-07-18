@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Check, Clock3, Loader2, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { isAxiosError } from 'axios'
 import api from '@/lib/api'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 
 interface LaborBookTimeEntry {
   id: string
@@ -136,14 +137,16 @@ export default function LaborBookTimePage() {
     normalized_hours: '',
   })
 
+  const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const { data: entries = [], isLoading } = useQuery<LaborBookTimeEntry[]>({
-    queryKey: ['labor-book-time', searchQuery],
+    queryKey: ['labor-book-time', debouncedSearch],
     queryFn: async () => {
       const response = await api.get('/labor-book-time', {
-        params: searchQuery.trim() ? { q: searchQuery.trim() } : undefined,
+        params: debouncedSearch ? { q: debouncedSearch } : undefined,
       })
       return response.data
     },
+    placeholderData: keepPreviousData,
   })
 
   const stats = useMemo(() => {

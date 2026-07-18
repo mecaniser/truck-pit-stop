@@ -3,12 +3,13 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_, asc, desc, literal_column
+from sqlalchemy import select, and_, func, or_, asc, desc, literal_column, case
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
 from app.core.phone import normalize_phone
+from app.core.search import build_search
 from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
@@ -208,8 +209,11 @@ CUSTOMER_SORT_FIELDS = {"name", "balance", "vehicle_count"}
 
 
 def _customer_search_filter(search: Optional[str]):
-    """OR-match across name / company / email / DOT / MC (ILIKE substring)
-    plus a phone match when the term itself looks like a phone number.
+    """Build (where_clause, relevance) for the customer list search: ILIKE
+    across name / company / email / DOT / MC, pg_trgm typo tolerance on
+    name/company ("jhonson" finds "Johnson"), and a phone match when the term
+    itself looks like a phone number. Relevance ranks exact name/company hits
+    above email/registration hits above fuzzy matches.
 
     Phone matching only kicks in when the search term, after stripping common
     phone punctuation (spaces/dashes/parens/dots/plus), is made up entirely of
@@ -220,23 +224,20 @@ def _customer_search_filter(search: Optional[str]):
     """
     term = (search or "").strip()
     if not term:
-        return None
-    like = f"%{term}%"
-    clauses = [
-        Customer.first_name.ilike(like),
-        Customer.last_name.ilike(like),
-        (Customer.first_name + literal_column("' '") + Customer.last_name).ilike(like),
-        Customer.company_name.ilike(like),
-        Customer.email.ilike(like),
-        Customer.usdot_number.ilike(like),
-        Customer.mc_number.ilike(like),
-    ]
+        return None, None
+    full_name = Customer.first_name + literal_column("' '") + Customer.last_name
+    clause, relevance = build_search(
+        term,
+        primary=[Customer.first_name, Customer.last_name, full_name, Customer.company_name],
+        secondary=[Customer.email, Customer.usdot_number, Customer.mc_number],
+        similarity=[full_name, Customer.company_name],
+    )
     stripped = re.sub(r"[\s().+-]", "", term)
     if stripped and stripped.isdigit():
-        clauses.append(
-            func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{stripped}%")
-        )
-    return or_(*clauses)
+        phone_hit = func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{stripped}%")
+        clause = or_(clause, phone_hit)
+        relevance = func.greatest(relevance, case((phone_hit, 1.0), else_=0.0))
+    return clause, relevance
 
 
 def _customer_matched_fields(customer: Customer, search: Optional[str]) -> List[str]:
@@ -268,6 +269,10 @@ def _customer_matched_fields(customer: Customer, search: Optional[str]) -> List[
         phone_digits = re.sub(r"\D", "", customer.phone or "")
         if stripped in phone_digits:
             matched.append("phone")
+    if not matched:
+        # In the result set but no exact substring hit — matched via pg_trgm
+        # typo tolerance (e.g. "jhonson" → "Johnson").
+        matched.append("similar")
     return matched
 
 
@@ -356,8 +361,14 @@ async def list_customers(
         Customer.tenant_id == current_user.tenant_id,
         Customer.is_internal_fleet.is_(False),
     )
-    search_filter = _customer_search_filter(search)
+    search_filter, relevance = _customer_search_filter(search)
     where_clause = base_filter if search_filter is None else and_(base_filter, search_filter)
+
+    # Rank by relevance while searching, unless the user explicitly sorted by
+    # balance/vehicle count or flipped the name order — their sort wins then.
+    order_by = _customer_order_by(sort, order)
+    if relevance is not None and (sort is None or sort == "name") and order == "asc":
+        order_by = [desc(relevance)] + order_by
 
     # total reflects the *filtered* set so the UI count stays correct while searching.
     total_result = await db.execute(
@@ -367,7 +378,7 @@ async def list_customers(
     result = await db.execute(
         select(Customer)
         .where(where_clause)
-        .order_by(*_customer_order_by(sort, order))
+        .order_by(*order_by)
         .offset(skip)
         .limit(limit)
     )

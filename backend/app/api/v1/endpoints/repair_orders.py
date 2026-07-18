@@ -8,11 +8,12 @@ from uuid import UUID
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, literal_column
+from sqlalchemy import select, and_, or_, func, literal_column, case
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.search import build_search
 from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -664,48 +665,58 @@ async def list_repair_orders(
     # Coerce defensively: `search` is a str|None over HTTP, but is safe here even
     # if a caller (e.g. a direct-function test) leaves it as the Query default.
     search_term = (search if isinstance(search, str) else "").strip()
+    order_by = [RepairOrder.created_at.desc()]
     if search_term:
-        like = f"%{search_term}%"
-        # Phone matching only kicks in when the term itself looks like a phone
-        # number (all digits after stripping common phone punctuation) — a
-        # term with real letters in it (e.g. "77 cargo") is a name/company
-        # search, and matching its incidental digits ("77") against every
-        # phone number on file would swamp the results with false positives.
-        stripped = re.sub(r"[\s().+-]", "", search_term)
-        phone_digits = stripped if stripped and stripped.isdigit() else None
+        full_name = Customer.first_name + literal_column("' '") + Customer.last_name
         query = query.join(Customer, RepairOrder.customer_id == Customer.id).join(
             Vehicle, RepairOrder.vehicle_id == Vehicle.id
         )
         count_query = count_query.join(Customer, RepairOrder.customer_id == Customer.id).join(
             Vehicle, RepairOrder.vehicle_id == Vehicle.id
         )
-        clauses = [
-            RepairOrder.order_number.ilike(like),
-            RepairOrder.description.ilike(like),
-            Customer.first_name.ilike(like),
-            Customer.last_name.ilike(like),
-            (Customer.first_name + literal_column("' '") + Customer.last_name).ilike(like),
-            Customer.company_name.ilike(like),
-            Customer.usdot_number.ilike(like),
-            Customer.mc_number.ilike(like),
-            Vehicle.vin.ilike(like),
-            Vehicle.unit_number.ilike(like),
-            Vehicle.make.ilike(like),
-            Vehicle.model.ilike(like),
-        ]
-        if phone_digits:
-            clauses.append(
-                func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{phone_digits}%")
-            )
-        search_clause = or_(*clauses)
+        # Shared search semantics (see app/core/search.py): ILIKE + separator-
+        # squashed IDs (order number / VIN / unit) + pg_trgm typo tolerance on
+        # customer name/company and vehicle make, ranked so exact hits lead.
+        search_clause, relevance = build_search(
+            search_term,
+            primary=[
+                RepairOrder.order_number,
+                Customer.first_name,
+                Customer.last_name,
+                full_name,
+                Customer.company_name,
+                Vehicle.vin,
+                Vehicle.unit_number,
+            ],
+            squashed=[RepairOrder.order_number, Vehicle.vin, Vehicle.unit_number],
+            secondary=[
+                RepairOrder.description,
+                Customer.usdot_number,
+                Customer.mc_number,
+                Vehicle.make,
+                Vehicle.model,
+            ],
+            similarity=[full_name, Customer.company_name, Vehicle.make],
+        )
+        # Phone matching only kicks in when the term itself looks like a phone
+        # number (all digits after stripping common phone punctuation) — a
+        # term with real letters in it (e.g. "77 cargo") is a name/company
+        # search, and matching its incidental digits ("77") against every
+        # phone number on file would swamp the results with false positives.
+        stripped = re.sub(r"[\s().+-]", "", search_term)
+        if stripped and stripped.isdigit():
+            phone_hit = func.regexp_replace(func.coalesce(Customer.phone, ""), r"\D", "", "g").ilike(f"%{stripped}%")
+            search_clause = or_(search_clause, phone_hit)
+            relevance = func.greatest(relevance, case((phone_hit, 1.0), else_=0.0))
         query = query.where(search_clause)
         count_query = count_query.where(search_clause)
+        order_by = [relevance.desc(), RepairOrder.created_at.desc()]
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
     result = await db.execute(
-        query.offset(skip).limit(limit).order_by(RepairOrder.created_at.desc())
+        query.offset(skip).limit(limit).order_by(*order_by)
         .options(selectinload(RepairOrder.vehicle), selectinload(RepairOrder.customer))
     )
     orders = result.scalars().all()

@@ -12,6 +12,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_db
+from app.core.search import build_search
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.user import User, UserRole
 
@@ -229,25 +230,35 @@ async def list_labor_book_time_entries(
         LaborOperationMemory.normalized_hours > 0,
     ]
     search = q.strip()
+    order_by = [LaborOperationMemory.last_used_at.desc(), LaborOperationMemory.operation_name.asc()]
     if search:
-        pattern = f"%{search}%"
-        filters.append(
-            or_(
-                LaborOperationMemory.operation_name.ilike(pattern),
-                LaborOperationMemory.operation_description.ilike(pattern),
-                LaborOperationMemory.operation_key.ilike(pattern),
-                LaborOperationMemory.vehicle_signature.ilike(pattern),
-                LaborOperationMemory.vehicle_make.ilike(pattern),
-                LaborOperationMemory.vehicle_model.ilike(pattern),
-                LaborOperationMemory.engine.ilike(pattern),
-                LaborOperationMemory.vin_sample.ilike(pattern),
-            )
+        # Shared search semantics (app/core/search.py): ILIKE + squashed VIN
+        # matching + pg_trgm typo tolerance on operation name, ranked so exact
+        # hits lead and fuzzy ones trail.
+        search_filter, relevance = build_search(
+            search,
+            primary=[
+                LaborOperationMemory.operation_name,
+                LaborOperationMemory.vehicle_make,
+                LaborOperationMemory.vehicle_model,
+            ],
+            squashed=[LaborOperationMemory.vin_sample, LaborOperationMemory.operation_key],
+            secondary=[
+                LaborOperationMemory.operation_description,
+                LaborOperationMemory.operation_key,
+                LaborOperationMemory.vehicle_signature,
+                LaborOperationMemory.engine,
+                LaborOperationMemory.vin_sample,
+            ],
+            similarity=[LaborOperationMemory.operation_name],
         )
+        filters.append(search_filter)
+        order_by = [relevance.desc()] + order_by
 
     result = await db.execute(
         select(LaborOperationMemory)
         .where(and_(*filters))
-        .order_by(LaborOperationMemory.last_used_at.desc(), LaborOperationMemory.operation_name.asc())
+        .order_by(*order_by)
         .limit(250)
     )
     return [_serialize_entry(entry) for entry in result.scalars().all()]
