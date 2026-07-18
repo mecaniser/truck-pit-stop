@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import uuid4
 import os
 
-from fastapi import Response
+from fastapi import Response, HTTPException
 import pytest
 from sqlalchemy import select
 from starlette.requests import Request
@@ -22,6 +22,7 @@ from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service
+from app.db.models.labor import Labor, LaborLineType
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
@@ -207,6 +208,18 @@ async def test_quote_send_locks_order_pricing(db_session, monkeypatch):
 @pytest.mark.asyncio
 async def test_quote_send_rolls_back_failed_price_refresh(db_session, monkeypatch):
     staff_user, _order, _service, quote = await _seed_quote_context(db_session)
+    # Order needs a work line so the send passes the empty-order guard.
+    db_session.add(Labor(
+        id=uuid4(),
+        tenant_id=_order.tenant_id,
+        repair_order_id=_order.id,
+        description="Brake Inspection",
+        hours=Decimal("1.00"),
+        hourly_rate=Decimal("120.00"),
+        total_cost=Decimal("120.00"),
+        line_type=LaborLineType.MANUAL,
+    ))
+    await db_session.commit()
     rolled_back = False
     original_rollback = db_session.rollback
 
@@ -242,6 +255,22 @@ async def test_quote_send_rolls_back_failed_price_refresh(db_session, monkeypatc
 
     assert rolled_back is True
     assert response.sent_to_customer is True
+
+
+@pytest.mark.asyncio
+async def test_quote_send_rejected_when_order_is_empty(db_session):
+    """An order with no work lines and no parts cannot have its quote sent.
+    The seed order has no labor lines or parts, so it is already empty."""
+    staff_user, _order, _service, quote = await _seed_quote_context(db_session)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await quotes_endpoint.send_quote_to_customer(
+            quote_id=quote.id,
+            db=db_session,
+            current_user=staff_user,
+        )
+    assert exc_info.value.status_code == 400
+    assert "before sending this quote" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

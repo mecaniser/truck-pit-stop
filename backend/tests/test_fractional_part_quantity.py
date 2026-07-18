@@ -27,7 +27,7 @@ from app.api.v1.endpoints.repair_orders import (
 )
 from app.schemas.repair_order import PartsUsageCreate, PartsUsageUpdate
 from app.db.models.customer import Customer
-from app.db.models.inventory import Inventory
+from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
@@ -145,6 +145,88 @@ async def test_add_part_can_attach_to_service_operation(db_session):
 
     assert resp.source_service_id == service.id
     assert order.parts_usage[0].source_service_id == service.id
+
+
+@pytest.mark.asyncio
+async def test_add_part_can_attach_to_free_form_operation_line(db_session):
+    """A free-form repair operation (no source_service_id) can still take parts,
+    linked via source_line_id."""
+    from app.db.models.labor import Labor, LaborLineType
+
+    user, order, inv = await _seed(db_session, stock_quantity=10)
+    line = Labor(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        repair_order_id=order.id,
+        description="Replace Trailer Tires",
+        hours=Decimal("0.50"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("50.00"),
+        line_type=LaborLineType.REPAIR_OPERATION,
+        source_service_id=None,
+    )
+    db_session.add(line)
+    await db_session.commit()
+
+    body = PartsUsageCreate(
+        inventory_id=inv.id,
+        quantity=Decimal("2"),
+        source_line_id=line.id,
+    )
+    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+
+    assert resp.source_line_id == line.id
+    assert resp.source_service_id is None
+    assert order.parts_usage[0].source_line_id == line.id
+
+
+@pytest.mark.asyncio
+async def test_add_part_rejects_source_line_id_from_another_order(db_session):
+    """source_line_id must reference a labor line on this order."""
+    user, order, inv = await _seed(db_session, stock_quantity=10)
+
+    body = PartsUsageCreate(
+        inventory_id=inv.id,
+        quantity=Decimal("1"),
+        source_line_id=uuid4(),  # not a real line on this order
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await add_parts_to_repair_order(order.id, body, db_session, user)
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_deleting_line_orphans_its_parts_via_set_null(db_session):
+    """Deleting a labor line SET NULLs its parts' source_line_id (the part
+    survives as a standalone/orphan part rather than being force-deleted)."""
+    from app.db.models.labor import Labor, LaborLineType
+    from app.services.price_build_service import PriceBuildService
+
+    user, order, inv = await _seed(db_session, stock_quantity=10)
+    line = Labor(
+        id=uuid4(),
+        tenant_id=order.tenant_id,
+        repair_order_id=order.id,
+        description="Replace Trailer Tires",
+        hours=Decimal("0.50"),
+        hourly_rate=Decimal("100.00"),
+        total_cost=Decimal("50.00"),
+        line_type=LaborLineType.REPAIR_OPERATION,
+        source_service_id=None,
+    )
+    db_session.add(line)
+    await db_session.commit()
+
+    body = PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1"), source_line_id=line.id)
+    resp = await add_parts_to_repair_order(order.id, body, db_session, user)
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.remove_line(db_session, loaded, line_id=line.id)
+
+    refreshed = await db_session.get(PartsUsage, resp.id)
+    assert refreshed is not None  # part not deleted
+    assert refreshed.source_line_id is None  # link cleared by ON DELETE SET NULL
 
 
 @pytest.mark.asyncio

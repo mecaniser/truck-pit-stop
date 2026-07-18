@@ -34,6 +34,7 @@ from app.db.models.customer import Customer
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage
+from app.db.models.labor import Labor
 from app.services.email_service import send_email
 from app.services.twilio_service import send_sms
 from app.services.pricing import (
@@ -722,6 +723,17 @@ async def send_quote_to_customer(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
+        )
+
+    # An empty order has nothing to quote — refuse to send it (the UI disables the
+    # button, but guard the API too so a direct call can't send a blank quote).
+    labor_count = await db.execute(
+        select(func.count(Labor.id)).where(Labor.repair_order_id == order.id)
+    )
+    if (labor_count.scalar() or 0) == 0 and len(order.parts_usage) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Add at least one operation, labor line, or part before sending this quote.",
         )
 
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))

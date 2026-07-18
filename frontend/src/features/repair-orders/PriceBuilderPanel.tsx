@@ -1011,7 +1011,10 @@ export default function PriceBuilderPanel({
   // The add bar must follow the same editable-status rule as canMutate, or an
   // internal in-progress order shows "start by adding…" with no add controls.
   const addBarReadOnly = !canEdit || isLocked || !isEditableStatus || completionMode || hasInvoice || orderStatus === 'completed'
-  const hasQuoteDraft = !!quoteNumber
+  // An order with no work lines and no parts has nothing to quote — don't let it
+  // read as "ready to send" or allow the quote to actually go out empty.
+  const isEmptyOrder = effectiveLaborLines.length === 0 && (partsUsed?.length ?? 0) === 0
+  const hasQuoteDraft = !!quoteNumber && !isEmptyOrder
   const hasAssignedTechnician = !!assignedTechnicianName
   // A finalized order is closed: the work is done and billed/settled. No more
   // photo uploads, and the quote pipeline is just clutter (the single status
@@ -1027,12 +1030,17 @@ export default function PriceBuilderPanel({
       return { ...tech, assigned, inProgress, load }
     })
     .sort((a, b) => a.load - b.load)
+  // Sending a quote/creating a draft only makes sense once there's something to
+  // bill. Block the action (and explain why) while the order is empty.
+  const quoteActionBlocked = quoteActionDisabled || isEmptyOrder
   const quoteButtonDisabledReason = quoteDisabledReason || (
-    quoteIsApproved
-      ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
-      : !canMutate
-        ? 'Quote changes are only available before the customer approves the work.'
-        : undefined
+    isEmptyOrder
+      ? 'Add at least one operation, labor line, or part before sending this quote.'
+      : quoteIsApproved
+        ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
+        : !canMutate
+          ? 'Quote changes are only available before the customer approves the work.'
+          : undefined
   )
   const lockContextMessage = quoteButtonDisabledReason || (
     quoteIsApproved
@@ -1199,10 +1207,12 @@ export default function PriceBuilderPanel({
       inventoryId,
       quantity,
       sourceServiceId,
+      sourceLineId,
     }: {
       inventoryId: string
       quantity: number
       sourceServiceId?: string | null
+      sourceLineId?: string | null
       quantityKey?: string
     }) => {
       const inventoryItem = inventory?.find((item) => item.id === inventoryId)
@@ -1210,11 +1220,13 @@ export default function PriceBuilderPanel({
         inventory_id: string
         quantity: number
         source_service_id: string | null
+        source_line_id: string | null
         unit_price?: string
       } = {
         inventory_id: inventoryId,
         quantity,
         source_service_id: sourceServiceId || null,
+        source_line_id: sourceLineId || null,
       }
       if (partsPricingMode === 'stock' && inventoryItem?.cost != null) {
         body.unit_price = inventoryItem.cost
@@ -2657,16 +2669,32 @@ export default function PriceBuilderPanel({
       {(() => {
         const allParts = partsUsed || []
         const lines = effectiveLaborLines
+        // A part attaches to a line either directly (source_line_id, used for any
+        // operation incl. free-form ones) or, for legacy service-bundled parts, via
+        // the line's source_service_id. Build lookups for both so groupedPartsForLine
+        // can resolve either way.
         const partsByService = new Map<string, typeof allParts>()
+        const partsByLine = new Map<string, typeof allParts>()
+        const lineIdsWithLinkedParts = new Set<string>()
         const orphanParts: typeof allParts = []
         for (const pu of allParts) {
-          if (pu.source_service_id) {
+          if (pu.source_line_id) {
+            const bucket = partsByLine.get(pu.source_line_id) || []
+            bucket.push(pu)
+            partsByLine.set(pu.source_line_id, bucket)
+            lineIdsWithLinkedParts.add(pu.source_line_id)
+          } else if (pu.source_service_id) {
             const bucket = partsByService.get(pu.source_service_id) || []
             bucket.push(pu)
             partsByService.set(pu.source_service_id, bucket)
           } else {
             orphanParts.push(pu)
           }
+        }
+        const groupedPartsForLine = (line: typeof lines[number]) => {
+          const byLine = partsByLine.get(line.id) || []
+          const byService = line.source_service_id ? partsByService.get(line.source_service_id) || [] : []
+          return byLine.length ? [...byLine, ...byService] : byService
         }
 
         const renderPartsRows = (parts: typeof allParts) => (
@@ -2774,7 +2802,7 @@ export default function PriceBuilderPanel({
         )
 
         const renderOperationPartPicker = (line: typeof lines[number], groupedParts: typeof allParts) => {
-          if (!line.source_service_id || operationPartPickerLineId !== line.id) return null
+          if (operationPartPickerLineId !== line.id) return null
           const term = (operationPartSearchByLineId[line.id] || '').trim().toLowerCase()
           const groupedInventoryIds = new Set(groupedParts.map((part) => part.inventory_id))
           const matches = (inventory || [])
@@ -2855,6 +2883,7 @@ export default function PriceBuilderPanel({
                               inventoryId: item.id,
                               quantity: rowQuantity,
                               sourceServiceId: line.source_service_id,
+                              sourceLineId: line.id,
                               quantityKey,
                             })}
                             disabled={!canMutate || addPart.isPending}
@@ -2954,7 +2983,7 @@ export default function PriceBuilderPanel({
             </div>
             <div className="divide-y divide-gray-100 border-y border-gray-100">
               {lines.map((line) => {
-                const groupedParts = line.source_service_id ? partsByService.get(line.source_service_id) || [] : []
+                const groupedParts = groupedPartsForLine(line)
                 const isOpen = openLineIds.has(line.id)
                 const partTotal = groupedParts.reduce((sum, part) => sum + (parseFloat(part.total_price || '0') || 0), 0)
                 const partSavings = groupedParts.reduce((sum, part) => sum + (parseFloat(part.savings || '0') || 0), 0)
@@ -3010,7 +3039,7 @@ export default function PriceBuilderPanel({
                         {groupedParts.length > 0 && renderPartsRows(groupedParts)}
                         <button
                           type="button"
-                          disabled={!canMutate || !line.source_service_id}
+                          disabled={!canMutate}
                           onClick={() => setOperationPartPickerLineId((current) => current === line.id ? null : line.id)}
                           className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-gray-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:hover:border-gray-300 disabled:hover:bg-transparent disabled:hover:text-gray-400 disabled:opacity-60"
                         >
@@ -3602,12 +3631,12 @@ export default function PriceBuilderPanel({
               ) : (
                 <span
                   className="inline-flex"
-                  title={quoteActionDisabled || !canMutate ? quoteButtonDisabledReason : undefined}
+                  title={quoteActionBlocked || !canMutate ? quoteButtonDisabledReason : undefined}
                 >
                   <button
                     type="button"
                     onClick={onQuoteAction}
-                    disabled={!canMutate || quoteActionDisabled || quoteActionPending || !onQuoteAction}
+                    disabled={!canMutate || quoteActionBlocked || quoteActionPending || !onQuoteAction}
                     className="inline-flex h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:bg-gray-300"
                   >
                     {quoteActionPending ? <Spinner size="xs" /> : <Plane className="h-4 w-4" />}

@@ -207,6 +207,7 @@ def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageRespon
         savings=savings,
         total_price=pu.total_price,
         source_service_id=pu.source_service_id,
+        source_line_id=pu.source_line_id,
         created_at=pu.created_at,
     )
 
@@ -2616,6 +2617,18 @@ async def add_parts_to_repair_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inventory item not found")
     if body.quantity <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Quantity must be greater than zero")
+    if body.source_line_id is not None:
+        line_result = await db.execute(
+            select(Labor.id).where(
+                and_(
+                    Labor.id == body.source_line_id,
+                    Labor.repair_order_id == order_id,
+                    Labor.tenant_id == current_user.tenant_id,
+                )
+            )
+        )
+        if line_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor line not found on this order")
     packages_needed = _packages_consumed(body.quantity)
     if inv.stock_quantity < packages_needed:
         raise HTTPException(
@@ -2638,6 +2651,7 @@ async def add_parts_to_repair_order(
         list_price=list_price,
         total_price=total_price,
         source_service_id=body.source_service_id,
+        source_line_id=body.source_line_id,
     )
     db.add(pu)
     inv.stock_quantity -= packages_needed

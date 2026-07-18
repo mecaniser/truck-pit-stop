@@ -74,3 +74,11 @@ class PartsUsage(BaseModel):
     # removing the parent Labor line is the way to remove them.
     source_service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=True, index=True)
 
+    # Direct link to the labor line this part is attached to. Lets parts be nested
+    # under any operation line — including free-form repair operations / manual lines
+    # that have no source_service_id. Deleting the line SET NULLs this (the part
+    # becomes a standalone/orphan part rather than being force-deleted).
+    source_line_id = Column(
+        UUID(as_uuid=True), ForeignKey("labor.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+

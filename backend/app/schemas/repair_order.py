@@ -18,6 +18,7 @@ class PartsUsageCreate(BaseModel):
     quantity: Decimal
     unit_price: Optional[Decimal] = None  # override; else use inventory selling_price
     source_service_id: Optional[UUID] = None
+    source_line_id: Optional[UUID] = None  # labor line this part is attached to
 
 
 class PartsUsageUpdate(BaseModel):
@@ -48,6 +49,7 @@ class PartsUsageResponse(BaseModel):
     savings: Decimal = Decimal("0")
     total_price: Decimal
     source_service_id: Optional[UUID] = None
+    source_line_id: Optional[UUID] = None
     created_at: datetime
 
     class Config:

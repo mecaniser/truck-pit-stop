@@ -1788,6 +1788,9 @@ export default function RepairOrdersPage() {
         toast.success(`Repair order ${createdOrder.order_number} created`)
       }
       closeModal()
+      // Drop the operator straight into the new order's drawer so they can start
+      // building it, instead of hunting for it back in the list.
+      openDetail(createdOrder)
     } catch (err: unknown) {
       toast.error(getErrorDetail(err, 'Failed to create repair order'))
     } finally {

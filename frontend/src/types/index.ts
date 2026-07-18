@@ -237,6 +237,7 @@ export interface PartsUsage {
   savings: string
   total_price: string
   source_service_id: string | null
+  source_line_id: string | null
   created_at: string
 }
 

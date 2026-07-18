@@ -9,7 +9,7 @@ from time import perf_counter
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -554,6 +554,15 @@ class PriceBuildService:
         # If this labor line came from a Service, also release its bundled parts.
         if line.source_service_id:
             await self._restore_service_parts(db, order, line.source_service_id)
+        # Parts attached directly to this line (free-form operations) are kept as
+        # standalone parts — clear the link so they survive the line deletion.
+        # The FK is ON DELETE SET NULL in Postgres; do it explicitly here too so
+        # the behavior holds regardless of DB-level FK enforcement.
+        await db.execute(
+            update(PartsUsage)
+            .where(PartsUsage.source_line_id == line.id)
+            .values(source_line_id=None)
+        )
         await db.delete(line)
         await db.commit()
         order = await self.load_order(db, order.id)
