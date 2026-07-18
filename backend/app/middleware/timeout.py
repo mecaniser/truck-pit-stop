@@ -72,7 +72,25 @@ class TimeoutMiddleware:
             )
 
             if response_started:
-                # Response stream already started; cannot send a fresh 504 frame.
+                # Response stream already started — a fresh 504 frame is not
+                # possible (the client already has a 200 status + headers),
+                # so this used to just `return`, leaving the connection in
+                # an ambiguous half-sent state with no signal anywhere that
+                # anything went wrong. Log it loudly (this is a distinct,
+                # worse failure mode than a clean pre-response timeout —
+                # the client gets a truncated/empty body with no error) and
+                # send an empty http.response.body with more_body=False to
+                # close the stream deterministically instead of leaving it
+                # hanging for the client's own timeout to eventually trip.
+                logger.error(
+                    "request_timeout_mid_stream",
+                    path=path,
+                    method=method,
+                    timeout_seconds=self.timeout_seconds,
+                    correlation_id=correlation_id,
+                )
+                with suppress(Exception):
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
                 return
 
             response = JSONResponse(

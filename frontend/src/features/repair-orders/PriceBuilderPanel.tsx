@@ -938,18 +938,29 @@ export default function PriceBuilderPanel({
     enabled: !!orderId && !isDeleted,
   })
 
-  const { data: inventory, isFetching: inventoryFetching } = useQuery<InventoryItem[]>({
+  const { data: inventory, isFetching: inventoryFetching, isError: inventoryErrored } = useQuery<InventoryItem[]>({
     queryKey: ['inventory'],
     queryFn: async () => {
       const pageSize = 100
-      let skip = 0
-      const all: InventoryItem[] = []
-      while (true) {
-        const response = await api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
+      const first = await api.get('/inventory', { params: { paginated: true, skip: 0, limit: pageSize } })
+      const all: InventoryItem[] = [...first.data.items]
+      const total = first.data.total ?? all.length
+      // Remaining pages fetched concurrently instead of one sequential await
+      // chain — a shop with many hundred items previously meant many
+      // round trips in series, each subject to the axios client's 30s
+      // timeout, so one slow page stalled every page behind it and could
+      // push total wall-clock time well past what any single request looks
+      // like. Fetching pages in parallel bounds total time to the slowest
+      // single page instead of the sum of all of them.
+      const remainingSkips: number[] = []
+      for (let skip = pageSize; skip < total; skip += pageSize) remainingSkips.push(skip)
+      if (remainingSkips.length > 0) {
+        const rest = await Promise.all(
+          remainingSkips.map((skip) =>
+            api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
+          )
+        )
+        for (const response of rest) all.push(...response.data.items)
       }
       return all
     },
@@ -2565,6 +2576,20 @@ export default function PriceBuilderPanel({
                       .filter((s) => !forThisOrder.some((f) => f.inventory_id === s.inventory_id))
 
                     if (!forThisOrder.length && !mostUsed.length) {
+                      if (inventoryErrored) {
+                        return (
+                          <p className="px-2 py-3 text-sm text-red-600">
+                            Couldn't load inventory — this isn't necessarily empty stock.{' '}
+                            <button
+                              type="button"
+                              onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory'] })}
+                              className="font-semibold underline hover:no-underline"
+                            >
+                              Retry
+                            </button>
+                          </p>
+                        )
+                      }
                       const fallback = (inventory || []).filter((item) => item.stock_quantity > 0).slice(0, 8)
                       if (!fallback.length) {
                         return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts yet.</p>
@@ -2600,6 +2625,20 @@ export default function PriceBuilderPanel({
                     )
                   }
 
+                  if (inventoryErrored) {
+                    return (
+                      <p className="px-2 py-3 text-sm text-red-600">
+                        Couldn't load inventory to search.{' '}
+                        <button
+                          type="button"
+                          onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory'] })}
+                          className="font-semibold underline hover:no-underline"
+                        >
+                          Retry
+                        </button>
+                      </p>
+                    )
+                  }
                   const matches = (inventory || [])
                     .filter((item) => item.stock_quantity > 0)
                     .filter((item) => item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
@@ -2766,7 +2805,18 @@ export default function PriceBuilderPanel({
                   className="h-10 w-full rounded-lg border border-orange-200 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                 />
               </div>
-              {!matches.length ? (
+              {inventoryErrored ? (
+                <p className="px-1 py-2 text-sm text-red-600">
+                  Couldn't load inventory.{' '}
+                  <button
+                    type="button"
+                    onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory'] })}
+                    className="font-semibold underline hover:no-underline"
+                  >
+                    Retry
+                  </button>
+                </p>
+              ) : !matches.length ? (
                 <p className="px-1 py-2 text-sm text-gray-500">No available parts match this operation search.</p>
               ) : (
                 <div className="space-y-1">
