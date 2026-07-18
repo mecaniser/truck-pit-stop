@@ -25,6 +25,9 @@ class Customer(BaseModel):
     
     notes = Column(Text, nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. zelle, walk_in, portal
+    # Stable id of the source record in Easy Truck Shop, set only on imported
+    # rows. Lets the resync tool match a re-scrape to this row idempotently.
+    ets_external_id = Column(String(50), nullable=True, index=True)
 
     # Federal motor carrier identifiers (FMCSA). Optional — most owner-operators
     # have a USDOT number; MC (Motor Carrier) number applies to for-hire carriers.
