@@ -46,8 +46,14 @@ Thumbs.db
 
 # E2E artifacts
 e2e/playwright-report/
+e2e/test-results/
 
+# Local agent/tooling config (machine-local, not shared)
+.claude/
 
 # Stray service documents (data artifacts, may contain PII — never commit)
 /Service*.pdf
 .gstack/
+
+# Finder-duplicated / working design handoff copies (the " 2" suffix)
+docs/design_handoff_analytics 2/
