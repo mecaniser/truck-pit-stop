@@ -15,8 +15,13 @@ from app.core.redis import get_redis
 logger = get_logger(__name__)
 
 WINDOW_SECONDS = 60
-SOFT_THRESHOLD = 60
-HARD_THRESHOLD = 100
+# The repair-order sidekick drawer fires ~4-5 requests per order opened
+# (detail, price-build, parts, quotes, invoice, recommended-services), so a
+# shop worker fast-paging through 20+ orders in the work queue legitimately
+# approaches 100/min on normal use, not just scripted/abusive traffic. Raised
+# with headroom for that real workflow while still catching runaway clients.
+SOFT_THRESHOLD = 150
+HARD_THRESHOLD = 250
 MIN_DELAY = 0.1
 MAX_DELAY = 0.5
 

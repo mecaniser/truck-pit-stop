@@ -128,11 +128,14 @@ def rate_limit_key(request: Request) -> str:
     return "ip:unknown"
 
 
-# Shared limiter instance for the whole API.
-# Stricter per-endpoint limits remain via decorators.
-# 300/minute (was 120): the repair-order drawer alone fires ~5 requests per
-# order opened (detail, price-build, parts, quotes, recommended-services),
-# and a shop user triaging the work queue can legitimately open several
-# orders within a few seconds — 120/min was tight enough for that normal
-# workflow to trip the limiter on its own.
+# Shared limiter instance for the whole API. Stricter per-endpoint limits
+# remain via decorators (e.g. login).
+#
+# Note: for general /api/v1 traffic, ThrottlingMiddleware (middleware/
+# throttling.py) runs ahead of this in the stack and is Redis-backed, so its
+# HARD_THRESHOLD/SOFT_THRESHOLD are the limits actually enforced in
+# production — this default_limits value only binds for requests that
+# reach this in-memory limiter without first being throttled there (e.g. if
+# Redis is unavailable, throttling.py fails open and falls through to here).
+# Keep both in the same ballpark when tuning.
 limiter = Limiter(key_func=rate_limit_key, default_limits=["300/minute"])
