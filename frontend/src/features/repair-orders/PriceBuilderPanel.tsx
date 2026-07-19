@@ -282,6 +282,10 @@ function partAddKey(inventoryId: string, sourceLineId?: string | null) {
   return `${sourceLineId || 'standalone'}:${inventoryId}`
 }
 
+function partQuantityKey(partId: string) {
+  return `usage:${partId}`
+}
+
 function stockShortageFromError(error: unknown): StockShortage | null {
   if (typeof error !== 'object' || error === null || !('response' in error)) return null
   const response = (error as { response?: { data?: { detail?: unknown } } }).response
@@ -358,9 +362,10 @@ const UNIT_ABBR: Record<string, string> = { each: 'ea', gallon: 'gal', quart: 'q
  * not whole units like a filter or belt.
  */
 function PartQtyStepper({
-  part, disabled, onChangeQty, onDelete,
+  part, quantityOverride, disabled, onChangeQty, onDelete,
 }: {
   part: PartsUsage
+  quantityOverride?: number
   disabled?: boolean
   onChangeQty: (next: number) => Promise<void>
   onDelete: () => Promise<void>
@@ -368,7 +373,7 @@ function PartQtyStepper({
   const isFluid = part.unit_type && part.unit_type !== 'each'
   const step = isFluid ? 0.25 : 1
   const unitAbbr = UNIT_ABBR[part.unit_type] || ''
-  const currentQuantity = parseFloat(part.quantity) || 0
+  const currentQuantity = quantityOverride ?? (parseFloat(part.quantity) || 0)
 
   return (
     <QuantityStepper
@@ -531,12 +536,14 @@ function StockShortageCallout({
   unitLabel,
   overridePending,
   addPending,
+  action,
   onOverride,
 }: {
   shortage: StockShortage
   unitLabel: string
   overridePending: boolean
   addPending: boolean
+  action: 'add' | 'update'
   onOverride: () => void
 }) {
   const availableLabel = unitLabel
@@ -551,6 +558,9 @@ function StockShortageCallout({
   const packageNote = shortage.requiredPackages !== Number(shortage.requestedQuantity)
     ? ` (${shortage.requiredPackages} packages required)`
     : ''
+  const actionLabel = action === 'update' ? 'Override & update' : 'Override & add'
+  const pendingLabel = action === 'update' ? 'Updating…' : 'Adding…'
+  const spinnerLabel = action === 'update' ? 'Updating quantity with stock override' : 'Adding with stock override'
 
   return (
     <div role="alert" className="mt-2 flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-800 sm:flex-row sm:items-center sm:justify-between">
@@ -567,8 +577,8 @@ function StockShortageCallout({
         disabled={overridePending || addPending}
         className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1.5 font-bold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {overridePending && <Spinner size="xs" label="Adding with stock override" />}
-        {overridePending ? 'Adding…' : 'Override & add'}
+        {overridePending && <Spinner size="xs" label={spinnerLabel} />}
+        {overridePending ? pendingLabel : actionLabel}
       </button>
     </div>
   )
@@ -939,6 +949,8 @@ export default function PriceBuilderPanel({
   const [woMileageOut, setWoMileageOut] = useState('')
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
   const [stockShortages, setStockShortages] = useState<Record<string, StockShortage>>({})
+  const [partQuantityOverrides, setPartQuantityOverrides] = useState<Record<string, number>>({})
+  const [partQuantitySavingKey, setPartQuantitySavingKey] = useState<string | null>(null)
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
   const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
@@ -954,6 +966,8 @@ export default function PriceBuilderPanel({
 
   useEffect(() => {
     setStockShortages({})
+    setPartQuantityOverrides({})
+    setPartQuantitySavingKey(null)
   }, [orderId])
   const initialLaborBookTimeForm = (): LaborBookTimeForm => ({
     operation_name: searchTerm.trim(),
@@ -1242,6 +1256,47 @@ export default function PriceBuilderPanel({
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] }),
     ])
     onUpdated?.()
+  }
+
+  const updatePartQuantity = async (part: PartsUsage, next: number, allowStockShortage = false) => {
+    const shortageKey = partQuantityKey(part.id)
+    setPartQuantityOverrides((current) => ({ ...current, [shortageKey]: next }))
+    setPartQuantitySavingKey(shortageKey)
+    setEditingPartsSaving(true)
+    try {
+      await api.patch(`/repair-orders/${orderId}/parts/${part.id}`, {
+        quantity: next,
+        allow_stock_shortage: allowStockShortage,
+      })
+      setStockShortages((current) => {
+        const updated = { ...current }
+        delete updated[shortageKey]
+        return updated
+      })
+      setPartQuantityOverrides((current) => {
+        const updated = { ...current }
+        delete updated[shortageKey]
+        return updated
+      })
+      await invalidate()
+    } catch (err: unknown) {
+      const shortage = stockShortageFromError(err)
+      if (shortage && shortage.inventoryId === part.inventory_id) {
+        setStockShortages((current) => ({ ...current, [shortageKey]: shortage }))
+        toast.error('Inventory count is short — review the inline stock check.')
+        return
+      }
+      setPartQuantityOverrides((current) => {
+        const updated = { ...current }
+        delete updated[shortageKey]
+        return updated
+      })
+      toast.error(errorDetail(err, 'Failed to update part quantity'))
+      await invalidate()
+    } finally {
+      setPartQuantitySavingKey(null)
+      setEditingPartsSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -2825,6 +2880,7 @@ export default function PriceBuilderPanel({
                             unitLabel={unitAbbr}
                             overridePending={isAddingThisPart}
                             addPending={addPart.isPending}
+                            action="add"
                             onOverride={() => addPart.mutate({ ...addRequest, allowStockShortage: true })}
                           />
                         )}
@@ -2950,6 +3006,11 @@ export default function PriceBuilderPanel({
               </thead>
               <tbody>
                 {parts.map((pu) => {
+                  const shortageKey = partQuantityKey(pu.id)
+                  const shortage = stockShortages[shortageKey]
+                  const quantityOverride = partQuantityOverrides[shortageKey]
+                  const retryQuantity = quantityOverride ?? (shortage ? Number(shortage.requestedQuantity) : parseFloat(pu.quantity) || 0)
+                  const quantityUpdatePending = partQuantitySavingKey === shortageKey
                   return (
                     <tr key={pu.id} className="border-b border-gray-100 last:border-0">
                       <td className="py-1.5 px-2.5 text-gray-800">
@@ -2962,26 +3023,39 @@ export default function PriceBuilderPanel({
                             </span>
                           )}
                         </div>
+                        {shortage && (
+                          <StockShortageCallout
+                            shortage={shortage}
+                            unitLabel={UNIT_ABBR[pu.unit_type] || pu.unit_type}
+                            overridePending={quantityUpdatePending}
+                            addPending={editingPartsSaving && !quantityUpdatePending}
+                            action="update"
+                            onOverride={() => { void updatePartQuantity(pu, retryQuantity, true) }}
+                          />
+                        )}
                       </td>
                       <td className="py-1.5 px-2.5 text-right text-gray-800">
                         {canMutate ? (
                           <span className="inline-flex justify-end">
                             <PartQtyStepper
                               part={pu}
+                              quantityOverride={quantityOverride}
                               disabled={editingPartsSaving || priceSavingId === pu.id}
-                              onChangeQty={async (next) => {
-                                try {
-                                  await api.patch(`/repair-orders/${orderId}/parts/${pu.id}`, { quantity: next })
-                                  await invalidate()
-                                } catch (err: unknown) {
-                                  toast.error(errorDetail(err, 'Failed to update quantity'))
-                                  await invalidate()
-                                }
-                              }}
+                              onChangeQty={(next) => updatePartQuantity(pu, next)}
                               onDelete={async () => {
                                 setEditingPartsSaving(true)
                                 try {
                                   await api.delete(`/repair-orders/${orderId}/parts/${pu.id}`)
+                                  setStockShortages((current) => {
+                                    const updated = { ...current }
+                                    delete updated[shortageKey]
+                                    return updated
+                                  })
+                                  setPartQuantityOverrides((current) => {
+                                    const updated = { ...current }
+                                    delete updated[shortageKey]
+                                    return updated
+                                  })
                                   await invalidate()
                                   toast.success(`${pu.inventory_name} removed`)
                                 } catch (err: unknown) {
@@ -3160,6 +3234,7 @@ export default function PriceBuilderPanel({
                             unitLabel={unitAbbr}
                             overridePending={isAddingThisPart}
                             addPending={addPart.isPending}
+                            action="add"
                             onOverride={() => addPart.mutate({ ...addRequest, allowStockShortage: true })}
                           />
                         )}

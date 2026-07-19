@@ -6,12 +6,14 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  patch: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   default: {
     get: apiMocks.get,
     post: apiMocks.post,
+    patch: apiMocks.patch,
   },
 }))
 
@@ -61,6 +63,7 @@ describe('PriceBuilderPanel pending feedback', () => {
   afterEach(() => {
     apiMocks.get.mockReset()
     apiMocks.post.mockReset()
+    apiMocks.patch.mockReset()
   })
 
   afterAll(() => {
@@ -222,6 +225,61 @@ describe('PriceBuilderPanel pending feedback', () => {
       expect(apiMocks.post).toHaveBeenLastCalledWith('/repair-orders/order-1/parts', expect.objectContaining({
         inventory_id: 'part-1',
         quantity: 2,
+        allow_stock_shortage: true,
+      }))
+    })
+  })
+
+  it('keeps an existing part quantity visible when stock validation fails and supports an override retry', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') {
+        return Promise.resolve({
+          data: [{
+            id: 'usage-1', repair_order_id: 'order-1', inventory_id: 'part-1',
+            inventory_sku: 'BS-1', inventory_name: 'Brake Shoes', quantity: '5', unit_type: 'each',
+            unit_price: '50.00', unit_cost: '30.00', list_price: '50.00', savings: '0.00',
+            total_price: '250.00', source_service_id: null, source_line_id: null,
+            created_at: '2026-07-19T00:00:00Z',
+          }],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    apiMocks.patch.mockImplementation((url: string, body?: { allow_stock_shortage?: boolean }) => {
+      if (url !== '/repair-orders/order-1/parts/usage-1') return Promise.resolve({ data: {} })
+      if (body?.allow_stock_shortage) return Promise.resolve({ data: {} })
+      return Promise.reject({
+        response: {
+          data: {
+            detail: {
+              code: 'insufficient_stock',
+              inventory_id: 'part-1',
+              requested_quantity: '6',
+              required_packages: 6,
+              available_packages: 5,
+              shortfall_packages: 1,
+              can_override: true,
+            },
+          },
+        },
+      })
+    })
+
+    const user = userEvent.setup()
+    renderPanel()
+
+    await screen.findByText('Brake Shoes')
+    await user.click(screen.getByRole('button', { name: /increase quantity for brake shoes/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Inventory shows 5 ea; this order requests 6 ea.')
+    expect(screen.getByRole('textbox', { name: 'Quantity for Brake Shoes' })).toHaveValue('6')
+
+    await user.click(screen.getByRole('button', { name: 'Override & update' }))
+
+    await waitFor(() => {
+      expect(apiMocks.patch).toHaveBeenLastCalledWith('/repair-orders/order-1/parts/usage-1', expect.objectContaining({
+        quantity: 6,
         allow_stock_shortage: true,
       }))
     })
