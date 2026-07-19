@@ -391,6 +391,35 @@ async def test_quote_send_queues_email_without_calling_resend(db_session, monkey
 
 
 @pytest.mark.asyncio
+async def test_quote_decline_sms_uses_tenant_shop_name(db_session, monkeypatch):
+    staff_user, _order, _service, quote = await _seed_quote_context(db_session)
+    staff_user.phone = "5558675309"
+    await db_session.commit()
+    sent_sms = []
+
+    async def _capture_sms(*_args, **kwargs):
+        sent_sms.append(kwargs.get("body") or _args[3])
+
+    async def _noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(quotes_endpoint, "send_sms", _capture_sms)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
+
+    await quotes_endpoint.decline_quote(
+        quote_id=quote.id,
+        body=quotes_endpoint.DeclineQuoteRequest(notes="Need approval"),
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    assert sent_sms
+    assert sent_sms[0].endswith(" - Lock Test Garage")
+    assert "DieselBridge Network" not in sent_sms[0]
+
+
+@pytest.mark.asyncio
 async def test_quote_send_email_includes_customer_savings(db_session, monkeypatch):
     staff_user, order, service, quote = await _seed_quote_context(db_session)
 

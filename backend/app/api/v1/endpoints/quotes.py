@@ -37,6 +37,7 @@ from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.services.email_service import send_email
 from app.services.provider_outbox_service import enqueue_email_notification
+from app.services.tenant_branding import get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.pricing import (
     get_order_checkout_breakdown,
@@ -1143,6 +1144,7 @@ async def decline_quote(
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
     record_quote(status="declined", tenant_id=str(order.tenant_id))
     
     # Broadcast WebSocket updates
@@ -1168,6 +1170,7 @@ async def decline_quote(
     vehicle = order.vehicle
     vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
     customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+    shop_name = await get_tenant_display_name(db, order.tenant_id)
     
     # Find managers to notify
     result = await db.execute(
@@ -1190,7 +1193,7 @@ async def decline_quote(
             try:
                 await send_sms(
                     db, str(order.tenant_id), manager.phone,
-                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - DieselBridge Network",
+                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
                     template_name="quote_declined_shop"
                 )
             except Exception:
@@ -1524,6 +1527,7 @@ async def decline_quote_by_token(
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
     record_quote(status="declined", tenant_id=str(order.tenant_id))
     
     # Broadcast WebSocket updates
@@ -1549,6 +1553,7 @@ async def decline_quote_by_token(
     vehicle = order.vehicle
     vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "vehicle"
     customer_name = f"{customer.first_name} {customer.last_name}" if customer else "Customer"
+    shop_name = await get_tenant_display_name(db, order.tenant_id)
     
     # Find managers to notify
     result = await db.execute(
@@ -1571,7 +1576,7 @@ async def decline_quote_by_token(
             try:
                 await send_sms(
                     db, str(order.tenant_id), manager.phone,
-                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - DieselBridge Network",
+                    f"Quote DECLINED: {customer_name} declined ${quote.total_amount:,.2f} for {vi}. Order #{order.order_number}.{notes_snippet} - {shop_name}",
                     template_name="quote_declined_shop"
                 )
             except Exception:

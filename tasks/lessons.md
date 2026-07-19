@@ -1,6 +1,9 @@
 # Lessons
 
 ## 2026-07-14
+- Correction: Automated repair-order SMS messages still used the platform brand (`DieselBridge Network`) even though the messages are sent on behalf of individual tenant shops.
+- Rule: Every customer- or staff-facing automated message must resolve its sender identity from the tenant at send time; platform branding is only for platform-owned communications.
+- Prevention: When adding or editing an automated notification template, search the full SMS/email workflow for hard-coded brand text and add a regression assertion for the tenant name in the saved delivery record.
 - Correction: After implementing fleet incident photo upload, the visible incident card still showed only Edit/Create repair/Resolve/Delete and no photo affordance because the UI change was not present on disk.
 - Rule: For visible workflow changes, verify the exact rendered component file still contains the new affordance after implementation, not just that backend endpoints/tests exist.
 - Prevention: Before final handoff for UI upload features, run a targeted `rg` for the user-facing label (for example `Upload photo` / `Attach photo`) in the active route component and verify TypeScript against that same working tree.

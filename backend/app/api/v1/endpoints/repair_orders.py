@@ -29,6 +29,7 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
 from app.services.email_service import send_email
+from app.services.tenant_branding import get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
     PriceBuildLockedError,
@@ -1252,6 +1253,7 @@ async def assign_mechanic(
     vehicle = order.vehicle
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
     portal_url = f"{settings.FRONTEND_URL.rstrip('/')}/mechanic"
+    shop_name = await get_tenant_display_name(db, order.tenant_id)
     
     # Parse services from internal_notes
     services_html = ""
@@ -1314,7 +1316,7 @@ async def assign_mechanic(
                 to=mechanic.phone,
                 body=(
                     f"New job assigned: Order #{order.order_number} for {vehicle_info}. "
-                    f"Portal: {portal_url} - DieselBridge Network"
+                    f"Portal: {portal_url} - {shop_name}"
                 ),
                 template_name="job_assigned_sms",
             )
@@ -1430,6 +1432,7 @@ async def start_work(
 
     await db.commit()
     await db.refresh(order)
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
     
     # Broadcast WebSocket update
     await broadcast_repair_order_update(
@@ -1475,6 +1478,7 @@ async def start_work(
     if not resume_existing:
         # Notify customer that work has started
         customer = order.customer
+        shop_name = await get_tenant_display_name(db, order.tenant_id)
         if customer and customer.email:
             vehicle = order.vehicle
             vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
@@ -1526,7 +1530,7 @@ async def start_work(
                     db,
                     str(order.tenant_id),
                     customer.phone,
-                    f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - DieselBridge Network",
+                    f"Work has started on your {vi}. Order #{order.order_number}. We'll text you when it's done. - {shop_name}",
                     template_name="work_started_sms",
                     customer_id=customer.id,
                     source="automated",
@@ -1897,6 +1901,7 @@ async def complete_work(
     
     await db.commit()
     await db.refresh(order)
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
     
     # Broadcast WebSocket update
     await broadcast_repair_order_update(
@@ -1928,6 +1933,7 @@ async def complete_work(
         )
     )
     managers = result.scalars().all()
+    shop_name = await get_tenant_display_name(db, order.tenant_id)
     
     vehicle = order.vehicle
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
@@ -1981,7 +1987,7 @@ async def complete_work(
                 db,
                 str(order.tenant_id),
                 customer.phone,
-                f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - DieselBridge Network",
+                f"Repair on your {vi} is complete and under review. Order #{order.order_number}. - {shop_name}",
                 template_name="work_complete_sms",
                 customer_id=customer.id,
                 source="automated",
@@ -2064,6 +2070,7 @@ async def approve_completion(
     
     await db.commit()
     await db.refresh(order)
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
     
     # Broadcast WebSocket update (best-effort: never fail a committed approval)
     try:
@@ -2080,6 +2087,7 @@ async def approve_completion(
 
     # Notify customer that work is complete
     customer = order.customer
+    shop_name = await get_tenant_display_name(db, order.tenant_id)
     if customer and customer.email:
         vehicle = order.vehicle
         vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
@@ -2138,7 +2146,7 @@ async def approve_completion(
                 db,
                 str(order.tenant_id),
                 customer.phone,
-                f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - DieselBridge Network",
+                f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - {shop_name}",
                 template_name="ready_pickup_sms",
                 customer_id=customer.id,
                 source="automated",

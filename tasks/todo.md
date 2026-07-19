@@ -3229,3 +3229,22 @@
 ## Review
 - The release is intentionally safe to deploy before the worker: migration `082` and all outbox code ship with `PROVIDER_OUTBOX_ENABLED=false`, preserving the current quote-email behavior.
 - The full backend suite still has unrelated direct-dependency test failures in `test_admin_tenant_user_management.py` (`Depends(get_db)` is passed when the role checker is called directly). The new outbox tests and affected quote/schema suites pass independently.
+
+---
+
+# Tenant-Branded Automated SMS (2026-07-19)
+
+## Plan
+- [x] Trace all automated customer and staff SMS templates that still hard-code the platform brand.
+- [x] Resolve the tenant name once per workflow and use it in every affected SMS suffix.
+- [x] Add regression coverage for the lifecycle messages shown in production and verify no hard-coded platform suffix remains in SMS send paths.
+- [ ] Run focused backend verification and independently deploy the correction.
+
+## Progress Notes
+- [x] The screenshot’s quote message already uses the selected tenant’s name. The work-started, under-review, and ready-for-pickup repair-order messages still hard-code `DieselBridge Network`; quote-decline staff alerts have the same issue.
+- [x] Added one shared tenant-name lookup with a neutral fallback. Repair-order SMS now use it for mechanic assignment, work started, work under review, and ready for pickup; both quote-decline manager alerts use it too.
+- [x] The new quote-decline regression test exposed a real async ORM issue in that notification path: a plain post-commit refresh dropped loaded relationships. The affected lifecycle paths now refresh scalar fields first, then explicitly refresh `customer` and `vehicle` before composing notifications.
+- [x] Focused verification passed: 36 tests across quote/pricing, provider outbox, and messaging; `compileall` and `git diff --check` passed. A targeted source scan finds no remaining hard-coded `DieselBridge Network` SMS send path.
+
+## Review
+- New automated texts will use the tenant’s current `name` (for example, `Truck Pit Stop`), so a renamed shop is reflected in future messages without a code change. Previously sent SMS are historical provider records and will not change.
