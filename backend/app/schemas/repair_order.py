@@ -61,6 +61,19 @@ class PartsUsageResponse(BaseModel):
         from_attributes = True
 
 
+class RepairOrderHistoryEventResponse(BaseModel):
+    id: UUID
+    event_type: str
+    label: str
+    detail: Optional[str] = None
+    entity_id: Optional[UUID] = None
+    actor_name: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class PartSuggestion(BaseModel):
     inventory_id: UUID
     sku: str
@@ -237,6 +250,7 @@ class RepairOrderPMServiceEntry(BaseModel):
 class RepairOrderDetailResponse(RepairOrderResponse):
     parts_usage: List[PartsUsageResponse] = []
     labor_items: List[LaborResponse] = []
+    history_events: List[RepairOrderHistoryEventResponse] = []
     # Selected PM services (fleet PM work orders only); empty for other orders.
     pm_services: List[RepairOrderPMServiceEntry] = []
 

@@ -336,9 +336,20 @@ export interface RepairOrderPMService {
   duration_minutes: number
 }
 
+export interface RepairOrderHistoryEvent {
+  id: string
+  event_type: string
+  label: string
+  detail?: string | null
+  entity_id?: string | null
+  actor_name?: string | null
+  created_at: string
+}
+
 export interface RepairOrderDetail extends RepairOrder {
   parts_usage: PartsUsage[]
   labor_items: Labor[]
+  history_events: RepairOrderHistoryEvent[]
   is_pm?: boolean
   pm_services?: RepairOrderPMService[]
 }

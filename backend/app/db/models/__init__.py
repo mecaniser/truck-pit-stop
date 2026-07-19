@@ -54,6 +54,7 @@ from app.db.models.fleet import (
 )
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 
 __all__ = [
     "Tenant",
@@ -117,4 +118,5 @@ __all__ = [
     "DescriptionLibraryEntry",
     "ProviderOutboxEvent",
     "ProviderOutboxStatus",
+    "RepairOrderHistoryEvent",
 ]

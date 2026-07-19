@@ -28,6 +28,7 @@ from app.db.models.quote import Quote
 from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance, PointsTransactionType
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.services.email_service import send_email
 from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
@@ -77,6 +78,7 @@ from app.schemas.repair_order import (
     RecommendedServiceResponse,
     PartSuggestion,
     PartSuggestionsResponse,
+    RepairOrderHistoryEventResponse,
 )
 
 logger = get_logger(__name__)
@@ -246,6 +248,49 @@ def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageRespon
         source_line_id=pu.source_line_id,
         stock_shortage_override=bool(pu.stock_shortage_override),
         created_at=pu.created_at,
+    )
+
+
+def _part_unit_label(unit_type: Optional[str]) -> str:
+    return {
+        "each": "ea",
+        "gallon": "gal",
+        "quart": "qt",
+        "liter": "L",
+    }.get(unit_type or "", unit_type or "ea")
+
+
+def _format_part_quantity(quantity: Decimal) -> str:
+    formatted = format(quantity, "f")
+    return formatted.rstrip("0").rstrip(".") if "." in formatted else formatted
+
+
+def _part_history_detail(inventory_name: str, quantity: Decimal, unit_type: Optional[str]) -> str:
+    return f"{inventory_name} · {_format_part_quantity(quantity)} {_part_unit_label(unit_type)}"
+
+
+def _record_repair_order_history_event(
+    db: AsyncSession,
+    *,
+    order: RepairOrder,
+    current_user: User,
+    event_type: str,
+    label: str,
+    detail: str,
+    entity_id: Optional[UUID] = None,
+) -> None:
+    actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+    db.add(
+        RepairOrderHistoryEvent(
+            tenant_id=order.tenant_id,
+            repair_order_id=order.id,
+            created_at=datetime.now(timezone.utc),
+            event_type=event_type,
+            label=label,
+            detail=detail,
+            entity_id=entity_id,
+            actor_name=actor_name,
+        )
     )
 
 
@@ -850,6 +895,16 @@ async def get_repair_order_detail(
     _check_ro_access(current_user, order)
     parts_resp = [_build_parts_usage_response(pu) for pu in order.parts_usage]
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    history_result = await db.execute(
+        select(RepairOrderHistoryEvent)
+        .where(
+            RepairOrderHistoryEvent.repair_order_id == order.id,
+            RepairOrderHistoryEvent.tenant_id == order.tenant_id,
+            RepairOrderHistoryEvent.deleted_at.is_(None),
+        )
+        .order_by(RepairOrderHistoryEvent.created_at.asc())
+    )
+    history_resp = [RepairOrderHistoryEventResponse.model_validate(event) for event in history_result.scalars().all()]
 
     # Selected PM services (fleet PM work orders). Ordered as chosen.
     from app.db.models.fleet import RepairOrderPMService
@@ -894,6 +949,7 @@ async def get_repair_order_detail(
         deleted_by_name=_user_name(order.deleted_by_user),
         parts_usage=parts_resp,
         labor_items=labor_resp,
+        history_events=history_resp,
         pm_services=pm_services_resp,
     )
 
@@ -2781,7 +2837,17 @@ async def add_parts_to_repair_order(
         stock_shortage_override=reserved_packages < packages_needed,
     )
     db.add(pu)
+    await db.flush()
     inv.stock_quantity = available_packages - reserved_packages
+    _record_repair_order_history_event(
+        db,
+        order=order,
+        current_user=current_user,
+        event_type="part_added",
+        label="Part added with stock override" if pu.stock_shortage_override else "Part added to repair order",
+        detail=_part_history_detail(inv.name, body.quantity, inv.unit_type),
+        entity_id=pu.id,
+    )
     await db.commit()
     await db.refresh(pu)
     await _recompute_repair_order_totals(db, order_id)
@@ -2952,6 +3018,7 @@ async def update_parts_quantity(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parts usage not found")
 
     inv = pu.inventory_item
+    old_quantity = pu.quantity
 
     if body.quantity is not None:
         # Stock tracks whole packages. Compare the reservation held by this row
@@ -2998,6 +3065,21 @@ async def update_parts_quantity(
         pu.unit_price = body.unit_price
 
     pu.total_price = pu.unit_price * pu.quantity
+    if body.quantity is not None and body.quantity != old_quantity:
+        override_update = body.allow_stock_shortage and bool(pu.stock_shortage_override)
+        _record_repair_order_history_event(
+            db,
+            order=order,
+            current_user=current_user,
+            event_type="part_quantity_updated",
+            label="Part quantity updated with stock override" if override_update else "Part quantity updated",
+            detail=(
+                f"{inv.name if inv else 'Part'} · "
+                f"{_format_part_quantity(old_quantity)} {_part_unit_label(inv.unit_type if inv else None)} → "
+                f"{_format_part_quantity(body.quantity)} {_part_unit_label(inv.unit_type if inv else None)}"
+            ),
+            entity_id=pu.id,
+        )
     await db.commit()
     await _recompute_repair_order_totals(db, order_id)
     await db.refresh(pu)
@@ -3128,6 +3210,19 @@ async def remove_parts_from_repair_order(
     inv = pu.inventory_item
     if inv is not None:
         inv.stock_quantity += _stock_packages_reserved(pu)
+    _record_repair_order_history_event(
+        db,
+        order=order,
+        current_user=current_user,
+        event_type="part_removed",
+        label="Part removed from repair order",
+        detail=_part_history_detail(
+            inv.name if inv else "Part",
+            pu.quantity,
+            inv.unit_type if inv else None,
+        ),
+        entity_id=pu.id,
+    )
     await db.delete(pu)
     await db.commit()
     await _recompute_repair_order_totals(db, order_id)

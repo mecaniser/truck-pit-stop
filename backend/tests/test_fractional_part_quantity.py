@@ -14,6 +14,7 @@ import os
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
 os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
@@ -21,6 +22,7 @@ os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints.repair_orders import (
     add_parts_to_repair_order,
+    get_repair_order_detail,
     update_parts_quantity,
     remove_parts_from_repair_order,
     _packages_consumed,
@@ -28,6 +30,7 @@ from app.api.v1.endpoints.repair_orders import (
 from app.schemas.repair_order import PartsUsageCreate, PartsUsageUpdate
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
@@ -269,6 +272,12 @@ async def test_add_part_stock_shortage_override_records_only_available_reservati
     assert response.stock_shortage_override is True
     stored = await db_session.get(PartsUsage, response.id)
     assert stored.stock_reserved_packages == 1
+    history_result = await db_session.execute(
+        select(RepairOrderHistoryEvent)
+        .where(RepairOrderHistoryEvent.repair_order_id == order.id)
+    )
+    history_event = history_result.scalar_one()
+    assert history_event.label == "Part added with stock override"
     await db_session.refresh(inv)
     assert inv.stock_quantity == 0
 
@@ -277,6 +286,45 @@ async def test_add_part_stock_shortage_override_records_only_available_reservati
     await remove_parts_from_repair_order(order.id, response.id, db_session, user)
     await db_session.refresh(inv)
     assert inv.stock_quantity == 1
+
+
+@pytest.mark.asyncio
+async def test_part_add_quantity_update_and_removal_are_recorded_in_order_history(db_session):
+    user, order, inv = await _seed(db_session, stock_quantity=5, unit_type="each")
+
+    part = await add_parts_to_repair_order(
+        order.id,
+        PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("2")),
+        db_session,
+        user,
+    )
+    await update_parts_quantity(
+        order.id,
+        part.id,
+        PartsUsageUpdate(quantity=Decimal("3")),
+        db_session,
+        user,
+    )
+    await remove_parts_from_repair_order(order.id, part.id, db_session, user)
+
+    result = await db_session.execute(
+        select(RepairOrderHistoryEvent)
+        .where(RepairOrderHistoryEvent.repair_order_id == order.id)
+        .order_by(RepairOrderHistoryEvent.created_at.asc(), RepairOrderHistoryEvent.id.asc())
+    )
+    events = result.scalars().all()
+    assert [(event.event_type, event.label, event.detail) for event in events] == [
+        ("part_added", "Part added to repair order", "Diesel Engine Oil 15W-40 (5 Gal) · 2 ea"),
+        ("part_quantity_updated", "Part quantity updated", "Diesel Engine Oil 15W-40 (5 Gal) · 2 ea → 3 ea"),
+        ("part_removed", "Part removed from repair order", "Diesel Engine Oil 15W-40 (5 Gal) · 3 ea"),
+    ]
+
+    detail = await get_repair_order_detail(order.id, db_session, user)
+    assert [event.label for event in detail.history_events] == [
+        "Part added to repair order",
+        "Part quantity updated",
+        "Part removed from repair order",
+    ]
 
 
 @pytest.mark.asyncio

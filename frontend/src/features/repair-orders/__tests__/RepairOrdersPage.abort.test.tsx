@@ -21,7 +21,7 @@ vi.mock('@/contexts/ThemeContext', () => ({
   useTheme: () => ({ accentColors: { primary: '#2563eb' } }),
 }))
 
-import type { PartsUsage } from '../../../types'
+import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
 
@@ -156,12 +156,73 @@ describe('RepairOrdersPage request cancellation', () => {
         label: 'Part added to repair order',
         at: '2026-07-19T10:00:00Z',
         detail: 'Brake Pad · 1 ea',
+        entityId: 'usage-1',
       },
       {
         id: 'part-usage-2',
         label: 'Part added with stock override',
         at: '2026-07-19T10:05:00Z',
         detail: 'Engine Oil · 2.50 gal',
+        entityId: 'usage-2',
+      },
+    ])
+  })
+
+  it('prefers persisted quantity and removal events without duplicating the current part row', () => {
+    const historyEvents: RepairOrderHistoryEvent[] = [
+      {
+        id: 'history-add',
+        event_type: 'part_added',
+        label: 'Part added to repair order',
+        detail: 'Brake Pad · 2 ea',
+        entity_id: 'usage-1',
+        actor_name: 'Shop Admin',
+        created_at: '2026-07-19T10:00:00Z',
+      },
+      {
+        id: 'history-update',
+        event_type: 'part_quantity_updated',
+        label: 'Part quantity updated',
+        detail: 'Brake Pad · 2 ea → 3 ea',
+        entity_id: 'usage-1',
+        actor_name: 'Shop Admin',
+        created_at: '2026-07-19T10:01:00Z',
+      },
+      {
+        id: 'history-remove',
+        event_type: 'part_removed',
+        label: 'Part removed from repair order',
+        detail: 'Brake Pad · 3 ea',
+        entity_id: 'usage-1',
+        actor_name: 'Shop Admin',
+        created_at: '2026-07-19T10:02:00Z',
+      },
+    ]
+
+    expect(buildPartHistoryEvents([], historyEvents)).toEqual([
+      {
+        id: 'history-add',
+        label: 'Part added to repair order',
+        at: '2026-07-19T10:00:00Z',
+        detail: 'Brake Pad · 2 ea',
+        actor: 'Shop Admin',
+        entityId: 'usage-1',
+      },
+      {
+        id: 'history-update',
+        label: 'Part quantity updated',
+        at: '2026-07-19T10:01:00Z',
+        detail: 'Brake Pad · 2 ea → 3 ea',
+        actor: 'Shop Admin',
+        entityId: 'usage-1',
+      },
+      {
+        id: 'history-remove',
+        label: 'Part removed from repair order',
+        at: '2026-07-19T10:02:00Z',
+        detail: 'Brake Pad · 3 ea',
+        actor: 'Shop Admin',
+        entityId: 'usage-1',
       },
     ])
   })

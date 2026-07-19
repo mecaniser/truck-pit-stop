@@ -1523,7 +1523,7 @@ export default function RepairOrdersPage() {
       detail: order.order_number,
       actor: customerActor,
     })
-    events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? []))
+    events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? [], orderDetail?.history_events ?? []))
     push({
       id: 'quote-created',
       label: 'Quote draft created',
