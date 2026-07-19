@@ -111,6 +111,8 @@ type Props = {
   technicianOptions?: TechnicianOption[]
   technicianAssignmentPending?: boolean
   onAssignTechnician?: (mechanicId: string) => void
+  technicianOverridePending?: boolean
+  onOverrideTechnicianAssignment?: () => void
   completionMode?: boolean
   completionPending?: boolean
   mileageOutValue?: string
@@ -701,6 +703,8 @@ export default function PriceBuilderPanel({
   technicianOptions = [],
   technicianAssignmentPending = false,
   onAssignTechnician,
+  technicianOverridePending = false,
+  onOverrideTechnicianAssignment,
   completionMode = false,
   completionPending = false,
   mileageOutValue = '',
@@ -1016,11 +1020,13 @@ export default function PriceBuilderPanel({
   const isEmptyOrder = effectiveLaborLines.length === 0 && (partsUsed?.length ?? 0) === 0
   const hasQuoteDraft = !!quoteNumber && !isEmptyOrder
   const hasAssignedTechnician = !!assignedTechnicianName
+  const technicianAssignmentBypassed = quoteIsApproved && !hasAssignedTechnician && ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus)
   // A finalized order is closed: the work is done and billed/settled. No more
   // photo uploads, and the quote pipeline is just clutter (the single status
   // chip already says it all).
   const isFinalized = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
   const canManageTechnician = !isInternalOrder && quoteIsApproved && !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
+  const canOverrideTechnicianAssignment = !isInternalOrder && quoteIsApproved && !hasAssignedTechnician && orderStatus === 'approved' && !!onOverrideTechnicianAssignment
   const availableTechnicians = technicianOptions
     .filter((tech) => tech.mechanic_id !== assignedTechnicianId)
     .map((tech) => {
@@ -1807,17 +1813,17 @@ export default function PriceBuilderPanel({
             </span>
             <span className="text-gray-300">→</span>
             <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              hasAssignedTechnician
+              hasAssignedTechnician || technicianAssignmentBypassed
                 ? 'bg-emerald-100 text-emerald-700'
                 : quoteIsApproved
                   ? 'bg-white text-amber-700 ring-1 ring-amber-200'
                   : 'bg-transparent text-gray-400'
             }`}>
-              {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : quoteIsApproved ? 'Assign technician' : 'Technician'}
+              {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ In progress' : quoteIsApproved ? 'Assign technician' : 'Technician'}
             </span>
           </div>
         </div>
-        {canManageTechnician && onAssignTechnician && availableTechnicians.length > 0 && (
+        {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
           <div className="border-t border-orange-100 bg-white px-5 py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
@@ -1829,30 +1835,51 @@ export default function PriceBuilderPanel({
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {availableTechnicians.map((tech) => (
-                <button
-                  key={tech.mechanic_id}
-                  type="button"
-                  onClick={() => onAssignTechnician(tech.mechanic_id)}
-                  disabled={technicianAssignmentPending}
-                  className="rounded-lg border border-gray-200 bg-white p-2.5 text-left transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-semibold text-gray-900">{tech.mechanic_name}</span>
-                    <span className={`text-xs font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
-                      {tech.load.toFixed(0)}%
-                    </span>
+            {onAssignTechnician && availableTechnicians.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {availableTechnicians.map((tech) => (
+                  <button
+                    key={tech.mechanic_id}
+                    type="button"
+                    onClick={() => onAssignTechnician(tech.mechanic_id)}
+                    disabled={technicianAssignmentPending || technicianOverridePending}
+                    className="rounded-lg border border-gray-200 bg-white p-2.5 text-left transition hover:border-orange-300 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-semibold text-gray-900">{tech.mechanic_name}</span>
+                      <span className={`text-xs font-bold ${tech.load < 50 ? 'text-emerald-600' : tech.load < 80 ? 'text-orange-600' : 'text-red-600'}`}>
+                        {tech.load.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        className={`h-full rounded-full ${tech.load < 50 ? 'bg-emerald-500' : tech.load < 80 ? 'bg-orange-500' : 'bg-red-500'}`}
+                        style={{ width: `${tech.load}%` }}
+                      />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {canOverrideTechnicianAssignment && (
+              <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/70 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">Start without assigning a technician</p>
+                    <p className="mt-0.5 text-xs text-amber-700">Admin override for work handled verbally or outside the mechanic portal.</p>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                    <div
-                      className={`h-full rounded-full ${tech.load < 50 ? 'bg-emerald-500' : tech.load < 80 ? 'bg-orange-500' : 'bg-red-500'}`}
-                      style={{ width: `${tech.load}%` }}
-                    />
-                  </div>
-                </button>
-              ))}
-            </div>
+                  <button
+                    type="button"
+                    onClick={onOverrideTechnicianAssignment}
+                    disabled={technicianOverridePending || technicianAssignmentPending}
+                    className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-bold text-white hover:bg-amber-700 disabled:bg-gray-300"
+                  >
+                    {technicianOverridePending ? <Spinner size="xs" /> : <Play className="h-4 w-4" />}
+                    {technicianOverridePending ? 'Starting...' : 'Override & start'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         </>

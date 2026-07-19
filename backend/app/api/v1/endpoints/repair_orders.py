@@ -1098,6 +1098,68 @@ class AssignMechanicRequest(BaseModel):
     mechanic_id: UUID
 
 
+@router.post("/{order_id}/override-start-work", response_model=RepairOrderResponse)
+async def override_start_work_without_mechanic(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+    )),
+):
+    """Owner/admin override: start approved customer work without assigning a mechanic."""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if order.is_internal:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use the internal work order start action for fleet work orders",
+        )
+
+    if order.assigned_mechanic_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This repair order already has an assigned mechanic",
+        )
+
+    if order.status != RepairOrderStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Can only override technician assignment for approved repair orders",
+        )
+
+    order.status = RepairOrderStatus.IN_PROGRESS
+    if order.work_started_at is None:
+        order.work_started_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(order)
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at.isoformat() if order.held_at else None,
+    )
+
+    return RepairOrderResponse.model_validate(order)
+
+
 @router.post("/{order_id}/assign-mechanic", response_model=RepairOrderResponse)
 async def assign_mechanic(
     order_id: UUID,

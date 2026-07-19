@@ -916,6 +916,24 @@ export default function RepairOrdersPage() {
     },
   })
 
+  const overrideTechnicianAssignmentMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const response = await api.post(`/repair-orders/${orderId}/override-start-work`)
+      return response.data as RepairOrder
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
+      queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
+      setSelectedOrder(updated)
+      toast.success('Work started without assigning a technician')
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'Failed to start work without a technician'))
+    },
+  })
+
   const startWorkOrderMutation = useMutation({
     mutationFn: async (orderId: string) => {
       const response = await api.post(`/fleet/work-orders/${orderId}/start`)
@@ -2964,7 +2982,7 @@ export default function RepairOrdersPage() {
                             Waiting for customer approval...
                           </p>
                         )}
-                        {isApproved && !hasMechanic && (
+                        {isApproved && !hasMechanic && (orderDetail ?? selectedOrder).status === 'approved' && (
                           <p className="text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                             Customer approved! Assign a technician to start work.
                           </p>
@@ -2983,43 +3001,61 @@ export default function RepairOrdersPage() {
                         )}
 
                         {/* Mechanic Assignment - shown inline when approved but no mechanic */}
-                        {isApproved && !hasMechanic && mechanics && mechanics.length > 0 && (
+                        {isApproved && !hasMechanic && (orderDetail ?? selectedOrder).status === 'approved' && (
                           <div className="pt-3 border-t border-gray-200 space-y-3">
                             <p className="text-xs font-medium text-gray-500 uppercase">Available Technicians</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {[...(mechanics || [])]
-                                .map((m) => {
-                                  const inProgress = m.in_progress_count ?? 0
-                                  const assigned = m.assigned_count ?? 0
-                                  const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
-                                  return { ...m, load, inProgress, assigned }
-                                })
-                                .sort((a, b) => a.load - b.load)
-                                .map((m) => (
-                                  <button
-                                    key={m.mechanic_id}
-                                    type="button"
-                                    onClick={() =>
-                                      selectedOrder.id &&
-                                      assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
-                                    }
-                                    disabled={assignMechanicMutation.isPending}
-                                    className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
-                                      <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
-                                        {m.load.toFixed(0)}%
-                                      </span>
-                                    </div>
-                                    <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-                                      <div
-                                        className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                        style={{ width: `${m.load}%` }}
-                                      />
-                                    </div>
-                                  </button>
-                                ))}
+                            {mechanics && mechanics.length > 0 && (
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {[...(mechanics || [])]
+                                  .map((m) => {
+                                    const inProgress = m.in_progress_count ?? 0
+                                    const assigned = m.assigned_count ?? 0
+                                    const load = assigned > 0 ? Math.min((inProgress / assigned) * 100, 100) : 0
+                                    return { ...m, load, inProgress, assigned }
+                                  })
+                                  .sort((a, b) => a.load - b.load)
+                                  .map((m) => (
+                                    <button
+                                      key={m.mechanic_id}
+                                      type="button"
+                                      onClick={() =>
+                                        selectedOrder.id &&
+                                        assignMechanicMutation.mutate({ orderId: selectedOrder.id, mechanicId: m.mechanic_id, orderStatus: (orderDetail ?? selectedOrder).status })
+                                      }
+                                      disabled={assignMechanicMutation.isPending || overrideTechnicianAssignmentMutation.isPending}
+                                      className="w-full text-left p-2.5 rounded-lg border border-gray-200 bg-white hover:border-amber-400 hover:bg-amber-50 transition-all disabled:opacity-50"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-gray-800">{m.mechanic_name}</span>
+                                        <span className={`text-xs font-medium ${m.load < 50 ? 'text-green-600' : m.load < 80 ? 'text-amber-600' : 'text-red-600'}`}>
+                                          {m.load.toFixed(0)}%
+                                        </span>
+                                      </div>
+                                      <div className="mt-1.5 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                                        <div
+                                          className={`h-full transition-all ${m.load < 50 ? 'bg-green-500' : m.load < 80 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                          style={{ width: `${m.load}%` }}
+                                        />
+                                      </div>
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                            <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2.5">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-semibold text-amber-900">Start without assigning a technician</p>
+                                  <p className="text-xs text-amber-700">Admin override for work assigned verbally or outside the mechanic portal.</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => selectedOrder.id && overrideTechnicianAssignmentMutation.mutate(selectedOrder.id)}
+                                  disabled={assignMechanicMutation.isPending || overrideTechnicianAssignmentMutation.isPending}
+                                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-bold text-white hover:bg-amber-700 disabled:bg-gray-300"
+                                >
+                                  {overrideTechnicianAssignmentMutation.isPending ? 'Starting...' : 'Override & start'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -3238,6 +3274,11 @@ export default function RepairOrdersPage() {
                         mechanicId,
                         orderStatus: (orderDetail ?? selectedOrder).status,
                       })
+                    }
+                    technicianOverridePending={overrideTechnicianAssignmentMutation.isPending}
+                    onOverrideTechnicianAssignment={() =>
+                      selectedOrder.id &&
+                      overrideTechnicianAssignmentMutation.mutate(selectedOrder.id)
                     }
                     completionMode={(orderDetail ?? selectedOrder).status === 'pending_review'}
                     completionPending={approveCompletionMutation.isPending}

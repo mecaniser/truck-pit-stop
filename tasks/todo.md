@@ -1,3 +1,46 @@
+# Team Technician Update UX Fix (2026-07-19)
+
+## Plan
+- [x] Trace the Team technician edit drawer submit handler and staff update API payload.
+- [x] Fix the update path so editing technician contact details sends a request and reports success/failure visibly.
+- [x] Add or update focused verification for the broken path.
+- [x] Run frontend/backend checks and document results.
+
+## Progress Notes
+- [x] Investigated the shop Team page drawer shown in the screenshot where `Update technician` had no visible response.
+- [x] Found the edit drawer reset omitted the required hidden `role` field, so React Hook Form validation blocked submit before `onSubmit` could call `PUT /mechanics/{id}`.
+- [x] Set `role: 'mechanic'` when opening add/edit drawer defaults, added toast success/error feedback, and included staff creation pending state in the main drawer submit button.
+- [x] Added a focused regression test proving edited technician contact details submit to `PUT /mechanics/{id}`.
+- [x] Passed focused Vitest, frontend TypeScript, and `git diff --check`.
+
+## Review
+- The technician edit drawer now sends the update request instead of silently failing on the hidden role field. Users get a spinner while saving and toast feedback on success or API failure.
+
+---
+
+# Admin Technician Assignment Override (2026-07-19)
+
+## Plan
+- [x] Add an owner/admin-only backend action to move an approved customer repair order directly to `in_progress` without `assigned_mechanic_id`.
+- [x] Add focused backend coverage proving the override bypasses mechanic assignment, sets `work_started_at`, and broadcasts the status update.
+- [x] Add a Price Builder assignment option for admins to start work without selecting a technician.
+- [x] Add the same override option to the legacy repair-order assignment panel so both active surfaces behave consistently.
+- [x] Run focused backend and frontend verification.
+
+## Progress Notes
+- [x] Traced the existing flow: customer quote approval sets RO status to `approved`; `assign-mechanic` sets `assigned_mechanic_id` and moves to `assigned`; mechanic `start-work` moves assigned/acknowledged jobs to `in_progress`.
+- [x] Chosen implementation: a separate admin override transition, not a fake mechanic assignment, so mechanic workload counts and assignment notifications stay accurate.
+- [x] Added `POST /repair-orders/{order_id}/override-start-work` for garage owners/admins only; it rejects internal, already-assigned, and non-approved repair orders.
+- [x] Added regression coverage for the happy path and the unapproved-order guard.
+- [x] Added `Override & start` to the Price Builder assignment panel and the legacy inline assignment panel.
+- [x] Updated the Price Builder workflow strip so bypassed in-progress orders show the technician step as passed instead of continuing to request assignment.
+- [x] Passed focused backend tests, frontend TypeScript, visible-label check, and `git diff --check`.
+
+## Review
+- Shop owners/admins can now override technician assignment on approved customer repair orders and move the order straight to `in_progress` while leaving `assigned_mechanic_id` empty. This supports verbal/offline mechanic assignment without corrupting mechanic workload counts or sending mechanic assignment notifications.
+
+---
+
 # Photo Removal for Uploads (2026-07-14)
 
 ## Plan

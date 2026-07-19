@@ -52,6 +52,26 @@ class _FakeAsyncSession:
         return None
 
 
+class _FakeOverrideSession:
+    def __init__(self, order: RepairOrder):
+        self.order = order
+        self.execute_calls = 0
+        self.commit_count = 0
+
+    async def execute(self, statement):
+        self.execute_calls += 1
+        entity = statement.column_descriptions[0].get("entity")
+        assert self.execute_calls == 1
+        assert entity is RepairOrder
+        return _ScalarResult(self.order)
+
+    async def commit(self):
+        self.commit_count += 1
+
+    async def refresh(self, _obj):
+        return None
+
+
 def _build_context(mechanic_phone: str | None):
     tenant_id = uuid4()
     customer_id = uuid4()
@@ -194,3 +214,53 @@ async def test_assign_mechanic_skips_sms_when_no_mechanic_phone(monkeypatch):
 
     assert response.status == RepairOrderStatus.ASSIGNED
     assert len(sms_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_override_starts_approved_ro_without_mechanic(monkeypatch):
+    order, _mechanic, manager = _build_context(mechanic_phone=None)
+    fake_db = _FakeOverrideSession(order=order)
+
+    broadcast_calls: list[dict] = []
+
+    async def _capture_broadcast(**kwargs):
+        broadcast_calls.append(kwargs)
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _capture_broadcast)
+
+    response = await repair_orders.override_start_work_without_mechanic(
+        order_id=order.id,
+        db=fake_db,
+        current_user=manager,
+    )
+
+    assert response.status == RepairOrderStatus.IN_PROGRESS
+    assert response.assigned_mechanic_id is None
+    assert response.work_started_at is not None
+    assert fake_db.commit_count == 1
+
+    assert len(broadcast_calls) == 1
+    assert broadcast_calls[0]["status"] == RepairOrderStatus.IN_PROGRESS.value
+
+
+@pytest.mark.asyncio
+async def test_admin_override_rejects_unapproved_ro(monkeypatch):
+    order, _mechanic, manager = _build_context(mechanic_phone=None)
+    order.status = RepairOrderStatus.QUOTED
+    fake_db = _FakeOverrideSession(order=order)
+
+    async def _noop_broadcast(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_broadcast)
+
+    with pytest.raises(repair_orders.HTTPException) as exc_info:
+        await repair_orders.override_start_work_without_mechanic(
+            order_id=order.id,
+            db=fake_db,
+            current_user=manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert order.status == RepairOrderStatus.QUOTED
+    assert fake_db.commit_count == 0
