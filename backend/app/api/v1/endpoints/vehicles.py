@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, or_
 from sqlalchemy.orm import selectinload
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
@@ -10,6 +10,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
 from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleCustomerUpdate, VehicleResponse
+from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 
 router = APIRouter()
@@ -119,6 +120,75 @@ async def list_vehicles(
     vehicles = result.scalars().all()
     items = [VehicleResponse.model_validate(v) for v in vehicles]
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/typeahead", response_model=List[VehicleTypeaheadResponse])
+async def vehicle_typeahead(
+    q: Optional[str] = Query(None, max_length=100, description="Match vehicle unit, VIN, plate, make, or model"),
+    customer_id: Optional[UUID] = Query(None, description="Restrict results to a selected customer"),
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return a small, capped vehicle picker payload for the RO workspace.
+
+    Joining the parent customer lets this lookup exclude soft-deleted parent
+    records and enforce fleet-manager scope in the same database query.
+    """
+    filters = [Vehicle.deleted_at.is_(None), Customer.deleted_at.is_(None)]
+
+    if current_user.role == UserRole.CUSTOMER:
+        if not current_user.customer_id:
+            return []
+        filters.append(Vehicle.customer_id == current_user.customer_id)
+    else:
+        if not current_user.tenant_id:
+            return []
+        filters.append(Vehicle.tenant_id == current_user.tenant_id)
+        if current_user.role == UserRole.FLEET_MANAGER:
+            filters.append(Customer.is_internal_fleet.is_(True))
+
+    if customer_id:
+        filters.append(Vehicle.customer_id == customer_id)
+
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{term}%"
+        filters.append(
+            or_(
+                Vehicle.unit_number.ilike(pattern),
+                Vehicle.vin.ilike(pattern),
+                Vehicle.license_plate.ilike(pattern),
+                Vehicle.make.ilike(pattern),
+                Vehicle.model.ilike(pattern),
+            )
+        )
+
+    result = await db.execute(
+        select(Vehicle)
+        .join(Customer, Vehicle.customer_id == Customer.id)
+        .where(*filters)
+        .order_by(
+            func.lower(Vehicle.unit_number),
+            func.lower(Vehicle.make),
+            func.lower(Vehicle.model),
+            Vehicle.id,
+        )
+        .limit(limit)
+    )
+    return [
+        VehicleTypeaheadResponse(
+            id=vehicle.id,
+            customer_id=vehicle.customer_id,
+            make=vehicle.make,
+            model=vehicle.model,
+            year=vehicle.year,
+            unit_number=vehicle.unit_number,
+            license_plate=vehicle.license_plate,
+            vin=vehicle.vin,
+        )
+        for vehicle in result.scalars().all()
+    ]
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)

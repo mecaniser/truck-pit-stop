@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 
 import api from '@/lib/api'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
@@ -74,6 +75,11 @@ export type PriceBuilderHistoryEvent = {
 }
 
 type AddBarType = 'operation' | 'saved_labor' | 'part' | 'history'
+
+type InventoryTypeaheadItem = Pick<
+  InventoryItem,
+  'id' | 'sku' | 'name' | 'stock_quantity' | 'on_order_quantity' | 'unit_type' | 'cost' | 'selling_price'
+>
 
 type Props = {
   orderId: string
@@ -155,6 +161,7 @@ type Props = {
   onReopenWorkOrder?: () => void
   reopenPending?: boolean
   recommendedServices?: RecommendedService[]
+  recommendedServicesLoading?: boolean
   showAddRecommendedService?: boolean
   recommendedServiceForm?: {
     description: string
@@ -175,6 +182,7 @@ type Props = {
   addRecommendedPending?: boolean
   resolveRecommendedPending?: boolean
   deleteRecommendedPending?: boolean
+  onRecommendedServicesOpenChange?: (open: boolean) => void
   onUpdated?: () => void
 }
 
@@ -747,6 +755,7 @@ export default function PriceBuilderPanel({
   onReopenWorkOrder,
   reopenPending = false,
   recommendedServices,
+  recommendedServicesLoading = false,
   showAddRecommendedService,
   recommendedServiceForm,
   onToggleAddRecommendedService,
@@ -757,6 +766,7 @@ export default function PriceBuilderPanel({
   addRecommendedPending,
   resolveRecommendedPending,
   deleteRecommendedPending,
+  onRecommendedServicesOpenChange,
   onUpdated,
 }: Props) {
   const queryClient = useQueryClient()
@@ -788,6 +798,15 @@ export default function PriceBuilderPanel({
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
   const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
+
+  // Accordions belong to the selected order. Resetting them on navigation
+  // prevents a panel opened for one order from silently triggering optional
+  // reads for the next order in the work queue.
+  useEffect(() => {
+    setRecommendedOpen(false)
+    setPhotosOpen(false)
+    onRecommendedServicesOpenChange?.(false)
+  }, [orderId, onRecommendedServicesOpenChange])
   const initialLaborBookTimeForm = (): LaborBookTimeForm => ({
     operation_name: searchTerm.trim(),
     operation_description: '',
@@ -809,10 +828,10 @@ export default function PriceBuilderPanel({
   // Inline result of a VIN decode (auto or manual), shown next to the VIN field
   // instead of a toast.
   const [vinDecodeStatus, setVinDecodeStatus] = useState<{ ok: boolean; message: string } | null>(null)
-  const { data: summary, refetch, isLoading, isError: summaryErrored, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
+  const { data: summary, refetch: refetchSummary, isLoading, isError: summaryErrored, isFetching: summaryFetching } = useQuery<PriceBuildSummary>({
     queryKey: ['price-build', orderId],
-    queryFn: async () => {
-      const response = await api.get(`/repair-orders/${orderId}/price-build`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${orderId}/price-build`, { signal })
       return response.data
     },
     // A soft-deleted order's work/labor endpoints 404 (the order is hidden from
@@ -820,14 +839,17 @@ export default function PriceBuilderPanel({
     enabled: !!orderId && !isDeleted,
   })
 
-  const { data: repairPhotos = [] } = useQuery<RepairOrderPhoto[]>({
+  const { data: repairPhotosData, isFetching: repairPhotosFetching } = useQuery<RepairOrderPhoto[]>({
     queryKey: ['repair-order-photos', orderId],
-    queryFn: async () => {
-      const response = await api.get(`/repair-orders/${orderId}/photos`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${orderId}/photos`, { signal })
       return response.data
     },
-    enabled: !!orderId && !isDeleted,
+    // The photos section starts collapsed. Do not spend a request on thumbnails
+    // and Cloudinary URLs until the operator opens that optional panel.
+    enabled: !!orderId && !isDeleted && photosOpen,
   })
+  const repairPhotos = repairPhotosData ?? []
 
   const uploadPhotoMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -847,8 +869,8 @@ export default function PriceBuilderPanel({
       setPhotoCaption('')
       queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to upload photo')
+    onError: (error: unknown) => {
+      toast.error(errorDetail(error, 'Failed to upload photo'))
     },
     onSettled: () => {
       setPendingPhotoName(null)
@@ -863,8 +885,8 @@ export default function PriceBuilderPanel({
       toast.success('Photo deleted')
       queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to delete photo')
+    onError: (error: unknown) => {
+      toast.error(errorDetail(error, 'Failed to delete photo'))
     },
   })
 
@@ -933,62 +955,55 @@ export default function PriceBuilderPanel({
   })
   const effectiveLaborTotal = effectiveLaborLines.reduce((sum, l) => sum + (parseFloat(l.total_cost || '0') || 0), 0)
 
-  const { data: partsUsed, refetch: refetchParts, isFetching: partsFetching } = useQuery<PartsUsage[]>({
+  const { data: partsUsed, isFetching: partsFetching } = useQuery<PartsUsage[]>({
     queryKey: ['price-build-parts', orderId],
-    queryFn: async () => {
-      const response = await api.get(`/repair-orders/${orderId}/parts`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${orderId}/parts`, { signal })
       return response.data
     },
     enabled: !!orderId && !isDeleted,
   })
 
-  const { data: inventory, isFetching: inventoryFetching, isError: inventoryErrored } = useQuery<InventoryItem[]>({
-    queryKey: ['inventory'],
-    queryFn: async () => {
-      const pageSize = 100
-      const first = await api.get('/inventory', { params: { paginated: true, skip: 0, limit: pageSize } })
-      const all: InventoryItem[] = [...first.data.items]
-      const total = first.data.total ?? all.length
-      // Remaining pages fetched concurrently instead of one sequential await
-      // chain — a shop with many hundred items previously meant many
-      // round trips in series, each subject to the axios client's 30s
-      // timeout, so one slow page stalled every page behind it and could
-      // push total wall-clock time well past what any single request looks
-      // like. Fetching pages in parallel bounds total time to the slowest
-      // single page instead of the sum of all of them.
-      const remainingSkips: number[] = []
-      for (let skip = pageSize; skip < total; skip += pageSize) remainingSkips.push(skip)
-      if (remainingSkips.length > 0) {
-        const rest = await Promise.all(
-          remainingSkips.map((skip) =>
-            api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
-          )
-        )
-        for (const response of rest) all.push(...response.data.items)
-      }
-      return all
+  const partSearchTerm = useDebouncedValue(searchTerm.trim(), 250)
+  const operationPartSearchTerm = useDebouncedValue(
+    operationPartPickerLineId ? (operationPartSearchByLineId[operationPartPickerLineId] || '').trim() : '',
+    250,
+  )
+  const inventorySearchTerm = addType === 'part' ? partSearchTerm : operationPartSearchTerm
+  const shouldSearchInventory = (
+    (addType === 'part' || !!operationPartPickerLineId) && inventorySearchTerm.length >= 2
+  )
+  const { data: inventory = [], isFetching: inventoryFetching, isError: inventoryErrored } = useQuery<InventoryTypeaheadItem[]>({
+    queryKey: ['inventory-typeahead', inventorySearchTerm],
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/inventory/typeahead', {
+        signal,
+        params: { q: inventorySearchTerm, limit: 20, in_stock: true },
+      })
+      return response.data
     },
-    // Shares the ['inventory'] cache entry with RepairOrdersPage's query — this
-    // panel remounts on every drawer open, and with no staleTime here that was
-    // forcing a full re-page of the catalog every time regardless of the
-    // staleTime set on the other query sharing this key.
-    staleTime: 60 * 1000,
+    // Searching a part is explicit user intent. The endpoint is tenant-scoped,
+    // capped, and avoids count/full-catalog work; cache each short query so
+    // backspacing and reopening the picker remain instant.
+    enabled: !!orderId && !isDeleted && shouldSearchInventory,
+    staleTime: 30 * 1000,
   })
 
   const { data: partSuggestions, isFetching: partSuggestionsFetching } = useQuery<PartSuggestionsResponse>({
     queryKey: ['price-build-part-suggestions', orderId],
-    queryFn: async () => {
-      const response = await api.get(`/repair-orders/${orderId}/parts/suggestions`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${orderId}/parts/suggestions`, { signal })
       return response.data
     },
-    enabled: !!orderId && !isDeleted && addType === 'part',
+    enabled: !!orderId && !isDeleted && addType === 'part' && partSearchTerm.length === 0,
   })
 
   const laborBookSearchTerm = searchTerm.trim()
   const { data: laborBookEntries = [], isFetching: laborBookEntriesFetching } = useQuery<LaborBookTimeEntry[]>({
     queryKey: ['labor-book-time', laborBookSearchTerm],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const response = await api.get('/labor-book-time', {
+        signal,
         params: laborBookSearchTerm ? { q: laborBookSearchTerm } : undefined,
       })
       return response.data
@@ -1070,13 +1085,14 @@ export default function PriceBuilderPanel({
   const hiddenHistoryCount = Math.max(0, sortedHistoryEvents.length - visibleHistoryEvents.length)
 
   const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['price-build', orderId] })
-    await queryClient.invalidateQueries({ queryKey: ['price-build-parts', orderId] })
-    await queryClient.invalidateQueries({ queryKey: ['price-build-part-suggestions', orderId] })
-    await queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
-    await queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-    await refetch()
-    await refetchParts()
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['price-build', orderId] }),
+      queryClient.invalidateQueries({ queryKey: ['price-build-parts', orderId] }),
+      queryClient.invalidateQueries({ queryKey: ['price-build-part-suggestions', orderId] }),
+      queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] }),
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] }),
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] }),
+    ])
     onUpdated?.()
   }
 
@@ -2615,25 +2631,11 @@ export default function PriceBuilderPanel({
                       .filter((s) => !forThisOrder.some((f) => f.inventory_id === s.inventory_id))
 
                     if (!forThisOrder.length && !mostUsed.length) {
-                      if (inventoryErrored) {
-                        return (
-                          <p className="px-2 py-3 text-sm text-red-600">
-                            Couldn't load inventory — this isn't necessarily empty stock.{' '}
-                            <button
-                              type="button"
-                              onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory'] })}
-                              className="font-semibold underline hover:no-underline"
-                            >
-                              Retry
-                            </button>
-                          </p>
-                        )
-                      }
-                      const fallback = (inventory || []).filter((item) => item.stock_quantity > 0).slice(0, 8)
-                      if (!fallback.length) {
-                        return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts yet.</p>
-                      }
-                      return fallback.map((item, index) => renderItemRow(item, index))
+                      return (
+                        <p className="px-2 py-3 text-sm text-gray-500">
+                          Start typing at least two characters to search in-stock inventory.
+                        </p>
+                      )
                     }
 
                     return (
@@ -2664,13 +2666,17 @@ export default function PriceBuilderPanel({
                     )
                   }
 
+                  if (term.length < 2) {
+                    return <p className="px-2 py-3 text-sm text-gray-500">Type at least two characters to search inventory.</p>
+                  }
+
                   if (inventoryErrored) {
                     return (
                       <p className="px-2 py-3 text-sm text-red-600">
-                        Couldn't load inventory to search.{' '}
+                        Couldn't search inventory.{' '}
                         <button
                           type="button"
-                          onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory'] })}
+                          onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory-typeahead', inventorySearchTerm] })}
                           className="font-semibold underline hover:no-underline"
                         >
                           Retry
@@ -2678,10 +2684,9 @@ export default function PriceBuilderPanel({
                       </p>
                     )
                   }
-                  const matches = (inventory || [])
-                    .filter((item) => item.stock_quantity > 0)
-                    .filter((item) => item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
-                    .slice(0, 8)
+                  const matches = inventory.filter((item) => (
+                    item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term)
+                  ))
                   if (!matches.length) {
                     return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts match this search.</p>
                   }
@@ -2831,11 +2836,11 @@ export default function PriceBuilderPanel({
         const renderOperationPartPicker = (line: typeof lines[number], groupedParts: typeof allParts) => {
           if (operationPartPickerLineId !== line.id) return null
           const term = (operationPartSearchByLineId[line.id] || '').trim().toLowerCase()
+          const hasSearchTerm = term.length >= 2
           const groupedInventoryIds = new Set(groupedParts.map((part) => part.inventory_id))
-          const matches = (inventory || [])
-            .filter((item) => item.stock_quantity > 0)
+          const matches = inventory
             .filter((item) => !groupedInventoryIds.has(item.id))
-            .filter((item) => !term || item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
+            .filter((item) => item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
             .slice(0, 6)
 
           return (
@@ -2860,12 +2865,14 @@ export default function PriceBuilderPanel({
                   className="h-10 w-full rounded-lg border border-orange-200 bg-white pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-orange-200"
                 />
               </div>
-              {inventoryErrored ? (
+              {!hasSearchTerm ? (
+                <p className="px-1 py-2 text-sm text-gray-500">Type at least two characters to search in-stock inventory.</p>
+              ) : inventoryErrored ? (
                 <p className="px-1 py-2 text-sm text-red-600">
-                  Couldn't load inventory.{' '}
+                  Couldn't search inventory.{' '}
                   <button
                     type="button"
-                    onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory'] })}
+                    onClick={() => queryClient.invalidateQueries({ queryKey: ['inventory-typeahead', inventorySearchTerm] })}
                     className="font-semibold underline hover:no-underline"
                   >
                     Retry
@@ -2982,7 +2989,7 @@ export default function PriceBuilderPanel({
               <p className="mt-1 text-sm text-gray-500">This isn't necessarily an empty order — the request failed.</p>
               <button
                 type="button"
-                onClick={() => refetch()}
+                onClick={() => refetchSummary()}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
               >
                 Retry
@@ -3137,7 +3144,11 @@ export default function PriceBuilderPanel({
         {showRecommendedServicesPanel && (
           <button
             type="button"
-            onClick={() => setRecommendedOpen((open) => !open)}
+            onClick={() => setRecommendedOpen((open) => {
+              const next = !open
+              onRecommendedServicesOpenChange?.(next)
+              return next
+            })}
             className="flex w-full items-center justify-between rounded-xl border-t border-gray-100 px-2 py-3 text-left hover:bg-gray-50"
           >
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
@@ -3204,7 +3215,11 @@ export default function PriceBuilderPanel({
                 </div>
               </div>
             )}
-            {recommendedServices?.length ? (
+            {recommendedServicesLoading ? (
+              <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-3 text-sm text-gray-500">
+                <Spinner size="xs" /> Loading recommended services…
+              </div>
+            ) : recommendedServices?.length ? (
               <ul className="divide-y divide-gray-200 rounded-xl bg-white">
                 {recommendedServices.map((svc) => (
                   <li key={svc.id} className={`flex items-start gap-3 p-3 ${svc.is_resolved ? 'opacity-50' : ''}`}>
@@ -3256,7 +3271,7 @@ export default function PriceBuilderPanel({
             Order Total footer. Adding is only allowed while the order is open;
             on a finalized order with no photos there's nothing to show, so the
             whole section is hidden. */}
-        {!isDeleted && !(isFinalized && repairPhotos.length === 0) && (
+        {!isDeleted && !(isFinalized && repairPhotosData !== undefined && repairPhotos.length === 0) && (
           <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
             <button
               type="button"
@@ -3267,7 +3282,11 @@ export default function PriceBuilderPanel({
               <span className="min-w-0">
                 <span className="block text-xs font-bold uppercase tracking-[0.16em] text-gray-400">Repair photos</span>
                 <span className="mt-0.5 block text-sm font-semibold text-gray-900">
-                  {repairPhotos.length ? `${repairPhotos.length} photo${repairPhotos.length === 1 ? '' : 's'} attached` : 'No photos attached'}
+                  {repairPhotosData === undefined
+                    ? 'Open to view repair photos'
+                    : repairPhotos.length
+                      ? `${repairPhotos.length} photo${repairPhotos.length === 1 ? '' : 's'} attached`
+                      : 'No photos attached'}
                 </span>
               </span>
               <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
@@ -3322,7 +3341,11 @@ export default function PriceBuilderPanel({
                     </label>
                   </div>
                 )}
-                {(repairPhotos.length > 0 || uploadPhotoMutation.isPending) ? (
+                {repairPhotosFetching ? (
+                  <div className="mt-3 inline-flex items-center gap-2 text-sm text-gray-500">
+                    <Spinner size="xs" /> Loading repair photos…
+                  </div>
+                ) : (repairPhotos.length > 0 || uploadPhotoMutation.isPending) ? (
                   <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${isFinalized ? '' : 'mt-3'}`}>
                     {uploadPhotoMutation.isPending && (
                       <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
@@ -3528,7 +3551,7 @@ export default function PriceBuilderPanel({
                   {summaryLoadFailed && (
                     <button
                       type="button"
-                      onClick={() => refetch()}
+                      onClick={() => refetchSummary()}
                       className="ml-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 hover:bg-red-200"
                     >
                       Retry

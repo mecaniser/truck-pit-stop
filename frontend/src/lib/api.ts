@@ -48,6 +48,14 @@ const processQueue = (error: unknown, token: string | null = null) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // React Query uses AbortSignal to cancel stale navigation requests. An
+    // aborted request must not enter the 401 refresh/logout flow: it is not an
+    // authentication failure and retrying it would recreate the request we
+    // intentionally stopped.
+    if (axios.isCancel(error)) {
+      return Promise.reject(error)
+    }
+
     const originalRequest = error.config
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/')
 

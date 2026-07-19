@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, or_
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from decimal import Decimal
@@ -18,6 +18,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.service import Service, ServiceCategory, ServicePart
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.core.config import settings
+from app.schemas.typeahead import ServiceTypeaheadResponse
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
 
 router = APIRouter()
@@ -136,7 +137,12 @@ async def _resolve_tenant_id(current_user: User, db: AsyncSession) -> Optional[U
         return current_user.tenant_id
     if current_user.customer_id:
         from app.db.models.customer import Customer
-        result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
+        result = await db.execute(
+            select(Customer).where(
+                Customer.id == current_user.customer_id,
+                Customer.deleted_at.is_(None),
+            )
+        )
         customer = result.scalar_one_or_none()
         if customer:
             return customer.tenant_id
@@ -459,6 +465,52 @@ async def list_services(
     labor_rate = await _get_labor_rate(db, tenant_id)
     items = [_serialize_service(s, labor_rate, include_category=True) for s in services]
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/typeahead", response_model=List[ServiceTypeaheadResponse])
+async def service_typeahead(
+    q: Optional[str] = Query(None, max_length=100, description="Match active service name or description"),
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return active service choices without loading bundled parts or pricing.
+
+    The selected service is re-read and priced by the authoritative price-build
+    mutation.  Keeping this lookup to one capped query prevents opening a
+    repair-order form from loading every service and every bundle part.
+    """
+    tenant_id = await _resolve_tenant_id(current_user, db)
+    if not tenant_id:
+        return []
+
+    filters = [
+        Service.tenant_id == tenant_id,
+        Service.deleted_at.is_(None),
+        Service.is_active.is_(True),
+    ]
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{term}%"
+        filters.append(or_(Service.name.ilike(pattern), Service.description.ilike(pattern)))
+
+    result = await db.execute(
+        select(Service)
+        .where(*filters)
+        .order_by(Service.sort_order, func.lower(Service.name), Service.id)
+        .limit(limit)
+    )
+    return [
+        ServiceTypeaheadResponse(
+            id=service.id,
+            name=service.name,
+            description=service.description,
+            duration_minutes=service.duration_minutes,
+            base_price=service.base_price,
+            requires_vehicle=service.requires_vehicle,
+        )
+        for service in result.scalars().all()
+    ]
 
 
 class PreloadServicesResult(BaseModel):

@@ -3131,4 +3131,26 @@
 
 ## Delivery Plan
 - [x] Commit the initial availability-hardening slice as one atomic release: application safeguards, Railway preflight hook, tests, and delivery record.
-- [ ] Push `main`, deploy the linked Railway service, and verify the deployment reaches an active state with the schema preflight succeeding.
+- [x] Push `main`, deploy the linked Railway service, and verify the deployment reaches an active state with the schema preflight succeeding.
+
+---
+
+# Repair-Order Workspace Request Reduction (2026-07-19)
+
+## Plan
+- [x] Reconfirm the current list/drawer request graph and identify data that is required for the first paint versus optional panels.
+- [x] Thread React Query abort signals through the shared API client so closed drawers and superseded pages stop consuming server/database capacity.
+- [x] Replace eager whole-tenant catalog loading in the repair-order drawer with scoped, debounced server-side lookups and capped results.
+- [x] Make optional drawer panels lazy and preserve exact query keys after mutations instead of broad invalidation/refetch chains.
+- [x] Add focused frontend/backend tests, production-build validation, and a request-count regression check before independently deploying the slice.
+
+## Progress Notes
+- [x] Initial production evidence: a single repair-order drawer currently fans out into order detail, price build, parts, photos, quotes/recommendations, and whole-catalog requests. This is the next direct UI-latency target after the production safety release.
+- [x] Replaced full customer, vehicle, service, and inventory catalog scans with tenant-scoped `typeahead` endpoints (20 results, 250 ms debounce). These are only enabled while creating a repair order; opening an existing drawer no longer starts any of those scans.
+- [x] Passed React Query abort signals through repair-order queries and Axios; cancellation now bypasses the token-refresh path. Closing or superseding a drawer cancels stale order-specific reads.
+- [x] Deferred repair photos and recommended-services requests until their panels open. Resetting the optional panels on order navigation prevents the prior order's expanded accordion state from triggering requests for the next one.
+- [x] Removed the Price Builder's duplicate explicit refetch after invalidation and its separate full-inventory owner. Price/part mutations now rely on the single active-query invalidation pass.
+- [x] Verified: tenant/scope/cap response tests (2), cancellation tests (2), frontend TypeScript, frontend production build, and `git diff --check` all pass.
+
+## Review
+- A regular repair-order drawer now avoids whole-tenant catalogue paging and optional panel fetches on first paint. New-order pickers fetch only small server-filtered result sets, and the part picker queries in-stock inventory only after two search characters. This removes the dominant request amplification path identified in production while preserving selected picker values and server-side pricing.

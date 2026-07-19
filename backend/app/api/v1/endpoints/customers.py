@@ -32,6 +32,7 @@ from app.schemas.customer import (
     CustomerMergeRequest,
     CustomerMergeResult,
 )
+from app.schemas.typeahead import CustomerTypeaheadResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
@@ -388,6 +389,74 @@ async def list_customers(
     vehicle_info = await get_customer_vehicle_info(db, cust_ids)
     items = [_customer_response_with_balance(c, balances, vehicle_info, search) for c in customers]
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/typeahead", response_model=List[CustomerTypeaheadResponse])
+async def customer_typeahead(
+    q: Optional[str] = Query(None, max_length=100, description="Match customer name, company, email, or phone"),
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return a small, capped customer picker payload for the RO workspace.
+
+    This deliberately avoids the full customer-list endpoint's count query,
+    balance aggregation, and vehicle aggregation.  An empty query is useful
+    for an initial picker view, but remains strictly capped.
+    """
+    filters = [Customer.deleted_at.is_(None)]
+
+    if current_user.role == UserRole.CUSTOMER:
+        if not current_user.customer_id:
+            return []
+        filters.append(Customer.id == current_user.customer_id)
+    else:
+        if not current_user.tenant_id:
+            return []
+        filters.append(Customer.tenant_id == current_user.tenant_id)
+        # Mirror the existing customer list: the house account belongs in the
+        # dedicated fleet workflow, except for fleet managers who need it.
+        if current_user.role == UserRole.FLEET_MANAGER:
+            filters.append(Customer.is_internal_fleet.is_(True))
+        else:
+            filters.append(Customer.is_internal_fleet.is_(False))
+
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{term}%"
+        filters.append(
+            or_(
+                Customer.first_name.ilike(pattern),
+                Customer.last_name.ilike(pattern),
+                Customer.company_name.ilike(pattern),
+                Customer.email.ilike(pattern),
+                Customer.phone.ilike(pattern),
+                Customer.usdot_number.ilike(pattern),
+                Customer.mc_number.ilike(pattern),
+            )
+        )
+
+    result = await db.execute(
+        select(Customer)
+        .where(*filters)
+        .order_by(
+            func.lower(func.coalesce(Customer.company_name, Customer.first_name)),
+            func.lower(Customer.last_name),
+            Customer.id,
+        )
+        .limit(limit)
+    )
+    return [
+        CustomerTypeaheadResponse(
+            id=customer.id,
+            first_name=customer.first_name,
+            last_name=customer.last_name,
+            company_name=customer.company_name,
+            email=customer.email,
+            phone=customer.phone,
+        )
+        for customer in result.scalars().all()
+    ]
 
 
 @router.get("/internal-fleet", response_model=CustomerResponse)

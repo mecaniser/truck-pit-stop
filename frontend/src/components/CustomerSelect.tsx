@@ -1,11 +1,19 @@
 import { Spinner } from '@/components/ui'
 import BaseSelect from './BaseSelect'
-import { Customer } from '../types'
 import { formatUSPhone } from '../utils/phone'
 import { customerDisplayName, customerPersonalName } from '../lib/customerName'
 
+export interface CustomerSelectItem {
+  id: string
+  first_name: string
+  last_name: string
+  company_name: string | null
+  email?: string | null
+  phone?: string | null
+}
+
 interface CustomerSelectProps {
-  customers: Customer[]
+  customers: CustomerSelectItem[]
   value: string
   onChange: (id: string) => void
   placeholder?: string
@@ -21,6 +29,12 @@ interface CustomerSelectProps {
   /** While true, the select is disabled and shows a "Loading customers…" state
    * instead of an empty/unresponsive-looking dropdown. */
   isLoading?: boolean
+  /** Receive the live picker query when results are supplied by a server-side
+   * typeahead rather than the complete customer catalog. */
+  onQueryChange?: (query: string) => void
+  /** Show BaseSelect's in-menu searching state while a typeahead request is
+   * debouncing or in flight. */
+  searchLoading?: boolean
 }
 
 export default function CustomerSelect({
@@ -36,11 +50,13 @@ export default function CustomerSelect({
   phoneValue = '',
   onPhoneChange,
   isLoading = false,
+  onQueryChange,
+  searchLoading = false,
 }: CustomerSelectProps) {
   const selectedCustomer = customers.find((c) => c.id === value)
   const needsPhone = phoneRequired && !!selectedCustomer && !selectedCustomer.phone
 
-  function subLabel(c: Customer): string | undefined {
+  function subLabel(c: CustomerSelectItem): string | undefined {
     if (subLabelField === 'phone') {
       return c.phone ? formatUSPhone(c.phone) : 'no phone'
     }
@@ -77,6 +93,8 @@ export default function CustomerSelect({
           addNewLabel="+ Add new customer"
           onAddNew={onAddNew}
           variant={variant}
+          onQueryChange={onQueryChange}
+          loading={searchLoading}
         />
       )}
 

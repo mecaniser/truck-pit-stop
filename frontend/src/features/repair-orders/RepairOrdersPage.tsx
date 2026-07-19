@@ -6,7 +6,7 @@ import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Service, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -16,7 +16,6 @@ import CustomerSelect from '../../components/CustomerSelect'
 import { customerDisplayName as customerNameOf, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { formatUSPhone } from '@/utils/phone'
-import { getServiceStockStatus } from '@/utils/serviceStock'
 import BaseSelect from '../../components/BaseSelect'
 import QuantityStepper from '@/components/QuantityStepper'
 import ViewToggle from '@/components/ViewToggle'
@@ -26,7 +25,6 @@ import { useWebSocket } from '../../hooks/useWebSocket'
 import { useAuthStore } from '@/stores/authStore'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
-import SuggestingInput from '@/components/SuggestingInput'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
 
 interface NewCustomerForm {
@@ -56,6 +54,41 @@ interface NewVehicleForm {
   mileage: string
 }
 
+type CustomerTypeaheadItem = {
+  id: string
+  first_name: string
+  last_name: string
+  company_name: string | null
+  email: string
+  phone: string | null
+}
+
+type VehicleTypeaheadItem = {
+  id: string
+  customer_id: string
+  make: string
+  model: string
+  year: number | null
+  unit_number: string | null
+  license_plate: string | null
+  vin: string | null
+}
+
+type ServiceTypeaheadItem = {
+  id: string
+  name: string
+  description: string | null
+  duration_minutes: number
+  base_price: string | null
+  requires_vehicle: boolean
+}
+
+type CustomerLookupItem = Pick<CustomerTypeaheadItem, 'id' | 'first_name' | 'last_name' | 'company_name' | 'email' | 'phone'> & {
+  source?: string | null
+}
+
+type VehicleLookupItem = VehicleTypeaheadItem
+
 type ApiErrorLike = {
   response?: {
     data?: {
@@ -72,7 +105,7 @@ type ManualPaymentResponse = {
   warning?: string | null
 }
 
-const isWalkInPlaceholderCustomer = (customer?: Customer | null): boolean => {
+const isWalkInPlaceholderCustomer = (customer?: CustomerLookupItem | null): boolean => {
   if (!customer) return false
   const email = (customer.email || '').toLowerCase()
   const firstName = (customer.first_name || '').toLowerCase()
@@ -178,15 +211,16 @@ export default function RepairOrdersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('')
+  const [customerQuery, setCustomerQuery] = useState('')
+  const [vehicleQuery, setVehicleQuery] = useState('')
+  const [selectedCustomerOption, setSelectedCustomerOption] = useState<CustomerTypeaheadItem | null>(null)
+  const [selectedVehicleOption, setSelectedVehicleOption] = useState<VehicleTypeaheadItem | null>(null)
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
   const [mileageIn, setMileageIn] = useState('')
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
-  // Inline stock-replenish state (keyed by inventory_id) for the new-RO modal's warning panel.
-  const [replenishingId, setReplenishingId] = useState<string | null>(null)
-  const [replenishValue, setReplenishValue] = useState<string>('')
-  const [replenishSaving, setReplenishSaving] = useState(false)
+  const [selectedServiceOptions, setSelectedServiceOptions] = useState<ServiceTypeaheadItem[]>([])
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -239,7 +273,11 @@ export default function RepairOrdersPage() {
   const [captureZelleSender, setCaptureZelleSender] = useState(false)
   const [showAmountBreakdown, setShowAmountBreakdown] = useState(false)
   const [showAddRecService, setShowAddRecService] = useState(false)
+  const [recommendedServicesOpen, setRecommendedServicesOpen] = useState(false)
   const [recServiceForm, setRecServiceForm] = useState({ description: '', priority: 'soon' as RecommendedServicePriority, estimated_cost: '', notes: '' })
+  const debouncedCustomerQuery = useDebouncedValue(customerQuery.trim(), 250)
+  const debouncedVehicleQuery = useDebouncedValue(vehicleQuery.trim(), 250)
+  const debouncedServiceSearch = useDebouncedValue(serviceSearch.trim(), 250)
 
   const openZellePaymentModal = (mode: ZelleModalMode = 'collect') => {
     setShowInvoicePaymentOptions(false)
@@ -268,8 +306,9 @@ export default function RepairOrdersPage() {
   // the API instead of loading every order and filtering in the browser.
   const orderPageKey = (p: number) =>
     ['repair-orders', { page: p, search: debouncedSearch, status: statusFilter }] as const
-  const fetchOrderPage = async (p: number) => {
+  const fetchOrderPage = async (p: number, signal?: AbortSignal) => {
     const response = await api.get('/repair-orders', {
+      signal,
       params: {
         paginated: true,
         skip: p * RO_PAGE_SIZE,
@@ -286,7 +325,7 @@ export default function RepairOrdersPage() {
   }
   const { data: orderPage, isLoading, isPlaceholderData, isFetching } = useQuery({
     queryKey: orderPageKey(page),
-    queryFn: () => fetchOrderPage(page),
+    queryFn: ({ signal }) => fetchOrderPage(page, signal),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
@@ -299,7 +338,7 @@ export default function RepairOrdersPage() {
     if (orderPage?.has_more && !isPlaceholderData) {
       queryClient.prefetchQuery({
         queryKey: orderPageKey(page + 1),
-        queryFn: () => fetchOrderPage(page + 1),
+        queryFn: ({ signal }) => fetchOrderPage(page + 1, signal),
         staleTime: 30_000,
       })
     }
@@ -328,6 +367,17 @@ export default function RepairOrdersPage() {
     setAddPartQuantity(1)
   }
 
+  const cancelOrderQueries = (orderId: string) => {
+    queryClient.cancelQueries({ queryKey: ['repair-order-detail', orderId] })
+    queryClient.cancelQueries({ queryKey: ['price-build', orderId] })
+    queryClient.cancelQueries({ queryKey: ['repair-order-photos', orderId] })
+    queryClient.cancelQueries({ queryKey: ['price-build-parts', orderId] })
+    queryClient.cancelQueries({ queryKey: ['price-build-part-suggestions', orderId] })
+    queryClient.cancelQueries({ queryKey: ['quote', orderId] })
+    queryClient.cancelQueries({ queryKey: ['invoice-for-order', orderId] })
+    queryClient.cancelQueries({ queryKey: ['recommended-services', orderId] })
+  }
+
   const openDetail = (order: RepairOrder) => {
     // Rapid prev/next through the work queue (e.g. paging through 20+ orders
     // in a few seconds) was leaving every previous order's detail/price-build/
@@ -337,13 +387,7 @@ export default function RepairOrdersPage() {
     // for the order actually on screen. Cancel the outgoing order's in-flight
     // queries so only the order you're actually looking at is still fetching.
     if (selectedOrder?.id && selectedOrder.id !== order.id) {
-      queryClient.cancelQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
-      queryClient.cancelQueries({ queryKey: ['price-build', selectedOrder.id] })
-      queryClient.cancelQueries({ queryKey: ['price-build-parts', selectedOrder.id] })
-      queryClient.cancelQueries({ queryKey: ['price-build-part-suggestions', selectedOrder.id] })
-      queryClient.cancelQueries({ queryKey: ['quote', selectedOrder.id] })
-      queryClient.cancelQueries({ queryKey: ['invoice-for-order', selectedOrder.id] })
-      queryClient.cancelQueries({ queryKey: ['recommended-services', selectedOrder.id] })
+      cancelOrderQueries(selectedOrder.id)
     }
     applyDetailState(order)
     // Fresh open pushes ?selected= so Back/close return to the view underneath;
@@ -353,6 +397,7 @@ export default function RepairOrdersPage() {
   }
 
   const clearDetailState = () => {
+    if (selectedOrder?.id) cancelOrderQueries(selectedOrder.id)
     setSelectedOrder(null)
     setIsDetailOpen(false)
     setQuoteSent(false)
@@ -394,8 +439,9 @@ export default function RepairOrdersPage() {
       applyDetailState(order)
       return
     }
+    const controller = new AbortController()
     let cancelled = false
-    api.get(`/repair-orders/${selectedId}/detail`)
+    api.get(`/repair-orders/${selectedId}/detail`, { signal: controller.signal })
       .then((response) => {
         if (cancelled) return
         queryClient.setQueryData(['repair-order-detail', selectedId], response.data)
@@ -406,133 +452,96 @@ export default function RepairOrdersPage() {
         toast.error("Couldn't open that repair order — it may have been deleted")
         setSearchParams({}, { replace: true })
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, orders, isDetailOpen, selectedOrder?.id])
 
-  // The full customer / vehicle / service lists are only needed by the create
-  // and edit forms — not to render the paginated list, which carries its own
-  // denormalized customer/vehicle summaries. Load them lazily when a form opens.
-  const needsFormData = isModalOpen || isDetailOpen
-
-  const { data: customers, isLoading: isLoadingCustomers } = useQuery<Customer[]>({
-    queryKey: ['customers'],
-    queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: Customer[] = []
-      while (true) {
-        const response = await api.get('/customers', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
+  // Picker data is only needed to create a repair order. Each lookup is a
+  // capped, debounced server-side typeahead, so opening an existing order no
+  // longer pages through every customer, vehicle, and service in the tenant.
+  const { data: customerResults = [], isLoading: isLoadingCustomers, isFetching: isFetchingCustomers } = useQuery<CustomerTypeaheadItem[]>({
+    queryKey: ['customer-typeahead', debouncedCustomerQuery],
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/customers/typeahead', {
+        signal,
+        params: { q: debouncedCustomerQuery || undefined, limit: 20 },
+      })
+      return response.data
     },
-    enabled: needsFormData,
-    // This pages through the whole tenant's customer list, so it's expensive
-    // to redo on every drawer open. Mutations that add/edit a customer
-    // explicitly invalidate this key, so a resting cache here is safe.
-    staleTime: 5 * 60 * 1000,
+    enabled: isModalOpen,
+    staleTime: 30_000,
   })
 
   // Fleet company name, so internal fleet ROs show the fleet operator (e.g.
   // "77 Cargo") as the customer instead of the generic house account.
   const { data: fleetSettings } = useQuery<{ fleet_company_name: string | null }>({
     queryKey: ['fleet-settings'],
-    queryFn: async () => {
-      const response = await api.get('/fleet/settings')
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/fleet/settings', { signal })
       return response.data
     },
   })
 
-  const { data: vehicles } = useQuery<Vehicle[]>({
-    queryKey: ['vehicles'],
-    queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: Vehicle[] = []
-      while (true) {
-        const response = await api.get('/vehicles', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
+  const { data: vehicleResults = [], isFetching: isFetchingVehicles } = useQuery<VehicleTypeaheadItem[]>({
+    queryKey: ['vehicle-typeahead', selectedCustomerId, debouncedVehicleQuery],
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/vehicles/typeahead', {
+        signal,
+        params: {
+          customer_id: selectedCustomerId,
+          q: debouncedVehicleQuery || undefined,
+          limit: 20,
+        },
+      })
+      return response.data
     },
-    enabled: needsFormData,
-    // Same rationale as the customers query above — full-table fetch, so
-    // avoid redoing it on every drawer open. Vehicle mutations invalidate it.
-    staleTime: 5 * 60 * 1000,
+    enabled: isModalOpen && !!selectedCustomerId && selectedCustomerId !== 'add_new',
+    staleTime: 30_000,
   })
 
-  const { data: services, refetch: refetchServices } = useQuery<Service[]>({
-    queryKey: ['services'],
-    queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: Service[] = []
-      while (true) {
-        const response = await api.get('/services', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
+  const { data: serviceResults = [], isLoading: isLoadingServices, isFetching: isFetchingServices } = useQuery<ServiceTypeaheadItem[]>({
+    queryKey: ['service-typeahead', debouncedServiceSearch],
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/services/typeahead', {
+        signal,
+        params: { q: debouncedServiceSearch || undefined, limit: 20 },
+      })
+      return response.data
     },
-    // Stock can change in another tab (e.g. user replenished from the warning panel),
-    // so refresh when the user comes back to this tab.
-    refetchOnWindowFocus: true,
-    enabled: needsFormData,
-    staleTime: 60 * 1000,
+    enabled: isModalOpen,
+    staleTime: 30_000,
   })
 
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
     queryKey: ['mechanics'],
-    queryFn: async () => {
-      const response = await api.get('/dashboard/stats')
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/dashboard/stats', { signal })
       return response.data?.mechanic_workload || []
     },
   })
 
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading } = useQuery<RepairOrderDetail>({
     queryKey: ['repair-order-detail', selectedOrder?.id],
-    queryFn: async () => {
-      const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`, { signal })
       return response.data
     },
     enabled: !!(selectedOrder?.id && isDetailOpen),
   })
 
-  const { data: inventory } = useQuery<InventoryItem[]>({
-    queryKey: ['inventory'],
-    queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: InventoryItem[] = []
-      while (true) {
-        const response = await api.get('/inventory', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
-    },
-    enabled: isDetailOpen,
-    // Stock levels move during a shift (parts added to other orders), so a
-    // shorter window than customers/vehicles — but still avoids re-paging
-    // the whole catalog every time a different order's drawer is opened.
-    staleTime: 60 * 1000,
-  })
+  // PriceBuilderPanel owns the part picker and fetches it only when the user
+  // opens that control. The legacy inline editor is disabled; keep its empty
+  // placeholder below solely so the dormant JSX remains type-safe without
+  // triggering a catalog download whenever a drawer opens.
+  const inventory: InventoryItem[] = []
 
   const { data: quoteForOrder, refetch: refetchQuote } = useQuery<Quote | null>({
     queryKey: ['quote', selectedOrder?.id],
-    queryFn: async () => {
-      const response = await api.get(`/quotes?repair_order_id=${selectedOrder!.id}`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/quotes?repair_order_id=${selectedOrder!.id}`, { signal })
       return response.data
     },
     enabled: !!(selectedOrder?.id && isDetailOpen),
@@ -540,21 +549,31 @@ export default function RepairOrdersPage() {
 
   const { data: invoiceForOrder } = useQuery<Invoice | null>({
     queryKey: ['invoice-for-order', selectedOrder?.id],
-    queryFn: async () => {
-      const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/invoices?repair_order_id=${selectedOrder!.id}`, { signal })
       const invoices = response.data
       return invoices.length > 0 ? invoices[0] : null
     },
     enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
   })
 
-  const { data: recommendedServices, refetch: refetchRecServices } = useQuery<RecommendedService[]>({
+  const { data: recommendedServices, refetch: refetchRecServices, isFetching: recommendedServicesFetching } = useQuery<RecommendedService[]>({
     queryKey: ['recommended-services', selectedOrder?.id],
-    queryFn: async () => {
-      const response = await api.get(`/repair-orders/${selectedOrder!.id}/recommended-services`)
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/repair-orders/${selectedOrder!.id}/recommended-services`, { signal })
       return response.data
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen),
+    // This is a collapsed optional panel in the active price-builder drawer.
+    // Fetch it on intent, while retaining the existing behavior for the
+    // non-price-builder legacy detail shell where the list is visible.
+    enabled: !!(
+      selectedOrder?.id
+      && isDetailOpen
+      && (
+        recommendedServicesOpen
+        || !PRICE_BUILDER_STATUSES.includes((orderDetail ?? selectedOrder).status)
+      )
+    ),
   })
 
   const addRecServiceMutation = useMutation({
@@ -584,8 +603,8 @@ export default function RepairOrdersPage() {
 
   const { data: zelleSettings } = useQuery<{ zelle_email: string | null; zelle_phone: string | null; zelle_qr_image: string | null }>({
     queryKey: ['zelle-settings'],
-    queryFn: async () => {
-      const response = await api.get('/admin/zelle-settings')
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/admin/zelle-settings', { signal })
       return response.data
     },
     enabled: showZelleQrModal,
@@ -593,8 +612,8 @@ export default function RepairOrdersPage() {
 
   const { data: taxFeeSettings } = useQuery<{ labor_rate: number }>({
     queryKey: ['tax-fee-settings'],
-    queryFn: async () => {
-      const response = await api.get('/admin/tax-fee-settings')
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/admin/tax-fee-settings', { signal })
       return response.data
     },
   })
@@ -610,22 +629,43 @@ export default function RepairOrdersPage() {
   useEffect(() => {
     setInvoiceDueDate('')
     setShowInvoiceCreateOptions(false)
+    setRecommendedServicesOpen(false)
   }, [selectedOrder?.id])
 
-  const filteredVehicles = useMemo(() => {
-    if (!vehicles) return []
-    if (selectedCustomerId) {
-      return vehicles.filter((v) => v.customer_id === selectedCustomerId)
-    }
-    return []
-  }, [vehicles, selectedCustomerId])
+  // Keep selected values in the option sets even after BaseSelect clears its
+  // query or a new service search replaces the result page. This makes the
+  // closed controls stable without keeping an entire tenant catalog in memory.
+  const customerOptions = useMemo(() => {
+    const byId = new Map<string, CustomerTypeaheadItem>()
+    customerResults.forEach((item) => byId.set(item.id, item))
+    if (selectedCustomerOption) byId.set(selectedCustomerOption.id, selectedCustomerOption)
+    return [...byId.values()]
+  }, [customerResults, selectedCustomerOption])
+
+  const vehicleOptions = useMemo(() => {
+    const byId = new Map<string, VehicleTypeaheadItem>()
+    vehicleResults.forEach((item) => byId.set(item.id, item))
+    if (selectedVehicleOption) byId.set(selectedVehicleOption.id, selectedVehicleOption)
+    return [...byId.values()]
+  }, [vehicleResults, selectedVehicleOption])
+
+  const serviceOptions = useMemo(() => {
+    const byId = new Map<string, ServiceTypeaheadItem>()
+    serviceResults.forEach((item) => byId.set(item.id, item))
+    selectedServiceOptions.forEach((item) => byId.set(item.id, item))
+    return [...byId.values()]
+  }, [serviceResults, selectedServiceOptions])
+
+  const filteredVehicles = useMemo(
+    () => vehicleOptions.filter((vehicle) => vehicle.customer_id === selectedCustomerId),
+    [vehicleOptions, selectedCustomerId],
+  )
 
   // Seed the lookups from each order's denormalized customer/vehicle summary so
-  // list rows render without loading the full customer/vehicle tables. When the
-  // full lists are loaded (e.g. the create/edit modal is open) those richer
-  // objects take precedence.
+  // list rows render without loading the full customer/vehicle tables. Picker
+  // results fill any currently visible records with their richer labels.
   const customerLookup = useMemo(() => {
-    const map = new Map<string, Partial<Customer>>()
+    const map = new Map<string, CustomerLookupItem>()
     orders?.forEach((o) => {
       if (o.customer_id && !map.has(o.customer_id)) {
         map.set(o.customer_id, {
@@ -633,32 +673,34 @@ export default function RepairOrdersPage() {
           first_name: o.customer_first_name ?? '',
           last_name: o.customer_last_name ?? '',
           company_name: o.customer_company_name ?? null,
-          email: o.customer_email ?? null,
+          email: o.customer_email ?? '',
           phone: o.customer_phone ?? null,
-        } as Partial<Customer>)
+        })
       }
     })
-    customers?.forEach((c) => map.set(c.id, c))
-    return map as Map<string, Customer>
-  }, [orders, customers])
+    customerOptions.forEach((customer) => map.set(customer.id, customer))
+    return map
+  }, [orders, customerOptions])
 
   const vehicleLookup = useMemo(() => {
-    const map = new Map<string, Partial<Vehicle>>()
+    const map = new Map<string, VehicleLookupItem>()
     orders?.forEach((o) => {
       if (o.vehicle_id && !map.has(o.vehicle_id)) {
         map.set(o.vehicle_id, {
           id: o.vehicle_id,
-          make: o.vehicle_make,
-          model: o.vehicle_model,
+          customer_id: o.customer_id,
+          make: o.vehicle_make || '',
+          model: o.vehicle_model || '',
           year: o.vehicle_year,
           unit_number: o.vehicle_unit_number,
           vin: o.vehicle_vin,
-        } as Partial<Vehicle>)
+          license_plate: null,
+        })
       }
     })
-    vehicles?.forEach((v) => map.set(v.id, v))
-    return map as Map<string, Vehicle>
-  }, [orders, vehicles])
+    vehicleOptions.forEach((vehicle) => map.set(vehicle.id, vehicle))
+    return map
+  }, [orders, vehicleOptions])
 
   const mechanicLookup = useMemo(() => {
     const map = new Map<string, string>()
@@ -678,7 +720,7 @@ export default function RepairOrdersPage() {
 
   // Display name for an order in a list row: fleet company for internal ROs,
   // else the customer's company name (primary) / personal name (fallback).
-  const orderCustomerName = (order: RepairOrder, customer?: Customer | null, fallback = '—'): string =>
+  const orderCustomerName = (order: RepairOrder, customer?: CustomerLookupItem | null, fallback = '—'): string =>
     order.is_internal
       ? (fleetSettings?.fleet_company_name || 'Internal Fleet')
       : customerNameOf(customer, fallback)
@@ -857,7 +899,7 @@ export default function RepairOrdersPage() {
       invalidateOrderBoards()
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['price-build', updated.id] })
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] })
       setSelectedOrder(updated)
       toast.success(`Repair order ${updated.order_number} restored`)
       // While the order sat deleted its parts went back on the shelf and may
@@ -1049,7 +1091,7 @@ export default function RepairOrdersPage() {
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-typeahead'] })
       if (selectedOrder?.id) {
         queryClient.invalidateQueries({ queryKey: ['repair-order-detail', selectedOrder.id] })
         setSelectedOrder(prev => prev ? { ...prev, status: 'paid' } : null)
@@ -1659,11 +1701,16 @@ export default function RepairOrdersPage() {
   const resetModal = () => {
     setSelectedCustomerId('')
     setSelectedVehicleId('')
+    setCustomerQuery('')
+    setVehicleQuery('')
+    setSelectedCustomerOption(null)
+    setSelectedVehicleOption(null)
     setShowNewVehicleForm(false)
     setDescription('')
     setMileageIn('')
     setServiceSearch('')
     setSelectedServiceIds([])
+    setSelectedServiceOptions([])
     setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
     setNewVehicle({ make: '', model: '', year: '', vin: '', license_plate: '', mileage: '' })
   }
@@ -1728,7 +1775,7 @@ export default function RepairOrdersPage() {
         finalVehicleId = createdVehicle.id
         finalCustomerId = createdVehicle.customer_id
       } else {
-        const vehicle = vehicles?.find((v) => v.id === selectedVehicleId)
+        const vehicle = vehicleOptions.find((item) => item.id === selectedVehicleId)
         if (!vehicle) {
           toast.error('Selected vehicle not found')
           return
@@ -1742,17 +1789,17 @@ export default function RepairOrdersPage() {
         return
       }
 
-      const selectedServiceText = services
-        ?.filter((svc) => selectedServiceIds.includes(svc.id))
+      const selectedServiceText = selectedServiceOptions
+        .filter((svc) => selectedServiceIds.includes(svc.id))
         .map((svc) => svc.name)
         .join(' • ')
 
-      const selectedServicePayload = services
-        ?.filter((svc) => selectedServiceIds.includes(svc.id))
+      const selectedServicePayload = selectedServiceOptions
+        .filter((svc) => selectedServiceIds.includes(svc.id))
         .map((svc) => ({
           id: svc.id,
           name: svc.name,
-        })) || []
+        }))
 
       const combinedDescription = [selectedServiceText, description.trim()].filter(Boolean).join(' — ')
 
@@ -1796,8 +1843,8 @@ export default function RepairOrdersPage() {
 
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['quote', createdOrder.id] })
-      queryClient.invalidateQueries({ queryKey: ['customers'] })
-      queryClient.invalidateQueries({ queryKey: ['vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-typeahead'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-typeahead'] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       if (createdQuoteNumber) {
         toast.success(`Repair order ${createdOrder.order_number} created — Quote ${createdQuoteNumber} ready to send`)
@@ -2202,18 +2249,25 @@ export default function RepairOrdersPage() {
                         <div className="flex-1">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
                           <CustomerSelect
-                            customers={customers || []}
-                            isLoading={isLoadingCustomers}
+                            customers={customerOptions}
+                            isLoading={isLoadingCustomers && customerOptions.length === 0}
+                            searchLoading={isFetchingCustomers}
                             value={selectedCustomerId}
+                            onQueryChange={setCustomerQuery}
                             onChange={(val) => {
                               if (val === 'add_new') {
                                 setSelectedCustomerId('add_new')
+                                setSelectedCustomerOption(null)
                                 setSelectedVehicleId('')
+                                setSelectedVehicleOption(null)
                                 setShowNewVehicleForm(true)
                                 return
                               }
+                              setSelectedCustomerOption(customerOptions.find((customer) => customer.id === val) || null)
                               setSelectedCustomerId(val)
                               setSelectedVehicleId('')
+                              setSelectedVehicleOption(null)
+                              setVehicleQuery('')
                               setShowNewVehicleForm(false)
                             }}
                           />
@@ -2222,7 +2276,9 @@ export default function RepairOrdersPage() {
                           type="button"
                           onClick={() => {
                             setSelectedCustomerId('add_new')
+                            setSelectedCustomerOption(null)
                             setSelectedVehicleId('')
+                            setSelectedVehicleOption(null)
                             setShowNewVehicleForm(true)
                           }}
                           className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
@@ -2234,42 +2290,38 @@ export default function RepairOrdersPage() {
 
                       {selectedCustomerId && selectedCustomerId !== 'add_new' && (
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-800 mb-2">Vehicles for this customer</h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {filteredVehicles.map((vehicle) => {
-                              const selected = selectedVehicleId === vehicle.id
-                              return (
-                                <button
-                                  key={vehicle.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedVehicleId(vehicle.id)
-                                    setShowNewVehicleForm(false)
-                                  }}
-                                  className={`w-full text-left p-4 rounded-lg border transition-all ${
-                                    selected
-                                      ? 'border-amber-500 ring-2 ring-amber-200 bg-white'
-                                      : 'border-gray-200 bg-white/60 hover:border-amber-300'
-                                  }`}
-                                >
-                                  <div className="text-xs text-slate-500 mb-1">{vehicle.year || 'Year'}</div>
-                                  <div className="text-sm font-semibold text-slate-900">
-                                    {vehicleDisplayLabel(vehicle, { includeYear: false })}
-                                  </div>
-                                  <div className="text-xs text-slate-600 mt-1">{vehicle.license_plate || 'No plate'}</div>
-                                </button>
-                              )
-                            })}
-
+                          <h4 className="text-sm font-semibold text-gray-800 mb-2">Select vehicle</h4>
+                          <div className="flex items-end gap-3">
+                            <div className="flex-1">
+                              <BaseSelect
+                                options={filteredVehicles.map((vehicle) => ({
+                                  value: vehicle.id,
+                                  label: vehicleDisplayLabel(vehicle),
+                                  subLabel: [vehicle.unit_number && `Unit ${vehicle.unit_number}`, vehicle.license_plate].filter(Boolean).join(' · ') || undefined,
+                                  searchText: vehicle.vin || undefined,
+                                }))}
+                                value={selectedVehicleId}
+                                onChange={(value) => {
+                                  setSelectedVehicleId(value)
+                                  setSelectedVehicleOption(vehicleOptions.find((vehicle) => vehicle.id === value) || null)
+                                  setShowNewVehicleForm(false)
+                                }}
+                                onQueryChange={setVehicleQuery}
+                                loading={isFetchingVehicles}
+                                placeholder="Search unit, VIN, plate, or vehicle"
+                                allowAddNew={false}
+                              />
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
                                 setSelectedVehicleId('')
+                                setSelectedVehicleOption(null)
                                 setShowNewVehicleForm(true)
                               }}
-                              className="w-full p-4 rounded-lg border-2 border-dashed border-gray-300 text-center text-sm text-amber-600 hover:border-amber-400 hover:bg-amber-50 transition-colors"
+                              className="h-[42px] px-3 rounded-lg border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors"
                             >
-                              + Add new vehicle
+                              + Add vehicle
                             </button>
                           </div>
                         </div>
@@ -2452,22 +2504,13 @@ export default function RepairOrdersPage() {
 
                   <div className="space-y-3">
                     <div className="relative">
-                      <SuggestingInput
+                      <input
                         value={serviceSearch}
-                        onChange={setServiceSearch}
-                        onSelect={(text) => {
-                          // A picked suggestion is a canonical service name from
-                          // history — it may not be a bookable Service yet, so
-                          // there's nothing to "select" here. Drop it straight
-                          // into the work description instead, and clear the
-                          // search box back to filtering the chips below.
-                          setDescription((prev) => (prev ? `${prev}\n${text}` : text))
-                          setServiceSearch('')
-                        }}
-                        suggestUrl="/services/name-suggestions"
+                        onChange={(event) => setServiceSearch(event.target.value)}
                         placeholder="Search services (e.g., oil change, brake, diagnostics)"
                         className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors text-gray-900 placeholder-gray-400"
                       />
+                      {isFetchingServices && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
                       <svg
                         className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none"
                         fill="none"
@@ -2479,25 +2522,10 @@ export default function RepairOrdersPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {(services || [])
-                        .filter((svc) => {
-                          if (!serviceSearch.trim()) return true
-                          // Multi-keyword, separator-agnostic: every word must
-                          // match in name or description ("oil chg" word order
-                          // doesn't matter, "a/c" matches "AC").
-                          const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
-                          const haystack = `${svc.name} ${svc.description || ''}`.toLowerCase()
-                          const squashedHaystack = squash(haystack)
-                          return serviceSearch.toLowerCase().trim().split(/\s+/).every((word) => {
-                            if (haystack.includes(word)) return true
-                            const squashedWord = squash(word)
-                            return squashedWord !== '' && squashedHaystack.includes(squashedWord)
-                          })
-                        })
-                        .slice(0, 8)
+                      {serviceOptions
+                        .slice(0, 20)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
-                          const stockStatus = getServiceStockStatus(svc)
                           return (
                             <span
                               key={svc.id}
@@ -2506,24 +2534,16 @@ export default function RepairOrdersPage() {
                                   ? 'border-amber-500 bg-amber-50 text-amber-700'
                                   : 'border-gray-200 bg-white hover:border-amber-300 text-gray-700'
                               }`}
-                              title={stockStatus.tooltip}
                             >
-                              {stockStatus.dotClass && (
-                                <span className={`w-2 h-2 rounded-full ${stockStatus.dotClass}`} aria-hidden="true" />
-                              )}
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const adding = !selectedServiceIds.includes(svc.id)
-                                  setSelectedServiceIds((prev) =>
-                                    prev.includes(svc.id) ? prev.filter((id) => id !== svc.id) : [...prev, svc.id]
-                                  )
-                                  // The bundle is still addable — parts get ordered all the
-                                  // time — but call out the shortage at the moment of use.
-                                  if (adding && stockStatus.level === 'out') {
-                                    toast(`Parts for ${svc.name} are out of stock`, { icon: '⚠️' })
-                                  } else if (adding && stockStatus.level === 'low') {
-                                    toast(`Low stock on parts for ${svc.name}`, { icon: '⚠️' })
+                                  if (active) {
+                                    setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
+                                    setSelectedServiceOptions((prev) => prev.filter((item) => item.id !== svc.id))
+                                  } else {
+                                    setSelectedServiceIds((prev) => [...prev, svc.id])
+                                    setSelectedServiceOptions((prev) => [...prev.filter((item) => item.id !== svc.id), svc])
                                   }
                                 }}
                                 className="focus:outline-none"
@@ -2533,9 +2553,10 @@ export default function RepairOrdersPage() {
                               {active && (
                                 <button
                                   type="button"
-                                  onClick={() =>
+                                  onClick={() => {
                                     setSelectedServiceIds((prev) => prev.filter((id) => id !== svc.id))
-                                  }
+                                    setSelectedServiceOptions((prev) => prev.filter((item) => item.id !== svc.id))
+                                  }}
                                   className="inline-flex items-center justify-center w-4 h-4 -mr-0.5 leading-none text-amber-700 hover:text-amber-900"
                                   aria-label={`Remove ${svc.name}`}
                                 >
@@ -2546,120 +2567,11 @@ export default function RepairOrdersPage() {
                           )
                         })}
 
-                      {services && services.length === 0 && (
-                        <span className="text-sm text-gray-500">No services available yet</span>
+                      {!isFetchingServices && !isLoadingServices && serviceOptions.length === 0 && (
+                        <span className="text-sm text-gray-500">No matching services found</span>
                       )}
                     </div>
 
-                    {(() => {
-                      const shortages = (services || [])
-                        .filter((svc) => selectedServiceIds.includes(svc.id))
-                        .flatMap((svc) =>
-                          (svc.parts || [])
-                            .filter((p) => (p.stock_quantity ?? 0) < (parseFloat(p.quantity) || 0))
-                            .map((p) => ({
-                              serviceName: svc.name,
-                              partName: p.name,
-                              inventoryId: p.inventory_id,
-                              have: p.stock_quantity ?? 0,
-                              need: parseFloat(p.quantity) || 0,
-                            }))
-                        )
-                      if (shortages.length === 0) return null
-                      return (
-                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
-                          <div className="flex items-start gap-2">
-                            <TriangleAlert className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-amber-900">
-                                Parts stock warning
-                              </p>
-                              <p className="text-xs text-amber-800 mt-0.5">
-                                The order can still be created, but these parts won't be auto-attached until stock is replenished:
-                              </p>
-                              <ul className="mt-2 space-y-2 text-xs text-amber-900">
-                                {shortages.map((s) => {
-                                  const open = replenishingId === s.inventoryId
-                                  return (
-                                    <li key={s.inventoryId} className="rounded border border-amber-200 bg-white/60 p-2">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span>
-                                          <span className="font-medium">{s.serviceName}:</span>{' '}
-                                          {s.partName} — have {s.have}, need {s.need}
-                                        </span>
-                                        {!open && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setReplenishingId(s.inventoryId)
-                                              setReplenishValue(String(s.need))
-                                            }}
-                                            className="text-amber-800 underline hover:text-amber-900 whitespace-nowrap font-medium"
-                                          >
-                                            Replenish stock
-                                          </button>
-                                        )}
-                                      </div>
-                                      {open && (
-                                        <div className="mt-2 flex items-center gap-2">
-                                          <label className="text-[11px] text-amber-900 font-medium">
-                                            New stock qty:
-                                          </label>
-                                          <input
-                                            type="number"
-                                            min={0}
-                                            value={replenishValue}
-                                            onChange={(e) => setReplenishValue(e.target.value)}
-                                            className="w-24 h-8 px-2 rounded border border-amber-300 bg-white text-gray-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                            autoFocus
-                                          />
-                                          <button
-                                            type="button"
-                                            disabled={replenishSaving}
-                                            onClick={async () => {
-                                              const num = Number(replenishValue)
-                                              if (!Number.isFinite(num) || num < 0) {
-                                                toast.error('Enter a valid quantity')
-                                                return
-                                              }
-                                              setReplenishSaving(true)
-                                              try {
-                                                await api.put(`/inventory/${s.inventoryId}`, { stock_quantity: num })
-                                                await refetchServices()
-                                                toast.success(`${s.partName} stock updated to ${num}`)
-                                                setReplenishingId(null)
-                                                setReplenishValue('')
-                                              } catch (err) {
-                                                toast.error(getErrorDetail(err, 'Failed to update stock'))
-                                              } finally {
-                                                setReplenishSaving(false)
-                                              }
-                                            }}
-                                            className="h-8 px-3 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-60"
-                                          >
-                                            {replenishSaving ? 'Saving…' : 'Save'}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setReplenishingId(null)
-                                              setReplenishValue('')
-                                            }}
-                                            className="h-8 px-2 text-amber-800 hover:text-amber-900 text-xs"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </div>
-                                      )}
-                                    </li>
-                                  )
-                                })}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
                   </div>
                 </div>
 
@@ -3352,6 +3264,7 @@ export default function RepairOrdersPage() {
                     onReopenWorkOrder={() => selectedOrder.id && reopenWorkOrderMutation.mutate(selectedOrder.id)}
                     reopenPending={reopenWorkOrderMutation.isPending}
                     recommendedServices={['completed', 'invoiced', 'paid'].includes((orderDetail ?? selectedOrder).status) ? [] : recommendedServices}
+                    recommendedServicesLoading={recommendedServicesFetching}
                     showAddRecommendedService={showAddRecService}
                     recommendedServiceForm={recServiceForm}
                     onToggleAddRecommendedService={() => setShowAddRecService((prev) => !prev)}
@@ -3367,8 +3280,8 @@ export default function RepairOrdersPage() {
                     addRecommendedPending={addRecServiceMutation.isPending}
                     resolveRecommendedPending={resolveRecServiceMutation.isPending}
                     deleteRecommendedPending={deleteRecServiceMutation.isPending}
+                    onRecommendedServicesOpenChange={setRecommendedServicesOpen}
                     onUpdated={() => {
-                      refetchOrderDetail()
                       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
                     }}
                   />
@@ -3393,16 +3306,16 @@ export default function RepairOrdersPage() {
                     0
                   )
                   const canEditServices = ['draft', 'quoted'].includes((orderDetail ?? selectedOrder).status)
-                  const availableServices = services?.filter(
+                  const availableServices = serviceOptions.filter(
                     (s) => !detailServices.some((ds) => ds.id === s.id)
-                  ) || []
+                  )
 
                   const handleAddService = (serviceId: string) => {
-                    const svc = services?.find((s) => s.id === serviceId)
+                    const svc = serviceOptions.find((s) => s.id === serviceId)
                     if (!svc || !selectedOrder.id) return
                     const newServices = [
                       ...detailServices,
-                      { id: svc.id, name: svc.name, base_price: svc.computed_total_price },
+                      { id: svc.id, name: svc.name, base_price: svc.base_price || '0' },
                     ]
                     updateServicesMutation.mutate({ orderId: selectedOrder.id, selectedServices: newServices })
                   }
@@ -3452,7 +3365,7 @@ export default function RepairOrdersPage() {
                               options={availableServices.map((s) => ({
                                 value: s.id,
                                 label: s.name,
-                                subLabel: `$${parseFloat(s.computed_total_price).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                                subLabel: `$${parseFloat(s.base_price || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
                               }))}
                               value=""
                               onChange={handleAddService}

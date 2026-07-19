@@ -3,7 +3,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 
 from app.core.search import build_search
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from app.core.default_catalog import DEFAULT_INVENTORY
 from app.core.image_validation import read_validated_image
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
+from app.db.models.customer import Customer
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.services.cloudinary_service import (
     is_cloudinary_configured,
@@ -23,6 +24,7 @@ from app.services.cloudinary_service import (
     delete_cloudinary_image,
 )
 from app.tasks.description_library_refresh import process_on_demand_library_regenerate
+from app.schemas.typeahead import InventoryTypeaheadResponse
 
 router = APIRouter()
 
@@ -74,6 +76,21 @@ def _inventory_response(item: Inventory) -> InventoryResponse:
         created_at=item.created_at.isoformat(),
         updated_at=item.updated_at.isoformat(),
     )
+
+
+async def _resolve_typeahead_tenant_id(current_user: User, db: AsyncSession) -> Optional[UUID]:
+    """Resolve a customer user's current tenant without exposing every catalog."""
+    if current_user.role != UserRole.CUSTOMER:
+        return current_user.tenant_id
+    if not current_user.customer_id:
+        return None
+    result = await db.execute(
+        select(Customer.tenant_id).where(
+            Customer.id == current_user.customer_id,
+            Customer.deleted_at.is_(None),
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 class InventoryCreate(BaseModel):
@@ -283,6 +300,60 @@ async def list_inventory(
 
     serialized_items = [_inventory_response(item) for item in items]
     return paginated_or_list(serialized_items, total, skip, limit, paginated)
+
+
+@router.get("/typeahead", response_model=List[InventoryTypeaheadResponse])
+async def inventory_typeahead(
+    q: Optional[str] = Query(None, max_length=100, description="Match an in-stock part by name, SKU, category, or location"),
+    limit: int = Query(20, ge=1, le=50),
+    in_stock: bool = Query(True, description="Limit the repair-order picker to parts that can be added"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return a small, capped inventory picker payload for adding RO parts."""
+    tenant_id = await _resolve_typeahead_tenant_id(current_user, db)
+    if not tenant_id:
+        return []
+
+    filters = [
+        Inventory.tenant_id == tenant_id,
+        Inventory.deleted_at.is_(None),
+    ]
+    if in_stock:
+        filters.append(Inventory.stock_quantity > 0)
+
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{term}%"
+        filters.append(
+            or_(
+                Inventory.name.ilike(pattern),
+                Inventory.sku.ilike(pattern),
+                Inventory.category.ilike(pattern),
+                Inventory.description.ilike(pattern),
+                Inventory.location.ilike(pattern),
+            )
+        )
+
+    result = await db.execute(
+        select(Inventory)
+        .where(*filters)
+        .order_by(func.lower(Inventory.name), Inventory.id)
+        .limit(limit)
+    )
+    return [
+        InventoryTypeaheadResponse(
+            id=item.id,
+            sku=item.sku,
+            name=item.name,
+            stock_quantity=item.stock_quantity,
+            on_order_quantity=item.on_order_quantity,
+            unit_type=item.unit_type,
+            cost=item.cost,
+            selling_price=item.selling_price,
+        )
+        for item in result.scalars().all()
+    ]
 
 
 @router.post("", response_model=InventoryResponse, status_code=status.HTTP_201_CREATED)
