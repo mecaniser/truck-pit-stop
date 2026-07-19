@@ -1235,6 +1235,14 @@ async def override_start_work_without_mechanic(
     order.status = RepairOrderStatus.IN_PROGRESS
     if order.work_started_at is None:
         order.work_started_at = datetime.now(timezone.utc)
+    _record_repair_order_history_event(
+        db,
+        order=order,
+        current_user=current_user,
+        event_type="admin_override_started_work",
+        label="Work started by admin override",
+        detail="Technician assignment was bypassed; work is being handled outside the mechanic portal.",
+    )
 
     await db.commit()
     await db.refresh(order)
@@ -2095,6 +2103,85 @@ async def complete_work(
     return RepairOrderResponse.model_validate(order)
 
 
+@router.post("/{order_id}/admin-complete-work", response_model=RepairOrderResponse)
+async def admin_complete_unassigned_work(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
+):
+    """Admin marks an override-started customer repair order ready for review."""
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+
+    if current_user.tenant_id != order.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if order.is_internal:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Use the internal work order completion flow")
+
+    if order.assigned_mechanic_id is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assigned repair orders must be completed by the technician")
+
+    if order.status != RepairOrderStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot complete job in '{order.status.value}' status",
+        )
+
+    order.status = RepairOrderStatus.PENDING_REVIEW
+    order.work_completed_at = datetime.now(timezone.utc)
+    order.hold_reason = None
+    order.held_at = None
+    _record_repair_order_history_event(
+        db,
+        order=order,
+        current_user=current_user,
+        event_type="admin_completed_work",
+        label="Work marked complete by admin",
+        detail="Admin completed override-started work without a technician assignment.",
+    )
+
+    await db.commit()
+    await db.refresh(order)
+    await db.refresh(order, attribute_names=["customer", "vehicle"])
+
+    await broadcast_repair_order_update(
+        tenant_id=str(order.tenant_id),
+        customer_id=str(order.customer_id),
+        order_id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value,
+        updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+
+    customer = order.customer
+    if customer and customer.phone:
+        vehicle = order.vehicle
+        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+        shop_name = await get_tenant_display_name(db, order.tenant_id)
+        try:
+            await send_sms(
+                db,
+                str(order.tenant_id),
+                customer.phone,
+                f"Repair on your {vehicle_info} is complete and under review. Order #{order.order_number}. - {shop_name}",
+                template_name="work_complete_sms",
+                customer_id=customer.id,
+                source="automated",
+            )
+        except Exception:
+            pass
+
+    return RepairOrderResponse.model_validate(order)
+
+
 class ApproveCompletionRequest(BaseModel):
     review_notes: Optional[str] = None
     mileage_out: Optional[int] = None  # odometer at completion
@@ -2136,6 +2223,15 @@ async def approve_completion(
         order.mileage_out = body.mileage_out
 
     order.status = RepairOrderStatus.COMPLETED
+    if order.assigned_mechanic_id is None:
+        _record_repair_order_history_event(
+            db,
+            order=order,
+            current_user=current_user,
+            event_type="admin_approved_completion",
+            label="Completion approved by admin",
+            detail="Admin reviewed and approved work completed outside the mechanic portal.",
+        )
 
     # Completing an internal preventive-maintenance order advances the truck's next PM.
     if order.is_internal and order.is_pm:

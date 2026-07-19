@@ -1,3 +1,65 @@
+# Collapsed Assignment After Admin Override (2026-07-19)
+
+## Plan
+- [x] Inspect Price Builder and legacy repair-order assignment panels after override-start.
+- [x] Collapse the technician assignment area by default when work is already in progress without an assigned technician.
+- [x] Preserve an explicit `Assign technician` disclosure so admins can assign later if needed.
+- [x] Run focused frontend verification and whitespace checks.
+
+## Progress Notes
+- [x] User reported that after `Override & start`, the technician cards and override banner remain expanded instead of collapsing to a single `Assign technician` row.
+- [x] Added a Price Builder technician assignment disclosure that defaults closed for bypassed in-progress orders and open for normal approved orders.
+- [x] Updated the legacy repair order drawer to keep `Assign technician` available after override-start and default it closed.
+- [x] Added focused Price Builder regression coverage for the collapsed bypass state.
+- [x] Passed focused Vitest, frontend TypeScript, and `git diff --check`.
+
+## Review
+- After `Override & start`, the assignment area collapses to `Assign technician` with a down caret. Admins can expand it to assign a technician later; normal approved orders still show the assignment options by default.
+
+---
+
+# Admin Completion After Assignment Override (2026-07-19)
+
+## Plan
+- [x] Add an admin-only completion transition for customer orders started through assignment override.
+- [x] Keep mechanic completion points/timer logic exclusive to assigned mechanics.
+- [x] Surface a `Mark Completed` control for bypassed in-progress customer orders.
+- [x] Add focused backend/frontend coverage and run checks.
+
+## Progress Notes
+- [x] Current mechanic completion endpoint requires `MECHANIC` role and `assigned_mechanic_id == current_user.id`, so bypassed orders cannot be completed by the admin who started them.
+- [x] Added `POST /repair-orders/{order_id}/admin-complete-work` for garage owners/admins to move unassigned in-progress customer ROs to `pending_review`.
+- [x] Guarded the admin endpoint so assigned jobs still must be completed by the assigned technician and internal jobs still use the fleet work-order completion path.
+- [x] Added `Mark Completed` in Price Builder for bypassed in-progress customer ROs; it opens a confirmation panel and then transitions to pending review.
+- [x] Passed focused backend override/completion tests, focused Price Builder regression tests, frontend TypeScript, backend compile, and `git diff --check`.
+
+## Review
+- Admins now control completion for orders they override-start without a mechanic. The order still moves through `pending_review`, preserving the admin review/approval step before the customer-facing completion notification and invoicing flow.
+
+---
+
+# Admin Override Repair Order History (2026-07-19)
+
+## Plan
+- [x] Record explicit history events when an admin starts work through technician-assignment override.
+- [x] Record explicit history events when an admin marks override-started work complete.
+- [x] Record explicit history events when an admin approves completion for no-mechanic work.
+- [x] Ensure the UI does not label no-mechanic completion as technician completion.
+- [x] Add focused backend/frontend coverage and run checks.
+
+## Progress Notes
+- [x] Added persisted history event `admin_override_started_work` with label `Work started by admin override`.
+- [x] Added persisted history event `admin_completed_work` with label `Work marked complete by admin`.
+- [x] Added persisted history event `admin_approved_completion` with label `Completion approved by admin`.
+- [x] Updated the frontend history projection to suppress generic `Work started` / `Technician completed work` fallbacks when persisted admin override events exist.
+- [x] Updated fallback labels for legacy no-mechanic records so they read as admin override work instead of technician work.
+- [x] Passed focused backend lifecycle tests, focused frontend history/Price Builder tests, frontend TypeScript, backend compile, and `git diff --check`.
+
+## Review
+- Repair order history now clearly shows admin-controlled override work as started, completed, and approved by the admin, with actor names and details explaining that technician assignment was bypassed.
+
+---
+
 # Customer Notification Tenant Contact Info (2026-07-19)
 
 ## Plan
@@ -3419,3 +3481,20 @@
 
 ## Review
 - Focused Vitest (7), TypeScript, changed-file ESLint, production build, and diff checks pass. Railway deployment `115e2233-def4-4546-b25d-4dbd3de40e77` completed successfully.
+
+---
+
+# Repair Order Part Change History (2026-07-19)
+
+## Plan
+- [x] Add a durable repair-order history event model and migration for part mutations.
+- [x] Record part add, quantity-stepper update, stock-override update, and removal events in the same transaction.
+- [x] Return persisted events in repair-order detail and merge them into the History panel.
+- [x] Add focused backend/frontend coverage, run checks, and independently deploy.
+
+## Progress Notes
+- [x] User reported that quantity stepper changes and removals are not represented after the initial part-add history fix.
+- [x] Added migration `084` and tenant-scoped audit rows for part additions, quantity changes, stock overrides, and removals; removed rows remain represented by their history event.
+
+## Review
+- Backend quantity/schema tests (22), frontend focused tests (9), TypeScript, ESLint, production build, compileall, and diff checks pass. Railway deployment `35080100-265c-42a7-b7eb-9c1e20b74d13` completed successfully.

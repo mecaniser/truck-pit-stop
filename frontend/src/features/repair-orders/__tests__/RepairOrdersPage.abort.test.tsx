@@ -226,4 +226,60 @@ describe('RepairOrdersPage request cancellation', () => {
       },
     ])
   })
+
+  it('preserves persisted admin override lifecycle events in repair-order history', () => {
+    const historyEvents: RepairOrderHistoryEvent[] = [
+      {
+        id: 'history-admin-started',
+        event_type: 'admin_override_started_work',
+        label: 'Work started by admin override',
+        detail: 'Technician assignment was bypassed; work is being handled outside the mechanic portal.',
+        entity_id: null,
+        actor_name: 'Shop Manager',
+        created_at: '2026-07-19T10:03:00Z',
+      },
+      {
+        id: 'history-admin-completed',
+        event_type: 'admin_completed_work',
+        label: 'Work marked complete by admin',
+        detail: 'Admin completed override-started work without a technician assignment.',
+        entity_id: null,
+        actor_name: 'Shop Manager',
+        created_at: '2026-07-19T10:20:00Z',
+      },
+      {
+        id: 'history-admin-approved',
+        event_type: 'admin_approved_completion',
+        label: 'Completion approved by admin',
+        detail: 'Admin reviewed and approved work completed outside the mechanic portal.',
+        entity_id: null,
+        actor_name: 'Shop Manager',
+        created_at: '2026-07-19T10:25:00Z',
+      },
+    ]
+
+    expect(buildPartHistoryEvents([], historyEvents)).toEqual([
+      {
+        id: 'history-admin-started',
+        label: 'Work started by admin override',
+        at: '2026-07-19T10:03:00Z',
+        detail: 'Technician assignment was bypassed; work is being handled outside the mechanic portal.',
+        actor: 'Shop Manager',
+      },
+      {
+        id: 'history-admin-completed',
+        label: 'Work marked complete by admin',
+        at: '2026-07-19T10:20:00Z',
+        detail: 'Admin completed override-started work without a technician assignment.',
+        actor: 'Shop Manager',
+      },
+      {
+        id: 'history-admin-approved',
+        label: 'Completion approved by admin',
+        at: '2026-07-19T10:25:00Z',
+        detail: 'Admin reviewed and approved work completed outside the mechanic portal.',
+        actor: 'Shop Manager',
+      },
+    ])
+  })
 })

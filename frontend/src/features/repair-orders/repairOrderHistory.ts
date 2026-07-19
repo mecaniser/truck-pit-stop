@@ -17,7 +17,7 @@ export function buildPartHistoryEvents(parts: PartsUsage[], historyEvents: Repai
     at: event.created_at,
     detail: event.detail || undefined,
     actor: event.actor_name || undefined,
-    entityId: event.entity_id || undefined,
+    ...(event.entity_id ? { entityId: event.entity_id } : {}),
   }))
   const fallback = parts.map((part) => ({
     id: `part-${part.id}`,

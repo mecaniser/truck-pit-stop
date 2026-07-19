@@ -14,7 +14,9 @@ os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
 os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import repair_orders
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 
@@ -48,27 +50,39 @@ class _FakeAsyncSession:
     async def commit(self):
         self.commit_count += 1
 
-    async def refresh(self, _obj):
+    async def scalar(self, _statement):
+        return "Test Garage"
+
+    async def refresh(self, _obj, **_kwargs):
         return None
 
 
 class _FakeOverrideSession:
     def __init__(self, order: RepairOrder):
         self.order = order
+        self.added: list[object] = []
         self.execute_calls = 0
         self.commit_count = 0
 
     async def execute(self, statement):
         self.execute_calls += 1
         entity = statement.column_descriptions[0].get("entity")
-        assert self.execute_calls == 1
-        assert entity is RepairOrder
-        return _ScalarResult(self.order)
+        if entity is RepairOrder:
+            return _ScalarResult(self.order)
+        if entity is Tenant:
+            return _ScalarResult(None)
+        raise AssertionError(f"Unexpected query call #{self.execute_calls} for entity {entity}")
+
+    def add(self, obj):
+        self.added.append(obj)
 
     async def commit(self):
         self.commit_count += 1
 
-    async def refresh(self, _obj):
+    async def scalar(self, _statement):
+        return "Test Garage"
+
+    async def refresh(self, _obj, **_kwargs):
         return None
 
 
@@ -238,6 +252,12 @@ async def test_admin_override_starts_approved_ro_without_mechanic(monkeypatch):
     assert response.assigned_mechanic_id is None
     assert response.work_started_at is not None
     assert fake_db.commit_count == 1
+    assert len(fake_db.added) == 1
+    history_event = fake_db.added[0]
+    assert isinstance(history_event, RepairOrderHistoryEvent)
+    assert history_event.event_type == "admin_override_started_work"
+    assert history_event.label == "Work started by admin override"
+    assert history_event.actor_name == "Shop Manager"
 
     assert len(broadcast_calls) == 1
     assert broadcast_calls[0]["status"] == RepairOrderStatus.IN_PROGRESS.value
@@ -264,3 +284,102 @@ async def test_admin_override_rejects_unapproved_ro(monkeypatch):
     assert exc_info.value.status_code == 400
     assert order.status == RepairOrderStatus.QUOTED
     assert fake_db.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_completes_override_started_ro_without_mechanic(monkeypatch):
+    order, _mechanic, manager = _build_context(mechanic_phone=None)
+    order.status = RepairOrderStatus.IN_PROGRESS
+    order.work_started_at = datetime.now(timezone.utc)
+    order.assigned_mechanic_id = None
+    fake_db = _FakeOverrideSession(order=order)
+
+    broadcast_calls: list[dict] = []
+
+    async def _capture_broadcast(**kwargs):
+        broadcast_calls.append(kwargs)
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _capture_broadcast)
+
+    response = await repair_orders.admin_complete_unassigned_work(
+        order_id=order.id,
+        db=fake_db,
+        current_user=manager,
+    )
+
+    assert response.status == RepairOrderStatus.PENDING_REVIEW
+    assert response.assigned_mechanic_id is None
+    assert response.work_completed_at is not None
+    assert fake_db.commit_count == 1
+    assert len(fake_db.added) == 1
+    history_event = fake_db.added[0]
+    assert isinstance(history_event, RepairOrderHistoryEvent)
+    assert history_event.event_type == "admin_completed_work"
+    assert history_event.label == "Work marked complete by admin"
+    assert history_event.actor_name == "Shop Manager"
+    assert len(broadcast_calls) == 1
+    assert broadcast_calls[0]["status"] == RepairOrderStatus.PENDING_REVIEW.value
+
+
+@pytest.mark.asyncio
+async def test_admin_complete_override_rejects_assigned_ro(monkeypatch):
+    order, mechanic, manager = _build_context(mechanic_phone=None)
+    order.status = RepairOrderStatus.IN_PROGRESS
+    order.assigned_mechanic_id = mechanic.id
+    fake_db = _FakeOverrideSession(order=order)
+
+    async def _noop_broadcast(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_broadcast)
+
+    with pytest.raises(repair_orders.HTTPException) as exc_info:
+        await repair_orders.admin_complete_unassigned_work(
+            order_id=order.id,
+            db=fake_db,
+            current_user=manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert order.status == RepairOrderStatus.IN_PROGRESS
+    assert fake_db.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_approval_of_override_completed_ro_records_admin_history(monkeypatch):
+    order, _mechanic, manager = _build_context(mechanic_phone=None)
+    order.status = RepairOrderStatus.PENDING_REVIEW
+    order.work_started_at = datetime.now(timezone.utc)
+    order.work_completed_at = datetime.now(timezone.utc)
+    order.assigned_mechanic_id = None
+    fake_db = _FakeOverrideSession(order=order)
+
+    async def _noop_broadcast(**_kwargs):
+        return None
+
+    async def _noop_email(**_kwargs):
+        return None
+
+    async def _noop_sms(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_broadcast)
+    monkeypatch.setattr(repair_orders, "send_email", _noop_email)
+    monkeypatch.setattr(repair_orders, "send_sms", _noop_sms)
+
+    response = await repair_orders.approve_completion(
+        order_id=order.id,
+        body=repair_orders.ApproveCompletionRequest(review_notes="Looks good", mileage_out=123456),
+        db=fake_db,
+        current_user=manager,
+    )
+
+    assert response.status == RepairOrderStatus.COMPLETED
+    assert order.mileage_out == 123456
+    assert fake_db.commit_count == 1
+    assert len(fake_db.added) == 1
+    history_event = fake_db.added[0]
+    assert isinstance(history_event, RepairOrderHistoryEvent)
+    assert history_event.event_type == "admin_approved_completion"
+    assert history_event.label == "Completion approved by admin"
+    assert history_event.actor_name == "Shop Manager"

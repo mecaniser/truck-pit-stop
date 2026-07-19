@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ComponentProps } from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
@@ -36,7 +37,7 @@ const emptySummary = {
   warnings: [],
 }
 
-function renderPanel() {
+function renderPanel(props: Partial<ComponentProps<typeof PriceBuilderPanel>> = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -46,7 +47,7 @@ function renderPanel() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <PriceBuilderPanel orderId="order-1" orderStatus="draft" canEdit />
+      <PriceBuilderPanel orderId="order-1" orderStatus="draft" canEdit {...props} />
     </QueryClientProvider>,
   )
 }
@@ -283,5 +284,40 @@ describe('PriceBuilderPanel pending feedback', () => {
         allow_stock_shortage: true,
       }))
     })
+  })
+
+  it('collapses technician assignment after an admin override starts work', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    const user = userEvent.setup()
+    const onAdminCompleteWork = vi.fn()
+    renderPanel({
+      orderStatus: 'in_progress',
+      quoteIsApproved: true,
+      technicianOptions: [
+        { mechanic_id: 'tech-1', mechanic_name: 'Mike Johnson', assigned_count: 0, in_progress_count: 0 },
+      ],
+      onAssignTechnician: vi.fn(),
+      onAdminCompleteWork,
+    })
+
+    const disclosure = await screen.findByRole('button', { name: 'Assign technician' })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Mike Johnson')).not.toBeInTheDocument()
+
+    await user.click(disclosure)
+
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Mike Johnson')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Mark Completed' }))
+    expect(screen.getByText('Mark work completed')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Mark completed' }))
+    expect(onAdminCompleteWork).toHaveBeenCalledTimes(1)
   })
 })

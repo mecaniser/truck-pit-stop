@@ -149,6 +149,8 @@ type Props = {
   startWorkOrderPending?: boolean
   onCompleteWorkOrder?: (mileageOut: number | null) => void
   completeWorkOrderPending?: boolean
+  onAdminCompleteWork?: () => void
+  adminCompleteWorkPending?: boolean
   invoiceCreatePending?: boolean
   invoiceDueDateValue?: string
   showInvoiceCreateOptions?: boolean
@@ -879,6 +881,8 @@ export default function PriceBuilderPanel({
   startWorkOrderPending = false,
   onCompleteWorkOrder,
   completeWorkOrderPending = false,
+  onAdminCompleteWork,
+  adminCompleteWorkPending = false,
   invoiceCreatePending = false,
   invoiceDueDateValue = '',
   showInvoiceCreateOptions = false,
@@ -943,6 +947,7 @@ export default function PriceBuilderPanel({
   const [customerOpen, setCustomerOpen] = useState(false)
   const [recommendedOpen, setRecommendedOpen] = useState(false)
   const [photosOpen, setPhotosOpen] = useState(false)
+  const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(true)
   const [photoCaption, setPhotoCaption] = useState('')
   const [pendingPhotoName, setPendingPhotoName] = useState<string | null>(null)
   const [armWoComplete, setArmWoComplete] = useState(false)
@@ -1198,6 +1203,7 @@ export default function PriceBuilderPanel({
   const hasQuoteDraft = !!quoteNumber && !isEmptyOrder
   const hasAssignedTechnician = !!assignedTechnicianName
   const technicianAssignmentBypassed = quoteIsApproved && !hasAssignedTechnician && ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus)
+  const canAdminCompleteBypassedWork = !isInternalOrder && technicianAssignmentBypassed && orderStatus === 'in_progress' && !!onAdminCompleteWork
   // A finalized order is closed: the work is done and billed/settled. No more
   // photo uploads, and the quote pipeline is just clutter (the single status
   // chip already says it all).
@@ -1315,6 +1321,10 @@ export default function PriceBuilderPanel({
     setHistoryOpen(false)
     setHistoryVisibleCount(5)
   }, [orderId])
+
+  useEffect(() => {
+    setTechnicianAssignmentOpen(!technicianAssignmentBypassed)
+  }, [orderId, technicianAssignmentBypassed])
 
   useEffect(() => {
     if (!['in_progress', 'pending_review'].includes(orderStatus)) {
@@ -2081,17 +2091,25 @@ export default function PriceBuilderPanel({
         </div>
         {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
           <div className="border-t border-orange-100 bg-white px-5 py-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
+            <button
+              type="button"
+              onClick={() => setTechnicianAssignmentOpen((open) => !open)}
+              className={`flex w-full items-center justify-between gap-2 text-left ${technicianAssignmentOpen ? 'mb-2' : ''}`}
+              aria-expanded={technicianAssignmentOpen}
+            >
+              <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-500">
                 {hasAssignedTechnician ? 'Reassign technician' : 'Assign technician'}
-              </p>
+              </span>
               {hasAssignedTechnician && assignedTechnicianName && (
                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                   Current: {assignedTechnicianName}
                 </span>
               )}
-            </div>
-            {onAssignTechnician && availableTechnicians.length > 0 && (
+              {!hasAssignedTechnician && (
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${technicianAssignmentOpen ? 'rotate-180' : ''}`} />
+              )}
+            </button>
+            {technicianAssignmentOpen && onAssignTechnician && availableTechnicians.length > 0 && (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {availableTechnicians.map((tech) => (
                   <button
@@ -2117,7 +2135,7 @@ export default function PriceBuilderPanel({
                 ))}
               </div>
             )}
-            {canOverrideTechnicianAssignment && (
+            {technicianAssignmentOpen && canOverrideTechnicianAssignment && (
               <div className="mt-3 rounded-lg border border-dashed border-amber-300 bg-amber-50/70 p-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -2263,6 +2281,39 @@ export default function PriceBuilderPanel({
             )}
           </div>
           )}
+        </div>
+      )}
+
+      {canAdminCompleteBypassedWork && armWoComplete && (
+        <div className="rounded-2xl border border-yellow-200 bg-yellow-50/70 p-4">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
+              <CheckCircle className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="font-semibold text-yellow-950">Mark work completed</p>
+              <p className="text-sm text-yellow-700">Moves this admin-started order to review so it can be approved and invoiced.</p>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setArmWoComplete(false)}
+              className="inline-flex h-9 items-center rounded-lg border border-gray-200 px-3 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={adminCompleteWorkPending}
+              onClick={onAdminCompleteWork}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
+            >
+              {adminCompleteWorkPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
+              {adminCompleteWorkPending ? 'Completing...' : 'Mark completed'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -4025,6 +4076,16 @@ export default function PriceBuilderPanel({
                   </button>
                 </span>
               )
+            )}
+            {canAdminCompleteBypassedWork && !isDeleted && !armWoComplete && (
+              <button
+                type="button"
+                onClick={() => setArmWoComplete(true)}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
+              >
+                <CheckCircle className="h-4 w-4" />
+                Mark Completed
+              </button>
             )}
             {isInternalOrder && !isDeleted && (
               ['draft', 'assigned', 'acknowledged'].includes(orderStatus) ? (
