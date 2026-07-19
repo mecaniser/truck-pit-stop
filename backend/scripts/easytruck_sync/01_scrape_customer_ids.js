@@ -33,44 +33,41 @@ const FAIL_FILE = path.join(__dirname, 'data', 'customer_ids_failures.json');
 
   for (let p = 1; p <= totalPages; p++) {
     const url = `${listUrl}&page=${p}`;
-    await page.goto(url, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
-    const rowCount = await page.locator('table tbody tr').count();
     let pageFailures = 0;
 
-    for (let i = 0; i < rowCount; i++) {
-      let cells, company;
+    // Load the page once and read every row's customer id straight from its
+    // <tr id="row-{customerId}"> attribute + the row cell text. No per-row
+    // clicking, so no navigation races and ~50x fewer page loads. Retry the
+    // page load a few times to ride out transient network hiccups.
+    let rows = null;
+    for (let attempt = 0; attempt < 3 && rows === null; attempt++) {
       try {
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 20000 });
-        await page.waitForTimeout(400);
-        const row = page.locator('table tbody tr').nth(i);
-        cells = await row.locator('td').allInnerTexts();
-        company = cells[0];
-
-        const urlBefore = page.url();
-        await row.locator('td').first().click();
-        // robust wait: poll page.url() instead of relying solely on waitForURL
-        let id = null;
-        for (let attempt = 0; attempt < 20; attempt++) {
-          const m = page.url().match(/\/customers\/(\d+)$/);
-          if (m) { id = m[1]; break; }
-          await page.waitForTimeout(300);
-        }
-
-        if (!id) {
-          pageFailures++;
-          failures.push({ page: p, row: i, company, reason: 'no id after click+poll', urlAfter: page.url() });
-          continue;
-        }
-        if (seen.has(id)) continue;
-
-        const [, usdot, contact, balance, units, group] = cells;
-        results.push({ id, company, usdot, balance, units, group });
-        seen.add(id);
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.waitForTimeout(500);
+        rows = await page.locator('table tbody tr').evaluateAll(trs =>
+          trs.map(tr => {
+            const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
+            const m = (tr.id || '').match(/row-(\d+)/);
+            return { id: m ? m[1] : null, cells };
+          })
+        );
       } catch (e) {
-        pageFailures++;
-        failures.push({ page: p, row: i, company: company || '?', reason: e.message });
+        if (attempt === 2) { failures.push({ page: p, reason: `page load failed: ${e.message}` }); rows = []; }
+        else await page.waitForTimeout(1500);
       }
+    }
+
+    for (const { id, cells } of rows) {
+      const company = cells[0];
+      if (!id) {
+        pageFailures++;
+        failures.push({ page: p, company, reason: 'no row-{id} attribute' });
+        continue;
+      }
+      if (seen.has(id)) continue;
+      const [, usdot, contact, balance, units, group] = cells;
+      results.push({ id, company, usdot, balance, units, group });
+      seen.add(id);
     }
     fs.writeFileSync(OUT_FILE, JSON.stringify(results, null, 2));
     fs.writeFileSync(FAIL_FILE, JSON.stringify(failures, null, 2));
