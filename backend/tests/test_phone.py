@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.core.phone import normalize_phone
+from app.core.phone import format_phone_display, normalize_phone
 
 
 class TestNormalizePhone:
@@ -27,3 +27,14 @@ class TestNormalizePhone:
 
     def test_mixed_separators(self):
         assert normalize_phone("555.123.4567") == "5551234567"
+
+
+class TestFormatPhoneDisplay:
+    def test_formats_ten_digit_us_number(self):
+        assert format_phone_display("7045550199") == "(704) 555-0199"
+
+    def test_formats_us_number_with_country_code(self):
+        assert format_phone_display("17045550199") == "(704) 555-0199"
+
+    def test_keeps_non_us_number_as_entered(self):
+        assert format_phone_display("+44 20 7946 0958") == "+44 20 7946 0958"

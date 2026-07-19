@@ -29,7 +29,7 @@ from app.db.models.mechanic_points import MechanicPoints, MechanicPointsBalance,
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.work_photo import WorkPhoto
 from app.services.email_service import send_email
-from app.services.tenant_branding import get_tenant_display_name
+from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.price_build_service import (
     PriceBuildLockedError,
@@ -1514,7 +1514,10 @@ async def start_work(
     if not resume_existing:
         # Notify customer that work has started
         customer = order.customer
-        shop_name = await get_tenant_display_name(db, order.tenant_id)
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+        email_tenant = tenant_result.scalar_one_or_none()
+        shop_name = email_tenant.name.strip() if email_tenant and email_tenant.name and email_tenant.name.strip() else "Your repair shop"
+        shop_contact_html = build_tenant_contact_html(email_tenant)
         if customer and customer.email:
             vehicle = order.vehicle
             vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
@@ -1523,7 +1526,7 @@ async def start_work(
             <html>
             <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <div style="text-align: center; margin-bottom: 30px;">
-                    <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
+                    <h1 style="color: #d97706; margin: 0;">🔧 {shop_name}</h1>
                 </div>
                 
                 <h2 style="color: #333;">Work Has Started!</h2>
@@ -1544,6 +1547,7 @@ async def start_work(
                         View in Portal
                     </a>
                 </p>
+                {shop_contact_html}
             </body>
             </html>
             """
@@ -1552,9 +1556,10 @@ async def start_work(
                 db=db,
                 tenant_id=str(order.tenant_id),
                 to=customer.email,
-                subject=f"Work Started on {order.order_number} - DieselBridge Network",
+                subject=f"Work Started on {order.order_number} - {shop_name}",
                 body=html_body,
                 template_name="work_started",
+                sender_name=shop_name,
             )
         
         # SMS notification
@@ -2123,7 +2128,10 @@ async def approve_completion(
 
     # Notify customer that work is complete
     customer = order.customer
-    shop_name = await get_tenant_display_name(db, order.tenant_id)
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+    email_tenant = tenant_result.scalar_one_or_none()
+    shop_name = email_tenant.name.strip() if email_tenant and email_tenant.name and email_tenant.name.strip() else "Your repair shop"
+    shop_contact_html = build_tenant_contact_html(email_tenant)
     if customer and customer.email:
         vehicle = order.vehicle
         vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
@@ -2132,7 +2140,7 @@ async def approve_completion(
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #d97706; margin: 0;">🔧 DieselBridge Network</h1>
+                <h1 style="color: #d97706; margin: 0;">🔧 {shop_name}</h1>
             </div>
             
             <h2 style="color: #16a34a;">Work Complete!</h2>
@@ -2155,8 +2163,9 @@ async def approve_completion(
             </p>
             
             <p style="color: #666; font-size: 14px;">
-                Thank you for choosing DieselBridge Network!
+                Thank you for choosing {shop_name}!
             </p>
+            {shop_contact_html}
         </body>
         </html>
         """
@@ -2166,9 +2175,10 @@ async def approve_completion(
                 db=db,
                 tenant_id=str(order.tenant_id),
                 to=customer.email,
-                subject=f"Work Complete: {order.order_number} - DieselBridge Network",
+                subject=f"Work Complete: {order.order_number} - {shop_name}",
                 body=html_body,
                 template_name="work_complete",
+                sender_name=shop_name,
             )
         except Exception:
             logger.exception("approve_completion: work-complete email failed for order %s", order_id)

@@ -48,6 +48,8 @@ async def _seed_quote_context(db_session):
         id=uuid4(),
         name="Lock Test Garage",
         slug=f"lock-test-{uuid4().hex[:8]}",
+        phone="7045550199",
+        email="service@locktest.example",
         labor_rate=Decimal("100.00"),
     )
     customer = Customer(
@@ -343,6 +345,8 @@ async def test_quote_send_email_uses_tenant_branding(db_session, monkeypatch):
     assert sent_email["sender_name"] == "Lock Test Garage"
     assert sent_email["subject"].endswith(" - Lock Test Garage")
     assert "Lock Test Garage" in sent_email["body"]
+    assert "(704) 555-0199" in sent_email["body"]
+    assert "service@locktest.example" in sent_email["body"]
     assert "DieselBridge Network" not in sent_email["subject"]
     assert "DieselBridge Network" not in sent_email["body"]
 

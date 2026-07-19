@@ -37,7 +37,7 @@ from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.services.email_service import send_email
 from app.services.provider_outbox_service import enqueue_email_notification
-from app.services.tenant_branding import get_tenant_display_name
+from app.services.tenant_branding import build_tenant_contact_html, get_tenant_display_name
 from app.services.twilio_service import send_sms
 from app.services.pricing import (
     get_order_checkout_breakdown,
@@ -845,6 +845,7 @@ async def send_quote_to_customer(
     parts_total = get_order_parts_total(order)
     savings_html = _build_quote_savings_html(order)
     checkout_html = _build_quote_checkout_html(order, tenant) if tenant else ""
+    shop_contact_html = build_tenant_contact_html(tenant)
     
     # Build vehicle info
     vehicle = order.vehicle
@@ -896,9 +897,9 @@ async def send_quote_to_customer(
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
         
         <p style="color: #666; font-size: 12px; text-align: center;">
-            If you have any questions, please contact us directly.<br>
             This link expires in 7 days.
         </p>
+        {shop_contact_html}
     </body>
     </html>
     """
@@ -942,6 +943,7 @@ async def send_quote_to_customer(
                 <p style="margin: 8px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Labor / Services:</strong> ${labor_total:,.2f}</p>
                 <p style="margin: 4px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Parts:</strong> ${parts_total:,.2f}</p>
                 <p style="color: #666; font-size: 14px;">Work will begin shortly. We will notify you when your vehicle is being serviced.</p>
+                {shop_contact_html}
             </body></html>
             """
         email_template_name = "quote_auto_approved"
