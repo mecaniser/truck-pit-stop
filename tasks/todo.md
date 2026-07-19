@@ -3189,3 +3189,20 @@
 
 ## Review
 - Selecting a company now immediately presents its available trucks as cards, with the unit number prominent and the model directly below it. A lightweight company-scoped filter remains available for larger fleets without hiding the normal selection workflow.
+
+---
+
+# Compact Company Truck Cards (2026-07-19)
+
+## Plan
+- [x] Remove non-selection metadata from the company truck grid.
+- [x] Tighten card padding and responsive grid density for multi-truck companies.
+- [x] Preserve clear model and unit identification plus accessible full labels.
+- [x] Run focused verification and independently release the density refinement.
+
+## Progress Notes
+- [x] Cards now contain only the truck model/name and unit number. Year and plate are deliberately omitted from this high-density picker.
+- [x] Passed the focused repair-order card regression test, frontend TypeScript, focused ESLint, production build, and `git diff --check`.
+
+## Review
+- The company truck picker now presents dense cards with only the two selection fields that matter: truck model/name and unit number. Ten or more trucks fit naturally without the previous empty detail-card space.

@@ -2322,32 +2322,33 @@ export default function RepairOrdersPage() {
                               <Spinner size="sm" className="mr-2" /> Loading company trucks…
                             </div>
                           ) : filteredVehicles.length > 0 ? (
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                               {filteredVehicles.map((vehicle) => {
                                 const selected = selectedVehicleId === vehicle.id
+                                const vehicleName = vehicleDisplayLabel(vehicle, { includeYear: false })
+                                const unitLabel = vehicle.unit_number ? `Unit ${vehicle.unit_number}` : 'Unit not assigned'
                                 return (
                                   <button
                                     key={vehicle.id}
                                     type="button"
+                                    aria-label={`Select ${vehicleName} · ${unitLabel}`}
+                                    title={`${vehicleName} · ${unitLabel}`}
                                     onClick={() => {
                                       setSelectedVehicleId(vehicle.id)
                                       setSelectedVehicleOption(vehicle)
                                       setShowNewVehicleForm(false)
                                     }}
-                                    className={`w-full rounded-lg border p-4 text-left transition-all ${
+                                    className={`min-w-0 rounded-md border px-3 py-2 text-left transition-all ${
                                       selected
                                         ? 'border-amber-500 bg-white ring-2 ring-amber-200'
                                         : 'border-gray-200 bg-white/60 hover:border-amber-300'
                                     }`}
                                   >
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      {vehicle.unit_number ? `Unit ${vehicle.unit_number}` : 'Unit not assigned'}
+                                    <p className="truncate text-sm font-semibold leading-tight text-slate-900">
+                                      {vehicleName}
                                     </p>
-                                    <p className="mt-1 text-sm font-semibold text-slate-900">
-                                      {vehicleDisplayLabel(vehicle, { includeYear: false })}
-                                    </p>
-                                    <p className="mt-1 text-xs text-slate-600">
-                                      {[vehicle.year, vehicle.license_plate || 'No plate'].filter(Boolean).join(' · ')}
+                                    <p className="mt-1 truncate text-xs font-medium uppercase tracking-wide text-slate-500">
+                                      {unitLabel}
                                     </p>
                                   </button>
                                 )

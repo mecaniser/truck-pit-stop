@@ -203,3 +203,6 @@
 - Correction: The initial typeahead optimisation replaced the immediate company-truck grid with a click-to-open select, removing the workflow the dispatcher preferred after customer selection.
 - Rule: Performance work must preserve established high-frequency interaction patterns when the same scoped request can support them efficiently.
 - Prevention: When changing a data picker from a visible grid to a searchable control, verify with the user whether immediate comparison/selection is part of the workflow before shipping.
+- Correction: Restoring the visible truck grid preserved the selection workflow but retained unneeded year/plate metadata and oversized cards, wasting space for companies with many trucks.
+- Rule: Compact picker cards should contain only the fields needed to identify and choose the record; secondary operational metadata belongs in details, not a high-density selection grid.
+- Prevention: For grid pickers, validate card density against a realistic 10-plus-item example and remove every field that does not change the selection decision.

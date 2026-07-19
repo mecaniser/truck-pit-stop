@@ -112,5 +112,6 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(await screen.findByText('Available trucks')).toBeInTheDocument()
     expect(screen.getByText('Unit 204')).toBeInTheDocument()
     expect(screen.getByText('Freightliner Cascadia')).toBeInTheDocument()
+    expect(screen.queryByText('2022 · ELIS-204')).not.toBeInTheDocument()
   })
 })
