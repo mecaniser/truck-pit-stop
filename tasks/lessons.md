@@ -1,6 +1,9 @@
 # Lessons
 
 ## 2026-07-14
+- Correction: Price Builder mutations and server-backed picker loads could leave the visible workflow empty or unchanged with no pending affordance, making slow network responses look like failed actions.
+- Rule: Every repair-order mutation and async picker transition must expose pending feedback at the action control and, where the result replaces an empty surface, in that surface too.
+- Prevention: For each new Price Builder request, verify a slow-network state in the browser: button disabled/spinning, no duplicate submit, and a contextual skeleton or loading row when the destination content has not arrived.
 - Correction: Automated repair-order SMS messages still used the platform brand (`DieselBridge Network`) even though the messages are sent on behalf of individual tenant shops.
 - Rule: Every customer- or staff-facing automated message must resolve its sender identity from the tenant at send time; platform branding is only for platform-owned communications.
 - Prevention: When adding or editing an automated notification template, search the full SMS/email workflow for hard-coded brand text and add a regression assertion for the tenant name in the saved delivery record.

@@ -3248,3 +3248,23 @@
 
 ## Review
 - New automated texts will use the tenant’s current `name` (for example, `Truck Pit Stop`), so a renamed shop is reflected in future messages without a code change. Previously sent SMS are historical provider records and will not change.
+
+---
+
+# Price Builder Pending Feedback (2026-07-19)
+
+## Plan
+- [x] Map every add/search/load mutation in the Price Builder repair-order workflow and the existing spinner primitives they can reuse.
+- [x] Add visible pending feedback to operation, labor, and part add controls without changing the compact workflow layout.
+- [x] Add skeleton/inline loading states when server-backed parts and work lines are still resolving.
+- [x] Add focused UI regression coverage and run TypeScript/build checks.
+- [ ] Commit, push, and independently deploy the update.
+
+## Progress Notes
+- [x] User reported that slow-network add/search transitions look like empty or non-responsive UI: the plus controls, operation work/labor surface, and part search/add flows need an explicit in-progress state.
+- [x] Reused the shared `Spinner` for the selected operation, saved labor, standalone part, and operation-attached part actions; all other add controls disable while the request is in flight.
+- [x] Replaced false-empty part search states with compact skeleton rows, and render a contextual work/labor placeholder until an added operation or part reaches the summary.
+- [x] Added two slow-request UI tests. Targeted lint, TypeScript, and the production build pass; repository-wide lint remains blocked by existing unrelated errors.
+
+## Review
+- Adding a repair operation or labor book time now gives feedback both on the clicked plus control and in Work & Labor. Searching or adding parts now has the same feedback whether the part is standalone or attached to a repair operation.

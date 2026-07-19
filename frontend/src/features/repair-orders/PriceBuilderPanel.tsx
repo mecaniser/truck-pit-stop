@@ -432,6 +432,53 @@ function LaborLineEditor({
 }
 
 /**
+ * Keeps an asynchronous picker from briefly reading as empty while its result
+ * set is still on the wire. The shape intentionally mirrors the compact picker
+ * rows instead of shifting the Price Builder layout with a full panel loader.
+ */
+function PickerLoadingRows({ message }: { message: string }) {
+  return (
+    <div aria-live="polite">
+      <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
+        <Spinner size="xs" label={message} />
+        {message}
+      </p>
+      <div aria-hidden="true" className="space-y-1.5 px-2 pb-2 animate-pulse">
+        {[0, 1].map((index) => (
+          <div key={index} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5">
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="h-3.5 w-2/5 rounded bg-gray-200" />
+              <div className="h-2.5 w-3/5 rounded bg-gray-100" />
+            </div>
+            <div className="h-8 w-8 rounded-full bg-gray-200" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** A compact destination placeholder for a new operation or part mutation. */
+function PendingWorkRows({ message }: { message: string }) {
+  return (
+    <div aria-live="polite" className="rounded-xl border border-dashed border-orange-200 bg-orange-50/40 px-3 py-3">
+      <p className="inline-flex items-center gap-2 text-sm font-semibold text-gray-700">
+        <Spinner size="xs" label={message} />
+        {message}
+      </p>
+      <div aria-hidden="true" className="mt-3 flex items-center gap-3 animate-pulse">
+        <div className="h-9 w-9 shrink-0 rounded-lg bg-orange-100" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="h-3.5 w-2/5 rounded bg-orange-100" />
+          <div className="h-2.5 w-3/5 rounded bg-orange-50" />
+        </div>
+        <div className="h-5 w-16 rounded bg-orange-100" />
+      </div>
+    </div>
+  )
+}
+
+/**
  * Order number in the panel header. On mobile the value is truncated to fit
  * the narrow header; tapping it reveals the full number in a small popover so
  * it stays reachable. Desktop hover also gets a native title.
@@ -1572,6 +1619,30 @@ export default function PriceBuilderPanel({
     updateLine.isPending ||
     removeLine.isPending
   )
+  const isApplyingOperationCandidate = (candidate: RepairOperationCandidate) => (
+    applyRepairOp.isPending && applyRepairOp.variables?.candidate.operation_id === candidate.operation_id
+  )
+  const isApplyingLaborBookEntry = (entry: LaborBookTimeEntry) => (
+    applyLaborBookEntry.isPending && applyLaborBookEntry.variables?.id === entry.id
+  )
+  const isAddingPartFor = (inventoryId: string, sourceLineId: string | null) => (
+    addPart.isPending &&
+    addPart.variables?.inventoryId === inventoryId &&
+    (addPart.variables?.sourceLineId ?? null) === sourceLineId
+  )
+  const isAddingStandalonePart = addPart.isPending && !addPart.variables?.sourceLineId
+  const isAddingPartToLine = (lineId: string) => (
+    addPart.isPending && addPart.variables?.sourceLineId === lineId
+  )
+  const pendingWorkMessage = applyRepairOp.isPending
+    ? 'Adding operation to work & labor…'
+    : applyLaborBookEntry.isPending
+      ? 'Adding labor book time to work & labor…'
+      : createAndApplyLaborBookTime.isPending
+        ? 'Saving and adding labor book time…'
+        : addPart.isPending
+          ? 'Adding part to work & labor…'
+          : null
   // `summary.total_cost` bakes in the server's (possibly stale) labor_total;
   // shift it by however far our optimistic labor total has diverged so the
   // order total moves in lockstep with the steppers instead of waiting for
@@ -2305,6 +2376,7 @@ export default function PriceBuilderPanel({
                 )}
                 {!searchOps.isPending && candidates.map((c, index) => {
                   const isAddNew = isNoMatchCandidate && candidates.length === 1
+                  const isAddingThisOperation = isApplyingOperationCandidate(c)
                   return (
                     <div
                       key={c.operation_id}
@@ -2359,9 +2431,9 @@ export default function PriceBuilderPanel({
                           })}
                           disabled={!canMutate || applyRepairOp.isPending || (isAddNew && !bookTimeHours)}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                          aria-label={isAddNew ? 'Add operation' : 'Apply operation'}
+                          aria-label={isAddingThisOperation ? `Adding ${c.name}` : isAddNew ? 'Add operation' : 'Apply operation'}
                         >
-                          <Plus className="h-4 w-4" />
+                          {isAddingThisOperation ? <Spinner size="xs" label={`Adding ${c.name}`} /> : <Plus className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
@@ -2378,6 +2450,7 @@ export default function PriceBuilderPanel({
                 )}
                 {!laborBookEntriesFetching && laborBookEntries.length > 0 && laborBookEntries.slice(0, 8).map((entry, index) => {
                   const scope = laborBookTimeScope(entry)
+                  const isAddingThisLaborBookEntry = isApplyingLaborBookEntry(entry)
                   return (
                     <div
                       key={entry.id}
@@ -2396,9 +2469,9 @@ export default function PriceBuilderPanel({
                         onClick={() => applyLaborBookEntry.mutate(entry)}
                         disabled={!canMutate || applyLaborBookEntry.isPending}
                         className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                        aria-label={`Add ${entry.operation_name}`}
+                        aria-label={isAddingThisLaborBookEntry ? `Adding ${entry.operation_name}` : `Add ${entry.operation_name}`}
                       >
-                        <Plus className="h-4 w-4" />
+                        {isAddingThisLaborBookEntry ? <Spinner size="xs" label={`Adding ${entry.operation_name}`} /> : <Plus className="h-4 w-4" />}
                       </button>
                     </div>
                   )
@@ -2554,8 +2627,9 @@ export default function PriceBuilderPanel({
                         type="button"
                         onClick={() => createAndApplyLaborBookTime.mutate()}
                         disabled={!canMutate || createAndApplyLaborBookTime.isPending}
-                        className="h-9 rounded-lg bg-gray-900 px-3 text-xs font-bold text-white disabled:bg-gray-300"
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-gray-900 px-3 text-xs font-bold text-white disabled:bg-gray-300"
                       >
+                        {createAndApplyLaborBookTime.isPending && <Spinner size="xs" label="Saving labor book time" />}
                         {createAndApplyLaborBookTime.isPending ? 'Saving…' : 'Save & add'}
                       </button>
                     </div>
@@ -2569,20 +2643,21 @@ export default function PriceBuilderPanel({
               </>
             ) : addType === 'part' ? (
               <>
-                {(inventoryFetching || partSuggestionsFetching) && (
-                  <p className="inline-flex items-center gap-2 px-2 py-3 text-xs font-semibold text-gray-500">
-                    <Spinner size="xs" />
-                    Loading parts…
-                  </p>
-                )}
                 {(() => {
                   const term = searchTerm.trim().toLowerCase()
+                  const pickerLoading = inventoryFetching || partSuggestionsFetching
+                  const pickerHasNoResultsYet = term.length >= 2 ? inventory.length === 0 : !partSuggestions
+
+                  if (pickerLoading && pickerHasNoResultsYet) {
+                    return <PickerLoadingRows message={term.length >= 2 ? 'Searching in-stock parts…' : 'Loading suggested parts…'} />
+                  }
 
                   const renderItemRow = (item: { id: string; name: string; sku: string; stock_quantity: number; unit_type: string; selling_price: string }, index: number) => {
                     const isFluid = item.unit_type && item.unit_type !== 'each'
                     const step = isFluid ? 0.25 : 1
                     const unitAbbr = UNIT_ABBR[item.unit_type] || ''
                     const rowQuantity = Math.max(step, partQuantitiesByItemId[item.id] ?? 1)
+                    const isAddingThisPart = isAddingPartFor(item.id, null)
                     return (
                       <div
                         key={item.id}
@@ -2616,9 +2691,9 @@ export default function PriceBuilderPanel({
                             onClick={() => addPart.mutate({ inventoryId: item.id, quantity: rowQuantity })}
                             disabled={!canMutate || addPart.isPending}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                            aria-label={`Add ${item.name}`}
+                            aria-label={isAddingThisPart ? `Adding ${item.name}` : `Add ${item.name}`}
                           >
-                            <Plus className="h-4 w-4" />
+                            {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name}`} /> : <Plus className="h-4 w-4" />}
                           </button>
                         </div>
                       </div>
@@ -2842,6 +2917,7 @@ export default function PriceBuilderPanel({
             .filter((item) => !groupedInventoryIds.has(item.id))
             .filter((item) => item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term))
             .slice(0, 6)
+          const inventoryLoadingWithoutResults = inventoryFetching && inventory.length === 0
 
           return (
             <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/50 p-3">
@@ -2867,6 +2943,8 @@ export default function PriceBuilderPanel({
               </div>
               {!hasSearchTerm ? (
                 <p className="px-1 py-2 text-sm text-gray-500">Type at least two characters to search in-stock inventory.</p>
+              ) : inventoryLoadingWithoutResults ? (
+                <PickerLoadingRows message="Searching inventory…" />
               ) : inventoryErrored ? (
                 <p className="px-1 py-2 text-sm text-red-600">
                   Couldn't search inventory.{' '}
@@ -2888,6 +2966,7 @@ export default function PriceBuilderPanel({
                     const unitAbbr = UNIT_ABBR[item.unit_type] || ''
                     const quantityKey = `${line.id}:${item.id}`
                     const rowQuantity = Math.max(step, partQuantitiesByItemId[quantityKey] ?? 1)
+                    const isAddingThisPart = isAddingPartFor(item.id, line.id)
                     return (
                       <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-2.5 py-2">
                         <div className="min-w-0">
@@ -2922,9 +3001,9 @@ export default function PriceBuilderPanel({
                             })}
                             disabled={!canMutate || addPart.isPending}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                            aria-label={`Add ${item.name} to ${line.description}`}
+                            aria-label={isAddingThisPart ? `Adding ${item.name} to ${line.description}` : `Add ${item.name} to ${line.description}`}
                           >
-                            <Plus className="h-4 w-4" />
+                            {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name} to ${line.description}`} /> : <Plus className="h-4 w-4" />}
                           </button>
                         </div>
                       </div>
@@ -2998,6 +3077,9 @@ export default function PriceBuilderPanel({
           )
         }
         if (!lines.length && !orphanParts.length) {
+          if (pendingWorkMessage || (partsFetching && !partsUsed)) {
+            return <PendingWorkRows message={pendingWorkMessage || 'Loading parts for work & labor…'} />
+          }
           return (
             <div className="rounded-xl border border-dashed border-orange-200 bg-orange-50/40 px-4 py-6 text-center">
               <p className="font-semibold text-gray-900">Start by adding an operation, diagnostic or part.</p>
@@ -3019,6 +3101,7 @@ export default function PriceBuilderPanel({
               {lines.map((line) => {
                 const groupedParts = groupedPartsForLine(line)
                 const isOpen = openLineIds.has(line.id)
+                const isAddingPartHere = isAddingPartToLine(line.id)
                 const partTotal = groupedParts.reduce((sum, part) => sum + (parseFloat(part.total_price || '0') || 0), 0)
                 const partSavings = groupedParts.reduce((sum, part) => sum + (parseFloat(part.savings || '0') || 0), 0)
                 const lineTotal = (parseFloat(line.total_cost || '0') || 0) + partTotal
@@ -3071,13 +3154,15 @@ export default function PriceBuilderPanel({
                           {renderLaborEditor(line)}
                         </div>
                         {groupedParts.length > 0 && renderPartsRows(groupedParts)}
+                        {isAddingPartHere && <PendingWorkRows message="Adding part to this operation…" />}
                         <button
                           type="button"
-                          disabled={!canMutate}
+                          disabled={!canMutate || addPart.isPending}
                           onClick={() => setOperationPartPickerLineId((current) => current === line.id ? null : line.id)}
                           className="inline-flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-2 text-sm font-semibold text-gray-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:hover:border-gray-300 disabled:hover:bg-transparent disabled:hover:text-gray-400 disabled:opacity-60"
                         >
-                          <Plus className="h-4 w-4" /> Add part to this operation
+                          {isAddingPartHere ? <Spinner size="xs" label="Adding part to this operation" /> : <Plus className="h-4 w-4" />}
+                          {isAddingPartHere ? 'Adding part…' : 'Add part to this operation'}
                         </button>
                         {renderOperationPartPicker(line, groupedParts)}
                       </div>
@@ -3097,6 +3182,20 @@ export default function PriceBuilderPanel({
                     </div>
                   </div>
                   <div className="ml-[60px]">{renderPartsRows(orphanParts)}</div>
+                </div>
+              )}
+              {isAddingStandalonePart && lines.length > 0 && (
+                <div className="py-3">
+                  <div className="mb-2 flex items-center gap-2 px-2">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                      <Box className="h-4 w-4" />
+                    </span>
+                    <div>
+                      <p className="font-semibold text-gray-900">Standalone parts</p>
+                      <p className="text-xs text-gray-500">Adding a part…</p>
+                    </div>
+                  </div>
+                  <div className="ml-[60px]"><PendingWorkRows message="Adding standalone part…" /></div>
                 </div>
               )}
             </div>
