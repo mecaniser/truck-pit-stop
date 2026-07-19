@@ -248,7 +248,71 @@ async def test_add_part_insufficient_stock_counts_whole_packages(db_session):
     with pytest.raises(HTTPException) as exc_info:
         await add_parts_to_repair_order(order.id, body, db_session, user)
     assert exc_info.value.status_code == 400
-    assert "Insufficient stock" in exc_info.value.detail
+    assert exc_info.value.detail["code"] == "insufficient_stock"
+    assert exc_info.value.detail["available_packages"] == 0
+    assert exc_info.value.detail["required_packages"] == 1
+    assert exc_info.value.detail["can_override"] is True
+
+
+@pytest.mark.asyncio
+async def test_add_part_stock_shortage_override_records_only_available_reservation(db_session):
+    user, order, inv = await _seed(db_session, stock_quantity=1, unit_type="each")
+
+    response = await add_parts_to_repair_order(
+        order.id,
+        PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("2"), allow_stock_shortage=True),
+        db_session,
+        user,
+    )
+
+    assert response.quantity == Decimal("2")
+    assert response.stock_shortage_override is True
+    stored = await db_session.get(PartsUsage, response.id)
+    assert stored.stock_reserved_packages == 1
+    await db_session.refresh(inv)
+    assert inv.stock_quantity == 0
+
+    # Removing an override must restore only the one package actually reserved,
+    # not the two units billed on the repair order.
+    await remove_parts_from_repair_order(order.id, response.id, db_session, user)
+    await db_session.refresh(inv)
+    assert inv.stock_quantity == 1
+
+
+@pytest.mark.asyncio
+async def test_quantity_increase_can_use_stock_shortage_override_without_negative_inventory(db_session):
+    user, order, inv = await _seed(db_session, stock_quantity=1, unit_type="each")
+    part = await add_parts_to_repair_order(
+        order.id,
+        PartsUsageCreate(inventory_id=inv.id, quantity=Decimal("1")),
+        db_session,
+        user,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await update_parts_quantity(
+            order.id,
+            part.id,
+            PartsUsageUpdate(quantity=Decimal("2")),
+            db_session,
+            user,
+        )
+    assert exc_info.value.detail["code"] == "insufficient_stock"
+
+    updated = await update_parts_quantity(
+        order.id,
+        part.id,
+        PartsUsageUpdate(quantity=Decimal("2"), allow_stock_shortage=True),
+        db_session,
+        user,
+    )
+    assert updated.stock_shortage_override is True
+    await db_session.refresh(inv)
+    assert inv.stock_quantity == 0
+
+    await remove_parts_from_repair_order(order.id, part.id, db_session, user)
+    await db_session.refresh(inv)
+    assert inv.stock_quantity == 1
 
 
 @pytest.mark.asyncio

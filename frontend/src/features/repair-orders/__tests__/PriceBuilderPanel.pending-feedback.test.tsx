@@ -151,7 +151,7 @@ describe('PriceBuilderPanel pending feedback', () => {
     const search = await screen.findByPlaceholderText(/add part/i)
     await user.type(search, 'brake')
 
-    expect(await screen.findByText('Searching in-stock parts…')).toBeInTheDocument()
+    expect(await screen.findByText('Searching inventory…')).toBeInTheDocument()
     await act(async () => {
       resolveInventory?.()
       await pendingInventory
@@ -166,6 +166,64 @@ describe('PriceBuilderPanel pending feedback', () => {
     await act(async () => {
       resolvePartAdd?.()
       await pendingPartAdd
+    })
+  })
+
+  it('keeps an insufficient-stock failure beside the part and retries only after an explicit override', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') return Promise.resolve({ data: [] })
+      if (url === '/repair-orders/order-1/parts/suggestions') return Promise.resolve({ data: { for_this_order: [], most_used: [] } })
+      if (url === '/inventory/typeahead') {
+        return Promise.resolve({
+          data: [{
+            id: 'part-1', name: 'Brake Pad', sku: 'BP-1', stock_quantity: 1,
+            on_order_quantity: 0, unit_type: 'each', cost: '30.00', selling_price: '50.00',
+          }],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+    apiMocks.post.mockImplementation((url: string, body?: { allow_stock_shortage?: boolean }) => {
+      if (url !== '/repair-orders/order-1/parts') return Promise.resolve({ data: {} })
+      if (body?.allow_stock_shortage) return Promise.resolve({ data: {} })
+      return Promise.reject({
+        response: {
+          data: {
+            detail: {
+              code: 'insufficient_stock',
+              inventory_id: 'part-1',
+              requested_quantity: '2',
+              required_packages: 2,
+              available_packages: 1,
+              shortfall_packages: 1,
+              can_override: true,
+            },
+          },
+        },
+      })
+    })
+
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: 'Part' }))
+    const search = await screen.findByPlaceholderText(/add part/i)
+    await user.type(search, 'brake')
+    await screen.findByRole('button', { name: 'Add Brake Pad' })
+
+    await user.click(screen.getByRole('button', { name: /increase quantity for brake pad/i }))
+    await user.click(screen.getByRole('button', { name: 'Add Brake Pad' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Inventory shows 1 ea; this order requests 2 ea.')
+    await user.click(screen.getByRole('button', { name: 'Override & add' }))
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenLastCalledWith('/repair-orders/order-1/parts', expect.objectContaining({
+        inventory_id: 'part-1',
+        quantity: 2,
+        allow_stock_shortage: true,
+      }))
     })
   })
 })

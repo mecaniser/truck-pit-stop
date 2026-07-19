@@ -3268,3 +3268,23 @@
 
 ## Review
 - Adding a repair operation or labor book time now gives feedback both on the clicked plus control and in Work & Labor. Searching or adding parts now has the same feedback whether the part is standalone or attached to a repair operation.
+
+---
+
+# Price Builder Stock Shortage Override (2026-07-19)
+
+## Plan
+- [x] Trace the existing insufficient-stock API contract and inventory adjustment behavior.
+- [x] Add a deliberate server-side override that records the requested part while preserving stock integrity and an audit signal.
+- [x] Surface the shortage inline on the affected picker row, with requested versus available quantities and an explicit override action.
+- [x] Add focused backend/frontend regression coverage and run checks.
+- [ ] Independently release the change.
+
+## Progress Notes
+- [x] User reported that an insufficient-stock toast gives no actionable row-level feedback, leaving the failed part request indistinguishable from a normal add control.
+- [x] The API now returns a structured shortage payload, reserves only available packages on an explicit override, and restores that exact reservation on removal, deletion, or restoration.
+- [x] The Price Builder keeps the failed picker row visible with an inline shortage alert and `Override & add`; concurrent override buttons are disabled while any part add is in flight.
+- [x] Focused frontend (3) and backend (16) tests, TypeScript, changed-file lint, diff checks, and production build pass. The full backend suite still has five unrelated tenant-messaging permission failures.
+
+## Review
+- Staff can intentionally add a part whose physical quantity exceeds the recorded inventory without allowing inventory to go negative. The row shows the conflict and the resulting part is marked with a `Stock override` audit badge.

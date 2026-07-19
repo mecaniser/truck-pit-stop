@@ -238,6 +238,9 @@ export interface PartsUsage {
   total_price: string
   source_service_id: string | null
   source_line_id: string | null
+  // True when staff explicitly added a physically available part despite an
+  // incomplete inventory count; inventory was never allowed to go negative.
+  stock_shortage_override?: boolean
   created_at: string
 }
 

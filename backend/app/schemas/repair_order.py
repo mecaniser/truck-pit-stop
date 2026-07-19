@@ -19,11 +19,15 @@ class PartsUsageCreate(BaseModel):
     unit_price: Optional[Decimal] = None  # override; else use inventory selling_price
     source_service_id: Optional[UUID] = None
     source_line_id: Optional[UUID] = None  # labor line this part is attached to
+    # Explicit acknowledgement that the shop has physical stock which has not
+    # been recorded in inventory yet. The API retains the shortfall for audit.
+    allow_stock_shortage: bool = False
 
 
 class PartsUsageUpdate(BaseModel):
     quantity: Optional[Decimal] = None
     unit_price: Optional[Decimal] = None
+    allow_stock_shortage: bool = False
 
 
 class PartsPricingModeRequest(BaseModel):
@@ -50,6 +54,7 @@ class PartsUsageResponse(BaseModel):
     total_price: Decimal
     source_service_id: Optional[UUID] = None
     source_line_id: Optional[UUID] = None
+    stock_shortage_override: bool = False
     created_at: datetime
 
     class Config:

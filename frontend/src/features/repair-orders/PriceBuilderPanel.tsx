@@ -81,6 +81,23 @@ type InventoryTypeaheadItem = Pick<
   'id' | 'sku' | 'name' | 'stock_quantity' | 'on_order_quantity' | 'unit_type' | 'cost' | 'selling_price'
 >
 
+type PartAddRequest = {
+  inventoryId: string
+  quantity: number
+  sourceServiceId?: string | null
+  sourceLineId?: string | null
+  quantityKey?: string
+  allowStockShortage?: boolean
+}
+
+type StockShortage = {
+  inventoryId: string
+  requestedQuantity: string
+  requiredPackages: number
+  availablePackages: number
+  shortfallPackages: number
+}
+
 type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
@@ -259,6 +276,37 @@ function errorDetail(error: unknown, fallback: string) {
     if (typeof detail === 'string' && detail.trim()) return detail
   }
   return fallback
+}
+
+function partAddKey(inventoryId: string, sourceLineId?: string | null) {
+  return `${sourceLineId || 'standalone'}:${inventoryId}`
+}
+
+function stockShortageFromError(error: unknown): StockShortage | null {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return null
+  const response = (error as { response?: { data?: { detail?: unknown } } }).response
+  const detail = response?.data?.detail
+  if (typeof detail !== 'object' || detail === null || Array.isArray(detail)) return null
+  const payload = detail as Record<string, unknown>
+  if (payload.code !== 'insufficient_stock' || typeof payload.inventory_id !== 'string') return null
+
+  const requiredPackages = Number(payload.required_packages)
+  const availablePackages = Number(payload.available_packages)
+  const shortfallPackages = Number(payload.shortfall_packages)
+  if (
+    typeof payload.requested_quantity !== 'string' ||
+    !Number.isFinite(requiredPackages) ||
+    !Number.isFinite(availablePackages) ||
+    !Number.isFinite(shortfallPackages)
+  ) return null
+
+  return {
+    inventoryId: payload.inventory_id,
+    requestedQuantity: payload.requested_quantity,
+    requiredPackages,
+    availablePackages,
+    shortfallPackages,
+  }
 }
 
 function nullableText(value: string) {
@@ -474,6 +522,54 @@ function PendingWorkRows({ message }: { message: string }) {
         </div>
         <div className="h-5 w-16 rounded bg-orange-100" />
       </div>
+    </div>
+  )
+}
+
+function StockShortageCallout({
+  shortage,
+  unitLabel,
+  overridePending,
+  addPending,
+  onOverride,
+}: {
+  shortage: StockShortage
+  unitLabel: string
+  overridePending: boolean
+  addPending: boolean
+  onOverride: () => void
+}) {
+  const availableLabel = unitLabel
+    ? `${shortage.availablePackages} ${unitLabel}`
+    : `${shortage.availablePackages} package${shortage.availablePackages === 1 ? '' : 's'}`
+  const requestedLabel = unitLabel
+    ? `${shortage.requestedQuantity} ${unitLabel}`
+    : `${shortage.requestedQuantity} package${shortage.requestedQuantity === '1' ? '' : 's'}`
+  const shortfallLabel = unitLabel
+    ? `${shortage.shortfallPackages} ${unitLabel}`
+    : `${shortage.shortfallPackages} package${shortage.shortfallPackages === 1 ? '' : 's'}`
+  const packageNote = shortage.requiredPackages !== Number(shortage.requestedQuantity)
+    ? ` (${shortage.requiredPackages} packages required)`
+    : ''
+
+  return (
+    <div role="alert" className="mt-2 flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-800 sm:flex-row sm:items-center sm:justify-between">
+      <p className="flex min-w-0 items-start gap-1.5">
+        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />
+        <span>
+          <span className="font-bold">Stock count needs attention.</span>{' '}
+          Inventory shows {availableLabel}; this order requests {requestedLabel}{packageNote}. Short by {shortfallLabel}.
+        </span>
+      </p>
+      <button
+        type="button"
+        onClick={onOverride}
+        disabled={overridePending || addPending}
+        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-2.5 py-1.5 font-bold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {overridePending && <Spinner size="xs" label="Adding with stock override" />}
+        {overridePending ? 'Adding…' : 'Override & add'}
+      </button>
     </div>
   )
 }
@@ -842,6 +938,7 @@ export default function PriceBuilderPanel({
   const [armWoComplete, setArmWoComplete] = useState(false)
   const [woMileageOut, setWoMileageOut] = useState('')
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
+  const [stockShortages, setStockShortages] = useState<Record<string, StockShortage>>({})
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
   const [operationPartSearchByLineId, setOperationPartSearchByLineId] = useState<Record<string, string>>({})
   const [bookTimeHours, setBookTimeHours] = useState('1')
@@ -854,6 +951,10 @@ export default function PriceBuilderPanel({
     setPhotosOpen(false)
     onRecommendedServicesOpenChange?.(false)
   }, [orderId, onRecommendedServicesOpenChange])
+
+  useEffect(() => {
+    setStockShortages({})
+  }, [orderId])
   const initialLaborBookTimeForm = (): LaborBookTimeForm => ({
     operation_name: searchTerm.trim(),
     operation_description: '',
@@ -1025,13 +1126,13 @@ export default function PriceBuilderPanel({
     queryFn: async ({ signal }) => {
       const response = await api.get('/inventory/typeahead', {
         signal,
-        params: { q: inventorySearchTerm, limit: 20, in_stock: true },
+        params: { q: inventorySearchTerm, limit: 20, in_stock: false },
       })
       return response.data
     },
-    // Searching a part is explicit user intent. The endpoint is tenant-scoped,
-    // capped, and avoids count/full-catalog work; cache each short query so
-    // backspacing and reopening the picker remain instant.
+    // Searching a part is explicit user intent. Include zero-stock rows so a
+    // verified physical part that has not been recorded yet can use the explicit
+    // shortage override; the endpoint remains tenant-scoped and capped.
     enabled: !!orderId && !isDeleted && shouldSearchInventory,
     staleTime: 30 * 1000,
   })
@@ -1277,13 +1378,8 @@ export default function PriceBuilderPanel({
       quantity,
       sourceServiceId,
       sourceLineId,
-    }: {
-      inventoryId: string
-      quantity: number
-      sourceServiceId?: string | null
-      sourceLineId?: string | null
-      quantityKey?: string
-    }) => {
+      allowStockShortage = false,
+    }: PartAddRequest) => {
       const inventoryItem = inventory?.find((item) => item.id === inventoryId)
       const body: {
         inventory_id: string
@@ -1291,11 +1387,13 @@ export default function PriceBuilderPanel({
         source_service_id: string | null
         source_line_id: string | null
         unit_price?: string
+        allow_stock_shortage: boolean
       } = {
         inventory_id: inventoryId,
         quantity,
         source_service_id: sourceServiceId || null,
         source_line_id: sourceLineId || null,
+        allow_stock_shortage: allowStockShortage,
       }
       if (partsPricingMode === 'stock' && inventoryItem?.cost != null) {
         body.unit_price = inventoryItem.cost
@@ -1303,6 +1401,11 @@ export default function PriceBuilderPanel({
       await api.post(`/repair-orders/${orderId}/parts`, body)
     },
     onSuccess: async (_data, variables) => {
+      setStockShortages((current) => {
+        const next = { ...current }
+        delete next[partAddKey(variables.inventoryId, variables.sourceLineId)]
+        return next
+      })
       setSearchTerm('')
       setPartQuantitiesByItemId((current) => {
         const next = { ...current }
@@ -1314,7 +1417,18 @@ export default function PriceBuilderPanel({
       await invalidate()
       toast.success('Part added')
     },
-    onError: (err: unknown) => toast.error(errorDetail(err, 'Unable to add part')),
+    onError: (err: unknown, variables) => {
+      const shortage = stockShortageFromError(err)
+      if (shortage && shortage.inventoryId === variables.inventoryId) {
+        setStockShortages((current) => ({
+          ...current,
+          [partAddKey(variables.inventoryId, variables.sourceLineId)]: shortage,
+        }))
+        toast.error('Inventory count is short — review the inline stock check.')
+        return
+      }
+      toast.error(errorDetail(err, 'Unable to add part'))
+    },
   })
 
   const searchOps = useMutation({
@@ -2649,7 +2763,7 @@ export default function PriceBuilderPanel({
                   const pickerHasNoResultsYet = term.length >= 2 ? inventory.length === 0 : !partSuggestions
 
                   if (pickerLoading && pickerHasNoResultsYet) {
-                    return <PickerLoadingRows message={term.length >= 2 ? 'Searching in-stock parts…' : 'Loading suggested parts…'} />
+                    return <PickerLoadingRows message={term.length >= 2 ? 'Searching inventory…' : 'Loading suggested parts…'} />
                   }
 
                   const renderItemRow = (item: { id: string; name: string; sku: string; stock_quantity: number; unit_type: string; selling_price: string }, index: number) => {
@@ -2658,44 +2772,62 @@ export default function PriceBuilderPanel({
                     const unitAbbr = UNIT_ABBR[item.unit_type] || ''
                     const rowQuantity = Math.max(step, partQuantitiesByItemId[item.id] ?? 1)
                     const isAddingThisPart = isAddingPartFor(item.id, null)
+                    const shortage = stockShortages[partAddKey(item.id, null)]
+                    const addRequest: PartAddRequest = { inventoryId: item.id, quantity: rowQuantity }
                     return (
                       <div
                         key={item.id}
-                        className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 ${
+                        className={`rounded-xl px-3 py-2.5 ${
                           index === 0 ? 'bg-orange-50 shadow-[inset_3px_0_0_#ef8a12]' : 'hover:bg-gray-50'
                         }`}
                       >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
-                          <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                            {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
-                          </p>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                            <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
+                              {item.sku} · {item.stock_quantity} in stock{unitAbbr ? ` (${unitAbbr})` : ''} · list {money(item.selling_price)}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <QuantityStepper
+                              value={rowQuantity}
+                              min={step}
+                              step={step}
+                              unitLabel={unitAbbr}
+                              disabled={!canMutate || addPart.isPending}
+                              ariaLabel={`Quantity for ${item.name}`}
+                              onChange={(next) => {
+                                setPartQuantitiesByItemId((current) => ({
+                                  ...current,
+                                  [item.id]: next,
+                                }))
+                                setStockShortages((current) => {
+                                  const updated = { ...current }
+                                  delete updated[partAddKey(item.id, null)]
+                                  return updated
+                                })
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => addPart.mutate(addRequest)}
+                              disabled={!canMutate || addPart.isPending}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                              aria-label={isAddingThisPart ? `Adding ${item.name}` : `Add ${item.name}`}
+                            >
+                              {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name}`} /> : <Plus className="h-4 w-4" />}
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <QuantityStepper
-                            value={rowQuantity}
-                            min={step}
-                            step={step}
+                        {shortage && (
+                          <StockShortageCallout
+                            shortage={shortage}
                             unitLabel={unitAbbr}
-                            disabled={!canMutate || addPart.isPending}
-                            ariaLabel={`Quantity for ${item.name}`}
-                            onChange={(next) => {
-                              setPartQuantitiesByItemId((current) => ({
-                                ...current,
-                                [item.id]: next,
-                              }))
-                            }}
+                            overridePending={isAddingThisPart}
+                            addPending={addPart.isPending}
+                            onOverride={() => addPart.mutate({ ...addRequest, allowStockShortage: true })}
                           />
-                          <button
-                            type="button"
-                            onClick={() => addPart.mutate({ inventoryId: item.id, quantity: rowQuantity })}
-                            disabled={!canMutate || addPart.isPending}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                            aria-label={isAddingThisPart ? `Adding ${item.name}` : `Add ${item.name}`}
-                          >
-                            {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name}`} /> : <Plus className="h-4 w-4" />}
-                          </button>
-                        </div>
+                        )}
                       </div>
                     )
                   }
@@ -2708,7 +2840,7 @@ export default function PriceBuilderPanel({
                     if (!forThisOrder.length && !mostUsed.length) {
                       return (
                         <p className="px-2 py-3 text-sm text-gray-500">
-                          Start typing at least two characters to search in-stock inventory.
+                          Start typing at least two characters to search inventory.
                         </p>
                       )
                     }
@@ -2763,7 +2895,7 @@ export default function PriceBuilderPanel({
                     item.name.toLowerCase().includes(term) || item.sku.toLowerCase().includes(term)
                   ))
                   if (!matches.length) {
-                    return <p className="px-2 py-3 text-sm text-gray-500">No in-stock parts match this search.</p>
+                    return <p className="px-2 py-3 text-sm text-gray-500">No parts match this search.</p>
                   }
                   return matches.map((item, index) => renderItemRow(item, index))
                 })()}
@@ -2822,7 +2954,14 @@ export default function PriceBuilderPanel({
                     <tr key={pu.id} className="border-b border-gray-100 last:border-0">
                       <td className="py-1.5 px-2.5 text-gray-800">
                         <div className="font-medium">{pu.inventory_name}</div>
-                        <div className="text-xs text-gray-500">{pu.inventory_sku}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                          <span>{pu.inventory_sku}</span>
+                          {pu.stock_shortage_override && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                              Stock override
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-1.5 px-2.5 text-right text-gray-800">
                         {canMutate ? (
@@ -2942,7 +3081,7 @@ export default function PriceBuilderPanel({
                 />
               </div>
               {!hasSearchTerm ? (
-                <p className="px-1 py-2 text-sm text-gray-500">Type at least two characters to search in-stock inventory.</p>
+                <p className="px-1 py-2 text-sm text-gray-500">Type at least two characters to search inventory.</p>
               ) : inventoryLoadingWithoutResults ? (
                 <PickerLoadingRows message="Searching inventory…" />
               ) : inventoryErrored ? (
@@ -2957,7 +3096,7 @@ export default function PriceBuilderPanel({
                   </button>
                 </p>
               ) : !matches.length ? (
-                <p className="px-1 py-2 text-sm text-gray-500">No available parts match this operation search.</p>
+                <p className="px-1 py-2 text-sm text-gray-500">No parts match this operation search.</p>
               ) : (
                 <div className="space-y-1">
                   {matches.map((item) => {
@@ -2967,45 +3106,63 @@ export default function PriceBuilderPanel({
                     const quantityKey = `${line.id}:${item.id}`
                     const rowQuantity = Math.max(step, partQuantitiesByItemId[quantityKey] ?? 1)
                     const isAddingThisPart = isAddingPartFor(item.id, line.id)
+                    const shortage = stockShortages[partAddKey(item.id, line.id)]
+                    const addRequest: PartAddRequest = {
+                      inventoryId: item.id,
+                      quantity: rowQuantity,
+                      sourceServiceId: line.source_service_id,
+                      sourceLineId: line.id,
+                      quantityKey,
+                    }
                     return (
-                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-2.5 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
-                          <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
-                            {item.sku} · {item.stock_quantity} in stock ({unitAbbr}) · list {money(item.selling_price)}
-                          </p>
+                      <div key={item.id} className="rounded-lg bg-white px-2.5 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-gray-900">{item.name}</p>
+                            <p className="truncate font-['JetBrains_Mono',monospace] text-[11px] text-gray-500">
+                              {item.sku} · {item.stock_quantity} in stock ({unitAbbr}) · list {money(item.selling_price)}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <QuantityStepper
+                              value={rowQuantity}
+                              min={step}
+                              step={step}
+                              unitLabel={unitAbbr}
+                              disabled={!canMutate || addPart.isPending}
+                              ariaLabel={`Quantity for ${item.name}`}
+                              onChange={(next) => {
+                                setPartQuantitiesByItemId((current) => ({
+                                  ...current,
+                                  [quantityKey]: next,
+                                }))
+                                setStockShortages((current) => {
+                                  const updated = { ...current }
+                                  delete updated[partAddKey(item.id, line.id)]
+                                  return updated
+                                })
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => addPart.mutate(addRequest)}
+                              disabled={!canMutate || addPart.isPending}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
+                              aria-label={isAddingThisPart ? `Adding ${item.name} to ${line.description}` : `Add ${item.name} to ${line.description}`}
+                            >
+                              {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name} to ${line.description}`} /> : <Plus className="h-4 w-4" />}
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <QuantityStepper
-                            value={rowQuantity}
-                            min={step}
-                            step={step}
+                        {shortage && (
+                          <StockShortageCallout
+                            shortage={shortage}
                             unitLabel={unitAbbr}
-                            disabled={!canMutate || addPart.isPending}
-                            ariaLabel={`Quantity for ${item.name}`}
-                            onChange={(next) => {
-                              setPartQuantitiesByItemId((current) => ({
-                                ...current,
-                                [quantityKey]: next,
-                              }))
-                            }}
+                            overridePending={isAddingThisPart}
+                            addPending={addPart.isPending}
+                            onOverride={() => addPart.mutate({ ...addRequest, allowStockShortage: true })}
                           />
-                          <button
-                            type="button"
-                            onClick={() => addPart.mutate({
-                              inventoryId: item.id,
-                              quantity: rowQuantity,
-                              sourceServiceId: line.source_service_id,
-                              sourceLineId: line.id,
-                              quantityKey,
-                            })}
-                            disabled={!canMutate || addPart.isPending}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gray-900 text-white disabled:bg-gray-300"
-                            aria-label={isAddingThisPart ? `Adding ${item.name} to ${line.description}` : `Add ${item.name} to ${line.description}`}
-                          >
-                            {isAddingThisPart ? <Spinner size="xs" label={`Adding ${item.name} to ${line.description}`} /> : <Plus className="h-4 w-4" />}
-                          </button>
-                        </div>
+                        )}
                       </div>
                     )
                   })}

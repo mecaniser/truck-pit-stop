@@ -190,6 +190,41 @@ def _packages_consumed(quantity: Decimal) -> int:
     return max(1, math.ceil(quantity)) if quantity > 0 else 0
 
 
+def _stock_packages_reserved(part: "PartsUsage") -> int:
+    """Return the packages this row actually reserved from inventory.
+
+    Older rows predate shortage overrides and have no stored reservation, so
+    retain their original whole-package consumption as the safe fallback.
+    """
+    if part.stock_reserved_packages is not None:
+        return max(0, part.stock_reserved_packages)
+    return _packages_consumed(part.quantity)
+
+
+def _insufficient_stock_detail(
+    inventory: "Inventory",
+    *,
+    requested_quantity: Decimal,
+    required_packages: int,
+    available_packages: int,
+) -> dict[str, object]:
+    """Stable 400 payload the parts picker can render beside the failed row."""
+    return {
+        "code": "insufficient_stock",
+        "message": (
+            f"Insufficient stock: have {available_packages}, requested {requested_quantity} "
+            f"({required_packages} package(s))"
+        ),
+        "inventory_id": str(inventory.id),
+        "inventory_name": inventory.name,
+        "requested_quantity": str(requested_quantity),
+        "required_packages": required_packages,
+        "available_packages": available_packages,
+        "shortfall_packages": max(0, required_packages - available_packages),
+        "can_override": True,
+    }
+
+
 def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageResponse":
     inv = inv if inv is not None else pu.inventory_item
     list_price = pu.list_price if pu.list_price is not None else pu.unit_price
@@ -209,6 +244,7 @@ def _build_parts_usage_response(pu: "PartsUsage", inv=None) -> "PartsUsageRespon
         total_price=pu.total_price,
         source_service_id=pu.source_service_id,
         source_line_id=pu.source_line_id,
+        stock_shortage_override=bool(pu.stock_shortage_override),
         created_at=pu.created_at,
     )
 
@@ -1058,8 +1094,8 @@ async def update_repair_order(
             )
             for pu in parts_result.scalars().all():
                 if pu.inventory_item is not None:
-                    # Restore the same whole-package count that was deducted on add.
-                    pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _packages_consumed(pu.quantity)
+                    # Restore exactly what this part row actually reserved.
+                    pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _stock_packages_reserved(pu)
                 await db.delete(pu)
 
     # Update fields
@@ -2355,8 +2391,8 @@ async def _release_reserved_stock(db: AsyncSession, order_id: UUID) -> None:
     )
     for pu in result.scalars().all():
         if pu.inventory_item is not None:
-            # Same whole-package count that was deducted when the part was added.
-            pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _packages_consumed(pu.quantity)
+            # Give back only the packages this row actually reserved.
+            pu.inventory_item.stock_quantity = (pu.inventory_item.stock_quantity or 0) + _stock_packages_reserved(pu)
 
 
 async def _reserve_stock_again(db: AsyncSession, order_id: UUID) -> list[str]:
@@ -2377,11 +2413,13 @@ async def _reserve_stock_again(db: AsyncSession, order_id: UUID) -> list[str]:
         inv = pu.inventory_item
         if inv is None:
             continue
-        needed = _packages_consumed(pu.quantity)
+        needed = _stock_packages_reserved(pu)
         available = inv.stock_quantity or 0
         if available < needed:
             shortages.append(f"{inv.name} (need {needed}, {available} in stock)")
             inv.stock_quantity = 0
+            pu.stock_reserved_packages = available
+            pu.stock_shortage_override = True
         else:
             inv.stock_quantity = available - needed
     return shortages
@@ -2700,10 +2738,16 @@ async def add_parts_to_repair_order(
         if line_result.scalar_one_or_none() is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Labor line not found on this order")
     packages_needed = _packages_consumed(body.quantity)
-    if inv.stock_quantity < packages_needed:
+    available_packages = max(0, inv.stock_quantity or 0)
+    if available_packages < packages_needed and not body.allow_stock_shortage:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient stock: have {inv.stock_quantity}, requested {body.quantity} ({packages_needed} package(s))",
+            detail=_insufficient_stock_detail(
+                inv,
+                requested_quantity=body.quantity,
+                required_packages=packages_needed,
+                available_packages=available_packages,
+            ),
         )
     # Internal fleet repairs price parts at cost (no markup, no customer-facing list price);
     # customer repairs default to the selling price.
@@ -2711,6 +2755,7 @@ async def add_parts_to_repair_order(
     unit_price = body.unit_price if body.unit_price is not None else default_price
     list_price = inv.cost if order.is_internal else inv.selling_price
     total_price = unit_price * body.quantity
+    reserved_packages = min(available_packages, packages_needed)
     pu = PartsUsage(
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
@@ -2722,9 +2767,11 @@ async def add_parts_to_repair_order(
         total_price=total_price,
         source_service_id=body.source_service_id,
         source_line_id=body.source_line_id,
+        stock_reserved_packages=reserved_packages,
+        stock_shortage_override=reserved_packages < packages_needed,
     )
     db.add(pu)
-    inv.stock_quantity -= packages_needed
+    inv.stock_quantity = available_packages - reserved_packages
     await db.commit()
     await db.refresh(pu)
     await _recompute_repair_order_totals(db, order_id)
@@ -2897,19 +2944,35 @@ async def update_parts_quantity(
     inv = pu.inventory_item
 
     if body.quantity is not None:
-        # Stock tracks whole packages, so compare packages consumed at the old vs.
-        # new quantity rather than the raw fractional delta (e.g. going from 1.0
-        # to 1.25 gal still draws from the same already-opened jug).
-        old_packages = _packages_consumed(pu.quantity)
+        # Stock tracks whole packages. Compare the reservation held by this row
+        # to the new requirement rather than raw fractional quantity, because an
+        # earlier shortage override may have reserved fewer packages than were
+        # billed on the repair order.
+        old_reserved_packages = _stock_packages_reserved(pu)
         new_packages = _packages_consumed(body.quantity)
-        package_delta = new_packages - old_packages
-        if inv is not None and package_delta > 0 and (inv.stock_quantity or 0) < package_delta:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {package_delta} more package(s)",
-            )
         if inv is not None:
-            inv.stock_quantity = (inv.stock_quantity or 0) - package_delta
+            available_packages = max(0, inv.stock_quantity or 0)
+            additional_packages = max(0, new_packages - old_reserved_packages)
+            if additional_packages > available_packages and not body.allow_stock_shortage:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=_insufficient_stock_detail(
+                        inv,
+                        requested_quantity=body.quantity,
+                        required_packages=new_packages,
+                        available_packages=available_packages + old_reserved_packages,
+                    ),
+                )
+            reserved_packages = min(new_packages, old_reserved_packages + available_packages)
+            if reserved_packages >= old_reserved_packages:
+                inv.stock_quantity = available_packages - (reserved_packages - old_reserved_packages)
+            else:
+                inv.stock_quantity = available_packages + (old_reserved_packages - reserved_packages)
+            pu.stock_reserved_packages = reserved_packages
+            pu.stock_shortage_override = reserved_packages < new_packages
+        else:
+            pu.stock_reserved_packages = 0
+            pu.stock_shortage_override = new_packages > 0
         pu.quantity = body.quantity
 
     if body.unit_price is not None:
@@ -3054,7 +3117,7 @@ async def remove_parts_from_repair_order(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parts usage not found")
     inv = pu.inventory_item
     if inv is not None:
-        inv.stock_quantity += _packages_consumed(pu.quantity)
+        inv.stock_quantity += _stock_packages_reserved(pu)
     await db.delete(pu)
     await db.commit()
     await _recompute_repair_order_totals(db, order_id)

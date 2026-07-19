@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Numeric, ForeignKey, Text, Date
+from sqlalchemy import Boolean, Column, String, Integer, Numeric, ForeignKey, Text, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from decimal import Decimal
@@ -65,6 +65,14 @@ class PartsUsage(BaseModel):
     list_price = Column(Numeric(10, 2), nullable=True)
     total_price = Column(Numeric(10, 2), nullable=False)
 
+    # Normally a repair-order part reserves every package it needs. When a
+    # verified physical part has not yet been entered into inventory, an
+    # explicit shortage override records the smaller reservation instead of
+    # driving inventory negative. Keeping that amount makes later edits,
+    # deletion, and soft-delete restoration safe.
+    stock_reserved_packages = Column(Integer, nullable=True)
+    stock_shortage_override = Column(Boolean, default=False, nullable=False)
+
     # Warranty tracking (surfaced on the fleet Truck Detail "Parts & warranty" list).
     warranty_until = Column(Date, nullable=True)
     warranty_miles = Column(Integer, nullable=True)
@@ -81,4 +89,3 @@ class PartsUsage(BaseModel):
     source_line_id = Column(
         UUID(as_uuid=True), ForeignKey("labor.id", ondelete="SET NULL"), nullable=True, index=True
     )
-
