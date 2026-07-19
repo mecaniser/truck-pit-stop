@@ -1255,6 +1255,9 @@ export default function CustomersPage() {
   }
 
   const vehicleCount = customerVehicles?.length || 0
+  const showVehicleUnitColumn = customerVehicles?.some((vehicle) => !!vehicle.unit_number?.trim()) ?? false
+  const showVehicleVinColumn = customerVehicles?.some((vehicle) => !!vehicle.vin?.trim()) ?? false
+  const showVehiclePlateColumn = customerVehicles?.some((vehicle) => !!vehicle.license_plate?.trim()) ?? false
 
   const repairOrderStats = useMemo(() => {
     const total = customerRepairOrders?.length || 0
@@ -3057,12 +3060,14 @@ export default function CustomersPage() {
                     </div>
                     {customerVehicles && customerVehicles.length > 0 ? (
                       vehiclesViewMode === 'list' ? (
-                        <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-hidden">
-                          <table className="w-full text-sm">
+                        <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-x-auto">
+                          <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
                               <tr>
                                 <th className="px-3 py-2 text-left font-medium">Vehicle</th>
-                                <th className="px-3 py-2 text-left font-medium">Plate</th>
+                                {showVehicleUnitColumn && <th className="px-3 py-2 text-left font-medium">Unit</th>}
+                                {showVehicleVinColumn && <th className="px-3 py-2 text-left font-medium">VIN</th>}
+                                {showVehiclePlateColumn && <th className="px-3 py-2 text-left font-medium">Plate</th>}
                                 <th className="px-3 py-2 text-right font-medium">Actions</th>
                               </tr>
                             </thead>
@@ -3077,15 +3082,37 @@ export default function CustomersPage() {
                                     {vehicleDisplayLabel(vehicle)}
                                     {vehicle.color && <span className="text-gray-500 font-normal"> · {vehicle.color}</span>}
                                   </td>
-                                  <td className="px-3 py-2.5">
-                                    {vehicle.license_plate ? (
-                                      <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded px-1.5 py-0.5">
-                                        {vehicle.license_plate}
-                                      </span>
-                                    ) : (
-                                      <span className="text-gray-400">—</span>
-                                    )}
-                                  </td>
+                                  {showVehicleUnitColumn && (
+                                    <td className="px-3 py-2.5">
+                                      {vehicle.unit_number ? (
+                                        <span className="text-xs font-medium text-slate-700 bg-slate-100 rounded px-1.5 py-0.5">
+                                          {vehicle.unit_number}
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                  )}
+                                  {showVehicleVinColumn && (
+                                    <td className="px-3 py-2.5">
+                                      {vehicle.vin ? (
+                                        <span className="font-mono text-xs text-gray-700">{vehicle.vin}</span>
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                  )}
+                                  {showVehiclePlateColumn && (
+                                    <td className="px-3 py-2.5">
+                                      {vehicle.license_plate ? (
+                                        <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded px-1.5 py-0.5">
+                                          {vehicle.license_plate}
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                  )}
                                   <td className="px-3 py-2.5 text-right">
                                     <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                       <button

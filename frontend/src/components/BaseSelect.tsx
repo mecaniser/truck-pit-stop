@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { useId, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Spinner } from '@/components/ui'
 import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
@@ -65,8 +65,10 @@ export default function BaseSelect({
 }: BaseSelectProps) {
   const dark = variant === 'dark'
   const { accentColors } = useTheme()
+  const selectId = useId()
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -94,6 +96,7 @@ export default function BaseSelect({
   // every reset path (close, select, Escape) also clears the external search.
   const updateQuery = (q: string) => {
     setQuery(q)
+    setActiveIndex(0)
     onQueryChange?.(q)
   }
 
@@ -113,6 +116,23 @@ export default function BaseSelect({
   // What actually renders in the open menu. `filtered` (and `options`) keep the
   // selected entry so the closed-state label above can always resolve.
   const visible = hideSelectedOption ? filtered.filter((opt) => opt.value !== value) : filtered
+  const menuItems = useMemo(
+    () => [
+      ...visible.map((opt) => ({ type: 'option' as const, value: opt.value, label: opt.label, option: opt })),
+      ...(allowAddNew ? [{ type: 'add_new' as const, value: 'add_new', label: addNewLabel }] : []),
+    ],
+    [visible, allowAddNew, addNewLabel],
+  )
+  const listboxId = `${selectId}-listbox`
+  const activeItem = menuItems[activeIndex]
+  const activeOptionId = isOpen && activeItem ? `${listboxId}-option-${activeIndex}` : undefined
+
+  const openMenu = (preferredIndex?: number) => {
+    if (disabled) return
+    const selectedIndex = menuItems.findIndex((item) => item.value === value)
+    setActiveIndex(preferredIndex ?? (selectedIndex >= 0 ? selectedIndex : 0))
+    setIsOpen(true)
+  }
 
   // Measure before paint when opening; keep the menu glued to the trigger while
   // the user scrolls or resizes.
@@ -136,6 +156,20 @@ export default function BaseSelect({
     }
   }, [isOpen, searchable])
 
+  useEffect(() => {
+    if (!isOpen) return
+    setActiveIndex((current) => {
+      if (menuItems.length === 0) return 0
+      return Math.min(current, menuItems.length - 1)
+    })
+  }, [isOpen, menuItems.length])
+
+  useEffect(() => {
+    if (!isOpen || activeIndex < 0) return
+    const activeEl = menuRef.current?.querySelector<HTMLElement>(`[data-base-select-index="${activeIndex}"]`)
+    activeEl?.scrollIntoView?.({ block: 'nearest' })
+  }, [isOpen, activeIndex])
+
   // Close on click outside — but not when clicking inside the portaled menu.
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -151,7 +185,11 @@ export default function BaseSelect({
 
   const handleSelect = (val: string) => {
     if (allowAddNew && val === 'add_new') {
-      if (onAddNew) onAddNew()
+      if (onAddNew) {
+        onAddNew()
+      } else {
+        onChange(val)
+      }
       setIsOpen(false)
       updateQuery('')
     } else {
@@ -162,11 +200,34 @@ export default function BaseSelect({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (!isOpen) {
+        openMenu(0)
+        return
+      }
+      setActiveIndex((current) => Math.min(current + 1, Math.max(menuItems.length - 1, 0)))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (!isOpen) {
+        openMenu(Math.max(menuItems.length - 1, 0))
+        return
+      }
+      setActiveIndex((current) => Math.max(current - 1, 0))
+    } else if (e.key === 'Home' && isOpen) {
+      e.preventDefault()
+      setActiveIndex(0)
+    } else if (e.key === 'End' && isOpen) {
+      e.preventDefault()
+      setActiveIndex(Math.max(menuItems.length - 1, 0))
+    } else if (e.key === 'Escape') {
       setIsOpen(false)
       updateQuery('')
-    } else if (e.key === 'Enter' && visible.length === 1) {
-      handleSelect(visible[0].value)
+    } else if (e.key === 'Enter' && isOpen) {
+      e.preventDefault()
+      if (activeItem) {
+        handleSelect(activeItem.value)
+      }
     }
   }
 
@@ -176,8 +237,12 @@ export default function BaseSelect({
       {!isOpen ? (
         <button
           type="button"
-          onClick={() => !disabled && setIsOpen(true)}
+          onClick={() => openMenu()}
+          onKeyDown={handleKeyDown}
           disabled={disabled}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          aria-controls={isOpen ? listboxId : undefined}
           className={`w-full ${heightClass} px-4 border rounded-lg text-left focus:outline-none focus:ring-2 transition-colors flex items-center justify-between ${
             dark
               ? 'border-white/20 bg-white/10 text-white'
@@ -196,6 +261,11 @@ export default function BaseSelect({
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-expanded={isOpen}
+            aria-controls={listboxId}
+            aria-activedescendant={activeOptionId}
+            aria-autocomplete="list"
             value={query}
             onChange={(e) => updateQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -218,6 +288,8 @@ export default function BaseSelect({
       {isOpen && menuPos && createPortal(
         <div
           ref={menuRef}
+          id={listboxId}
+          role="listbox"
           style={{
             position: 'fixed',
             left: menuPos.left,
@@ -231,23 +303,30 @@ export default function BaseSelect({
               : 'bg-white ring-1 ring-black/10'
           }`}
         >
-          {visible.map((opt) => (
+          {visible.map((opt, index) => {
+            const active = index === activeIndex
+            return (
             <button
               key={opt.value}
               type="button"
+              id={`${listboxId}-option-${index}`}
+              role="option"
+              aria-selected={opt.value === value}
+              data-base-select-index={index}
               onMouseDown={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
                 handleSelect(opt.value)
               }}
+              onMouseEnter={() => setActiveIndex(index)}
               className={`w-full text-left px-4 py-2 text-sm transition-colors ${
                 dark
                   ? opt.value === value
                     ? 'text-white'
-                    : 'text-gray-200 hover:bg-white/10'
+                    : `text-gray-200 ${active ? 'bg-white/10' : 'hover:bg-white/10'}`
                   : opt.value === value
                     ? 'text-gray-900'
-                    : 'text-gray-900 hover:bg-gray-50'
+                    : `text-gray-900 ${active ? 'bg-gray-50' : 'hover:bg-gray-50'}`
               }`}
               style={opt.value === value ? { backgroundColor: `${accentColors[500]}1a`, color: accentColors[400] } : undefined}
             >
@@ -271,17 +350,25 @@ export default function BaseSelect({
                 )}
               </div>
             </button>
-          ))}
+            )
+          })}
 
           {allowAddNew && (
             <button
               type="button"
+              id={`${listboxId}-option-${visible.length}`}
+              role="option"
+              aria-selected={false}
+              data-base-select-index={visible.length}
               onMouseDown={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
                 handleSelect('add_new')
               }}
-              className="w-full text-left px-4 py-2 text-sm font-medium transition-colors hover:opacity-80"
+              onMouseEnter={() => setActiveIndex(visible.length)}
+              className={`w-full text-left px-4 py-2 text-sm font-medium transition-colors hover:opacity-80 ${
+                activeIndex === visible.length ? (dark ? 'bg-white/10' : 'bg-gray-50') : ''
+              }`}
               style={{ color: accentColors[600] }}
             >
               {addNewLabel}

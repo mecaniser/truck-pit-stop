@@ -51,7 +51,7 @@ interface NewVehicleForm {
   model: string
   year: string
   vin: string
-  license_plate: string
+  unit_number: string
   mileage: string
 }
 
@@ -240,7 +240,7 @@ export default function RepairOrdersPage() {
     model: '',
     year: '',
     vin: '',
-    license_plate: '',
+    unit_number: '',
     mileage: '',
   })
   const [addPartInventoryId, setAddPartInventoryId] = useState('')
@@ -660,6 +660,14 @@ export default function RepairOrdersPage() {
     selectedServiceOptions.forEach((item) => byId.set(item.id, item))
     return [...byId.values()]
   }, [serviceResults, selectedServiceOptions])
+  const visibleServiceOptions = useMemo(() => {
+    return [...serviceOptions].sort((a, b) => {
+      const aSelected = selectedServiceIds.includes(a.id)
+      const bSelected = selectedServiceIds.includes(b.id)
+      if (aSelected === bSelected) return 0
+      return aSelected ? -1 : 1
+    })
+  }, [serviceOptions, selectedServiceIds])
 
   const filteredVehicles = useMemo(
     () => vehicleOptions.filter((vehicle) => vehicle.customer_id === selectedCustomerId),
@@ -809,7 +817,8 @@ export default function RepairOrdersPage() {
         model: data.model.trim(),
         year: data.year ? Number(data.year) : null,
         vin: data.vin.trim() || null,
-        license_plate: data.license_plate.trim() || null,
+        unit_number: data.unit_number.trim() || null,
+        license_plate: null,
         color: null,
         mileage: data.mileage ? Number(data.mileage) : null,
         notes: null,
@@ -1718,7 +1727,7 @@ export default function RepairOrdersPage() {
     setSelectedServiceIds([])
     setSelectedServiceOptions([])
     setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
-    setNewVehicle({ make: '', model: '', year: '', vin: '', license_plate: '', mileage: '' })
+    setNewVehicle({ make: '', model: '', year: '', vin: '', unit_number: '', mileage: '' })
   }
 
   const openModal = () => {
@@ -2287,17 +2296,28 @@ export default function RepairOrdersPage() {
                             setSelectedVehicleOption(null)
                             setShowNewVehicleForm(true)
                           }}
-                          className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                          className="inline-flex h-[42px] items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
                         >
                           <Plus className="w-4 h-4" />
-                          Add customer
+                          Add
                         </button>
                       </div>
 
                       {selectedCustomerId && selectedCustomerId !== 'add_new' && (
                         <div>
-                          <div className="mb-2 flex items-center justify-between gap-3">
+                          <div className="mb-2">
                             <h4 className="text-sm font-semibold text-gray-800">Available trucks</h4>
+                          </div>
+                          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <div className="relative flex-1">
+                              <input
+                                value={vehicleQuery}
+                                onChange={(event) => setVehicleQuery(event.target.value)}
+                                placeholder="Filter by unit, VIN, plate, make, or model"
+                                className="h-[42px] w-full rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                              />
+                              {isFetchingVehicles && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
+                            </div>
                             <button
                               type="button"
                               onClick={() => {
@@ -2305,19 +2325,11 @@ export default function RepairOrdersPage() {
                                 setSelectedVehicleOption(null)
                                 setShowNewVehicleForm(true)
                               }}
-                              className="h-[42px] px-3 rounded-lg border border-amber-200 text-sm font-medium text-amber-700 hover:bg-amber-50 transition-colors"
+                              className="inline-flex h-[42px] items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
                             >
-                              + Add vehicle
+                              <Plus className="w-4 h-4" />
+                              Add
                             </button>
-                          </div>
-                          <div className="relative mb-3">
-                            <input
-                              value={vehicleQuery}
-                              onChange={(event) => setVehicleQuery(event.target.value)}
-                              placeholder="Filter by unit, VIN, plate, make, or model"
-                              className="h-[42px] w-full rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                            />
-                            {isFetchingVehicles && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
                           </div>
                           {isLoadingVehicles ? (
                             <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
@@ -2395,13 +2407,13 @@ export default function RepairOrdersPage() {
                             />
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Plate</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Unit number</label>
                             <input
-                              name="license_plate"
-                              value={newVehicle.license_plate}
-                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, license_plate: e.target.value }))}
+                              name="unit_number"
+                              value={newVehicle.unit_number}
+                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, unit_number: e.target.value }))}
                               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                              placeholder="TRK-1234"
+                              placeholder="369"
                             />
                           </div>
                           <div>
@@ -2501,13 +2513,13 @@ export default function RepairOrdersPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Plate</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Unit number</label>
                         <input
-                          name="license_plate"
-                          value={newVehicle.license_plate}
-                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, license_plate: e.target.value }))}
+                          name="unit_number"
+                          value={newVehicle.unit_number}
+                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, unit_number: e.target.value }))}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          placeholder="TRK-1234"
+                          placeholder="369"
                         />
                       </div>
                       <div>
@@ -2558,9 +2570,9 @@ export default function RepairOrdersPage() {
                       </svg>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {serviceOptions
-                        .slice(0, 20)
+                    <div className="flex max-h-[88px] flex-wrap gap-2 overflow-hidden">
+                      {visibleServiceOptions
+                        .slice(0, 12)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
                           return (
