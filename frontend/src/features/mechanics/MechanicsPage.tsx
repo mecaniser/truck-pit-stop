@@ -11,6 +11,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import { generateMechanicPassword } from '@/utils/password'
 import { getPasswordValidationError } from '@/lib/passwordPolicy'
+import toast from 'react-hot-toast'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { Eye, EyeOff, Calendar, DollarSign, Check, X, Wrench, Clock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -198,6 +199,7 @@ export default function MechanicsPage() {
     },
     onSuccess: () => {
       setFormError(null)
+      toast.success('Technician added')
       reset()
       setIsAdding(false)
       queryClient.invalidateQueries({ queryKey: ['mechanic-users'] })
@@ -206,6 +208,7 @@ export default function MechanicsPage() {
     onError: (err: any) => {
       const detail = err?.response?.data?.detail || 'Failed to add technician'
       setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
+      toast.error(Array.isArray(detail) ? detail.join(', ') : detail)
     },
   })
 
@@ -218,6 +221,7 @@ export default function MechanicsPage() {
     },
     onSuccess: () => {
       setFormError(null)
+      toast.success('Team member added')
       reset()
       setIsAdding(false)
       queryClient.invalidateQueries({ queryKey: ['staff-roster'] })
@@ -225,6 +229,7 @@ export default function MechanicsPage() {
     onError: (err: any) => {
       const detail = err?.response?.data?.detail || 'Failed to add team member'
       setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
+      toast.error(Array.isArray(detail) ? detail.join(', ') : detail)
     },
   })
 
@@ -252,7 +257,11 @@ export default function MechanicsPage() {
   const editStaffMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: string; first_name: string; last_name: string; email: string; phone?: string; role: string; password?: string; permissions?: Record<string, boolean> }) =>
       (await api.patch(`/admin/staff/${id}`, data)).data,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['staff-roster'] }); setEditingStaff(null) },
+    onSuccess: () => {
+      toast.success('Team member updated')
+      queryClient.invalidateQueries({ queryKey: ['staff-roster'] })
+      setEditingStaff(null)
+    },
   })
   const STAFF_ROLE_LABELS: Record<string, string> = {
     garage_owner: 'Shop Owner', garage_admin: 'Shop Admin',
@@ -268,6 +277,7 @@ export default function MechanicsPage() {
     },
     onSuccess: () => {
       setFormError(null)
+      toast.success('Technician updated')
       reset()
       setIsAdding(false)
       setEditingMechanic(null)
@@ -277,6 +287,7 @@ export default function MechanicsPage() {
     onError: (err: any) => {
       const detail = err?.response?.data?.detail || 'Failed to update technician'
       setFormError(Array.isArray(detail) ? detail.join(', ') : detail)
+      toast.error(Array.isArray(detail) ? detail.join(', ') : detail)
     },
   })
 
@@ -346,6 +357,7 @@ export default function MechanicsPage() {
     setEditingMechanic(null)
     setFormError(null)
     reset({
+      role: 'mechanic',
       first_name: '',
       last_name: '',
       email: '',
@@ -377,6 +389,7 @@ export default function MechanicsPage() {
       setIsAdding(true)
       setFormError(null)
       reset({
+        role: 'mechanic',
         first_name: editingMechanic.first_name || '',
         last_name: editingMechanic.last_name || '',
         email: editingMechanic.email || '',
@@ -1083,14 +1096,14 @@ export default function MechanicsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={createMechanicMutation.isPending || updateMechanicMutation.isPending}
+                  disabled={createMechanicMutation.isPending || createStaffMutation.isPending || updateMechanicMutation.isPending}
                   className="inline-flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-70"
                   style={{ backgroundColor: accentColors[600] }}
                 >
-                  {(createMechanicMutation.isPending || updateMechanicMutation.isPending) && (
+                  {(createMechanicMutation.isPending || createStaffMutation.isPending || updateMechanicMutation.isPending) && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
-                  {createMechanicMutation.isPending || updateMechanicMutation.isPending
+                  {createMechanicMutation.isPending || createStaffMutation.isPending || updateMechanicMutation.isPending
                     ? 'Saving...'
                     : editingMechanic
                     ? 'Update technician'
@@ -1230,6 +1243,7 @@ export default function MechanicsPage() {
               onError: (err: any) => {
                 const d = err?.response?.data?.detail || 'Failed to save'
                 setFormError(Array.isArray(d) ? d.join(', ') : d)
+                toast.error(Array.isArray(d) ? d.join(', ') : d)
               },
             })
           }}
