@@ -55,6 +55,10 @@ export default function CustomerSelect({
 }: CustomerSelectProps) {
   const selectedCustomer = customers.find((c) => c.id === value)
   const needsPhone = phoneRequired && !!selectedCustomer && !selectedCustomer.phone
+  // A server-side lookup becomes loading again for every debounced query. Keep
+  // the BaseSelect mounted in that mode; replacing it with a loading placeholder
+  // would discard its local input value midway through typing.
+  const showLoadingPlaceholder = isLoading && !onQueryChange
 
   function subLabel(c: CustomerSelectItem): string | undefined {
     if (subLabelField === 'phone') {
@@ -65,7 +69,7 @@ export default function CustomerSelect({
 
   return (
     <div className="flex flex-col gap-2">
-      {isLoading ? (
+      {showLoadingPlaceholder ? (
         <div
           className={`flex h-[42px] w-full items-center gap-2 rounded-lg border px-4 text-sm ${
             variant === 'dark'

@@ -197,3 +197,6 @@
 - Correction: User reported a database error while sending quotes after nearby photo work, and the root issue was a swallowed optional price-refresh failure leaving the database transaction unusable.
 - Rule: When intentionally continuing after any database-backed optional step fails, always rollback the session and reload the ORM objects needed by the rest of the request.
 - Prevention: Add regression coverage for rollback/reload behavior on non-blocking database failures, especially in request handlers that catch broad exceptions around SQLAlchemy work.
+- Correction: Switching the customer picker to server-side typeahead let each new result query replace the select with a loading placeholder, clearing the text the user was typing.
+- Rule: A loading state for an interactive controlled input must not unmount the input when the request is caused by that input's own value.
+- Prevention: For server-side typeaheads, test typing, a loading rerender, and result replacement while asserting the query text and focus remain intact.

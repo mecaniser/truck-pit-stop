@@ -3154,3 +3154,21 @@
 
 ## Review
 - A regular repair-order drawer now avoids whole-tenant catalogue paging and optional panel fetches on first paint. New-order pickers fetch only small server-filtered result sets, and the part picker queries in-stock inventory only after two search characters. This removes the dominant request amplification path identified in production while preserving selected picker values and server-side pricing.
+
+---
+
+# Customer Typeahead Query Retention (2026-07-19)
+
+## Plan
+- [x] Trace the customer picker loading transition introduced by server-side typeahead.
+- [x] Keep the interactive select mounted during typeahead result loading.
+- [x] Add a regression test for typing across a loading rerender.
+- [x] Run focused verification and independently release the fix.
+
+## Progress Notes
+- [x] The typeahead request itself was working; `CustomerSelect` replaced `BaseSelect` with a loading placeholder when a debounced query started, which unmounted and cleared the active input.
+- [x] Server-side pickers now keep `BaseSelect` mounted and show its loading state instead, preserving the local query while results update.
+- [x] Passed the focused typeahead retention test, frontend TypeScript, focused ESLint, production build, and `git diff --check`.
+
+## Review
+- Customer search text now remains visible while a typeahead request debounces or fetches, so staff can continue typing and select the returned customer without the picker resetting.
