@@ -3069,3 +3069,66 @@
 
 ## Review
 - History now uses progressive disclosure instead of nested scrolling: latest 5 events first, then older events in 5-event batches.
+
+---
+
+# Production Performance & Data-Access Audit (2026-07-19)
+
+## Plan
+- [x] Inventory server request lifecycle, middleware, connection management, and production runtime settings.
+- [x] Trace repair-order list, pagination, filter, and detail queries; inspect ORM loading, index coverage, and error-prone transaction paths.
+- [x] Audit client request fan-out, React Query cache/invalidation, local/session storage, WebSocket activity, and list interaction behaviour.
+- [x] Correlate code findings with existing observability/configuration and establish a production measurement plan.
+- [x] Produce an evidence-based, prioritised remediation roadmap with acceptance metrics and rollout safeguards.
+
+## Progress Notes
+- [x] Scope confirmed as a read-only production-performance analysis; no runtime or application code changes are being made in this audit.
+
+## Review
+- The confirmed production-risk chain is request amplification: each repair-order page executes a multi-query list, opening an order fans out to detail/price/parts/photos/quotes/recommendations plus whole-catalog lookups, and real-time invalidations can repeat the work. This can trigger the global 150/min soft throttle and 250/min 429 threshold during ordinary fast paging.
+- The connected PostgreSQL error data shows a July 18 burst of 142 database 500s; PostgreSQL logs prove `parts_usage.source_line_id` was absent while application revision 081 queried it. The column is now present, so the immediate incident was migration drift that has since recovered. Deployment must verify the physical schema, not only `alembic_version`.
+- Primary remediation order: (1) migration/schema gate, explicit pool/timeouts, bounded error reporting, and remove event-loop blocking provider work; (2) one order-workspace read model and lazy server-side catalog typeaheads; (3) transactional stock/totals and query/index changes; (4) cache/real-time consolidation, code splitting, and production load testing with p95 targets.
+- Verification: frontend production build passed. The bundle is currently 2.27 MB raw / 559 KB gzip and should be route-split. No application or infrastructure code was changed in this analysis.
+
+---
+
+# Production Performance Remediation (2026-07-19)
+
+## Delivery Principles
+- Ship independently deployable phases: protect correctness and availability before changing query contracts or scaling workers.
+- Preserve tenant isolation, permissions, soft-delete semantics, price locking, and real-time updates in every phase.
+- Add observability and focused regression coverage with each change; do not increase connection limits or web-worker count without a measured connection budget and shared WebSocket fan-out.
+
+## Implementation Plan
+- [ ] **Phase 0 — Establish baseline and release safety.** Capture 24–48 hours of production request/error/pool/Redis data, template metric labels to prevent UUID cardinality, enable `pg_stat_statements`, and add deploy preflight that verifies Alembic head plus required columns/indexes. Produce the connection budget for Railway web, Celery, migration, and Postgres capacity. _Schema/metric safeguards are complete; production measurement and connection-budget work remain._
+- [ ] **Phase 1 — Contain database failures and request contention.** Configure explicit SQLAlchemy pool, pre-ping, recycle, checkout timeout, and PostgreSQL statement/lock/idle-transaction timeouts. Dispose engine on shutdown. Bound/circuit-break error persistence during database outages and return controlled retryable failures for pool exhaustion. Replace global navigation throttling delays with endpoint-aware limits and metrics. _Pool/error safeguards and read-navigation delay removal are complete; endpoint-specific hard limits and production metrics remain._
+- [ ] **Phase 2 — Remove blocking work from request paths.** Introduce a transactional outbox and worker delivery for email/SMS/notifications; apply explicit provider timeouts/retry/backoff/dead-letter visibility. Move Cloudinary, PDF, Stripe and VIN enrichment off the event loop or through bounded thread/async clients. Release DB transactions before external I/O.
+- [ ] **Phase 3 — Make repair-order writes correct and cheap.** Make stock decrement/restoration atomic and tenant-scoped. Commit line mutation, inventory change, totals update, and domain event in one transaction. Replace order-number MAX/retry with a locked tenant counter. Batch Price Builder loading/recalculation to remove redundant reloads and N+1 service/inventory queries.
+- [ ] **Phase 4 — Reduce browser/API request amplification.** Add a purpose-built repair-order workspace read model; render an immediate summary and lazy-load optional panels. Replace whole-tenant catalog downloads with tenant-scoped server typeaheads and capped results. Pass React Query abort signals to Axios. Return updated aggregates from mutations and patch exact cache keys rather than invalidate/refetch chains.
+- [ ] **Phase 5 — Scale list/search and caching deliberately.** Replace offset paging with stable cursor paging (`created_at`, `id`), fetch `limit + 1`, and make exact counts opt-in. Add active-row partial indexes concurrently after production EXPLAIN validation. Add a targeted tenant search document/index strategy. Enable private short-TTL caching only for safe low-volatility reads and serve hashed frontend assets from CDN/static hosting.
+- [ ] **Phase 6 — Make real-time and cold start scale.** Publish websocket events through Redis rather than process memory, use bounded socket send queues/timeouts, and coalesce client refreshes. Route-split Price Builder, maps, payments, analytics, and admin pages; prefetch the drawer chunk on list-row intent.
+- [ ] **Phase 7 — Verify and roll out.** Add PostgreSQL integration/plan tests alongside existing SQLite functional tests, performance regression scenarios for rapid paging/search/drawer opening, and a staged Railway load test. Roll out behind flags with error/latency rollback thresholds; compare the baseline against acceptance criteria before expanding rollout.
+
+## Per-Phase Verification
+- [ ] Phase 0: a failed schema probe blocks deployment; dashboards show endpoint P50/P95/P99, pool waits, SQL/provider/Redis timings, rate-limit reasons, and queue age.
+- [ ] Phase 1: pool checkout P95 <50 ms, zero pool timeouts, controlled 503 response under exhaustion, and no recursive error-log connection surge.
+- [ ] Phase 2: user mutations respond after durable domain commit, provider failures retry asynchronously, and provider latency no longer delays unrelated reads.
+- [ ] Phase 3: concurrent stock tests never oversell, totals remain correct under concurrent line edits, and number allocation remains collision-free under load.
+- [ ] Phase 4: initial drawer open makes at most three API calls, superseded requests abort within 250 ms, and a price/quantity edit performs one write with no redundant GET chain.
+- [ ] Phase 5: warm repair-order list/workspace P95 <500 ms, stable paging has no duplicate/missing rows, and search plans use intended indexes at production cardinality.
+- [ ] Phase 6: a committed mutation does not wait for socket delivery, multi-worker events reach every connected client once, and the initial JS payload is split below the current 559 KB gzip monolith.
+- [ ] Phase 7: normal-staff 429 rate <0.1%, drawer usable P95 <1.5 s, and every flag has a tested rollback path.
+
+## Review
+- Initial availability hardening is implemented:
+  - Deployment now runs a schema preflight after Alembic. It compares the live revision with the repository head and verifies the repair-order list index plus `parts_usage.source_line_id`, its index, and its foreign key. It intentionally redacts connection details from deploy errors.
+  - Error metrics normalize UUID path segments, preventing an incident from producing an unbounded Prometheus label series.
+  - PostgreSQL uses an explicit `5 + 5` connection pool budget per web process, pre-ping/recycle, bounded checkout/connect time, and server-side statement/lock/idle-transaction limits. Shutdown disposes the engine even if Redis shutdown fails.
+  - Best-effort database error persistence is limited to two concurrent writes, times out after one second, and always releases its owned connection. Pool checkout exhaustion now produces a controlled `503` with `Retry-After: 1`.
+  - Ordinary `GET`/`HEAD`/`OPTIONS` navigation no longer receives the artificial 100–500 ms soft-throttle delay; those requests still count toward the hard protection threshold. Writes retain progressive backpressure.
+- Verification passed: 17 focused tests covering the new preflight, pool/error behaviour, bounded metric labels, and throttling; backend compile; Alembic head `081`; Railway JSON validation; and the preflight's missing-configuration failure path. `git diff --check` is clean.
+- Known unrelated test-environment issue: 13 existing middleware tests still fail before reaching application code because Starlette `0.27` calls the removed `httpx.Client(app=...)` argument under the installed `httpx 0.28+`. The updated throttling tests avoid that incompatible client and pass. Pinning or upgrading this dependency pair should be handled as a dedicated test-runtime maintenance change.
+
+## Delivery Plan
+- [x] Commit the initial availability-hardening slice as one atomic release: application safeguards, Railway preflight hook, tests, and delivery record.
+- [ ] Push `main`, deploy the linked Railway service, and verify the deployment reaches an active state with the schema preflight succeeding.

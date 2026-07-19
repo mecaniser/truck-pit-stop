@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from typing import List
 
 
@@ -14,6 +14,22 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str
+    # Keep each web process within a predictable connection budget. These values
+    # apply only to PostgreSQL; SQLite keeps its driver-appropriate defaults so
+    # local development and the test suite remain lightweight.
+    DATABASE_POOL_SIZE: int = Field(default=5, ge=1)
+    DATABASE_MAX_OVERFLOW: int = Field(default=5, ge=0)
+    DATABASE_POOL_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
+    DATABASE_POOL_RECYCLE_SECONDS: int = Field(default=1800, ge=1)
+    DATABASE_CONNECT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
+    DATABASE_STATEMENT_TIMEOUT_MS: int = Field(default=15000, ge=1)
+    DATABASE_LOCK_TIMEOUT_MS: int = Field(default=5000, ge=1)
+    DATABASE_IDLE_TRANSACTION_TIMEOUT_MS: int = Field(default=30000, ge=1)
+
+    # Error persistence is best-effort: it must never consume the entire pool
+    # or delay an error response while the primary database is unhealthy.
+    ERROR_LOG_PERSIST_TIMEOUT_SECONDS: float = Field(default=1.0, gt=0)
+    ERROR_LOG_PERSIST_MAX_CONCURRENCY: int = Field(default=2, ge=1)
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

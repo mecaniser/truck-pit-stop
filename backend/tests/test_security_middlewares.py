@@ -5,6 +5,7 @@ import json
 import time
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Request
@@ -57,6 +58,27 @@ async def _run_asgi_request(
 
     await app(scope, receive, send)
     return sent
+
+
+async def _response_status_and_headers(
+    app: ASGIApp,
+    *,
+    method: str,
+    path: str,
+) -> tuple[int, dict[str, str]]:
+    sent = await _run_asgi_request(
+        app,
+        method=method,
+        path=path,
+        headers=[],
+        incoming_messages=[{"type": "http.request", "body": b"", "more_body": False}],
+    )
+    start = next(message for message in sent if message["type"] == "http.response.start")
+    headers = {
+        key.decode("latin1").lower(): value.decode("latin1")
+        for key, value in start.get("headers", [])
+    }
+    return start["status"], headers
 
 
 def test_idempotency_replay_and_conflict(monkeypatch, fake_redis):
@@ -431,13 +453,16 @@ def test_cache_control_headers_set_for_api_routes():
     assert health_response.headers.get("Cache-Control") != "no-store, private"
 
 
-def test_throttling_limits_requests(monkeypatch, fake_redis):
+@pytest.mark.asyncio
+async def test_throttling_limits_requests(monkeypatch, fake_redis):
     import app.middleware.throttling as throttling_module
 
     async def _fake_get_redis():
         return fake_redis
 
     monkeypatch.setattr(throttling_module, "get_redis", _fake_get_redis)
+    monkeypatch.setattr(throttling_module, "SOFT_THRESHOLD", 999)
+    monkeypatch.setattr(throttling_module, "HARD_THRESHOLD", 2)
     monkeypatch.setattr(throttling_module, "MIN_DELAY", 0.0)
     monkeypatch.setattr(throttling_module, "MAX_DELAY", 0.0)
 
@@ -448,24 +473,85 @@ def test_throttling_limits_requests(monkeypatch, fake_redis):
     async def ping():
         return {"ok": True}
 
-    client = TestClient(app)
+    for _ in range(2):
+        status, headers = await _response_status_and_headers(app, method="GET", path="/api/v1/ping")
+        assert status == 200
+        assert headers.get("x-ratelimit-limit") == "2"
+        assert headers.get("x-ratelimit-remaining") is not None
+        assert headers.get("x-ratelimit-reset") is not None
 
-    for _ in range(100):
-        ok = client.get("/api/v1/ping")
-        assert ok.status_code == 200
-        assert ok.headers.get("X-RateLimit-Limit") == "100"
-        assert ok.headers.get("X-RateLimit-Remaining") is not None
-        assert ok.headers.get("X-RateLimit-Reset") is not None
-
-    limited = client.get("/api/v1/ping")
-    assert limited.status_code == 429
-    assert limited.headers.get("Retry-After") == "60"
-    assert limited.headers.get("X-RateLimit-Limit") == "100"
-    assert limited.headers.get("X-RateLimit-Remaining") == "0"
-    assert limited.headers.get("X-RateLimit-Reset") is not None
+    status, headers = await _response_status_and_headers(app, method="GET", path="/api/v1/ping")
+    assert status == 429
+    assert headers.get("retry-after") == "60"
+    assert headers.get("x-ratelimit-limit") == "2"
+    assert headers.get("x-ratelimit-remaining") == "0"
+    assert headers.get("x-ratelimit-reset") is not None
 
 
-def test_throttling_does_not_undercount_same_millisecond_requests(monkeypatch, fake_redis):
+@pytest.mark.asyncio
+async def test_throttling_skips_soft_delay_for_safe_reads(monkeypatch, fake_redis):
+    import app.middleware.throttling as throttling_module
+
+    async def _fake_get_redis():
+        return fake_redis
+
+    delays: list[float] = []
+
+    async def _record_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(throttling_module, "get_redis", _fake_get_redis)
+    monkeypatch.setattr(throttling_module, "SOFT_THRESHOLD", 1)
+    monkeypatch.setattr(throttling_module, "HARD_THRESHOLD", 3)
+    monkeypatch.setattr(throttling_module.asyncio, "sleep", _record_sleep)
+
+    app = FastAPI()
+    app.add_middleware(ThrottlingMiddleware)
+
+    @app.get("/api/v1/ping")
+    async def ping():
+        return {"ok": True}
+
+    assert (await _response_status_and_headers(app, method="GET", path="/api/v1/ping"))[0] == 200
+    assert (await _response_status_and_headers(app, method="GET", path="/api/v1/ping"))[0] == 200
+
+    assert delays == []
+
+
+@pytest.mark.asyncio
+async def test_throttling_keeps_soft_delay_for_mutations(monkeypatch, fake_redis):
+    import app.middleware.throttling as throttling_module
+
+    async def _fake_get_redis():
+        return fake_redis
+
+    delays: list[float] = []
+
+    async def _record_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(throttling_module, "get_redis", _fake_get_redis)
+    monkeypatch.setattr(throttling_module, "SOFT_THRESHOLD", 1)
+    monkeypatch.setattr(throttling_module, "HARD_THRESHOLD", 3)
+    monkeypatch.setattr(throttling_module, "MIN_DELAY", 0.1)
+    monkeypatch.setattr(throttling_module, "MAX_DELAY", 0.5)
+    monkeypatch.setattr(throttling_module.asyncio, "sleep", _record_sleep)
+
+    app = FastAPI()
+    app.add_middleware(ThrottlingMiddleware)
+
+    @app.post("/api/v1/items")
+    async def create_item():
+        return {"ok": True}
+
+    assert (await _response_status_and_headers(app, method="POST", path="/api/v1/items"))[0] == 200
+    assert (await _response_status_and_headers(app, method="POST", path="/api/v1/items"))[0] == 200
+
+    assert delays == [pytest.approx(0.3)]
+
+
+@pytest.mark.asyncio
+async def test_throttling_does_not_undercount_same_millisecond_requests(monkeypatch, fake_redis):
     import app.middleware.throttling as throttling_module
 
     async def _fake_get_redis():
@@ -483,16 +569,15 @@ def test_throttling_does_not_undercount_same_millisecond_requests(monkeypatch, f
     async def ping():
         return {"ok": True}
 
-    client = TestClient(app)
+    first_status, _ = await _response_status_and_headers(app, method="GET", path="/api/v1/ping")
+    second_status, _ = await _response_status_and_headers(app, method="GET", path="/api/v1/ping")
 
-    first = client.get("/api/v1/ping")
-    second = client.get("/api/v1/ping")
-
-    assert first.status_code == 200
-    assert second.status_code == 429
+    assert first_status == 200
+    assert second_status == 429
 
 
-def test_throttling_does_not_apply_to_non_api_routes(monkeypatch, fake_redis):
+@pytest.mark.asyncio
+async def test_throttling_does_not_apply_to_non_api_routes(monkeypatch, fake_redis):
     import app.middleware.throttling as throttling_module
 
     async def _fake_get_redis():
@@ -507,10 +592,9 @@ def test_throttling_does_not_apply_to_non_api_routes(monkeypatch, fake_redis):
     async def health():
         return {"status": "ok"}
 
-    client = TestClient(app)
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.headers.get("X-RateLimit-Limit") is None
+    status, headers = await _response_status_and_headers(app, method="GET", path="/health")
+    assert status == 200
+    assert headers.get("x-ratelimit-limit") is None
 
 
 def test_pagination_helper_behaviour():

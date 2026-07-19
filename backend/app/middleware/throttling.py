@@ -24,6 +24,7 @@ SOFT_THRESHOLD = 150
 HARD_THRESHOLD = 250
 MIN_DELAY = 0.1
 MAX_DELAY = 0.5
+SAFE_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 class ThrottlingMiddleware:
@@ -43,6 +44,11 @@ class ThrottlingMiddleware:
     @staticmethod
     def _dict_to_headers(headers: dict[str, str]) -> list[tuple[bytes, bytes]]:
         return [(key.encode("latin1"), value.encode("latin1")) for key, value in headers.items()]
+
+    @staticmethod
+    def _should_apply_soft_delay(method: str) -> bool:
+        """Reserve progressive delays for writes while retaining the hard cap for all API traffic."""
+        return method.upper() not in SAFE_READ_METHODS
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if not self._should_apply(scope):
@@ -113,7 +119,11 @@ class ThrottlingMiddleware:
             await response(scope, receive, send)
             return
 
-        if request_count > SOFT_THRESHOLD:
+        # Navigation can legitimately issue several concurrent GETs (list,
+        # detail, and reference data). Continue counting those requests toward
+        # the hard limit, but do not add an artificial delay before the hard
+        # protection has been reached. Writes retain progressive backpressure.
+        if self._should_apply_soft_delay(method) and request_count > SOFT_THRESHOLD:
             ratio = min(1.0, (request_count - SOFT_THRESHOLD) / (HARD_THRESHOLD - SOFT_THRESHOLD))
             delay = MIN_DELAY + ((MAX_DELAY - MIN_DELAY) * ratio)
             await asyncio.sleep(delay)

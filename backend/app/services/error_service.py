@@ -3,7 +3,10 @@ Error Service for persistent error logging and querying.
 
 Provides methods to log errors to the database and query them for the admin dashboard.
 """
+import asyncio
 import traceback
+import weakref
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Optional, Any
 from uuid import UUID
@@ -11,8 +14,29 @@ from uuid import UUID
 from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.logging import get_logger
 from app.db.models.error_log import ErrorLog, ErrorCategory, ErrorSeverity
 from app.db.session import AsyncSessionLocal
+
+
+logger = get_logger(__name__)
+
+# Test runners can create a fresh event loop per test. Keep the concurrency
+# guard per loop instead of binding one asyncio semaphore to whichever loop
+# happens to log the first error.
+_persistence_semaphores: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop, asyncio.BoundedSemaphore
+] = weakref.WeakKeyDictionary()
+
+
+def _persistence_semaphore() -> asyncio.BoundedSemaphore:
+    loop = asyncio.get_running_loop()
+    semaphore = _persistence_semaphores.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.BoundedSemaphore(settings.ERROR_LOG_PERSIST_MAX_CONCURRENCY)
+        _persistence_semaphores[loop] = semaphore
+    return semaphore
 
 
 # Sensitive fields to strip from request context
@@ -62,50 +86,65 @@ async def log_error(
 ) -> Optional[ErrorLog]:
     """
     Log an error to the database.
-    
-    If no db session is provided, creates a new one (for use in exception handlers).
+
+    If no db session is provided, creates a dedicated session (for exception
+    handlers). Persistence is capped and timed because a database incident must
+    not generate unbounded follow-up work trying to record itself.
     """
+    owns_session = db is None
+    session = db or AsyncSessionLocal()
+
+    async def _persist() -> ErrorLog:
+        async with _persistence_semaphore():
+            error_log = ErrorLog(
+                error_type=error_type,
+                message=message[:10000] if message else "No message",  # Truncate very long messages
+                error_category=category.value if hasattr(category, 'value') else category,
+                severity=severity.value if hasattr(severity, 'value') else severity,
+                correlation_id=correlation_id,
+                endpoint=endpoint,
+                method=method,
+                status_code=status_code,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                stack_trace=stack_trace[:50000] if stack_trace else None,  # Truncate very long traces
+                request_context=sanitize_context(request_context) if request_context else None,
+            )
+
+            session.add(error_log)
+            await session.commit()
+            await session.refresh(error_log)
+            return error_log
+
     try:
-        # Create new session if not provided
-        close_session = False
-        if db is None:
-            db = AsyncSessionLocal()
-            close_session = True
-        
-        error_log = ErrorLog(
-            error_type=error_type,
-            message=message[:10000] if message else "No message",  # Truncate very long messages
-            error_category=category.value if hasattr(category, 'value') else category,
-            severity=severity.value if hasattr(severity, 'value') else severity,
-            correlation_id=correlation_id,
-            endpoint=endpoint,
-            method=method,
-            status_code=status_code,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            stack_trace=stack_trace[:50000] if stack_trace else None,  # Truncate very long traces
-            request_context=sanitize_context(request_context) if request_context else None,
+        return await asyncio.wait_for(
+            _persist(),
+            timeout=settings.ERROR_LOG_PERSIST_TIMEOUT_SECONDS,
         )
-        
-        db.add(error_log)
-        await db.commit()
-        await db.refresh(error_log)
-        
-        if close_session:
-            await db.close()
-        
-        return error_log
-    except Exception as e:
-        # Don't let error logging failures break the app
-        # Log to stdout as fallback
-        import structlog
-        logger = structlog.get_logger()
-        logger.error(
-            "failed_to_persist_error",
-            original_error=message,
-            persistence_error=str(e),
+    except asyncio.TimeoutError:
+        # Do not raise from an exception handler when error persistence is
+        # contended or the database is down.
+        logger.warning(
+            "error_log_persistence_timed_out",
+            error_type=error_type,
+            timeout_seconds=settings.ERROR_LOG_PERSIST_TIMEOUT_SECONDS,
         )
         return None
+    except Exception as exc:
+        # Don't let error logging failures break the app
+        logger.error(
+            "failed_to_persist_error",
+            error_type=error_type,
+            persistence_error=str(exc),
+        )
+        return None
+    finally:
+        # The error handler uses its own session, so it must always return the
+        # connection to the pool—even if commit/refresh fails or times out.
+        # Callers that supplied a session retain ownership of its lifecycle.
+        if owns_session:
+            with suppress(Exception):
+                await session.close()
 
 
 async def log_error_from_exception(

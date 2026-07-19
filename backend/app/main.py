@@ -13,7 +13,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
+from sqlalchemy.exc import (
+    SQLAlchemyError,
+    IntegrityError,
+    OperationalError,
+    TimeoutError as SQLAlchemyTimeoutError,
+)
 from pydantic import ValidationError
 import stripe
 
@@ -53,7 +58,12 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("application_shutting_down")
-    await close_redis()
+    try:
+        await close_redis()
+    finally:
+        # Release pooled connections so deploys, test lifespans, and graceful
+        # shutdowns do not leave database connections checked out.
+        await engine.dispose()
 
 
 app = FastAPI(
@@ -285,6 +295,11 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     correlation_id = getattr(request.state, "correlation_id", "unknown")
     error_type = type(exc).__name__
     
+    # A SQLAlchemy timeout at this boundary is pool checkout exhaustion. It is
+    # transient, so make that explicit to the client instead of presenting it
+    # as a generic database failure that invites an immediate retry storm.
+    is_pool_timeout = isinstance(exc, SQLAlchemyTimeoutError)
+
     # Determine severity
     if isinstance(exc, OperationalError):
         severity = ErrorSeverity.CRITICAL
@@ -313,15 +328,27 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     record_unhandled_exception(error_type)
     
     # Persist to database (use a separate connection since current may be broken)
+    status_code = 503 if is_pool_timeout else 500
     asyncio.create_task(_log_error_async(
         error_type=error_type,
         message=str(exc),
         category=ErrorCategory.DATABASE,
         severity=severity,
         request=request,
-        status_code=500,
+        status_code=status_code,
         stack_trace=traceback.format_exc(),
     ))
+
+    if is_pool_timeout:
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "detail": "Database temporarily unavailable. Please try again.",
+                "error": "Database temporarily unavailable",
+                "correlation_id": correlation_id,
+            },
+            headers={"Retry-After": "1"},
+        )
     
     return JSONResponse(
         status_code=500,

@@ -3,6 +3,9 @@ Prometheus Metrics Configuration
 
 Exposes application metrics for monitoring and alerting.
 """
+import re
+from typing import Optional
+
 from prometheus_fastapi_instrumentator import Instrumentator, metrics
 from prometheus_client import Counter, Histogram, Gauge
 from fastapi import FastAPI
@@ -77,6 +80,25 @@ UNHANDLED_EXCEPTIONS_TOTAL = Counter(
     "Total unhandled exceptions",
     ["exception_type"],
 )
+
+
+_UUID_PATH_SEGMENT = re.compile(
+    r"(?<=/)[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}(?=/|$)"
+)
+
+
+def normalize_endpoint_label(endpoint: Optional[str]) -> str:
+    """Return a bounded-cardinality endpoint label for custom metrics.
+
+    Exception handlers receive the concrete request URL, which can contain a
+    distinct UUID for every repair order, invoice, vehicle, and so on. Storing
+    those raw paths as Prometheus labels can exhaust the metrics process during
+    an incident. The normal HTTP instrumentator uses FastAPI route templates;
+    this preserves the same safety for custom error metrics until a route
+    template is available at every exception boundary.
+    """
+    path = (endpoint or "unknown").split("?", 1)[0]
+    return _UUID_PATH_SEGMENT.sub(":id", path)
 
 
 def setup_metrics(app: FastAPI) -> Instrumentator:
@@ -181,7 +203,7 @@ def record_error(
     ERRORS_TOTAL.labels(
         error_type=error_type,
         error_category=error_category,
-        endpoint=endpoint,
+        endpoint=normalize_endpoint_label(endpoint),
     ).inc()
 
 
