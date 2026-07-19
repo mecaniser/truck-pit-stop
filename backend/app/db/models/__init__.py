@@ -53,6 +53,7 @@ from app.db.models.fleet import (
     IncidentStatus,
 )
 from app.db.models.description_library import DescriptionLibraryEntry
+from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 
 __all__ = [
     "Tenant",
@@ -114,4 +115,6 @@ __all__ = [
     "IncidentSeverity",
     "IncidentStatus",
     "DescriptionLibraryEntry",
+    "ProviderOutboxEvent",
+    "ProviderOutboxStatus",
 ]

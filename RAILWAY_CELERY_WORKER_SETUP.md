@@ -37,6 +37,31 @@ Dockerfile, running Celery instead of Uvicorn.
    verify sooner, temporarily change the schedule to `crontab(minute="*/5")`,
    confirm it fires, then revert to the weekly cadence before merging.)
 
+## Provider outbox rollout
+
+The application now has a durable provider outbox for quote emails. It is
+intentionally **off by default** so deploying the schema and code cannot strand
+customer emails before a worker exists. Enable it only in this order:
+
+1. Deploy the web service release that contains Alembic revision `082`; its
+   pre-deploy check confirms the `provider_outbox` table and due-event index.
+2. Create/deploy the worker service above, with the same `DATABASE_URL`,
+   `REDIS_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `SECRET_KEY` as the
+   web service. It needs no public networking.
+3. Confirm worker logs show `celery@... ready` and that the
+   `process_provider_outbox` task is registered.
+4. Set **only on the web service**:
+   ```
+   PROVIDER_OUTBOX_ENABLED=true
+   ```
+   Redeploy the web service (or restart it after Railway applies the variable).
+
+Once enabled, sending a quote returns immediately after its database commit.
+Celery beat picks up the email within about ten seconds; Resend calls run from
+the worker with a 20-second timeout, bounded retries, and a dead-letter state.
+If the worker is unavailable, leave the flag false: the existing synchronous
+email behavior remains in place rather than silently queueing customer mail.
+
 ## What this unblocks
 
 Once deployed, these `beat_schedule` entries in `app/tasks/__init__.py`

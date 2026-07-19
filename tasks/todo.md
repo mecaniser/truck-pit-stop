@@ -3206,3 +3206,26 @@
 
 ## Review
 - The company truck picker now presents dense cards with only the two selection fields that matter: truck model/name and unit number. Ten or more trucks fit naturally without the previous empty detail-card space.
+
+---
+
+# Provider Transactional Outbox (2026-07-19)
+
+## Plan
+- [x] Map existing request-path provider delivery and select the smallest high-impact first migration.
+- [x] Add a durable, tenant-scoped outbox record and Alembic migration with retry/lease/idempotency fields.
+- [x] Move the selected delivery flow to write its domain change and outbox event in the same transaction.
+- [x] Add a bounded background worker that claims, delivers, retries, and marks failures without holding request DB transactions during provider I/O.
+- [ ] Gate the new quote-email route behind a production flag until the separate Railway Celery worker is verified live.
+- [ ] Add focused transaction/retry tests, run backend verification, and independently deploy the release.
+
+## Progress Notes
+- [x] Phase started after the repair-order read/UI request reduction work. The goal is to prevent external provider latency or failures from blocking user writes and occupying database connections.
+- [x] The first executable slice is quote email: it currently commits the quote then blocks the ASGI request while the Resend SDK performs an unbounded synchronous HTTP call. SMS and invoice/PDF delivery remain follow-on migrations because they have different tracking and attachment semantics.
+- [x] Railway's deployed web service runs only Uvicorn. `railway.worker.json` and `RAILWAY_CELERY_WORKER_SETUP.md` already describe the needed Celery worker, but the outbox must remain opt-in until that service is confirmed live.
+- [x] Added Alembic `082`, `provider_outbox`, an email-only quote hand-off, and a 10-second Celery beat sweep. The worker uses PostgreSQL `SKIP LOCKED`, a short lease, finite HTTP timeout, exponential retries, a dead-letter status, and Resend's 24-hour idempotency key; no database session stays open during the Resend request.
+- [x] Focused verification passed: `22 passed` across outbox delivery/retry/dead-letter tests, quote send behavior, and schema preflight; `compileall` and `git diff --check` passed.
+
+## Review
+- The release is intentionally safe to deploy before the worker: migration `082` and all outbox code ship with `PROVIDER_OUTBOX_ENABLED=false`, preserving the current quote-email behavior.
+- The full backend suite still has unrelated direct-dependency test failures in `test_admin_tenant_user_management.py` (`Depends(get_db)` is passed when the role checker is called directly). The new outbox tests and affected quote/schema suites pass independently.

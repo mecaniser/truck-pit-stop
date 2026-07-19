@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from celery import Celery
 from celery.schedules import crontab
 from app.core.config import settings
@@ -22,6 +24,7 @@ celery_app.conf.update(
         "app.tasks.mechanic_timer_maintenance",
         "app.tasks.fleet_inspection_compliance",
         "app.tasks.description_library_refresh",
+        "app.tasks.provider_outbox",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
@@ -45,7 +48,14 @@ celery_app.conf.update(
             "task": "process_description_library_refresh",
             "schedule": crontab(hour=6, minute=0, day_of_week=1),  # Mondays 6 AM UTC
         },
+        "process-provider-outbox": {
+            "task": "process_provider_outbox",
+            "schedule": timedelta(seconds=10),
+        },
     },
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
 )
 
 # Import tasks to register them

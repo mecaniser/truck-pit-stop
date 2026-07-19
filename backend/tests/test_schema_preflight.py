@@ -6,16 +6,34 @@ from app.commands import schema_preflight
 
 
 class FakeInspector:
-    def __init__(self, *, include_source_line: bool = True, include_active_list_index: bool = True):
+    def __init__(
+        self,
+        *,
+        include_source_line: bool = True,
+        include_active_list_index: bool = True,
+        include_provider_outbox: bool = True,
+    ):
         self.include_source_line = include_source_line
         self.include_active_list_index = include_active_list_index
+        self.include_provider_outbox = include_provider_outbox
 
     def get_columns(self, table_name: str):
-        assert table_name == "parts_usage"
-        columns = [{"name": "id"}]
-        if self.include_source_line:
-            columns.append({"name": "source_line_id"})
-        return columns
+        if table_name == "parts_usage":
+            columns = [{"name": "id"}]
+            if self.include_source_line:
+                columns.append({"name": "source_line_id"})
+            return columns
+        assert table_name == "provider_outbox"
+        if not self.include_provider_outbox:
+            return [{"name": "id"}]
+        return [
+            {"name": column}
+            for column in (
+                "id", "tenant_id", "event_type", "aggregate_type", "aggregate_id",
+                "payload", "idempotency_key", "status", "attempt_count", "available_at",
+                "locked_until",
+            )
+        ]
 
     def get_indexes(self, table_name: str):
         if table_name == "parts_usage":
@@ -25,13 +43,22 @@ class FakeInspector:
                     "column_names": ["source_line_id"],
                 }
             ]
-        assert table_name == "repair_orders"
-        if not self.include_active_list_index:
+        if table_name == "repair_orders":
+            if not self.include_active_list_index:
+                return []
+            return [
+                {
+                    "name": schema_preflight.REPAIR_ORDER_ACTIVE_LIST_INDEX,
+                    "column_names": ["tenant_id", "created_at"],
+                }
+            ]
+        assert table_name == "provider_outbox"
+        if not self.include_provider_outbox:
             return []
         return [
             {
-                "name": schema_preflight.REPAIR_ORDER_ACTIVE_LIST_INDEX,
-                "column_names": ["tenant_id", "created_at"],
+                "name": schema_preflight.PROVIDER_OUTBOX_DUE_INDEX,
+                "column_names": ["status", "available_at"],
             }
         ]
 
@@ -59,6 +86,13 @@ def test_collect_schema_issues_reports_missing_column_and_list_index():
 
     assert "missing required column parts_usage.source_line_id" in issues
     assert any("active repair-order list index" in issue for issue in issues)
+
+
+def test_collect_schema_issues_reports_missing_provider_outbox_objects():
+    issues = schema_preflight.collect_schema_issues(FakeInspector(include_provider_outbox=False))
+
+    assert any("provider_outbox columns" in issue for issue in issues)
+    assert any("provider outbox due index" in issue for issue in issues)
 
 
 def test_verify_database_fails_when_live_revision_is_not_the_script_head(monkeypatch):

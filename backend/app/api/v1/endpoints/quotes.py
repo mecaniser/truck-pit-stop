@@ -36,6 +36,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.services.email_service import send_email
+from app.services.provider_outbox_service import enqueue_email_notification
 from app.services.twilio_service import send_sms
 from app.services.pricing import (
     get_order_checkout_breakdown,
@@ -924,19 +925,9 @@ async def send_quote_to_customer(
         order.status = RepairOrderStatus.APPROVED
         auto_approved = True
     
-    await db.commit()
-    await db.refresh(quote)
     if auto_approved:
-        record_quote(status="approved", tenant_id=str(current_tenant_id))
-    
-    if auto_approved:
-        # Send auto-approved confirmation instead of approval request
-        await send_email(
-            db=db,
-            tenant_id=str(current_tenant_id),
-            to=customer.email,
-            subject=f"Quote {quote.quote_number} Auto-Approved - {shop_name}",
-            body=f"""
+        email_subject = f"Quote {quote.quote_number} Auto-Approved - {shop_name}"
+        email_body = f"""
             <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h1 style="color: #d97706;">{shop_name}</h1>
                 <h2 style="color: #16a34a;">Quote Auto-Approved</h2>
@@ -951,18 +942,47 @@ async def send_quote_to_customer(
                 <p style="margin: 4px 0 0 0; color: #4b5563; font-size: 14px;"><strong>Parts:</strong> ${parts_total:,.2f}</p>
                 <p style="color: #666; font-size: 14px;">Work will begin shortly. We will notify you when your vehicle is being serviced.</p>
             </body></html>
-            """,
-            template_name="quote_auto_approved",
+            """
+        email_template_name = "quote_auto_approved"
+    else:
+        email_subject = f"Quote {quote.quote_number} Ready for Approval - {shop_name}"
+        email_body = html_body
+        email_template_name = "quote_approval"
+
+    outbox_event = None
+    if settings.PROVIDER_OUTBOX_ENABLED:
+        # The business state and durable delivery record commit together. The
+        # worker reads the notification after commit, keeping Resend off the
+        # request path and out of the request database transaction.
+        outbox_event = await enqueue_email_notification(
+            db,
+            tenant_id=current_tenant_id,
+            aggregate_type="quote",
+            aggregate_id=quote.id,
+            idempotency_key=f"quote-email:{quote.id}:{quote.approval_token}",
+            recipient=customer.email,
+            subject=email_subject,
+            body=email_body,
+            template_name=email_template_name,
             sender_name=shop_name,
         )
-    else:
+
+    await db.commit()
+    await db.refresh(quote)
+    if auto_approved:
+        record_quote(status="approved", tenant_id=str(current_tenant_id))
+
+    # Keep the old behavior until the dedicated Railway worker is live and the
+    # feature flag is explicitly enabled. That makes this migration deployable
+    # without ever queueing customer emails into an unserved system.
+    if outbox_event is None:
         await send_email(
             db=db,
             tenant_id=str(current_tenant_id),
             to=customer.email,
-            subject=f"Quote {quote.quote_number} Ready for Approval - {shop_name}",
-            body=html_body,
-            template_name="quote_approval",
+            subject=email_subject,
+            body=email_body,
+            template_name=email_template_name,
             sender_name=shop_name,
         )
     

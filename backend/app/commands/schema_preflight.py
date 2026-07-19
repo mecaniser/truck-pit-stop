@@ -27,6 +27,7 @@ ALEMBIC_CONFIG_PATH = Path(__file__).resolve().parents[2] / "alembic.ini"
 PARTS_USAGE_SOURCE_LINE_INDEX = "ix_parts_usage_source_line_id"
 PARTS_USAGE_SOURCE_LINE_FOREIGN_KEY = "fk_parts_usage_source_line_id_labor"
 REPAIR_ORDER_ACTIVE_LIST_INDEX = "ix_repair_orders_tenant_created_at"
+PROVIDER_OUTBOX_DUE_INDEX = "ix_provider_outbox_due"
 
 
 class SchemaPreflightError(RuntimeError):
@@ -115,6 +116,36 @@ def collect_schema_issues(inspector: Any) -> list[str]:
         issues.append(
             "missing required active repair-order list index "
             "repair_orders.ix_repair_orders_tenant_created_at(tenant_id, created_at)"
+        )
+
+    provider_outbox_columns = {column["name"] for column in inspector.get_columns("provider_outbox")}
+    required_provider_outbox_columns = {
+        "tenant_id",
+        "event_type",
+        "aggregate_type",
+        "aggregate_id",
+        "payload",
+        "idempotency_key",
+        "status",
+        "attempt_count",
+        "available_at",
+        "locked_until",
+    }
+    missing_provider_outbox_columns = required_provider_outbox_columns - provider_outbox_columns
+    if missing_provider_outbox_columns:
+        issues.append(
+            "missing required provider_outbox columns "
+            + ", ".join(sorted(missing_provider_outbox_columns))
+        )
+
+    if not _index_matches(
+        inspector.get_indexes("provider_outbox"),
+        name=PROVIDER_OUTBOX_DUE_INDEX,
+        columns=("status", "available_at"),
+    ):
+        issues.append(
+            "missing required provider outbox due index "
+            "provider_outbox.ix_provider_outbox_due(status, available_at)"
         )
 
     return issues

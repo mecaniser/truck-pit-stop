@@ -20,6 +20,8 @@ from app.api.v1.endpoints import repair_orders as repair_orders_endpoint
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.quote import Quote
+from app.db.models.notification import Notification, NotificationStatus
+from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service
 from app.db.models.labor import Labor, LaborLineType
@@ -343,6 +345,49 @@ async def test_quote_send_email_uses_tenant_branding(db_session, monkeypatch):
     assert "Lock Test Garage" in sent_email["body"]
     assert "DieselBridge Network" not in sent_email["subject"]
     assert "DieselBridge Network" not in sent_email["body"]
+
+
+@pytest.mark.asyncio
+async def test_quote_send_queues_email_without_calling_resend(db_session, monkeypatch):
+    staff_user, order, service, quote = await _seed_quote_context(db_session)
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+
+    async def _must_not_send_email(**_kwargs):
+        raise AssertionError("Resend must not be called from the quote request")
+
+    async def _noop_sms(*_args, **_kwargs):
+        return None
+
+    async def _noop_broadcast(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(quotes_endpoint.settings, "PROVIDER_OUTBOX_ENABLED", True)
+    monkeypatch.setattr(quotes_endpoint, "send_email", _must_not_send_email)
+    monkeypatch.setattr(quotes_endpoint, "send_sms", _noop_sms)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_quote_event", _noop_broadcast)
+    monkeypatch.setattr(quotes_endpoint, "broadcast_repair_order_update", _noop_broadcast)
+
+    response = await quotes_endpoint.send_quote_to_customer(
+        quote_id=quote.id,
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    event = (
+        await db_session.execute(
+            select(ProviderOutboxEvent).where(ProviderOutboxEvent.aggregate_id == quote.id)
+        )
+    ).scalar_one()
+    notification = await db_session.get(Notification, event.payload["notification_id"])
+
+    assert response.sent_to_customer is True
+    assert event.status == ProviderOutboxStatus.PENDING.value
+    assert event.idempotency_key.endswith(str(quote.approval_token))
+    assert notification.status == NotificationStatus.PENDING
+    assert notification.recipient_email == order.customer.email
+    assert notification.subject.endswith(" - Lock Test Garage")
 
 
 @pytest.mark.asyncio

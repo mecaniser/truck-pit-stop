@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     # Resend
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "noreply@dieselbridge.network"
+
+    # Provider outbox. Keep delivery disabled until a dedicated Celery worker
+    # is deployed; enabled routes otherwise preserve their current synchronous
+    # behavior instead of queueing messages that nobody can process.
+    PROVIDER_OUTBOX_ENABLED: bool = False
+    PROVIDER_OUTBOX_BATCH_SIZE: int = Field(default=20, ge=1, le=100)
+    PROVIDER_OUTBOX_LEASE_SECONDS: int = Field(default=90, ge=30, le=900)
+    PROVIDER_OUTBOX_MAX_ATTEMPTS: int = Field(default=5, ge=1, le=20)
+    PROVIDER_OUTBOX_RETRY_BASE_SECONDS: int = Field(default=30, ge=1, le=3600)
+    PROVIDER_OUTBOX_RETRY_MAX_SECONDS: int = Field(default=900, ge=1, le=86400)
+    PROVIDER_OUTBOX_EMAIL_TIMEOUT_SECONDS: float = Field(default=20.0, gt=0, le=60)
     
     # Cloudinary (for work photos)
     CLOUDINARY_CLOUD_NAME: str = ""
