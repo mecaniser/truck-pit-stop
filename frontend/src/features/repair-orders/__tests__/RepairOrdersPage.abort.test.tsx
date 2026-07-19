@@ -21,7 +21,9 @@ vi.mock('@/contexts/ThemeContext', () => ({
   useTheme: () => ({ accentColors: { primary: '#2563eb' } }),
 }))
 
+import type { PartsUsage } from '../../../types'
 import RepairOrdersPage from '../RepairOrdersPage'
+import { buildPartHistoryEvents } from '../repairOrderHistory'
 
 function renderPage(initialEntries: string[] = ['/']) {
   const queryClient = new QueryClient({
@@ -113,5 +115,54 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(screen.getByText('Unit 204')).toBeInTheDocument()
     expect(screen.getByText('Freightliner Cascadia')).toBeInTheDocument()
     expect(screen.queryByText('2022 · ELIS-204')).not.toBeInTheDocument()
+  })
+
+  it('records normal and stock-override part additions in repair-order history', () => {
+    const basePart: PartsUsage = {
+      id: 'usage-1',
+      repair_order_id: 'order-1',
+      inventory_id: 'part-1',
+      inventory_sku: 'BP-1',
+      inventory_name: 'Brake Pad',
+      quantity: '1',
+      unit_type: 'each',
+      unit_price: '50.00',
+      unit_cost: '30.00',
+      list_price: '50.00',
+      savings: '0.00',
+      total_price: '50.00',
+      source_service_id: null,
+      source_line_id: null,
+      stock_shortage_override: false,
+      created_at: '2026-07-19T10:00:00Z',
+    }
+    const events = buildPartHistoryEvents([
+      basePart,
+      {
+        ...basePart,
+        id: 'usage-2',
+        inventory_id: 'part-2',
+        inventory_name: 'Engine Oil',
+        quantity: '2.50',
+        unit_type: 'gallon',
+        stock_shortage_override: true,
+        created_at: '2026-07-19T10:05:00Z',
+      },
+    ])
+
+    expect(events).toEqual([
+      {
+        id: 'part-usage-1',
+        label: 'Part added to repair order',
+        at: '2026-07-19T10:00:00Z',
+        detail: 'Brake Pad · 1 ea',
+      },
+      {
+        id: 'part-usage-2',
+        label: 'Part added with stock override',
+        at: '2026-07-19T10:05:00Z',
+        detail: 'Engine Oil · 2.50 gal',
+      },
+    ])
   })
 })

@@ -26,6 +26,7 @@ import { useAuthStore } from '@/stores/authStore'
 import PriceBuilderPanel from './PriceBuilderPanel'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
+import { buildPartHistoryEvents } from './repairOrderHistory'
 
 interface NewCustomerForm {
   first_name: string
@@ -1513,6 +1514,7 @@ export default function RepairOrdersPage() {
       detail: order.order_number,
       actor: customerActor,
     })
+    events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? []))
     push({
       id: 'quote-created',
       label: 'Quote draft created',
