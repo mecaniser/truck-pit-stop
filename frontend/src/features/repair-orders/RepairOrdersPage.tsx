@@ -485,7 +485,7 @@ export default function RepairOrdersPage() {
     },
   })
 
-  const { data: vehicleResults = [], isFetching: isFetchingVehicles } = useQuery<VehicleTypeaheadItem[]>({
+  const { data: vehicleResults = [], isLoading: isLoadingVehicles, isFetching: isFetchingVehicles } = useQuery<VehicleTypeaheadItem[]>({
     queryKey: ['vehicle-typeahead', selectedCustomerId, debouncedVehicleQuery],
     queryFn: async ({ signal }) => {
       const response = await api.get('/vehicles/typeahead', {
@@ -493,12 +493,16 @@ export default function RepairOrdersPage() {
         params: {
           customer_id: selectedCustomerId,
           q: debouncedVehicleQuery || undefined,
-          limit: 20,
+          // This is a single selected company's fleet, not the tenant-wide
+          // catalog. Give the immediate vehicle grid enough choices while
+          // retaining the capped, searchable endpoint for larger fleets.
+          limit: 50,
         },
       })
       return response.data
     },
     enabled: isModalOpen && !!selectedCustomerId && selectedCustomerId !== 'add_new',
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
 
@@ -2290,28 +2294,8 @@ export default function RepairOrdersPage() {
 
                       {selectedCustomerId && selectedCustomerId !== 'add_new' && (
                         <div>
-                          <h4 className="text-sm font-semibold text-gray-800 mb-2">Select vehicle</h4>
-                          <div className="flex items-end gap-3">
-                            <div className="flex-1">
-                              <BaseSelect
-                                options={filteredVehicles.map((vehicle) => ({
-                                  value: vehicle.id,
-                                  label: vehicleDisplayLabel(vehicle),
-                                  subLabel: [vehicle.unit_number && `Unit ${vehicle.unit_number}`, vehicle.license_plate].filter(Boolean).join(' · ') || undefined,
-                                  searchText: vehicle.vin || undefined,
-                                }))}
-                                value={selectedVehicleId}
-                                onChange={(value) => {
-                                  setSelectedVehicleId(value)
-                                  setSelectedVehicleOption(vehicleOptions.find((vehicle) => vehicle.id === value) || null)
-                                  setShowNewVehicleForm(false)
-                                }}
-                                onQueryChange={setVehicleQuery}
-                                loading={isFetchingVehicles}
-                                placeholder="Search unit, VIN, plate, or vehicle"
-                                allowAddNew={false}
-                              />
-                            </div>
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <h4 className="text-sm font-semibold text-gray-800">Available trucks</h4>
                             <button
                               type="button"
                               onClick={() => {
@@ -2324,6 +2308,56 @@ export default function RepairOrdersPage() {
                               + Add vehicle
                             </button>
                           </div>
+                          <div className="relative mb-3">
+                            <input
+                              value={vehicleQuery}
+                              onChange={(event) => setVehicleQuery(event.target.value)}
+                              placeholder="Filter by unit, VIN, plate, make, or model"
+                              className="h-[42px] w-full rounded-lg border border-gray-300 bg-white px-4 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                            />
+                            {isFetchingVehicles && <Spinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />}
+                          </div>
+                          {isLoadingVehicles ? (
+                            <div className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
+                              <Spinner size="sm" className="mr-2" /> Loading company trucks…
+                            </div>
+                          ) : filteredVehicles.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                              {filteredVehicles.map((vehicle) => {
+                                const selected = selectedVehicleId === vehicle.id
+                                return (
+                                  <button
+                                    key={vehicle.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedVehicleId(vehicle.id)
+                                      setSelectedVehicleOption(vehicle)
+                                      setShowNewVehicleForm(false)
+                                    }}
+                                    className={`w-full rounded-lg border p-4 text-left transition-all ${
+                                      selected
+                                        ? 'border-amber-500 bg-white ring-2 ring-amber-200'
+                                        : 'border-gray-200 bg-white/60 hover:border-amber-300'
+                                    }`}
+                                  >
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      {vehicle.unit_number ? `Unit ${vehicle.unit_number}` : 'Unit not assigned'}
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                                      {vehicleDisplayLabel(vehicle, { includeYear: false })}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                      {[vehicle.year, vehicle.license_plate || 'No plate'].filter(Boolean).join(' · ')}
+                                    </p>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-5 text-center text-sm text-gray-500">
+                              {vehicleQuery.trim() ? 'No company trucks match this search.' : 'No trucks are listed for this company yet.'}
+                            </div>
+                          )}
                         </div>
                       )}
 

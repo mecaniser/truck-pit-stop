@@ -3172,3 +3172,20 @@
 
 ## Review
 - Customer search text now remains visible while a typeahead request debounces or fetches, so staff can continue typing and select the returned customer without the picker resetting.
+
+---
+
+# Company Truck Grid Restoration (2026-07-19)
+
+## Plan
+- [x] Retain the per-selected-customer vehicle lookup introduced by the workspace optimisation.
+- [x] Restore immediate, model-and-unit labelled vehicle cards once a customer is selected.
+- [x] Keep a lightweight filter for larger company fleets without making the filter the only selection control.
+- [x] Run focused frontend verification and independently release the UX correction.
+
+## Progress Notes
+- [x] The global tenant vehicle scan remains removed. The selected customer's small, capped vehicle result set is now rendered immediately as selectable cards; the query limit is 50 and remains server-scoped.
+- [x] Passed focused repair-order/customer typeahead/API cancellation tests (4), frontend TypeScript, focused ESLint, production build, and `git diff --check`.
+
+## Review
+- Selecting a company now immediately presents its available trucks as cards, with the unit number prominent and the model directly below it. A lightweight company-scoped filter remains available for larger fleets without hiding the normal selection workflow.

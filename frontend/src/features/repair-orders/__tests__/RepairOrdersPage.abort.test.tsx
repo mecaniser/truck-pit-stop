@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -23,7 +23,7 @@ vi.mock('@/contexts/ThemeContext', () => ({
 
 import RepairOrdersPage from '../RepairOrdersPage'
 
-function renderPage() {
+function renderPage(initialEntries: string[] = ['/']) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -33,7 +33,7 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <RepairOrdersPage />
       </MemoryRouter>
     </QueryClientProvider>
@@ -70,5 +70,47 @@ describe('RepairOrdersPage request cancellation', () => {
 
     await waitFor(() => expect(signal.aborted).toBe(true))
     resolveRequest?.()
+  })
+
+  it('shows the selected company trucks as model-and-unit cards', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') {
+        return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      }
+      if (url === '/customers/typeahead') {
+        return Promise.resolve({
+          data: [{
+            id: 'customer-1', first_name: 'Elis', last_name: 'Logistics', company_name: 'ELIS LOGISTICS LLC',
+            email: 'dispatch@elis.example', phone: null,
+          }],
+        })
+      }
+      if (url === '/vehicles/typeahead') {
+        return Promise.resolve({
+          data: [{
+            id: 'vehicle-1', customer_id: 'customer-1', make: 'Freightliner', model: 'Cascadia',
+            year: 2022, unit_number: '204', license_plate: 'ELIS-204', vin: 'VIN204',
+          }],
+        })
+      }
+      if (url === '/services/typeahead') return Promise.resolve({ data: [] })
+      if (url === '/dashboard/stats') return Promise.resolve({ data: { mechanic_workload: [] } })
+      return Promise.resolve({ data: { labor_rate: 100 } })
+    })
+
+    renderPage(['/?new=true'])
+
+    await screen.findByRole('heading', { name: 'New Repair Order' })
+    fireEvent.click(await screen.findByRole('button', { name: /choose a customer/i }))
+    fireEvent.mouseDown(await screen.findByText('ELIS LOGISTICS LLC'))
+
+    await waitFor(() => {
+      expect(apiMocks.get).toHaveBeenCalledWith('/vehicles/typeahead', expect.objectContaining({
+        params: expect.objectContaining({ customer_id: 'customer-1', limit: 50 }),
+      }))
+    })
+    expect(await screen.findByText('Available trucks')).toBeInTheDocument()
+    expect(screen.getByText('Unit 204')).toBeInTheDocument()
+    expect(screen.getByText('Freightliner Cascadia')).toBeInTheDocument()
   })
 })

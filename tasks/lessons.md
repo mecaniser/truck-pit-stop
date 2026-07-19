@@ -200,3 +200,6 @@
 - Correction: Switching the customer picker to server-side typeahead let each new result query replace the select with a loading placeholder, clearing the text the user was typing.
 - Rule: A loading state for an interactive controlled input must not unmount the input when the request is caused by that input's own value.
 - Prevention: For server-side typeaheads, test typing, a loading rerender, and result replacement while asserting the query text and focus remain intact.
+- Correction: The initial typeahead optimisation replaced the immediate company-truck grid with a click-to-open select, removing the workflow the dispatcher preferred after customer selection.
+- Rule: Performance work must preserve established high-frequency interaction patterns when the same scoped request can support them efficiently.
+- Prevention: When changing a data picker from a visible grid to a searchable control, verify with the user whether immediate comparison/selection is part of the workflow before shipping.
