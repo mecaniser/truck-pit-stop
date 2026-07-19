@@ -1,3 +1,100 @@
+# Customer Notification Tenant Contact Info (2026-07-19)
+
+## Plan
+- [x] Audit customer-facing quote and repair-order workflow email templates for sender/contact values.
+- [x] Add a shared tenant contact block for customer emails.
+- [x] Include tenant phone/email in quote approval and auto-approval emails.
+- [x] Replace platform branding in work-started/work-complete customer emails with tenant branding and contact info.
+- [x] Format tenant phone numbers in customer email contact blocks.
+- [x] Run focused backend verification.
+
+## Progress Notes
+- [x] Quote approval email already used tenant `name` for subject/header/sender display name, but only showed “contact us directly” with no tenant phone/email.
+- [x] Quote SMS already ends with tenant `name`; SMS sender number comes from `Tenant.sms_phone_number` when configured, otherwise `TWILIO_PHONE_NUMBER`.
+- [x] Actual email From address still comes from `RESEND_FROM_EMAIL`; tenant `name` is used as sender display name.
+- [x] Work-started/work-complete customer emails were still hardcoded to `DieselBridge Network` in header/subject/body.
+- [x] Invoice notification service already passes tenant `phone` and `email` into invoice access/PDF/email flows.
+- [x] Added `build_tenant_contact_html()` and rendered tenant `phone`/`email` in quote approval, quote auto-approval, work-started, and work-complete customer emails.
+- [x] Updated work-started/work-complete email subjects and sender display names to use the tenant shop name.
+- [x] Formatted US tenant phone numbers as `(704) 555-0199` in email copy while keeping the `tel:` link normalized.
+- [x] Passed focused phone formatter tests, focused quote email branding/contact test, backend syntax compile, and `git diff --check`.
+
+## Review
+- Customer-facing quote and repair workflow emails now display the tenant phone/email when those tenant fields are configured, and US phone numbers render in standard readable format. Provider-level email From remains the configured Resend sender address with the tenant shop name as display name.
+
+---
+
+# Customer Vehicle Table Unit/VIN Columns (2026-07-19)
+
+## Plan
+- [x] Confirm customer vehicle rows already include unit number and VIN data.
+- [x] Add Unit and VIN columns to the customer detail Vehicles table.
+- [x] Hide optional vehicle detail columns when the selected customer's vehicles do not have that value.
+- [x] Run focused frontend verification and whitespace checks.
+
+## Progress Notes
+- [x] Found the current customer detail vehicle list renders Vehicle, Plate, and Actions only.
+- [x] Confirmed there is no vehicle `bin_number` field in the current data model; using VIN for the requested vehicle identification number column.
+- [x] Added Unit and VIN columns before Plate, with `—` for missing values.
+- [x] Made Unit, VIN, and Plate columns conditional so columns with no values for this customer's vehicles are not shown.
+- [x] Added horizontal overflow and a minimum table width so the extra columns stay readable in the slide-out panel.
+- [x] Passed `git diff --check`.
+- [x] Full frontend TypeScript is currently blocked by unrelated unused-symbol errors in `PriceBuilderPanel.tsx`.
+- [x] Focused `CustomersPage.tsx` ESLint is currently blocked by pre-existing `any`/hook warnings outside this vehicle-table change.
+
+## Review
+- Customer detail vehicle rows now always display Vehicle and Actions, and only display Unit, VIN, or Plate columns when the selected customer's vehicles include those details.
+
+---
+
+# Customer Select Keyboard Accessibility (2026-07-19)
+
+## Plan
+- [x] Inspect the New Repair Order customer picker and shared select implementation.
+- [x] Add keyboard navigation and combobox/listbox ARIA semantics to the shared `BaseSelect`.
+- [x] Add focused `CustomerSelect` regression coverage for keyboard selection.
+- [x] Restore the `+ Add new customer` menu action when no custom add handler is provided.
+- [x] Run focused component tests, frontend TypeScript, and whitespace validation.
+
+## Progress Notes
+- [x] Found `CustomerSelect` delegates to `BaseSelect`; `BaseSelect` only handled Escape and single-result Enter, so users could not arrow through customer results.
+- [x] Added ArrowUp/ArrowDown, Home/End, Enter, and Escape handling with active option tracking.
+- [x] Added combobox/listbox roles plus `aria-expanded`, `aria-controls`, `aria-activedescendant`, and `aria-selected`.
+- [x] Added `CustomerSelect` regression coverage proving keyboard navigation can select the second customer.
+- [x] Initial focused test exposed `scrollIntoView` missing in jsdom; guarded the optional call.
+- [x] Found `+ Add new customer` was swallowed by `BaseSelect` when `onAddNew` was omitted; added an `onChange('add_new')` fallback and regression coverage.
+- [x] Passed focused Vitest, frontend TypeScript, and `git diff --check`.
+
+## Review
+- The Select Customer typeahead is now keyboard navigable through the shared `BaseSelect`, and its `+ Add new customer` row triggers the New Repair Order modal's existing add-customer form state.
+
+---
+
+# New Repair Order Add Vehicle Alignment (2026-07-19)
+
+## Plan
+- [x] Locate the New Repair Order vehicle picker layout.
+- [x] Move `+ Add vehicle` from the Available trucks header into the vehicle filter row.
+- [x] Cap the suggested services chip rail to two rows while keeping selected chips visible first.
+- [x] Replace the inline new-vehicle Plate field with Unit number and submit it as `unit_number`.
+- [x] Shorten contextual Add Customer/Add Vehicle button text to just `Add`.
+- [x] Make the customer and vehicle Add buttons visually symmetric.
+- [x] Verify the active component contains the inline search/button layout and run focused checks.
+
+## Progress Notes
+- [x] Found the vehicle search input was rendered as a full-width row below the `Available trucks` header, while `+ Add vehicle` lived in the header row.
+- [x] Moved `+ Add vehicle` into a shared flex row with the vehicle filter input; it stays inline from `sm` up and stacks on narrow mobile.
+- [x] Capped service suggestions to a two-row `max-height` rail, reduced the initial rendered suggestion count, and sorted selected services to the front.
+- [x] Updated both existing-customer and new-customer vehicle forms to capture Unit number instead of Plate.
+- [x] Shortened the customer and vehicle add buttons because their nearby labels already provide the object context.
+- [x] Matched the two Add buttons on height, padding, icon, border, and inline-flex alignment.
+- [x] Passed frontend TypeScript and `git diff --check`.
+
+## Review
+- The New Repair Order modal now keeps the vehicle add action aligned with the filter bar, limits suggested service chips to two rows, captures Unit number when adding a vehicle, and uses symmetric concise contextual `Add` buttons.
+
+---
+
 # Team Technician Update UX Fix (2026-07-19)
 
 ## Plan
@@ -3278,7 +3375,7 @@
 - [x] Add a deliberate server-side override that records the requested part while preserving stock integrity and an audit signal.
 - [x] Surface the shortage inline on the affected picker row, with requested versus available quantities and an explicit override action.
 - [x] Add focused backend/frontend regression coverage and run checks.
-- [ ] Independently release the change.
+- [x] Independently release the change.
 
 ## Progress Notes
 - [x] User reported that an insufficient-stock toast gives no actionable row-level feedback, leaving the failed part request indistinguishable from a normal add control.
@@ -3288,3 +3385,37 @@
 
 ## Review
 - Staff can intentionally add a part whose physical quantity exceeds the recorded inventory without allowing inventory to go negative. The row shows the conflict and the resulting part is marked with a `Stock override` audit badge.
+
+---
+
+# Price Builder Existing Part Quantity Override (2026-07-19)
+
+## Plan
+- [x] Trace existing part quantity updates and reuse the structured stock-shortfall response.
+- [x] Keep failed quantity changes inline with an explicit override retry.
+- [x] Add focused coverage for quantity-update failure and override success.
+- [x] Run targeted checks, production build, and independently deploy the fix.
+
+## Progress Notes
+- [x] User reported that an existing part row can still fail silently at the quantity stepper when the requested quantity exceeds recorded stock.
+- [x] Quantity updates now retain the attempted value after a structured stock shortage, show the shortage beside the exact part row, and offer `Override & update` with a pending spinner.
+
+## Review
+- Targeted Vitest (4), backend fractional-quantity tests (16), TypeScript, changed-file ESLint, production build, and diff checks pass. Railway deployment `b34a1d95-d58c-4978-8e43-b2d8e8a4f97d` completed successfully.
+
+---
+
+# Repair Order History Part Additions (2026-07-19)
+
+## Plan
+- [x] Trace the existing repair-order history projection and the part-add response data.
+- [x] Add normal and stock-override part additions to the repair-order history timeline.
+- [x] Add focused regression coverage for both history labels/details.
+- [x] Run frontend checks and independently deploy the fix.
+
+## Progress Notes
+- [x] User reported that parts added with a stock override do not appear in the repair-order history.
+- [x] History now projects each persisted `parts_usage` row after the repair-order creation event, labelling override additions explicitly and showing quantity/unit details.
+
+## Review
+- Focused Vitest (7), TypeScript, changed-file ESLint, production build, and diff checks pass. Railway deployment `115e2233-def4-4546-b25d-4dbd3de40e77` completed successfully.

@@ -1,6 +1,9 @@
 # Lessons
 
 ## 2026-07-14
+- Correction: A rejected insufficient-stock part request only surfaced as a toast, so the specific picker row gave no indication of the quantity conflict or a supported next action.
+- Rule: Recoverable validation failures in the repair-order builder must persist at the field or row that caused them, with the failed values and any authorized remediation action visible in place.
+- Prevention: For every repair-order part validation response, test the full loop: request failure, inline detail, corrected retry, and authorized override where stock is known to be incomplete.
 - Correction: Price Builder mutations and server-backed picker loads could leave the visible workflow empty or unchanged with no pending affordance, making slow network responses look like failed actions.
 - Rule: Every repair-order mutation and async picker transition must expose pending feedback at the action control and, where the result replaces an empty surface, in that surface too.
 - Prevention: For each new Price Builder request, verify a slow-network state in the browser: button disabled/spinning, no duplicate submit, and a contextual skeleton or loading row when the destination content has not arrived.
