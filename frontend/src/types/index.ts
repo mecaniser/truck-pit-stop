@@ -420,6 +420,8 @@ export interface InventoryItem {
   reorder_level: number
   cost: string
   selling_price: string
+  // Refundable core-charge deposit on rebuildable parts; "0.00" if none.
+  core_charge: string
   // "each" (default) for discrete parts, or a fluid unit ("gallon", "quart",
   // "liter") so the Price Builder can offer 0.25-increment quantities.
   unit_type: UnitType
