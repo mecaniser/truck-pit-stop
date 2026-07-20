@@ -330,34 +330,69 @@ def _untouched(created_at, updated_at):
 
 
 def backfill_external_ids(conn, tenant_id, commit):
-    """Stamp ets_external_id onto existing import rows that predate the column.
-    Customers matched by company_name, vehicles by vin. Only touches rows where
-    ets_external_id IS NULL and source=import. Requires the scraped data to map
-    company_name/vin -> ETS id."""
+    """Stamp ets_external_id onto existing import rows that predate the column,
+    so a resync updates them instead of duplicating. Only touches rows where
+    ets_external_id IS NULL and source=import.
+
+    Matching, most-reliable first:
+      1. vehicles by VIN (exact) — VIN is a stable natural key.
+      2. customers whose VIN-matched vehicle links them to an ETS customer id.
+      3. remaining customers by company_name, case-insensitive + trimmed.
+    """
     customers = json.loads(DATA_FILE.read_text())
     recs = build_records(customers, tenant_id)
-    company_to_id = {c["company_name"]: c["ets_external_id"] for c in recs["customers"] if c["company_name"]}
+
     vin_to_id = {v["vin"]: v["ets_external_id"] for v in recs["vehicles"] if v["vin"]}
+    # ETS vehicle id -> ETS customer id, so a VIN match can also identify the customer.
+    vehicle_to_customer = {v["ets_external_id"]: v["ets_customer_id"] for v in recs["vehicles"]}
+    vin_to_customer = {
+        v["vin"]: vehicle_to_customer.get(v["ets_external_id"])
+        for v in recs["vehicles"] if v["vin"]
+    }
+    # normalized company name -> ETS customer id
+    company_to_id = {}
+    for c in recs["customers"]:
+        if c["company_name"]:
+            company_to_id[c["company_name"].strip().lower()] = c["ets_external_id"]
 
     cur = conn.cursor()
-    cust_updates = 0
-    for company, ets_id in company_to_id.items():
-        cur.execute(
-            """UPDATE customers SET ets_external_id=%s
-               WHERE tenant_id=%s AND source=%s AND ets_external_id IS NULL AND company_name=%s""",
-            (ets_id, tenant_id, IMPORT_SOURCE, company),
-        )
-        cust_updates += cur.rowcount
+
+    # 1) vehicles by VIN
     veh_updates = 0
     for vin, ets_id in vin_to_id.items():
         cur.execute(
             """UPDATE vehicles SET ets_external_id=%s
                WHERE tenant_id=%s AND source=%s AND ets_external_id IS NULL AND vin=%s""",
-            (ets_id, tenant_id, IMPORT_SOURCE, vin),
-        )
+            (ets_id, tenant_id, IMPORT_SOURCE, vin))
         veh_updates += cur.rowcount
+
+    # 2) customers via their VIN-matched vehicle's owner
+    cust_by_vin = 0
+    for vin, cust_ets in vin_to_customer.items():
+        if not cust_ets:
+            continue
+        cur.execute(
+            """UPDATE customers SET ets_external_id=%s
+               WHERE tenant_id=%s AND source=%s AND ets_external_id IS NULL
+                 AND id = (SELECT customer_id FROM vehicles
+                           WHERE tenant_id=%s AND source=%s AND vin=%s LIMIT 1)""",
+            (cust_ets, tenant_id, IMPORT_SOURCE, tenant_id, IMPORT_SOURCE, vin))
+        cust_by_vin += cur.rowcount
+
+    # 3) remaining customers by case-insensitive, trimmed company_name
+    cust_by_name = 0
+    for company_norm, ets_id in company_to_id.items():
+        cur.execute(
+            """UPDATE customers SET ets_external_id=%s
+               WHERE tenant_id=%s AND source=%s AND ets_external_id IS NULL
+                 AND lower(trim(company_name))=%s""",
+            (ets_id, tenant_id, IMPORT_SOURCE, company_norm))
+        cust_by_name += cur.rowcount
+
     cur.close()
-    print(f"Backfill: matched {cust_updates} customers by company_name, {veh_updates} vehicles by vin.")
+    print(f"Backfill: vehicles by VIN={veh_updates}; "
+          f"customers by VIN-owner={cust_by_vin}, by name={cust_by_name} "
+          f"(total customers={cust_by_vin + cust_by_name}).")
     if not commit:
         print("(dry-run — rolled back)")
         conn.rollback()
