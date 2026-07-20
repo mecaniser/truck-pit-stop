@@ -10,6 +10,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import TenantBrandLogo from '../../components/brand/TenantBrandLogo'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
+import { formatUSPhone } from '../../utils/phone'
 
 interface QuoteDetail {
   quote: {
@@ -42,6 +43,8 @@ interface QuoteDetail {
   zelle_savings_amount: string
   shop_name: string | null
   shop_logo_url: string | null
+  shop_phone: string | null
+  shop_email: string | null
   has_portal_account: boolean
   requires_password_setup: boolean
 }
@@ -78,6 +81,24 @@ function QuotePageBrand({
       />
     </div>
   )
+}
+
+const buildTelHref = (phone: string | null): string | null => {
+  if (!phone) return null
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.length === 10) return `tel:+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `tel:+${digits}`
+  return `tel:+${digits}`
+}
+
+const formatContactPhone = (phone: string | null): string | null => {
+  if (!phone) return null
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10 || (digits.length === 11 && digits.startsWith('1'))) {
+    return formatUSPhone(phone)
+  }
+  return phone
 }
 
 export default function QuoteApprovalPage() {
@@ -207,6 +228,12 @@ export default function QuoteApprovalPage() {
     : null
   const passwordValidationError = password ? getPasswordValidationError(password) : null
   const portalActionPending = portalResolveMutation.isPending || createPortalMutation.isPending
+  const contactPhoneDisplay = formatContactPhone(data.shop_phone) || supportPhoneDisplay
+  const contactEmail = data.shop_email || supportEmail
+  const contactTelHref = buildTelHref(data.shop_phone) || telHref
+  const contactMailtoHref = contactEmail ? `mailto:${contactEmail}` : mailtoHref
+  const contactName = data.shop_name || 'the shop'
+  const hasContact = !!(contactPhoneDisplay || contactEmail)
 
   const openPortalFromApprovedState = async (newPassword?: string) => {
     if (!token) return
@@ -305,20 +332,20 @@ export default function QuoteApprovalPage() {
               </button>
             </div>
           )}
-          {(supportPhoneDisplay || supportEmail) && (
+          {hasContact && (
             <p className="text-gray-500 text-xs mt-4">
               Need help?{' '}
-              {supportPhoneDisplay && telHref && (
+              {contactPhoneDisplay && contactTelHref && (
                 <>
-                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={telHref}>
-                    {supportPhoneDisplay}
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={contactTelHref}>
+                    {contactPhoneDisplay}
                   </a>
                 </>
               )}
-              {supportPhoneDisplay && supportEmail && ' • '}
-              {supportEmail && mailtoHref && (
-                <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={mailtoHref}>
-                  {supportEmail}
+              {contactPhoneDisplay && contactEmail && ' • '}
+              {contactEmail && contactMailtoHref && (
+                <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={contactMailtoHref}>
+                  {contactEmail}
                 </a>
               )}
             </p>
@@ -365,20 +392,20 @@ export default function QuoteApprovalPage() {
               Go to My Portal
             </Link>
           </div>
-          {(supportPhoneDisplay || supportEmail) && (
+          {hasContact && (
             <p className="text-gray-500 text-xs mt-4">
               Need help?{' '}
-              {supportPhoneDisplay && telHref && (
+              {contactPhoneDisplay && contactTelHref && (
                 <>
-                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={telHref}>
-                    {supportPhoneDisplay}
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={contactTelHref}>
+                    {contactPhoneDisplay}
                   </a>
                 </>
               )}
-              {supportPhoneDisplay && supportEmail && ' • '}
-              {supportEmail && mailtoHref && (
-                <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={mailtoHref}>
-                  {supportEmail}
+              {contactPhoneDisplay && contactEmail && ' • '}
+              {contactEmail && contactMailtoHref && (
+                <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={contactMailtoHref}>
+                  {contactEmail}
                 </a>
               )}
             </p>
@@ -643,23 +670,23 @@ export default function QuoteApprovalPage() {
 
         {/* Footer */}
         <div className="text-center text-gray-500 text-sm mt-6 space-y-1">
-          <p>Questions? Contact platform support and reference quote {quote.quote_number}.</p>
-          {(supportPhoneDisplay || supportEmail) && (
+          <p>Questions? Contact {contactName} and reference quote {quote.quote_number}.</p>
+          {hasContact && (
             <p className="text-gray-400">
-              {supportPhoneDisplay && telHref && (
+              {contactPhoneDisplay && contactTelHref && (
                 <>
                   Phone:{' '}
-                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={telHref}>
-                    {supportPhoneDisplay}
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={contactTelHref}>
+                    {contactPhoneDisplay}
                   </a>
                 </>
               )}
-              {supportPhoneDisplay && supportEmail && ' • '}
-              {supportEmail && mailtoHref && (
+              {contactPhoneDisplay && contactEmail && ' • '}
+              {contactEmail && contactMailtoHref && (
                 <>
                   Email:{' '}
-                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={mailtoHref}>
-                    {supportEmail}
+                  <a className="text-amber-300 hover:text-amber-200 font-medium underline" href={contactMailtoHref}>
+                    {contactEmail}
                   </a>
                 </>
               )}

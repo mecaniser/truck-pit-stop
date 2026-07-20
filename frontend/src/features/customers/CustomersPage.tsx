@@ -3068,7 +3068,6 @@ export default function CustomersPage() {
                                 {showVehicleUnitColumn && <th className="px-3 py-2 text-left font-medium">Unit</th>}
                                 {showVehicleVinColumn && <th className="px-3 py-2 text-left font-medium">VIN</th>}
                                 {showVehiclePlateColumn && <th className="px-3 py-2 text-left font-medium">Plate</th>}
-                                <th className="px-3 py-2 text-right font-medium">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -3113,30 +3112,6 @@ export default function CustomersPage() {
                                       )}
                                     </td>
                                   )}
-                                  <td className="px-3 py-2.5 text-right">
-                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          openEditVehicleModal(vehicle)
-                                        }}
-                                        className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                        title="Edit"
-                                      >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleDeleteVehicleClick(vehicle)
-                                        }}
-                                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                        title="Delete"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3144,52 +3119,75 @@ export default function CustomersPage() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {customerVehicles.map((vehicle) => (
-                            <div 
-                              key={vehicle.id} 
-                              className="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 transition-colors group relative"
-                            >
-                              <div 
-                                onClick={() => setSelectedVehicleInPanel(vehicle)}
-                                className="cursor-pointer"
+                          {customerVehicles.map((vehicle) => {
+                            const displayLabel = vehicleDisplayLabel(vehicle)
+                            const unitSuffix = vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''
+                            const cardTitle = unitSuffix && displayLabel.endsWith(unitSuffix)
+                              ? displayLabel.slice(0, -unitSuffix.length)
+                              : displayLabel
+                            return (
+                              <div
+                                key={vehicle.id}
+                                className="bg-gray-50 rounded-xl p-4 pr-14 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 transition-colors group relative"
                               >
-                                <p className="text-sm font-semibold text-gray-900 mb-1">
-                                  {vehicleDisplayLabel(vehicle)}
-                                </p>
-                                {vehicle.license_plate && (
-                                  <span className="inline-block text-xs font-medium text-amber-700 bg-amber-100 rounded px-2 py-0.5 mb-2">
-                                    {vehicle.license_plate}
-                                  </span>
-                                )}
-                                <div className="text-xs text-gray-500 space-y-0.5 mt-2">
-                                  {vehicle.color && <p>{vehicle.color}</p>}
-                                  <p>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</p>
+                                <div
+                                  onClick={() => setSelectedVehicleInPanel(vehicle)}
+                                  className="cursor-pointer"
+                                >
+                                  <div className="flex items-start justify-between gap-4">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-gray-900">
+                                        {cardTitle}
+                                      </p>
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                        {vehicle.color && <span>{vehicle.color}</span>}
+                                        <span>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</span>
+                                      </div>
+                                    </div>
+                                    <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+                                      {vehicle.unit_number && (
+                                        <span className="text-xs font-medium text-slate-700 bg-slate-100 rounded px-2 py-0.5">
+                                          Unit {vehicle.unit_number}
+                                        </span>
+                                      )}
+                                      {vehicle.license_plate && (
+                                        <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded px-2 py-0.5">
+                                          {vehicle.license_plate}
+                                        </span>
+                                      )}
+                                      {vehicle.vin && (
+                                        <span className="font-mono text-[11px] text-gray-500">
+                                          VIN {vehicle.vin}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openEditVehicleModal(vehicle)
+                                    }}
+                                    className="p-1.5 text-gray-500 hover:text-amber-600 bg-white hover:bg-amber-50 rounded shadow-sm transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleDeleteVehicleClick(vehicle)
+                                    }}
+                                    className="p-1.5 text-gray-500 hover:text-red-600 bg-white hover:bg-red-50 rounded shadow-sm transition-colors"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               </div>
-                              <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    openEditVehicleModal(vehicle)
-                                  }}
-                                  className="p-1.5 text-gray-500 hover:text-amber-600 bg-white hover:bg-amber-50 rounded shadow-sm transition-colors"
-                                  title="Edit"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDeleteVehicleClick(vehicle)
-                                  }}
-                                  className="p-1.5 text-gray-500 hover:text-red-600 bg-white hover:bg-red-50 rounded shadow-sm transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )
                     ) : (
