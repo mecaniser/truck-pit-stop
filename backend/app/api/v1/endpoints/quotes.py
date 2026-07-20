@@ -234,6 +234,8 @@ class QuoteDetailResponse(BaseModel):
     zelle_savings_amount: Decimal = Decimal("0.00")
     shop_name: Optional[str] = None
     shop_logo_url: Optional[str] = None
+    shop_phone: Optional[str] = None
+    shop_email: Optional[str] = None
     has_portal_account: bool = False
     requires_password_setup: bool = True
 
@@ -1279,6 +1281,8 @@ async def get_quote_by_token(
         zelle_savings_amount=checkout["zelle_savings_amount"],
         shop_name=tenant.name if tenant else None,
         shop_logo_url=tenant.logo_url if tenant else None,
+        shop_phone=tenant.phone if tenant else None,
+        shop_email=tenant.email if tenant else None,
         has_portal_account=existing_user is not None,
         requires_password_setup=existing_user is None,
     )

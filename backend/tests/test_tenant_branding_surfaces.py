@@ -55,6 +55,8 @@ async def test_quote_token_response_includes_shop_branding(monkeypatch):
         name="Truck Pit Stop",
         slug="truck-pit-stop",
         logo_url="https://cdn.example.com/tenant-logo.png",
+        phone="7045550199",
+        email="service@truckpitstop.example",
     )
     customer = SimpleNamespace(id=uuid4(), first_name="Alex")
     vehicle = SimpleNamespace(year=2022, make="Freightliner", model="Cascadia", vin="1234567890VIN")
@@ -106,6 +108,8 @@ async def test_quote_token_response_includes_shop_branding(monkeypatch):
 
     assert response.shop_name == "Truck Pit Stop"
     assert response.shop_logo_url == "https://cdn.example.com/tenant-logo.png"
+    assert response.shop_phone == "7045550199"
+    assert response.shop_email == "service@truckpitstop.example"
     assert response.labor_discount_amount == Decimal("10.00")
     assert response.order_discount_amount == Decimal("5.00")
 
@@ -120,7 +124,7 @@ async def test_invoice_access_resolve_includes_shop_branding(monkeypatch):
         logo_url="https://cdn.example.com/tenant-logo.png",
     )
     customer = SimpleNamespace(id=uuid4(), first_name="Alex", last_name="Driver")
-    vehicle = SimpleNamespace(year=2022, make="Freightliner", model="Cascadia")
+    vehicle = SimpleNamespace(year=2022, make="Freightliner", model="Cascadia", unit_number=None)
     order = SimpleNamespace(id=uuid4(), tenant_id=tenant_id, order_number="RO-0001")
     invoice = SimpleNamespace(
         id=uuid4(),
