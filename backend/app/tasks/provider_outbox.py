@@ -1,10 +1,9 @@
 """Celery entrypoint for durable external-provider delivery."""
 from __future__ import annotations
 
-import asyncio
-
 from app.services.provider_outbox_service import process_due_provider_outbox_events
 from app.tasks import celery_app
+from app.tasks.async_runtime import run_async
 
 
 @celery_app.task(
@@ -16,4 +15,4 @@ from app.tasks import celery_app
 )
 def process_provider_outbox() -> dict[str, int]:
     """Process a small due batch; Celery beat invokes this every ten seconds."""
-    return asyncio.run(process_due_provider_outbox_events())
+    return run_async(process_due_provider_outbox_events())

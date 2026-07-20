@@ -50,6 +50,9 @@ customer emails before a worker exists. Enable it only in this order:
    web service. It needs no public networking.
 3. Confirm worker logs show `celery@... ready` and that the
    `process_provider_outbox` task is registered.
+   Then watch at least six consecutive 10-second outbox sweeps. Every sweep
+   must complete successfully; do not enable the web flag if logs contain
+   `Event loop is closed`, pool checkout failures, or broker disconnects.
 4. Set **only on the web service**:
    ```
    PROVIDER_OUTBOX_ENABLED=true
@@ -61,6 +64,12 @@ Celery beat picks up the email within about ten seconds; Resend calls run from
 the worker with a 20-second timeout, bounded retries, and a dead-letter state.
 If the worker is unavailable, leave the flag false: the existing synchronous
 email behavior remains in place rather than silently queueing customer mail.
+
+For the first live check, send a quote to an internal test customer and confirm
+the worker result reports one claimed and one succeeded event. If delivery does
+not complete, immediately set `PROVIDER_OUTBOX_ENABLED=false` on the web service.
+Already-queued rows remain durable and can continue retrying while new sends
+return to the synchronous path.
 
 ## What this unblocks
 

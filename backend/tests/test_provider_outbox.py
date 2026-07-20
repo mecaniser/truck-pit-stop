@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from app.services.provider_outbox_service import (
     enqueue_email_notification,
     process_due_provider_outbox_events,
 )
+from app.tasks import provider_outbox as provider_outbox_task
 
 
 async def _enqueue_test_email(factory) -> tuple[object, object]:
@@ -158,3 +160,21 @@ async def test_outbox_uses_resend_idempotency_key(monkeypatch):
     assert response_id == "resend-message-456"
     assert sent["headers"]["Idempotency-Key"] == "quote-email-idempotency-key"
     assert sent["headers"]["User-Agent"] == "truck-pit-stop-provider-outbox/1.0"
+
+
+def test_celery_outbox_task_reuses_its_worker_event_loop(monkeypatch):
+    """Repeated sweeps must not reuse asyncpg connections on a closed loop."""
+    worker_loops = []
+
+    async def _process():
+        worker_loops.append(asyncio.get_running_loop())
+        return {"claimed": 0, "succeeded": 0, "retried": 0, "dead": 0, "invalid": 0}
+
+    monkeypatch.setattr(provider_outbox_task, "process_due_provider_outbox_events", _process)
+
+    first = provider_outbox_task.process_provider_outbox.run()
+    second = provider_outbox_task.process_provider_outbox.run()
+
+    assert first == second
+    assert worker_loops[0] is worker_loops[1]
+    assert not worker_loops[1].is_closed()
