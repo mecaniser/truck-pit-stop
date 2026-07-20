@@ -3677,6 +3677,7 @@
 - Garages now connect independently owned Stripe Standard accounts directly through Stripe. DieselBridge stores only the connected account relationship and routes direct charges with its platform key plus that account ID.
 - Stripe platform readiness and the callback configuration checklist are visible to super admins in `Settings > Platform > Integrations` alongside QuickBooks.
 - Restored the QuickBooks readiness handler after a sibling Stripe endpoint inadvertently displaced its response return; both platform readiness paths now pass focused tests.
+- Production release `4b16d57` deployed successfully to Railway. Migrations `085` and `086` applied, the API health endpoint reports alive, and `STRIPE_CONNECT_REDIRECT_URI` is set to the HTTPS `api.dieselbridge.com` callback.
 
 ---
 

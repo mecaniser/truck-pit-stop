@@ -1254,7 +1254,7 @@ export default function MechanicsPage() {
 }
 
 const GRANT_OPTIONS: { key: string; label: string; hint: string }[] = [
-  { key: 'payments', label: 'Payments (Stripe & Zelle)', hint: 'Payment collection settings' },
+  { key: 'payments', label: 'Payments (Stripe, Zelle & QuickBooks)', hint: 'Payment collection and accounting settings' },
   { key: 'taxes_fees', label: 'Taxes & Fees', hint: 'Tax rates, shop fees, labor rates' },
   { key: 'workforce', label: 'Workforce', hint: 'Shift and core-hours defaults' },
 ]
