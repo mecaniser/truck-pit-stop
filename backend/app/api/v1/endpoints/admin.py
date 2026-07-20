@@ -29,6 +29,11 @@ from app.schemas.tenant import TenantCreate, TenantUpdate, TenantResponse, Tenan
 from app.services import error_service
 from app.services.mechanic_time_service import validate_local_time_str, validate_timezone_name
 from app.services.website_logo_service import import_logo_from_website
+from app.services.quickbooks_service import (
+    QUICKBOOKS_ACCOUNTING_SCOPE,
+    QUICKBOOKS_PAYMENTS_SCOPE,
+    is_quickbooks_configured,
+)
 from app.core.logging import get_logger
 
 router = APIRouter()
@@ -58,6 +63,25 @@ class AttachSMSNumberRequest(BaseModel):
     replace_existing: bool = False
 
 
+class QuickBooksPlatformStatusResponse(BaseModel):
+    """Read-only integration readiness for DieselBridge super admins.
+
+    Client credentials and token-encryption material deliberately remain in the
+    deployment secret store and are never returned to the browser.
+    """
+
+    platform_ready: bool
+    callback_url: str
+    scopes: List[str]
+
+
+class StripePlatformStatusResponse(BaseModel):
+    """Read-only Stripe Standard OAuth readiness for DieselBridge admins."""
+
+    platform_ready: bool
+    callback_url: str
+
+
 def require_super_admin():
     """Dependency to ensure only SUPER_ADMIN can access these endpoints"""
     async def role_checker(current_user: User = Depends(get_current_active_user)):
@@ -68,6 +92,39 @@ def require_super_admin():
             )
         return current_user
     return role_checker
+
+
+@router.get("/platform/quickbooks-status", response_model=QuickBooksPlatformStatusResponse)
+async def get_quickbooks_platform_status(
+    current_user: User = Depends(require_super_admin()),
+):
+    """Show whether DieselBridge can accept tenant QuickBooks connections."""
+    callback_url = settings.QUICKBOOKS_REDIRECT_URI or (
+        f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/quickbooks/oauth/callback"
+    )
+    return QuickBooksPlatformStatusResponse(
+        platform_ready=is_quickbooks_configured(),
+        callback_url=callback_url,
+        scopes=[QUICKBOOKS_ACCOUNTING_SCOPE, QUICKBOOKS_PAYMENTS_SCOPE],
+    )
+
+
+@router.get("/platform/stripe-status", response_model=StripePlatformStatusResponse)
+async def get_stripe_platform_status(
+    current_user: User = Depends(require_super_admin()),
+):
+    """Show whether garages can connect independently owned Stripe accounts."""
+    callback_url = settings.STRIPE_CONNECT_REDIRECT_URI or (
+        f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/stripe/connect/oauth/callback"
+    )
+    return StripePlatformStatusResponse(
+        platform_ready=bool(
+            settings.STRIPE_SECRET_KEY
+            and settings.STRIPE_CONNECT_CLIENT_ID
+            and settings.STRIPE_CONNECT_REDIRECT_URI
+        ),
+        callback_url=callback_url,
+    )
 
 
 async def _release_sms_provision_cooldown(cooldown_key: str) -> None:

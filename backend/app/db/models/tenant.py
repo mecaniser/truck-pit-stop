@@ -29,6 +29,7 @@ class Tenant(BaseModel):
     # Stripe Connect
     stripe_account_id = Column(String(255), unique=True, nullable=True, index=True)
     stripe_onboarding_complete = Column(Boolean, default=False, nullable=False)
+    stripe_connection_type = Column(String(32), nullable=True)
     
     # Zelle payment info
     zelle_email = Column(String(255), nullable=True)

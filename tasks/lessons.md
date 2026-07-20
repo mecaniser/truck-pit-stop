@@ -203,6 +203,30 @@
 - Correction: User clarified Labor Book Time entries should have their own My Garage management tab instead of being treated as Services or hidden inside the price-builder add bar.
 - Rule: When a workflow persists reusable shop knowledge separately from the customer-facing service catalog, expose that data through a dedicated management surface rather than overloading the nearest existing list.
 - Prevention: Before adding reusable catalog UI, identify the backing table/model and record whether it is an operational library, customer service, inventory item, or repair-order line in `tasks/todo.md`.
+- Correction: The Payments & Accounting navigation label was allowed to wrap, and the QuickBooks setup state did not explain the activation process or visibly group all payment providers.
+- Rule: Payment-provider controls belong together under one no-wrap `Payments & Accounting` surface; a configuration-required state must give the operator an actionable setup sequence, not only a missing-configuration message.
+- Prevention: For every settings navigation label containing an ampersand or multi-word provider grouping, apply `whitespace-nowrap` at the rendered label and review the unavailable/configuration state as a first-run walkthrough.
+- Correction: The first no-wrap patch landed in the Account sidebar map, while `Payments & Accounting` is rendered by the separate Shop sidebar map and continued to wrap.
+- Rule: When duplicated render loops share nearly identical markup, patch and verify the loop that owns the visible target rather than relying on a matching nearby block.
+- Prevention: After a navigation-label change, use the component’s section data and rendered-loop references to confirm the exact target map has the new class before reporting it fixed.
+- Correction: Preventing the long payment label from wrapping made the active-row chevron crowd the selected button’s right border.
+- Rule: When keeping a sidebar label on one line, preserve explicit end padding for active affordances instead of allowing the label to consume the row’s visual breathing room.
+- Prevention: After a no-wrap sidebar change, inspect the active state with its chevron visible and adjust the rail width and icon inset together when needed.
+- Correction: I exposed Intuit app creation, callback registration, and deployment credentials inside the tenant QuickBooks card instead of the DieselBridge super-admin control panel.
+- Rule: Separate platform-provider configuration from tenant-provider consent. Tenant-facing integration UI must describe only the tenant’s sign-in/authorization action and never show developer or deployment setup work.
+- Prevention: For every multi-tenant integration surface, state the actor beside each step (`DieselBridge super admin` or `garage owner`) and verify the step appears only in that actor’s route before finalizing.
+- Correction: I placed the super-admin QuickBooks checklist on Platform Overview even though the account Settings screen is the expected configuration home.
+- Rule: Provider configuration belongs in an explicit super-admin Settings integration surface; the overview should stay focused on operational platform health and metrics.
+- Prevention: When an integration is platform-owned, verify its final navigation path from the avatar/profile settings screen and confirm the dashboard does not duplicate its configuration UI.
+- Correction: The original Stripe flow created an Express account for a garage even though the desired business rule is that each garage owns its provider account independently.
+- Rule: For tenant-owned payment providers, DieselBridge must authorize an existing vendor account through the provider's hosted OAuth flow and must never create that vendor account on the tenant's behalf.
+- Prevention: Before implementing any provider onboarding button, explicitly verify whether it means `create provider account` or `connect existing provider account`, then test the redirect destination and the persisted tenant relationship.
+- Correction: After converting Stripe to tenant-owned OAuth, I added only its tenant connection surface and omitted the matching platform configuration status from super-admin Integrations.
+- Rule: Every tenant provider flow needs a paired super-admin readiness card that exposes configuration state and callback information without exposing secrets.
+- Prevention: When adding an integration, verify both actor views in one checklist: platform configuration in super-admin Settings and vendor authorization in tenant Payments & Accounting.
+- Correction: Adding the Stripe platform-status endpoint accidentally moved the QuickBooks response return into the Stripe handler, causing the QuickBooks readiness request to fail.
+- Rule: Each API route must return from its own handler before the next route declaration; adjacent provider endpoints must not share trailing response code.
+- Prevention: After adding a sibling endpoint, run both endpoints' focused tests and inspect the route boundary in the diff before reporting the UI integration complete.
 - Correction: User reported a database error while sending quotes after nearby photo work, and the root issue was a swallowed optional price-refresh failure leaving the database transaction unusable.
 - Rule: When intentionally continuing after any database-backed optional step fails, always rollback the session and reload the ORM objects needed by the rest of the request.
 - Prevention: Add regression coverage for rollback/reload behavior on non-blocking database failures, especially in request handlers that catch broad exceptions around SQLAlchemy work.

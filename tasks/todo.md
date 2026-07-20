@@ -1,3 +1,62 @@
+# Customer Vehicle Cards Unit Number (2026-07-19)
+
+## Plan
+- [x] Inspect customer vehicle card rendering.
+- [x] Show unit number on every vehicle card when the value exists.
+- [x] Keep existing equipment fallback labels and mileage display.
+- [x] Rebalance card layout so identifiers use the right side of each card.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] Card view only showed unit numbers for vehicles whose make/model fell back to `Equipment · Unit ...`; regular trucks with a unit number displayed only year/make/model.
+- [x] Added a `Unit {number}` badge on every card when `vehicle.unit_number` is present.
+- [x] User noted the card layout still leaves too much unused space on the right because all details are left aligned.
+- [x] Rebalanced cards into a left title/mileage group and right-aligned identifier stack for Unit, Plate, and VIN.
+- [x] Passed frontend TypeScript and `git diff --check`.
+
+## Review
+- Customer vehicle cards now display unit numbers consistently and use the right side for identifiers, so the card view reads less like a left-aligned list with unused space.
+
+---
+
+# Customer Vehicle List Actions Column (2026-07-19)
+
+## Plan
+- [x] Locate the customer detail vehicle list `Actions` column.
+- [x] Remove the list-view `Actions` header and row controls.
+- [x] Keep vehicle row click behavior and existing card-view controls unchanged.
+- [x] Run focused frontend verification.
+
+## Progress Notes
+- [x] The list view had hover-only edit/delete buttons, leaving the `Actions` column visually empty until hover.
+- [x] Removed the list-view `Actions` header and the hover-only edit/delete cells.
+- [x] Passed frontend TypeScript and `git diff --check`.
+
+## Review
+- The customer vehicle list no longer shows an `Actions` column. Rows still open vehicle details when clicked; card view still retains its existing vehicle edit/delete controls.
+
+---
+
+# Quote Approval Tenant Contact (2026-07-19)
+
+## Plan
+- [x] Confirm why the quote approval page uses the wrong phone/email.
+- [x] Return tenant phone/email from the quote token detail endpoint.
+- [x] Render tenant contact info on approved/declined/pending quote screens, with platform contact only as fallback.
+- [x] Run focused frontend/backend verification.
+
+## Progress Notes
+- [x] The quote approval page currently reads `usePlatformContact()`, so the footer shows platform support contact instead of the tenant/shop contact.
+- [x] Added `shop_phone` and `shop_email` to the quote token detail response.
+- [x] Updated the quote approval page to prefer tenant phone/email on approved, declined, and pending quote screens.
+- [x] Kept platform support contact as a fallback only when tenant contact fields are not configured.
+- [x] Passed tenant branding backend tests, frontend TypeScript, backend compile, and `git diff --check`.
+
+## Review
+- The quote approval landing screen now displays the garage/tenant phone and email from the quote's tenant record instead of the platform support contact.
+
+---
+
 # Collapsed Assignment After Admin Override (2026-07-19)
 
 ## Plan
@@ -3498,3 +3557,142 @@
 
 ## Review
 - Backend quantity/schema tests (22), frontend focused tests (9), TypeScript, ESLint, production build, compileall, and diff checks pass. Railway deployment `35080100-265c-42a7-b7eb-9c1e20b74d13` completed successfully.
+
+---
+
+# QuickBooks Online Connection Foundation (2026-07-19)
+
+## Plan
+- [x] Document the integration boundary: TruckPitStop owns booking; QuickBooks Online handles accounting sync and, when enabled, QuickBooks Payments processing.
+- [x] Add tenant-scoped QuickBooks connection and short-lived OAuth state persistence, encrypting provider tokens at rest.
+- [x] Implement admin-gated OAuth connect, callback, status, and disconnect endpoints with exact accounting and payments scopes.
+- [x] Add a QuickBooks card to shop payment settings so owners can initiate and verify the connection.
+- [x] Add focused regression coverage for configuration, OAuth-state replay protection, token handling, and tenant isolation.
+- [x] Run backend/frontend checks and record production setup prerequisites.
+
+## Progress Notes
+- [x] Confirmed the current Stripe Connect flow is independent from repair-order booking and already uses processor-hosted fields.
+- [x] Confirmed QuickBooks Online Accounting and QuickBooks Payments are distinct APIs/scopes; both use tenant-authorized OAuth 2.0.
+- [x] Confirmed existing `quickbooks_customer_id` is only a placeholder for a future real customer sync and must not be treated as a live connection.
+- [x] Added secure per-tenant OAuth storage: hashed one-time state, a ten-minute TTL, consumed-state replay prevention, and Fernet-encrypted access/refresh tokens.
+- [x] Added the `Payments & Accounting` settings card and QuickBooks admin permission wording; `Connected` accurately means OAuth consent only, not live billing.
+- [x] Added migration `085`, connection endpoints, focused backend coverage, and the deployment/rollout guide in `docs/quickbooks-online-integration.md`.
+- [x] Passed focused backend tests (3), backend compile, Alembic-head validation, frontend TypeScript/production build, and `git diff --check`.
+- [x] Focused ESLint remains blocked by 19 pre-existing violations in `UnifiedSettingsPage.tsx` and `MechanicsPage.tsx`; no lint errors originate from this QuickBooks change.
+
+## Review
+- QuickBooks Online can now be connected securely per garage with both Accounting and Payments authorization scopes. The next controlled milestone is sandbox customer/invoice sync and payment reconciliation; no customer card data or financial writes are enabled by this foundation.
+
+---
+
+# Provider Outbox Production Activation (2026-07-19)
+
+## Plan
+- [x] Audit the existing web/worker deployment topology, shared variables, task registration, and outbox schema readiness without disturbing unrelated QuickBooks work.
+- [x] Close activation-critical reliability and observability gaps while keeping quote delivery synchronous by default.
+- [x] Run focused transaction, retry, dead-letter, worker-registration, and configuration verification.
+- [x] Commit and deploy the activation slice independently; verify the worker before enabling asynchronous quote delivery.
+- [x] Enable the web-service feature flag after the worker health gate passes, with a documented rollback path.
+- [ ] Confirm the first internal/test quote produces one claimed and succeeded outbox event and reaches the test recipient.
+
+## Review
+- Railway already had a successful `diesel-bridge-worker` service with the required database, Redis, Resend, and secret variables; the web feature flag was confirmed unset/off during the initial audit.
+- Live worker logs exposed intermittent `RuntimeError: Event loop is closed` failures because each 10-second outbox sweep created and closed a new asyncio loop while the shared async SQLAlchemy pool retained loop-bound asyncpg connections.
+- The worker task now reuses one event loop per Celery child and disposes the async engine before child shutdown. Production activation remains blocked until this fix is deployed and consecutive live sweeps remain clean.
+- Focused quote/outbox/schema verification passed (`25 passed`), backend compilation and diff checks passed, and two consecutive read-only queries succeeded against the production PostgreSQL connection through the new worker runtime.
+- Commit `f79d249` deployed successfully to both Railway services. More than twenty consecutive production sweeps completed without worker/runtime errors, settling around 11–30 ms after the initial connection.
+- `PROVIDER_OUTBOX_ENABLED=true` is now active on the production web service and `https://api.dieselbridge.com/health` reports `alive`. A recipient-safe end-to-end quote send remains the final verification step.
+
+---
+
+# Payments & Accounting Setup Flow (2026-07-19)
+
+## Plan
+- [x] Group Stripe, Zelle, and QuickBooks in the single Payments & Accounting settings surface.
+- [x] Add an operator-facing QuickBooks setup checklist for the configuration-required and connection-consent states.
+- [x] Prevent the `Payments & Accounting` navigation label from wrapping at every rendered breakpoint.
+- [x] Run focused frontend verification and document the finished activation process.
+
+## Progress Notes
+- [x] User clarified that Zelle is part of the payments and accounting offering alongside Stripe and QuickBooks, rather than a separate settings destination.
+- [x] User set an explicit UI rule: `Payments & Accounting` must always remain on one line.
+- [x] Moved the password-protected Zelle controls into Payments & Accounting, ordered with Stripe and QuickBooks so all settlement methods are visible together.
+- [x] Added a state-specific QuickBooks walkthrough: platform setup when the deployment is unconfigured, then the shop owner’s Intuit consent flow when it is ready.
+- [x] Marked QuickBooks authorization as distinct from sync/payment processing so Stripe or Zelle payments cannot be mistaken for a second QuickBooks charge.
+- [x] Added `whitespace-nowrap` plus non-shrinking adjacent icons to the full desktop navigation label; mobile continues to use the one-word `Payments` label.
+- [x] Passed frontend TypeScript and production build plus `git diff --check`. Focused ESLint remains blocked by the same 19 pre-existing violations in the two settings files.
+- [x] Screenshot review caught that the first no-wrap change targeted the Account navigation loop instead of the Shop loop. Applied the same no-wrap/fixed-icon treatment to the Shop row that renders `Payments & Accounting`, then rebuilt successfully.
+
+## Review
+- Stripe, Zelle, and QuickBooks now share one Payments & Accounting surface. Operators can follow the exact configuration/consent process in product, and the no-wrap naming rule is enforced on the rendered desktop label.
+
+---
+
+# Payments & Accounting Sidebar Spacing (2026-07-20)
+
+## Plan
+- [x] Widen the desktop settings rail to accommodate the no-wrap payment label.
+- [x] Add deliberate right-side inset for the active chevron.
+- [x] Run a production frontend build and whitespace verification.
+
+## Progress Notes
+- [x] Screenshot shows the active `Payments & Accounting` chevron crowded against the selected-row border after the label was kept on one line.
+- [x] Expanded the desktop rail from 256px to 288px and added a 4px chevron inset on active Account and Shop rows.
+- [x] Passed frontend TypeScript/production build and `git diff --check`.
+
+## Review
+- The `Payments & Accounting` row now keeps its text on one line without pushing the active arrow against the selected-button border.
+
+---
+
+# QuickBooks Platform vs Tenant Consent (2026-07-20)
+
+## Plan
+- [x] Add a super-admin-only QuickBooks platform-readiness endpoint and control-panel card without exposing credentials.
+- [x] Replace the tenant-facing developer setup instructions with a clear `Connect your QuickBooks company` sign-in/consent flow.
+- [x] Preserve garage-owner/admin permission boundaries and show tenants only whether DieselBridge has enabled the integration.
+- [x] Add focused backend coverage and run frontend/backend verification.
+
+## Progress Notes
+- [x] User confirmed the intended ownership model: DieselBridge owns the Intuit developer application; every garage tenant independently connects its own QuickBooks company.
+- [x] Screenshot confirmed the tenant card wrongly displays developer/deployment setup, which is not actionable for a garage owner.
+- [x] Added a super-admin-only platform status API and Platform Overview card. It exposes only readiness, callback URL, and requested scopes—never secrets or encryption material.
+- [x] Tenant QuickBooks UI now explains the Intuit sign-in, company selection, and consent path; it presents no developer steps when the platform is unavailable.
+- [x] Added focused authorization/secret-redaction coverage. `4 passed`; backend compilation, Alembic head, `git diff --check`, and frontend production build pass.
+
+## Review
+- DieselBridge configures the Intuit app once from Platform Overview. A garage owner or admin with Payments access uses `Connect My QuickBooks` to authorize only that garage's own QBO company. Authorization is intentionally separate from future invoice sync or QuickBooks Payments activation.
+
+---
+
+# Stripe Tenant-Owned Standard OAuth (2026-07-20)
+
+## Plan
+- [x] Replace DieselBridge-created Express onboarding with tenant-scoped Stripe Standard OAuth.
+- [x] Add one-time hashed OAuth state, callback validation, tenant connection status, and explicit disconnect handling.
+- [x] Update the garage UI to connect an existing Stripe account and manage it in Stripe Dashboard.
+- [x] Preserve legacy Express links without deleting them and add migration/test/build verification.
+
+## Review
+- Garages now connect independently owned Stripe Standard accounts directly through Stripe. DieselBridge stores only the connected account relationship and routes direct charges with its platform key plus that account ID.
+- Stripe platform readiness and the callback configuration checklist are visible to super admins in `Settings > Platform > Integrations` alongside QuickBooks.
+- Restored the QuickBooks readiness handler after a sibling Stripe endpoint inadvertently displaced its response return; both platform readiness paths now pass focused tests.
+
+---
+
+# QuickBooks Super-Admin Settings Location (2026-07-20)
+
+## Plan
+- [x] Inspect the super-admin Settings and Platform Overview screenshots and identify the incorrect placement.
+- [x] Add a super-admin-only `Settings > Platform > Integrations` navigation item and QuickBooks platform configuration panel.
+- [x] Remove the QuickBooks configuration panel and its API request from Platform Overview.
+- [x] Build the frontend and verify the existing platform-readiness API coverage still passes.
+
+## Progress Notes
+- [x] The screenshots confirmed that the profile Settings page showed only Account options while the QuickBooks checklist remained on Platform Overview.
+- [x] Added the `Platform` settings group and `Integrations` section exclusively for `super_admin` users; tenants and other staff cannot navigate to or render it.
+- [x] Moved the same secret-free readiness/checklist UI to that section and restored Platform Overview to operational stats, shops, and quick actions.
+- [x] Passed the TypeScript/production build and retained the focused QuickBooks API test coverage.
+
+## Review
+- Super admins now find provider configuration at `Settings > Platform > Integrations`; Platform Overview no longer displays the QuickBooks platform checklist.

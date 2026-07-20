@@ -70,7 +70,20 @@ class Settings(BaseSettings):
     
     # Stripe Connect
     STRIPE_CONNECT_WEBHOOK_SECRET: str = ""
+    STRIPE_CONNECT_CLIENT_ID: str = ""
+    STRIPE_CONNECT_REDIRECT_URI: str = ""
+    STRIPE_CONNECT_OAUTH_STATE_TTL_SECONDS: int = Field(default=600, ge=60, le=1800)
     PLATFORM_FEE_PERCENT: float = 1.5
+
+    # QuickBooks Online OAuth. The encryption key must be a Fernet key and is
+    # intentionally separate from SECRET_KEY so key rotation is scoped to
+    # provider credentials rather than application sessions.
+    QUICKBOOKS_CLIENT_ID: str = ""
+    QUICKBOOKS_CLIENT_SECRET: str = ""
+    QUICKBOOKS_REDIRECT_URI: str = ""
+    QUICKBOOKS_TOKEN_ENCRYPTION_KEY: str = ""
+    QUICKBOOKS_HTTP_TIMEOUT_SECONDS: float = Field(default=15.0, gt=0, le=60)
+    QUICKBOOKS_OAUTH_STATE_TTL_SECONDS: int = Field(default=600, ge=60, le=1800)
     
     # Twilio
     TWILIO_ACCOUNT_SID: str = ""

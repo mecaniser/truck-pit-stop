@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare
+  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -166,14 +166,41 @@ type PasswordFormData = z.infer<typeof passwordSchema>
 type GarageProfileFormData = z.infer<typeof garageProfileSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'garageProfile' | 'payments' | 'zelle' | 'notifications' | 'fees' | 'fleet' | 'workforce'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'integrations' | 'garageProfile' | 'payments' | 'notifications' | 'fees' | 'fleet' | 'workforce'
 
 interface ConnectStatus {
+  configured: boolean
   is_connected: boolean
   onboarding_complete: boolean
   charges_enabled: boolean
   payouts_enabled: boolean
   account_id: string | null
+  connection_type: 'standard_oauth' | 'express_legacy' | null
+}
+
+interface QuickBooksConnectionStatus {
+  configured: boolean
+  is_connected: boolean
+  realm_id: string | null
+  scopes: string[]
+  connected_at: string | null
+}
+
+interface QuickBooksPlatformStatus {
+  platform_ready: boolean
+  callback_url: string
+  scopes: string[]
+}
+
+interface StripePlatformStatus {
+  platform_ready: boolean
+  callback_url: string
+}
+
+function apiErrorDetail(error: unknown, fallback: string): string {
+  if (!error || typeof error !== 'object') return fallback
+  const response = (error as { response?: { data?: { detail?: unknown } } }).response
+  return typeof response?.data?.detail === 'string' ? response.data.detail : fallback
 }
 
 interface ZelleSettings {
@@ -1059,21 +1086,26 @@ function PaymentsSection() {
   })
 
   useEffect(() => {
-    const success = searchParams.get('success')
-    const refresh = searchParams.get('refresh')
-    if (success === 'true') {
-      toast.success('Stripe setup completed!')
+    const result = searchParams.get('stripe')
+    if (result === 'connected') {
+      toast.success('Your Stripe account is connected.')
       refetch()
       setSearchParams({}, { replace: true })
-    } else if (refresh === 'true') {
-      toast('Please complete your Stripe setup')
+    } else if (result) {
+      const messages: Record<string, string> = {
+        'not-connected': 'Stripe connection was cancelled.',
+        'account-in-use': 'That Stripe account is already connected to another shop.',
+        'legacy-account': 'Disconnect the legacy Express account before connecting your own Stripe account.',
+        error: 'Stripe could not complete the connection. Please try again.',
+      }
+      toast.error(messages[result] || 'Stripe could not complete the connection.')
       setSearchParams({}, { replace: true })
     }
   }, [searchParams, refetch, setSearchParams])
 
-  const onboardMutation = useMutation({
+  const connectMutation = useMutation({
     mutationFn: async () => {
-      const response = await api.post('/stripe/connect/onboard')
+      const response = await api.post('/stripe/connect/connect')
       return response.data
     },
     onSuccess: (data) => {
@@ -1081,29 +1113,17 @@ function PaymentsSection() {
       window.location.href = data.url
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to start Stripe setup')
+      toast.error(error.response?.data?.detail || 'Failed to start Stripe connection')
     },
   })
 
-  const refreshMutation = useMutation({
-    mutationFn: async () => {
-      const response = await api.post('/stripe/connect/refresh')
-      return response.data
+  const disconnectMutation = useMutation({
+    mutationFn: async () => (await api.post('/stripe/connect/disconnect')).data,
+    onSuccess: () => {
+      toast.success('Stripe connection removed. Your Stripe account was not deleted.')
+      refetch()
     },
-    onSuccess: (data) => {
-      setIsRedirecting(true)
-      window.location.href = data.url
-    },
-  })
-
-  const dashboardMutation = useMutation({
-    mutationFn: async () => {
-      const response = await api.post('/stripe/connect/dashboard')
-      return response.data
-    },
-    onSuccess: (data) => {
-      window.open(data.url, '_blank')
-    },
+    onError: (error: unknown) => toast.error(apiErrorDetail(error, 'Unable to disconnect Stripe account')),
   })
 
   if (isLoading) {
@@ -1115,8 +1135,14 @@ function PaymentsSection() {
   }
 
   const getStatusConfig = () => {
+    if (!status?.configured) {
+      return { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling Stripe account connections.' }
+    }
     if (!status?.is_connected) {
-      return { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect your Stripe account to receive payments.' }
+      return { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect your existing Stripe account to receive payments.' }
+    }
+    if (status.connection_type === 'express_legacy') {
+      return { led: 'warning' as const, title: 'LEGACY CONNECTION', desc: 'This is a DieselBridge-created Express account, not your independent Stripe account.' }
     }
     if (!status.onboarding_complete) {
       return { led: 'warning' as const, title: 'SETUP INCOMPLETE', desc: 'Please finish the Stripe onboarding process.' }
@@ -1128,6 +1154,9 @@ function PaymentsSection() {
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
+        Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks prepares accounting sync and future Intuit payment processing.
+      </div>
       <IndustrialCard className="p-6 sm:p-8">
         <div className={industrialStyles.sectionHeader}>
           <CreditCard className="w-4 h-4 text-[var(--accent-400)]" />
@@ -1158,13 +1187,15 @@ function PaymentsSection() {
         )}
 
         <div className="pt-4 border-t border-zinc-800/50">
-          {!status?.is_connected ? (
+          {!status?.configured ? (
+            <p className="text-sm text-amber-300">DieselBridge will let you know when Stripe account connections are ready.</p>
+          ) : !status?.is_connected ? (
             <button
-              onClick={() => onboardMutation.mutate()}
-              disabled={onboardMutation.isPending || isRedirecting}
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending || isRedirecting}
               className={industrialStyles.btnPrimary}
             >
-              {onboardMutation.isPending || isRedirecting ? (
+              {connectMutation.isPending || isRedirecting ? (
                 <span className="flex items-center gap-2">
                   <div className="w-4 h-4 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
                   Redirecting...
@@ -1172,43 +1203,281 @@ function PaymentsSection() {
               ) : (
                 <span className="flex items-center gap-2">
                   <CreditCard className="w-4 h-4" />
-                  Connect Stripe
+                  Connect My Stripe Account
                 </span>
               )}
             </button>
-          ) : !status.onboarding_complete ? (
-            <button
-              onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending || isRedirecting}
-              className={`${industrialStyles.btnPrimary} bg-amber-600 hover:bg-amber-500 border-amber-400`}
-            >
-              {refreshMutation.isPending || isRedirecting ? (
-                <span className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-zinc-600 border-t-white rounded-full animate-spin" />
-                  Redirecting...
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4" />
-                  Continue Setup
-                </span>
-              )}
-            </button>
+          ) : status.connection_type === 'standard_oauth' ? (
+            <>
+              <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className={industrialStyles.btnSecondary}>
+                <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Manage in Stripe Dashboard</span>
+              </a>
+              <button onClick={() => window.confirm('Disconnect your Stripe account? It will not be deleted.') && disconnectMutation.mutate()} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+                {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Stripe'}
+              </button>
+            </>
           ) : (
-            <button
-              onClick={() => dashboardMutation.mutate()}
-              disabled={dashboardMutation.isPending}
-              className={industrialStyles.btnSecondary}
-            >
-              <span className="flex items-center gap-2">
-                <ExternalLink className="w-4 h-4" />
-                Open Stripe Dashboard
-              </span>
+            <button onClick={() => window.confirm('Disconnect the legacy Stripe connection? The legacy account will not be deleted.') && disconnectMutation.mutate()} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Legacy Connection'}
             </button>
           )}
         </div>
       </IndustrialCard>
+      <ZelleSection />
+      <QuickBooksIntegrationCard />
     </div>
+  )
+}
+
+function PlatformIntegrationsSection() {
+  const { data: quickBooks, isLoading, isError } = useQuery<QuickBooksPlatformStatus>({
+    queryKey: ['quickbooks-platform-status'],
+    queryFn: async () => (await api.get('/admin/platform/quickbooks-status')).data,
+  })
+  const { data: stripe, isLoading: isStripeLoading, isError: isStripeError } = useQuery<StripePlatformStatus>({
+    queryKey: ['stripe-platform-status'],
+    queryFn: async () => (await api.get('/admin/platform/stripe-status')).data,
+  })
+
+  return (
+    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
+      <div className="rounded-xl border border-gold-500/20 bg-gold-500/5 px-4 py-3 text-sm text-gold-100/80">
+        These integrations are configured once by DieselBridge. Garages do not receive provider credentials; they authorize only their own connected accounts.
+      </div>
+
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Landmark className="w-4 h-4 text-gold-400" />
+          <span>QuickBooks Online</span>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="w-6 h-6 rounded-full border-2 border-zinc-600 border-t-gold-400 animate-spin" />
+          </div>
+        ) : isError || !quickBooks ? (
+          <div className="rounded-xl border border-red-700/40 bg-red-950/20 p-4 text-sm text-red-200">
+            QuickBooks platform readiness could not be loaded. Refresh and try again.
+          </div>
+        ) : (
+          <>
+            <div className="flex items-start gap-4 mb-6">
+              <div className="p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
+                {quickBooks.platform_ready ? (
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <StatusLED status="warning" />
+                )}
+              </div>
+              <div>
+                <h4 className="font-semibold text-zinc-100">
+                  {quickBooks.platform_ready ? 'TENANT CONNECTIONS ENABLED' : 'PLATFORM SETUP REQUIRED'}
+                </h4>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {quickBooks.platform_ready
+                    ? 'Garage owners and admins with Payments access can now connect their own QuickBooks company.'
+                    : 'Complete this one-time DieselBridge configuration before any garage can connect.'}
+                </p>
+              </div>
+            </div>
+
+            {quickBooks.platform_ready ? (
+              <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/15 p-4 text-sm text-emerald-100/85">
+                Tenant flow: from Payments &amp; Accounting, the garage selects <span className="font-medium text-emerald-200">Connect My QuickBooks</span>, signs into Intuit, chooses its company, and grants consent. No DieselBridge credentials are shown to tenants.
+              </div>
+            ) : (
+              <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
+                <h5 className="text-sm font-semibold text-amber-200">DieselBridge administrator checklist</h5>
+                <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
+                  <li><span className="mr-2 font-semibold text-gold-400">1.</span>Create a DieselBridge Intuit Developer app with QuickBooks Online Accounting and Payments enabled.</li>
+                  <li className="break-words"><span className="mr-2 font-semibold text-gold-400">2.</span>Register this production callback URL: <code className="text-amber-200">{quickBooks.callback_url}</code></li>
+                  <li><span className="mr-2 font-semibold text-gold-400">3.</span>Store the Intuit client ID, client secret, and a dedicated token-encryption key in managed backend secrets, then redeploy.</li>
+                </ol>
+                <a
+                  href="https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/oauth-2.0"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gold-400 hover:text-gold-300"
+                >
+                  Open Intuit OAuth setup guide <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            )}
+          </>
+        )}
+      </IndustrialCard>
+
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <CreditCard className="w-4 h-4 text-gold-400" />
+          <span>Stripe Standard Accounts</span>
+        </div>
+
+        {isStripeLoading ? (
+          <div className="flex justify-center py-8"><div className="w-6 h-6 rounded-full border-2 border-zinc-600 border-t-gold-400 animate-spin" /></div>
+        ) : isStripeError || !stripe ? (
+          <div className="rounded-xl border border-red-700/40 bg-red-950/20 p-4 text-sm text-red-200">Stripe platform readiness could not be loaded. Refresh and try again.</div>
+        ) : stripe.platform_ready ? (
+          <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/15 p-4 text-sm text-emerald-100/85">
+            <div className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="w-4 h-4" /> Tenant connections enabled</div>
+            <p className="mt-2">Garages can connect their independently owned Stripe accounts from Payments &amp; Accounting. DieselBridge does not create Stripe accounts for them.</p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
+            <h5 className="text-sm font-semibold text-amber-200">DieselBridge administrator checklist</h5>
+            <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
+              <li><span className="mr-2 font-semibold text-gold-400">1.</span>Create the DieselBridge Connect application in Stripe.</li>
+              <li className="break-words"><span className="mr-2 font-semibold text-gold-400">2.</span>Register this callback URL: <code className="text-amber-200">{stripe.callback_url}</code></li>
+              <li><span className="mr-2 font-semibold text-gold-400">3.</span>Store the Stripe secret key and Connect client ID in managed backend secrets, then redeploy.</li>
+            </ol>
+            <a href="https://docs.stripe.com/connect/oauth-standard-accounts" target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gold-400 hover:text-gold-300">
+              Open Stripe Standard OAuth guide <ExternalLink className="w-4 h-4" />
+            </a>
+          </div>
+        )}
+      </IndustrialCard>
+    </div>
+  )
+}
+
+function QuickBooksIntegrationCard() {
+  const queryClient = useQueryClient()
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
+    queryKey: ['quickbooks-status'],
+    queryFn: async () => (await api.get('/quickbooks/status')).data,
+  })
+
+  useEffect(() => {
+    const result = searchParams.get('quickbooks')
+    if (!result) return
+    const messages: Record<string, string> = {
+      connected: 'QuickBooks connected successfully.',
+      'not-connected': 'QuickBooks connection was cancelled.',
+      'realm-in-use': 'That QuickBooks company is already connected to another shop.',
+      error: 'QuickBooks could not complete the connection. Please try again.',
+    }
+    const message = messages[result]
+    if (message) {
+      result === 'connected' ? toast.success(message) : toast.error(message)
+      queryClient.invalidateQueries({ queryKey: ['quickbooks-status'] })
+      setSearchParams({}, { replace: true })
+    }
+  }, [queryClient, searchParams, setSearchParams])
+
+  const connectMutation = useMutation({
+    mutationFn: async () => (await api.post('/quickbooks/connect')).data as { url: string },
+    onSuccess: (data) => {
+      setIsRedirecting(true)
+      window.location.href = data.url
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorDetail(error, 'Failed to start QuickBooks connection'))
+    },
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: async () => (await api.post('/quickbooks/disconnect')).data,
+    onSuccess: () => {
+      toast.success('QuickBooks disconnected. Local authorization tokens were removed.')
+      queryClient.invalidateQueries({ queryKey: ['quickbooks-status'] })
+    },
+    onError: (error: unknown) => {
+      toast.error(apiErrorDetail(error, 'Failed to disconnect QuickBooks'))
+    },
+  })
+
+  const statusConfig = !status?.configured
+    ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
+    : status.is_connected
+      ? { led: 'active' as const, title: 'AUTHORIZATION COMPLETE', desc: 'Accounting and Payments are authorized. Customer, invoice, and payment sync are not active yet.' }
+      : { led: 'inactive' as const, title: 'CONNECT YOUR COMPANY', desc: 'Sign in to your QuickBooks Online company to authorize this garage.' }
+
+  return (
+    <IndustrialCard className="p-6 sm:p-8">
+      <div className={industrialStyles.sectionHeader}>
+        <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
+        <span>QuickBooks Online</span>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <div className="w-6 h-6 border-2 border-zinc-600 border-t-[var(--accent-400)] rounded-full animate-spin" />
+        </div>
+      ) : (
+        <>
+          <div className="flex items-start gap-4 mb-6">
+            <div className="p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
+              <StatusLED status={statusConfig.led} />
+            </div>
+            <div>
+              <h4 className="font-semibold text-zinc-100">{statusConfig.title}</h4>
+              <p className="text-sm text-zinc-400 mt-1">{statusConfig.desc}</p>
+            </div>
+          </div>
+
+          <div className="mb-6 rounded-xl border border-sky-800/40 bg-sky-950/20 p-4 text-sm text-sky-100/80">
+            DieselBridge keeps this garage’s TruckPitStop bookings as the source of truth. Connecting QuickBooks securely prepares customer, invoice, and payment reconciliation; no customer card details pass through TruckPitStop.
+          </div>
+
+          {!status?.configured && (
+            <div className="mb-6 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
+              <h5 className="text-sm font-semibold text-amber-200">No action needed from your garage</h5>
+              <p className="mt-2 text-sm leading-6 text-zinc-300">
+                DieselBridge has not enabled QuickBooks connections yet. You do not need developer credentials or a QuickBooks app. When it is available, return here to connect your company by signing in to Intuit.
+              </p>
+            </div>
+          )}
+
+          {status?.configured && !status.is_connected && (
+            <div className="mb-6 rounded-xl border border-zinc-700/60 bg-zinc-950/30 p-4">
+              <h5 className="text-sm font-semibold text-zinc-100">How to connect your QuickBooks company</h5>
+              <ol className="mt-3 space-y-2 text-sm text-zinc-400">
+                <li><span className="mr-2 font-semibold text-[var(--accent-400)]">1.</span>Select <span className="text-zinc-200">Connect My QuickBooks</span>.</li>
+                <li><span className="mr-2 font-semibold text-[var(--accent-400)]">2.</span>Sign in to Intuit with an administrator account for your QuickBooks company.</li>
+                <li><span className="mr-2 font-semibold text-[var(--accent-400)]">3.</span>Choose this garage’s company, approve access, and return to DieselBridge automatically.</li>
+              </ol>
+            </div>
+          )}
+
+          <div className="pt-4 border-t border-zinc-800/50 flex flex-wrap items-center gap-3">
+            {!status?.configured ? (
+              <p className="text-sm text-amber-300">DieselBridge will let you know when QuickBooks is ready to connect.</p>
+            ) : status.is_connected ? (
+              <>
+                <IndustrialBadge variant="success">
+                  <StatusLED status="active" />
+                  Accounting + Payments Authorized — Sync Not Active
+                </IndustrialBadge>
+                <button
+                  onClick={() => {
+                    if (window.confirm('Disconnect QuickBooks? This removes local authorization tokens and stops future sync.')) {
+                      disconnectMutation.mutate()
+                    }
+                  }}
+                  disabled={disconnectMutation.isPending}
+                  className={industrialStyles.btnSecondary}
+                >
+                  {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect QuickBooks'}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => connectMutation.mutate()}
+                disabled={connectMutation.isPending || isRedirecting}
+                className={industrialStyles.btnPrimary}
+              >
+                <span className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4" />
+                  {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Connect My QuickBooks'}
+                </span>
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </IndustrialCard>
   )
 }
 
@@ -2618,13 +2887,16 @@ const PROFILE_SECTIONS = [
   { id: 'appearance' as const, label: 'Appearance', shortLabel: 'Theme', icon: Palette },
 ]
 
+const PLATFORM_SECTIONS = [
+  { id: 'integrations' as const, label: 'Integrations', shortLabel: 'Integrations', icon: Landmark },
+]
+
 // gatedKey: owner-only sections that a garage admin can access only with an
 // explicit grant in user.permissions. Hiding here is UX only — the backend
 // permission checks are the actual security boundary.
 const GARAGE_SECTIONS = [
   { id: 'garageProfile' as const, label: 'Shop Profile', shortLabel: 'Profile', icon: Building2, gatedKey: undefined },
-  { id: 'payments' as const, label: 'Stripe Payments', shortLabel: 'Stripe', icon: CreditCard, gatedKey: 'payments' as const },
-  { id: 'zelle' as const, label: 'Zelle', shortLabel: 'Zelle', icon: QrCode, gatedKey: 'payments' as const },
+  { id: 'payments' as const, label: 'Payments & Accounting', shortLabel: 'Payments', icon: CreditCard, gatedKey: 'payments' as const },
   { id: 'notifications' as const, label: 'Notifications', shortLabel: 'Alerts', icon: Bell, gatedKey: undefined },
   { id: 'fees' as const, label: 'Tax & Fees', shortLabel: 'Fees', icon: Percent, gatedKey: 'taxes_fees' as const },
   { id: 'fleet' as const, label: 'Fleet', shortLabel: 'Fleet', icon: Truck, gatedKey: undefined },
@@ -2638,11 +2910,13 @@ function canSeeSection(user: UserType | null, gatedKey?: string): boolean {
   return false
 }
 
-function SidebarLayout({ activeSection, setActiveSection, isGarageUser, user }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean, user: UserType | null }) {
+function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperAdmin, user }: { activeSection: SettingsSection, setActiveSection: (s: SettingsSection) => void, isGarageUser: boolean, isSuperAdmin: boolean, user: UserType | null }) {
   const garageSections = GARAGE_SECTIONS.filter((s) => canSeeSection(user, s.gatedKey))
-  const allSections = isGarageUser
-    ? [...PROFILE_SECTIONS, ...garageSections]
-    : PROFILE_SECTIONS
+  const allSections = [
+    ...PROFILE_SECTIONS,
+    ...(isSuperAdmin ? PLATFORM_SECTIONS : []),
+    ...(isGarageUser ? garageSections : []),
+  ]
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 w-full max-w-[1200px] mx-auto">
@@ -2670,7 +2944,7 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, user }: 
       </div>
 
       {/* Desktop: Vertical sidebar */}
-      <div className="hidden lg:block w-64 flex-shrink-0">
+      <div className="hidden lg:block w-72 flex-shrink-0">
         <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-2xl p-4 sticky top-4">
           {/* Account Group */}
           <div className="mb-6">
@@ -2690,15 +2964,45 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, user }: 
                       : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                 >
-                  <section.icon className="w-4 h-4" />
-                  {section.label}
+                  <section.icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="whitespace-nowrap">{section.label}</span>
                   {activeSection === section.id && (
-                    <ChevronRight className="w-4 h-4 ml-auto" />
+                    <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
                   )}
                 </button>
               ))}
             </nav>
           </div>
+
+          {/* Platform Group */}
+          {isSuperAdmin && (
+            <div className="mb-6">
+              <h3 className={industrialStyles.sectionHeader}>
+                <Settings2 className="w-3 h-3" />
+                Platform
+              </h3>
+              <nav className="space-y-1">
+                {PLATFORM_SECTIONS.map((section, i) => (
+                  <button
+                    key={section.id}
+                    onClick={() => setActiveSection(section.id)}
+                    style={staggeredReveal(i + PROFILE_SECTIONS.length)}
+                    className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
+                      activeSection === section.id
+                        ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
+                        : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
+                    }`}
+                  >
+                    <section.icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">{section.label}</span>
+                    {activeSection === section.id && (
+                      <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          )}
 
           {/* Garage Group */}
           {isGarageUser && (
@@ -2712,17 +3016,17 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, user }: 
                   <button
                     key={section.id}
                     onClick={() => setActiveSection(section.id)}
-                    style={staggeredReveal(i + PROFILE_SECTIONS.length)}
+                    style={staggeredReveal(i + PROFILE_SECTIONS.length + (isSuperAdmin ? PLATFORM_SECTIONS.length : 0))}
                     className={`w-full flex items-center gap-3 px-3 py-3 text-sm font-medium transition-all rounded-xl animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 ${
                       activeSection === section.id
                         ? 'bg-[var(--accent-500)]/10 text-[var(--accent-400)] border border-[var(--accent-500)]/30'
                         : 'border border-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60'
-                    }`}
-                  >
-                    <section.icon className="w-4 h-4" />
-                    {section.label}
+                  }`}
+                >
+                    <section.icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="whitespace-nowrap">{section.label}</span>
                     {activeSection === section.id && (
-                      <ChevronRight className="w-4 h-4 ml-auto" />
+                      <ChevronRight className="w-4 h-4 ml-auto mr-1 flex-shrink-0" />
                     )}
                   </button>
                 ))}
@@ -2737,9 +3041,9 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, user }: 
         {activeSection === 'profile' && <ProfileSection />}
         {activeSection === 'security' && <SecuritySection />}
         {activeSection === 'appearance' && <AppearanceSection />}
+        {activeSection === 'integrations' && isSuperAdmin && <PlatformIntegrationsSection />}
         {activeSection === 'garageProfile' && <GarageProfileSection />}
         {activeSection === 'payments' && <PaymentsSection />}
-        {activeSection === 'zelle' && <ZelleSection />}
         {activeSection === 'notifications' && <NotificationsSection />}
         {activeSection === 'fees' && <FeesSection />}
         {activeSection === 'fleet' && <FleetSection />}
@@ -2756,6 +3060,7 @@ export default function UnifiedSettingsPage() {
   const [activeSection, setActiveSection] = useState<SettingsSection>('profile')
 
   const isGarageUser = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const isSuperAdmin = user?.role === 'super_admin'
 
   // If the active section becomes inaccessible (e.g. the owner revoked a
   // grant), fall back to the profile section instead of a blank pane.
@@ -2764,10 +3069,13 @@ export default function UnifiedSettingsPage() {
     if (gated && !canSeeSection(user ?? null, gated.gatedKey)) {
       setActiveSection('profile')
     }
-  }, [activeSection, user])
+    if (activeSection === 'integrations' && !isSuperAdmin) {
+      setActiveSection('profile')
+    }
+  }, [activeSection, isSuperAdmin, user])
 
   return (
-    <SidebarLayout activeSection={activeSection} setActiveSection={setActiveSection} isGarageUser={isGarageUser} user={user ?? null} />
+    <SidebarLayout activeSection={activeSection} setActiveSection={setActiveSection} isGarageUser={isGarageUser} isSuperAdmin={isSuperAdmin} user={user ?? null} />
   )
 }
 
