@@ -21,6 +21,10 @@ class Inventory(BaseModel):
     reorder_level = Column(Integer, default=0, nullable=False)
     cost = Column(Numeric(10, 2), nullable=False)
     selling_price = Column(Numeric(10, 2), nullable=False)
+    # Refundable deposit on a rebuildable part (core charge), returned when the
+    # old core is turned in. Feeds the inventory report's Core Value column
+    # (core_charge x stock_quantity). 0 for parts with no core.
+    core_charge = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
 
     # Unit this part is dispensed in. "each" parts (filters, belts) use whole-number
     # quantities; fluids (oil, coolant, DEF) are dispensed in fractional amounts of

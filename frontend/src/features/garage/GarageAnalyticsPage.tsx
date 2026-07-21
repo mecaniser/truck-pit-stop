@@ -127,11 +127,14 @@ interface InventoryRow {
   name: string
   quantity: string
   unit_cost: string
+  part_value: string
+  core_value: string
   total_value: string
 }
 
 interface ReportsInventoryResponse {
   part_value: string
+  core_value: string
   total_value: string
   rows: InventoryRow[]
 }
@@ -793,10 +796,12 @@ function InventoryTab() {
   const handleExport = () => {
     exportRowsToCsv(
       'inventory-value-report.csv',
-      ['SKU', 'Part', 'Quantity', 'Unit Cost', 'Total Value'],
-      data.rows.map((r) => [r.sku, r.name, r.quantity, r.unit_cost, r.total_value])
+      ['SKU', 'Part', 'Quantity', 'Unit Cost', 'Part Value', 'Core Value', 'Total Value'],
+      data.rows.map((r) => [r.sku, r.name, r.quantity, r.unit_cost, r.part_value, r.core_value, r.total_value])
     )
   }
+
+  const hasCore = parseFloat(data.core_value) > 0
 
   const accent = TAB_ACCENT.inventory
   const ranked = [...data.rows].sort((a, b) => parseFloat(b.total_value) - parseFloat(a.total_value))
@@ -824,6 +829,7 @@ function InventoryTab() {
 
       <StatStrip stats={[
         { label: 'Part Value', value: fmtMoney(data.part_value) },
+        { label: 'Core Value', value: fmtMoney(data.core_value) },
         { label: 'Total Value', value: fmtMoney(data.total_value) },
       ]} />
 
@@ -835,6 +841,8 @@ function InventoryTab() {
                 <th className="px-4 py-2.5 text-left font-medium">Part</th>
                 <th className="px-4 py-2.5 text-right font-medium">Quantity</th>
                 <th className="px-4 py-2.5 text-right font-medium">Unit Cost</th>
+                <th className="px-4 py-2.5 text-right font-medium">Part Value</th>
+                {hasCore && <th className="px-4 py-2.5 text-right font-medium">Core Value</th>}
                 <th className="px-4 py-2.5 text-right font-medium">Total Value</th>
               </tr>
             </thead>
@@ -847,11 +855,13 @@ function InventoryTab() {
                   </td>
                   <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{row.quantity}</td>
                   <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.unit_cost)}</td>
+                  <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.part_value)}</td>
+                  {hasCore && <td className="px-4 py-2.5 text-[13px] text-right text-white/55">{fmtMoney(row.core_value)}</td>}
                   <td className="px-4 py-2.5 text-[13px] text-right text-white/85 font-medium">{fmtMoney(row.total_value)}</td>
                 </tr>
               ))}
               {data.rows.length === 0 && (
-                <tr><td colSpan={4} className="px-4 py-8 text-center text-white/40">No inventory on file</td></tr>
+                <tr><td colSpan={hasCore ? 6 : 5} className="px-4 py-8 text-center text-white/40">No inventory on file</td></tr>
               )}
             </tbody>
           </table>

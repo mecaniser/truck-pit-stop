@@ -177,6 +177,7 @@ export default function InventoryPage() {
     reorder_level: '',
     cost: '',
     selling_price: '',
+    core_charge: '',
     unit_type: 'each' as UnitType,
     supplier_name: '',
     supplier_contact: '',
@@ -201,6 +202,7 @@ export default function InventoryPage() {
     reorder_level: '',
     cost: '',
     selling_price: '',
+    core_charge: '',
     unit_type: 'each' as UnitType,
     supplier_name: '',
     supplier_contact: '',
@@ -358,6 +360,7 @@ export default function InventoryPage() {
         reorder_level: String(selectedItem.reorder_level ?? ''),
         cost: selectedItem.cost ? String(selectedItem.cost) : '',
         selling_price: selectedItem.selling_price ? String(selectedItem.selling_price) : '',
+        core_charge: selectedItem.core_charge && Number(selectedItem.core_charge) > 0 ? String(selectedItem.core_charge) : '',
         unit_type: selectedItem.unit_type || 'each',
         supplier_name: selectedItem.supplier_name || '',
         supplier_contact: selectedItem.supplier_contact || '',
@@ -405,7 +408,7 @@ export default function InventoryPage() {
       // Quantity fields: an empty input means "set to 0" so users can clear stock back to none.
       // Money fields: an empty input means "leave as-is" to avoid accidentally zeroing prices.
       const quantityFields: Array<keyof typeof manageForm> = ['stock_quantity', 'on_order_quantity', 'reorder_level']
-      const moneyFields: Array<keyof typeof manageForm> = ['cost', 'selling_price']
+      const moneyFields: Array<keyof typeof manageForm> = ['cost', 'selling_price', 'core_charge']
       quantityFields.forEach((field) => {
         const raw = manageForm[field]
         const num = raw === '' ? 0 : Number(raw)
@@ -548,6 +551,7 @@ export default function InventoryPage() {
       if (addForm.location.trim()) payload.location = addForm.location.trim()
       if (addForm.stock_quantity !== '') payload.stock_quantity = Number(addForm.stock_quantity)
       if (addForm.reorder_level !== '') payload.reorder_level = Number(addForm.reorder_level)
+      if (addForm.core_charge !== '') payload.core_charge = Number(addForm.core_charge) || 0
       if (addForm.supplier_name.trim()) payload.supplier_name = addForm.supplier_name.trim()
       if (addForm.supplier_contact.trim()) payload.supplier_contact = addForm.supplier_contact.trim()
 
@@ -567,6 +571,7 @@ export default function InventoryPage() {
         reorder_level: '',
         cost: '',
         selling_price: '',
+        core_charge: '',
         unit_type: 'each',
         supplier_name: '',
         supplier_contact: '',
@@ -694,6 +699,7 @@ export default function InventoryPage() {
       reorder_level: '',
       cost: '',
       selling_price: '',
+      core_charge: '',
       unit_type: 'each',
       supplier_name: '',
       supplier_contact: '',
@@ -1565,6 +1571,14 @@ export default function InventoryPage() {
             onChange={(val) => handleManageChange('selling_price', val)}
           />
           <label className="text-sm text-gray-700 space-y-1">
+            <span>Core Charge <span className="text-gray-400 font-normal">(refundable deposit)</span></span>
+            <CurrencyInput
+              value={manageForm.core_charge}
+              onChange={(val) => handleManageChange('core_charge', val)}
+              step={1}
+            />
+          </label>
+          <label className="text-sm text-gray-700 space-y-1">
             <span>Unit</span>
             <select
               value={manageForm.unit_type}
@@ -1839,6 +1853,14 @@ export default function InventoryPage() {
             value={addForm.selling_price}
             onChange={(val) => handleAddFormChange('selling_price', val)}
           />
+          <label className="text-sm text-gray-700 space-y-1">
+            <span>Core Charge <span className="text-gray-400 font-normal">(refundable deposit)</span></span>
+            <CurrencyInput
+              value={addForm.core_charge}
+              onChange={(val) => handleAddFormChange('core_charge', val)}
+              step={1}
+            />
+          </label>
           <label className="text-sm text-gray-700 space-y-1">
             <span>Unit</span>
             <select

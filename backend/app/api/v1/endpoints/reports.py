@@ -208,11 +208,15 @@ async def get_reports_dashboard(
                 invoiced_hours_by_week[idx] += hours_dec
 
     # Current inventory value (point-in-time, not range-bound — matches ETS,
-    # which shows the *current* stock value on every date range).
+    # which shows the *current* stock value on every date range). Total Value =
+    # (cost + core_charge) x qty, so it includes refundable core deposits like
+    # the ETS "Total Value" figure.
     inv_result = await db.execute(
-        select(func.coalesce(func.sum(Inventory.cost * Inventory.stock_quantity), 0)).where(
-            Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None)
-        )
+        select(
+            func.coalesce(
+                func.sum((Inventory.cost + Inventory.core_charge) * Inventory.stock_quantity), 0
+            )
+        ).where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None))
     )
     inventory_value = _money(inv_result.scalar())
 
@@ -604,11 +608,14 @@ class InventoryRow(BaseModel):
     name: str
     quantity: str
     unit_cost: str
+    part_value: str
+    core_value: str
     total_value: str
 
 
 class ReportsInventoryResponse(BaseModel):
     part_value: str
+    core_value: str
     total_value: str
     rows: List[InventoryRow]
 
@@ -626,26 +633,33 @@ async def get_reports_inventory(
     result = await db.execute(
         select(Inventory)
         .where(Inventory.tenant_id == tenant_id, Inventory.deleted_at.is_(None))
-        .order_by((Inventory.cost * Inventory.stock_quantity).desc())
+        .order_by(((Inventory.cost + Inventory.core_charge) * Inventory.stock_quantity).desc())
     )
     items = result.scalars().all()
 
     rows = []
-    total_value = Decimal("0.00")
+    part_total = Decimal("0.00")
+    core_total = Decimal("0.00")
     for item in items:
-        value = _money(item.cost) * item.stock_quantity
-        total_value += value
+        qty = item.stock_quantity
+        part_value = _money(item.cost) * qty
+        core_value = _money(item.core_charge) * qty
+        part_total += part_value
+        core_total += core_value
         rows.append(InventoryRow(
             sku=item.sku,
             name=item.name,
-            quantity=str(item.stock_quantity),
+            quantity=str(qty),
             unit_cost=str(_money(item.cost)),
-            total_value=str(value),
+            part_value=str(part_value),
+            core_value=str(core_value),
+            total_value=str(part_value + core_value),
         ))
 
     return ReportsInventoryResponse(
-        part_value=str(total_value),
-        total_value=str(total_value),
+        part_value=str(part_total),
+        core_value=str(core_total),
+        total_value=str(part_total + core_total),
         rows=rows,
     )
 
