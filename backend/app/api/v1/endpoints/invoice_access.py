@@ -45,6 +45,7 @@ from app.services.invoice_access_service import (
 from app.services.pricing import get_order_checkout_breakdown
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
+from app.services.stripe_customer_service import ensure_connected_stripe_customer
 from app.services.stripe_platform_fee import platform_fee_amount_cents, platform_fee_percent_for
 
 router = APIRouter()
@@ -485,10 +486,18 @@ async def create_guest_payment_intent(
         if customer.email:
             metadata["customer_email"] = customer.email
 
+        stripe_customer_id = await ensure_connected_stripe_customer(
+            db,
+            customer,
+            tenant.stripe_account_id,
+        )
+
         intent_params = {
             "amount": amount_cents,
             "currency": "usd",
             "metadata": metadata,
+            "customer": stripe_customer_id,
+            "receipt_email": customer.email,
             "automatic_payment_methods": {"enabled": True},
         }
 

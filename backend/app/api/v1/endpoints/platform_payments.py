@@ -39,6 +39,13 @@ def _fee_display(value: Optional[Decimal]) -> Optional[str]:
     return str(value.quantize(Decimal("0.001"))) if value is not None else None
 
 
+def _connected_account_payments_url(account_id: Optional[str]) -> Optional[str]:
+    if not account_id:
+        return None
+    mode_prefix = "/test" if settings.STRIPE_SECRET_KEY.startswith("sk_test_") else ""
+    return f"https://dashboard.stripe.com{mode_prefix}/connect/accounts/{account_id}/payments"
+
+
 def _merchant_status(tenant: Tenant) -> dict:
     base = {
         "tenant_id": str(tenant.id),
@@ -183,6 +190,7 @@ async def payment_operations_ledger(
                 "status": payment.status.value if isinstance(payment.status, PaymentStatus) else str(payment.status),
                 "payment_intent_id": payment.stripe_payment_intent_id,
                 "connected_account_id": payment.stripe_connected_account_id,
+                "stripe_dashboard_url": _connected_account_payments_url(payment.stripe_connected_account_id),
                 "platform_fee_amount": str(payment.stripe_platform_fee_amount) if payment.stripe_platform_fee_amount is not None else None,
                 "platform_fee_percent": _fee_display(payment.stripe_platform_fee_percent),
             }

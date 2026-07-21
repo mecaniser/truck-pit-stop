@@ -376,10 +376,12 @@ export default function CustomerInvoicePage() {
             <span className="text-gray-400">Tax</span>
             <span className="text-white">${parseFloat(invoice.tax_amount || '0').toFixed(2)}</span>
           </div>
-          <div className="flex justify-between mb-2">
-            <span className="text-gray-400">Discount</span>
-            <span className="text-green-400">-${parseFloat(invoice.discount_amount || '0').toFixed(2)}</span>
-          </div>
+          {parseFloat(invoice.discount_amount || '0') > 0 && (
+            <div className="flex justify-between mb-2">
+              <span className="text-gray-400">Discount</span>
+              <span className="text-green-400">-${parseFloat(invoice.discount_amount || '0').toFixed(2)}</span>
+            </div>
+          )}
           <div className="flex justify-between pt-2 border-t border-white/10">
             <span className="font-semibold text-white">Total</span>
             <span className="font-bold text-xl text-white">${parseFloat(invoice.total_amount).toFixed(2)}</span>

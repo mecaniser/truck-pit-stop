@@ -3342,11 +3342,8 @@ export default function RepairOrdersPage() {
                       }
                     }}
                     onRecordPayment={() => {
-                      if (invoiceForOrder?.pending_zelle_confirmation) {
-                        openZellePaymentModal('confirm_pending')
-                      } else {
-                        setShowInvoicePaymentOptions(true)
-                      }
+                      setSelectedPaymentMethod('')
+                      setShowInvoicePaymentOptions(true)
                     }}
                     onDeleteInvoice={() => setShowDeleteInvoiceConfirm(true)}
                     historyEvents={priceBuilderHistoryEvents}
@@ -4081,11 +4078,21 @@ export default function RepairOrdersPage() {
                           </button>
                           <button
                             type="button"
+                            onClick={() => {
+                              setSelectedPaymentMethod('')
+                              setShowInvoicePaymentOptions(true)
+                            }}
+                            className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-yellow-300 text-yellow-900 text-xs font-medium rounded-md transition-colors"
+                          >
+                            Use Another Method
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => clearPendingZelleMutation.mutate({ invoiceId: invoiceForOrder.id })}
                             disabled={clearPendingZelleMutation.isPending}
                             className="px-3 py-1.5 bg-yellow-100 hover:bg-yellow-200 text-yellow-900 text-xs font-medium rounded-md transition-colors disabled:opacity-60"
                           >
-                            {clearPendingZelleMutation.isPending ? 'Clearing...' : 'Clear Pending'}
+                            {clearPendingZelleMutation.isPending ? 'Clearing...' : 'Dismiss Zelle Claim'}
                           </button>
                         </div>
                       </div>
@@ -4129,12 +4136,17 @@ export default function RepairOrdersPage() {
                     ) : showInvoicePaymentOptions ? (
                       <div className="space-y-3">
                         <p className="text-sm font-medium text-purple-800">Select payment method:</p>
+                        {invoiceForOrder.pending_zelle_confirmation && (
+                          <p className="text-xs leading-5 text-amber-800">
+                            Recording any method below clears the customer&apos;s pending Zelle claim and marks the invoice paid with the method you select.
+                          </p>
+                        )}
                         <div className="grid grid-cols-2 gap-2">
                           {[
                             { value: 'cash', label: 'Cash', icon: '💵' },
                             { value: 'zelle', label: 'Zelle', icon: '📱' },
                             { value: 'check', label: 'Check', icon: '📝' },
-                            { value: 'ach', label: 'ACH', icon: '🏦' },
+                            { value: 'ach', label: 'Account Transfer', icon: '🏦' },
                           ].map((method) => (
                             <button
                               key={method.value}
@@ -4539,13 +4551,18 @@ export default function RepairOrdersPage() {
               <p className="text-sm text-gray-500">
                 Invoice {invoiceForOrder.invoice_number} · {formatMoney(invoiceForOrder.total_amount)}
               </p>
+              {invoiceForOrder.pending_zelle_confirmation && (
+                <p className="mt-2 text-xs leading-5 text-amber-800">
+                  The customer&apos;s Zelle payment is still unconfirmed. Selecting another method will clear that claim when the payment is recorded.
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {[
                 { value: 'cash', label: 'Cash' },
                 { value: 'zelle', label: 'Zelle' },
                 { value: 'check', label: 'Check' },
-                { value: 'ach', label: 'ACH' },
+                { value: 'ach', label: 'Account Transfer' },
               ].map((method) => (
                 <button
                   key={method.value}
@@ -4872,6 +4889,20 @@ export default function RepairOrdersPage() {
                 >
                   Close
                 </button>
+                {zelleModalMode === 'confirm_pending' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAmountBreakdown(false)
+                      setShowZelleQrModal(false)
+                      setSelectedPaymentMethod('')
+                      setShowInvoicePaymentOptions(true)
+                    }}
+                    className="flex-1 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-medium rounded-lg transition-colors"
+                  >
+                    Use Another Method
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

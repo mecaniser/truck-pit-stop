@@ -808,22 +808,33 @@ async def list_repair_orders(
     order_ids = [o.id for o in orders]
     if order_ids:
         quote_result = await db.execute(
-            select(Quote.repair_order_id, Quote.sent_to_customer)
+            select(Quote.repair_order_id, Quote.sent_to_customer, Quote.sent_at)
             .where(Quote.repair_order_id.in_(order_ids))
         )
-        quote_sent_map = {row[0]: row[1] for row in quote_result.fetchall()}
+        quote_rows = quote_result.fetchall()
+        quote_sent_map = {row[0]: row[1] for row in quote_rows}
+        quote_sent_at_map = {row[0]: row[2] for row in quote_rows}
 
         invoice_result = await db.execute(
-            select(Invoice.repair_order_id, Invoice.status, Invoice.zelle_pending_submitted_at)
+            select(
+                Invoice.repair_order_id,
+                Invoice.status,
+                Invoice.zelle_pending_submitted_at,
+                Invoice.created_at,
+                Invoice.due_date,
+            )
             .where(Invoice.repair_order_id.in_(order_ids))
         )
-        pending_zelle_map = {
-            row[0]: (row[2] is not None and row[1] != InvoiceStatus.PAID)
-            for row in invoice_result.fetchall()
-        }
+        invoice_rows = invoice_result.fetchall()
+        pending_zelle_map = {row[0]: (row[2] is not None and row[1] != InvoiceStatus.PAID) for row in invoice_rows}
+        invoice_created_at_map = {row[0]: row[3] for row in invoice_rows}
+        invoice_due_date_map = {row[0]: row[4] for row in invoice_rows}
     else:
         quote_sent_map = {}
+        quote_sent_at_map = {}
         pending_zelle_map = {}
+        invoice_created_at_map = {}
+        invoice_due_date_map = {}
 
     # The Deleted view needs "who did this" — resolve actor names in bulk
     # rather than joining on every normal (non-deleted) list request.
@@ -848,7 +859,7 @@ async def list_repair_orders(
         return {"customer_first_name": c.first_name or "", "customer_last_name": c.last_name or "", "customer_company_name": c.company_name, "customer_email": c.email, "customer_phone": c.phone}
 
     _vf_exclude = {
-        'quote_sent', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
+        'quote_sent', 'quote_sent_at', 'invoice_created_at', 'invoice_due_date', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
         'vehicle_unit_number', 'vehicle_vin', 'cancelled_by_name', 'deleted_by_name',
         'customer_first_name', 'customer_last_name', 'customer_company_name', 'customer_email', 'customer_phone',
     }
@@ -858,6 +869,9 @@ async def list_repair_orders(
             **_vehicle_fields(o.vehicle),
             **_customer_fields(o.customer),
             quote_sent=quote_sent_map.get(o.id),
+            quote_sent_at=quote_sent_at_map.get(o.id),
+            invoice_created_at=invoice_created_at_map.get(o.id),
+            invoice_due_date=invoice_due_date_map.get(o.id),
             pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
             cancelled_by_name=actor_name_map.get(o.cancelled_by_user_id),
             deleted_by_name=actor_name_map.get(o.deleted_by_user_id),

@@ -304,6 +304,9 @@ export interface RepairOrder {
   created_at: string
   updated_at: string
   quote_sent?: boolean | null
+  quote_sent_at?: string | null
+  invoice_created_at?: string | null
+  invoice_due_date?: string | null
   pending_zelle_confirmation?: boolean
   hold_reason?: string | null
   held_at?: string | null

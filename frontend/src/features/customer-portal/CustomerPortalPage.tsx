@@ -309,6 +309,18 @@ function CustomerDashboard() {
                       {getVehicleLabel(order) && (
                         <p className="text-amber-300 text-xs font-medium mt-0.5">{getVehicleLabel(order)}</p>
                       )}
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-300">
+                        <span className="inline-flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 text-amber-300" />
+                          {order.status === 'invoiced' ? 'Invoice sent' : 'Quote sent'} {format(
+                            new Date(order.status === 'invoiced' ? (order.invoice_created_at || order.updated_at) : (order.quote_sent_at || order.updated_at)),
+                            'MMM d, yyyy h:mm a',
+                          )}
+                        </span>
+                        {order.status === 'invoiced' && order.invoice_due_date && (
+                          <span className="text-amber-200">Due {format(new Date(order.invoice_due_date), 'MMM d, yyyy')}</span>
+                        )}
+                      </p>
                       {order.description && (
                         <p className="text-gray-300 text-xs truncate mt-0.5">{order.description}</p>
                       )}
@@ -1019,15 +1031,17 @@ function CustomerRepairs() {
               </div>
             </div>
             <div className="space-y-2 border-t border-white/10 pt-3">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-400">Total before savings</span>
-                <span className="text-gray-200">${preSavingsTotal.toFixed(2)}</span>
-              </div>
               {customerSavings > 0 && (
+                <>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-gray-400">Total before savings</span>
+                    <span className="text-gray-200">${preSavingsTotal.toFixed(2)}</span>
+                  </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-emerald-300">Best savings</span>
                   <span className="font-semibold text-emerald-300">-${customerSavings.toFixed(2)}</span>
                 </div>
+                </>
               )}
               <div className="flex justify-between items-center text-lg border-t border-white/10 pt-3">
                 <span className="font-medium text-white">
@@ -1161,10 +1175,12 @@ function CustomerRepairs() {
                 <span className="text-gray-400">Tax</span>
                 <span className="text-white">${parseFloat(invoice.tax_amount || '0').toFixed(2)}</span>
               </div>
-              <div className="flex justify-between mb-2">
-                <span className="text-gray-400">Discount</span>
-                <span className="text-green-400">-${parseFloat(invoice.discount_amount || '0').toFixed(2)}</span>
-              </div>
+              {parseFloat(invoice.discount_amount || '0') > 0 && (
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-400">Discount</span>
+                  <span className="text-green-400">-${parseFloat(invoice.discount_amount || '0').toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between pt-2 border-t border-white/10">
                 <span className="font-semibold text-white">Total Due</span>
                 <span className="font-bold text-xl text-white">${parseFloat(invoice.total_amount).toFixed(2)}</span>

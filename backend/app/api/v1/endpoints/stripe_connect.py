@@ -1,14 +1,18 @@
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Optional
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_db, user_has_permission
 from app.core.logging import get_logger
+from app.db.models.invoice import Invoice
+from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
@@ -23,6 +27,14 @@ class ConnectLinkResponse(BaseModel):
     url: str
 
 
+class RecentStripePayment(BaseModel):
+    invoice_number: str
+    amount: str
+    status: str
+    payment_intent_id: Optional[str] = None
+    created_at: datetime
+
+
 class ConnectStatusResponse(BaseModel):
     configured: bool
     is_connected: bool
@@ -33,6 +45,14 @@ class ConnectStatusResponse(BaseModel):
     connection_type: Optional[str]
     verification_status: str
     requirements: list[str]
+    mode: str
+    account_dashboard_url: Optional[str] = None
+    available_balance: Optional[str] = None
+    pending_balance: Optional[str] = None
+    last_payout_amount: Optional[str] = None
+    last_payout_status: Optional[str] = None
+    last_payout_at: Optional[datetime] = None
+    recent_payments: list[RecentStripePayment] = Field(default_factory=list)
 
 
 class DisconnectResponse(BaseModel):
@@ -52,6 +72,54 @@ def _require_garage_admin(current_user: User) -> None:
 
 def _connect_configured() -> bool:
     return bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_PUBLISHABLE_KEY)
+
+
+def _stripe_mode() -> str:
+    if settings.STRIPE_SECRET_KEY.startswith("sk_live_"):
+        return "live"
+    if settings.STRIPE_SECRET_KEY.startswith("sk_test_"):
+        return "test"
+    return "unknown"
+
+
+def _connected_account_payments_url(account_id: str) -> str:
+    prefix = "/test" if _stripe_mode() == "test" else ""
+    return f"https://dashboard.stripe.com{prefix}/connect/accounts/{account_id}/payments"
+
+
+def _display_amount_from_cents(entries: Any) -> Optional[str]:
+    for entry in entries or []:
+        if _stripe_value(entry, "currency") == "usd":
+            amount = Decimal(str(_stripe_value(entry, "amount", 0))) / Decimal("100")
+            return str(amount.quantize(Decimal("0.01")))
+    return None
+
+
+def _payout_snapshot(
+    account_id: str,
+) -> tuple[Optional[str], Optional[str], Optional[datetime], Optional[str], Optional[str]]:
+    """Fetch provider-owned balance data without making the tenant status unavailable on a Stripe error."""
+    try:
+        balance = stripe.Balance.retrieve(stripe_account=account_id)
+        available = _display_amount_from_cents(_stripe_value(balance, "available", []))
+        pending = _display_amount_from_cents(_stripe_value(balance, "pending", []))
+        payouts = stripe.Payout.list(limit=1, stripe_account=account_id)
+        payout = list(_stripe_value(payouts, "data", []) or [])
+        if not payout:
+            return available, pending, None, None, None
+        latest = payout[0]
+        created = _stripe_value(latest, "created")
+        paid_at = datetime.fromtimestamp(created, timezone.utc) if created else None
+        payout_amount = Decimal(str(_stripe_value(latest, "amount", 0))) / Decimal("100")
+        return (
+            available,
+            pending,
+            paid_at,
+            str(payout_amount.quantize(Decimal("0.01"))),
+            _stripe_value(latest, "status"),
+        )
+    except stripe.error.StripeError:
+        return None, None, None, None, None
 
 
 async def _tenant_for(current_user: User, db: AsyncSession) -> Tenant:
@@ -185,6 +253,7 @@ async def get_connect_status(
 ):
     _require_garage_admin(current_user)
     tenant = await _tenant_for(current_user, db)
+    mode = _stripe_mode()
     if not tenant.stripe_account_id:
         return ConnectStatusResponse(
             configured=_connect_configured(),
@@ -196,6 +265,7 @@ async def get_connect_status(
             connection_type=None,
             verification_status="not_connected",
             requirements=[],
+            mode=mode,
         )
     try:
         account = stripe.Account.retrieve(tenant.stripe_account_id)
@@ -206,6 +276,28 @@ async def get_connect_status(
         if tenant.stripe_onboarding_complete != complete:
             tenant.stripe_onboarding_complete = complete
             await db.commit()
+        payment_rows = (
+            await db.execute(
+                select(Payment, Invoice.invoice_number)
+                .join(Invoice, Invoice.id == Payment.invoice_id)
+                .where(Payment.tenant_id == tenant.id, Payment.method == PaymentMethod.STRIPE)
+                .order_by(Payment.created_at.desc())
+                .limit(5)
+            )
+        ).all()
+        recent_payments = [
+            RecentStripePayment(
+                invoice_number=invoice_number,
+                amount=str(payment.amount),
+                status=payment.status.value if isinstance(payment.status, PaymentStatus) else str(payment.status),
+                payment_intent_id=payment.stripe_payment_intent_id,
+                created_at=payment.created_at,
+            )
+            for payment, invoice_number in payment_rows
+        ]
+        available, pending, last_payout_at, last_payout_amount, last_payout_status = _payout_snapshot(
+            tenant.stripe_account_id
+        )
         return ConnectStatusResponse(
             configured=_connect_configured(),
             is_connected=True,
@@ -216,6 +308,14 @@ async def get_connect_status(
             connection_type=tenant.stripe_connection_type or "express_legacy",
             verification_status=verification_status,
             requirements=requirements,
+            mode=mode,
+            account_dashboard_url=_connected_account_payments_url(tenant.stripe_account_id),
+            available_balance=available,
+            pending_balance=pending,
+            last_payout_amount=last_payout_amount,
+            last_payout_status=last_payout_status,
+            last_payout_at=last_payout_at,
+            recent_payments=recent_payments,
         )
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Unable to retrieve Stripe account status")

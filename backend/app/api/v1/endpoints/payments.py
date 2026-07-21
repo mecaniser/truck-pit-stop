@@ -27,6 +27,7 @@ from app.services.invoice_notification_service import send_invoice_payment_confi
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.payment_number_service import allocate_next_payment_number
 from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
+from app.services.stripe_customer_service import ensure_connected_stripe_customer
 from app.services.stripe_platform_fee import platform_fee_amount_cents, platform_fee_percent_for
 
 logger = get_logger(__name__)
@@ -346,6 +347,8 @@ async def create_payment_intent_for_invoice(
     
     result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
     customer = result.scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
 
     result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = result.scalar_one_or_none()
@@ -367,10 +370,18 @@ async def create_payment_intent_for_invoice(
             if customer.email:
                 metadata["customer_email"] = customer.email
 
+        stripe_customer_id = await ensure_connected_stripe_customer(
+            db,
+            customer,
+            tenant.stripe_account_id,
+        )
+
         intent_params = {
             "amount": amount_cents,
             "currency": "usd",
             "metadata": metadata,
+            "customer": stripe_customer_id,
+            "receipt_email": customer.email,
             "automatic_payment_methods": {"enabled": True},
         }
         

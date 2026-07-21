@@ -178,6 +178,20 @@ interface ConnectStatus {
   connection_type: 'stripe_hosted' | 'standard_oauth' | 'express_legacy' | null
   verification_status: 'not_connected' | 'setup_incomplete' | 'needs_information' | 'under_review' | 'restricted' | 'active'
   requirements: string[]
+  mode: 'test' | 'live' | 'unknown'
+  account_dashboard_url: string | null
+  available_balance: string | null
+  pending_balance: string | null
+  last_payout_amount: string | null
+  last_payout_status: string | null
+  last_payout_at: string | null
+  recent_payments: Array<{
+    invoice_number: string
+    amount: string
+    status: string
+    payment_intent_id: string | null
+    created_at: string
+  }>
 }
 
 interface QuickBooksConnectionStatus {
@@ -1270,6 +1284,12 @@ function PaymentsSection() {
   }
 
   const statusConfig = getStatusConfig()
+  const formatStripeAmount = (value: string | null) => value === null
+    ? 'Unavailable'
+    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value))
+  const accountLabel = status?.account_id
+    ? `${status.account_id.slice(0, 8)}...${status.account_id.slice(-4)}`
+    : 'Not connected'
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
@@ -1319,6 +1339,59 @@ function PaymentsSection() {
           </div>
         )}
 
+        {status?.is_connected && (
+          <div className="mb-6 border-y border-zinc-800/70 py-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-zinc-100">Stripe account activity</p>
+                <p className="mt-1 text-xs text-zinc-500">Direct card charges are created in this connected account.</p>
+              </div>
+              <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${status.mode === 'live' ? 'border-emerald-700/50 bg-emerald-950/30 text-emerald-300' : 'border-sky-700/50 bg-sky-950/30 text-sky-300'}`}>
+                {status.mode === 'live' ? 'Live mode' : status.mode === 'test' ? 'Test mode' : 'Stripe mode unavailable'}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="border border-zinc-800 bg-zinc-950/35 px-3 py-3">
+                <p className="text-xs text-zinc-500">Connected account</p>
+                <p className="mt-1 font-mono text-sm text-zinc-200">{accountLabel}</p>
+              </div>
+              <div className="border border-zinc-800 bg-zinc-950/35 px-3 py-3">
+                <p className="text-xs text-zinc-500">Available balance</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-100">{formatStripeAmount(status.available_balance)}</p>
+              </div>
+              <div className="border border-zinc-800 bg-zinc-950/35 px-3 py-3">
+                <p className="text-xs text-zinc-500">Pending balance</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-100">{formatStripeAmount(status.pending_balance)}</p>
+              </div>
+              <div className="border border-zinc-800 bg-zinc-950/35 px-3 py-3">
+                <p className="text-xs text-zinc-500">Latest payout</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-100">{status.last_payout_amount ? `${formatStripeAmount(status.last_payout_amount)}${status.last_payout_status ? ` · ${status.last_payout_status}` : ''}` : 'No payout recorded'}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-zinc-500">Recent payments recorded by DieselBridge</p>
+              {status.recent_payments.length ? (
+                <div className="divide-y divide-zinc-800 border-y border-zinc-800">
+                  {status.recent_payments.map((payment) => (
+                    <div key={`${payment.invoice_number}-${payment.payment_intent_id || payment.created_at}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 text-sm">
+                      <div>
+                        <span className="font-medium text-zinc-200">{payment.invoice_number}</span>
+                        <span className="ml-2 text-xs capitalize text-zinc-500">{payment.status.replace(/_/g, ' ')}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-medium text-zinc-100">{formatStripeAmount(payment.amount)}</span>
+                        <span className="ml-2 text-xs text-zinc-500">{new Date(payment.created_at).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-500">No Stripe payments have been recorded for this shop yet.</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="pt-4 border-t border-zinc-800/50">
           {!status?.is_connected && status?.configured ? (
             <button
@@ -1350,9 +1423,11 @@ function PaymentsSection() {
             </button>
           ) : status.connection_type !== 'express_legacy' ? (
             <div className="flex flex-wrap items-center gap-3">
-              <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className={`${industrialStyles.btnSecondary} inline-flex items-center justify-center`}>
-                <span className="inline-flex items-center gap-2"><ExternalLink className="w-4 h-4" />Manage in Stripe Dashboard</span>
-              </a>
+              {status.account_dashboard_url && (
+                <a href={status.account_dashboard_url} target="_blank" rel="noreferrer" className={`${industrialStyles.btnSecondary} inline-flex items-center justify-center`}>
+                  <span className="inline-flex items-center gap-2"><ExternalLink className="w-4 h-4" />View Connected Account Payments</span>
+                </a>
+              )}
               <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Stripe'}
               </button>

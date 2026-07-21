@@ -635,10 +635,12 @@ export default function InvoiceAccessPage() {
                 <span>Tax</span>
                 <span>{formatMoney(invoice.tax_amount)}</span>
               </div>
-              <div className="flex items-center justify-between text-green-700">
-                <span>Discount</span>
-                <span>-{formatMoney(invoice.discount_amount)}</span>
-              </div>
+              {parseFloat(invoice.discount_amount || '0') > 0 && (
+                <div className="flex items-center justify-between text-green-700">
+                  <span>Discount</span>
+                  <span>-{formatMoney(invoice.discount_amount)}</span>
+                </div>
+              )}
               <div className="pt-2 border-t border-gray-200 flex items-center justify-between text-gray-900 font-semibold">
                 <span>Total</span>
                 <span>{formatMoney(invoice.total_amount)}</span>

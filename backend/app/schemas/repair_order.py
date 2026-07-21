@@ -213,6 +213,9 @@ class RepairOrderResponse(RepairOrderBase):
     pricing_locked_at: Optional[datetime] = None
     pricing_lock_reason: Optional[str] = None
     quote_sent: Optional[bool] = None  # True if quote exists and was sent to customer
+    quote_sent_at: Optional[datetime] = None
+    invoice_created_at: Optional[datetime] = None
+    invoice_due_date: Optional[datetime] = None
     pending_zelle_confirmation: bool = False
     mileage_out: Optional[int] = None
     po_number: Optional[str] = None
