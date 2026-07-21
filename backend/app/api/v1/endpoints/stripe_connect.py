@@ -31,6 +31,8 @@ class ConnectStatusResponse(BaseModel):
     payouts_enabled: bool
     account_id: Optional[str]
     connection_type: Optional[str]
+    verification_status: str
+    requirements: list[str]
 
 
 class DisconnectResponse(BaseModel):
@@ -63,6 +65,26 @@ async def _tenant_for(current_user: User, db: AsyncSession) -> Tenant:
 
 def _account_is_ready(account: Any) -> bool:
     return bool(_stripe_value(account, "charges_enabled") and _stripe_value(account, "payouts_enabled"))
+
+
+def _verification_status(account: Any) -> tuple[str, list[str]]:
+    """Translate Stripe requirements into a tenant-facing connection state."""
+    if _account_is_ready(account):
+        return "active", []
+
+    requirements = _stripe_value(account, "requirements", {}) or {}
+    currently_due = list(_stripe_value(requirements, "currently_due", []) or [])
+    past_due = list(_stripe_value(requirements, "past_due", []) or [])
+    pending_verification = list(_stripe_value(requirements, "pending_verification", []) or [])
+    disabled_reason = _stripe_value(requirements, "disabled_reason")
+
+    if past_due or disabled_reason:
+        return "restricted", past_due or currently_due
+    if currently_due:
+        return "needs_information", currently_due
+    if pending_verification or _stripe_value(account, "details_submitted"):
+        return "under_review", pending_verification
+    return "setup_incomplete", []
 
 
 def _onboarding_urls() -> tuple[str, str]:
@@ -172,12 +194,15 @@ async def get_connect_status(
             payouts_enabled=False,
             account_id=None,
             connection_type=None,
+            verification_status="not_connected",
+            requirements=[],
         )
     try:
         account = stripe.Account.retrieve(tenant.stripe_account_id)
         charges_enabled = bool(_stripe_value(account, "charges_enabled"))
         payouts_enabled = bool(_stripe_value(account, "payouts_enabled"))
         complete = charges_enabled and payouts_enabled
+        verification_status, requirements = _verification_status(account)
         if tenant.stripe_onboarding_complete != complete:
             tenant.stripe_onboarding_complete = complete
             await db.commit()
@@ -189,6 +214,8 @@ async def get_connect_status(
             payouts_enabled=payouts_enabled,
             account_id=tenant.stripe_account_id,
             connection_type=tenant.stripe_connection_type or "express_legacy",
+            verification_status=verification_status,
+            requirements=requirements,
         )
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Unable to retrieve Stripe account status")

@@ -53,6 +53,11 @@ def get_effective_total(order: RepairOrder) -> Decimal:
     return get_order_subtotal(order)
 
 
+def is_pending_zelle_confirmation(invoice_status: InvoiceStatus, submitted_at: Optional[datetime]) -> bool:
+    """A customer-submitted Zelle payment needs staff review until the invoice is paid or cleared."""
+    return submitted_at is not None and invoice_status != InvoiceStatus.PAID
+
+
 def require_manager(current_user: User) -> None:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
         raise HTTPException(status_code=403, detail="Shop owner/admin access required")
@@ -368,10 +373,39 @@ async def get_dashboard_stats(
         .where(Quote.repair_order_id.in_(needs_action_ids))
     ) if needs_action_ids else None
     quote_sent_map = {row[0]: row[1] for row in quote_sent_result.fetchall()} if quote_sent_result else {}
-    orders_needing_action = [
+    standard_needs_action = [
         _build_order(o, c, v, m, quote_sent=quote_sent_map.get(o.id))
         for o, c, v, m in needs_action_rows
     ]
+
+    # A customer marking a Zelle transfer as sent is a staff-review task, even
+    # though its repair order remains invoiced. Surface it ahead of normal work.
+    pending_zelle_result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, Mechanic)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .outerjoin(Mechanic, RepairOrder.assigned_mechanic_id == Mechanic.id)
+        .where(
+            and_(
+                RepairOrder.tenant_id == tenant_id,
+                RepairOrder.deleted_at.is_(None),
+                Invoice.tenant_id == tenant_id,
+                Invoice.zelle_pending_submitted_at.is_not(None),
+                Invoice.status != InvoiceStatus.PAID,
+            )
+        )
+        .order_by(Invoice.zelle_pending_submitted_at.desc())
+        .limit(10)
+    )
+    pending_zelle_orders = [
+        _build_order(o, c, v, m, pending_zelle_confirmation=True)
+        for o, c, v, m in pending_zelle_result.all()
+    ]
+    pending_zelle_order_ids = {order.id for order in pending_zelle_orders}
+    orders_needing_action = (pending_zelle_orders + [
+        order for order in standard_needs_action if order.id not in pending_zelle_order_ids
+    ])[:10]
 
     # Lane 2: On the Floor (approved, assigned, acknowledged, in_progress)
     on_floor_statuses = [
@@ -434,7 +468,7 @@ async def get_dashboard_stats(
             )
         )
         pending_zelle_map = {
-            repair_order_id: bool(zelle_pending_submitted_at and status != InvoiceStatus.PAID)
+            repair_order_id: is_pending_zelle_confirmation(status, zelle_pending_submitted_at)
             for repair_order_id, status, zelle_pending_submitted_at in pending_result.all()
         }
 
@@ -447,6 +481,7 @@ async def get_dashboard_stats(
             pending_zelle_confirmation=pending_zelle_map.get(o.id, False),
         )
         for o, c, v, m in ready_rows
+        if not pending_zelle_map.get(o.id, False)
     ]
 
     # Mechanic-specific stats

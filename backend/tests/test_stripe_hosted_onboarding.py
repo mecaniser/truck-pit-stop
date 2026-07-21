@@ -31,6 +31,15 @@ def _configure(monkeypatch):
     monkeypatch.setattr(stripe_connect.settings, "FRONTEND_URL", "https://app.example.com")
 
 
+def test_verification_status_distinguishes_review_from_missing_details():
+    assert stripe_connect._verification_status(
+        {"charges_enabled": False, "payouts_enabled": False, "details_submitted": True, "requirements": {"pending_verification": ["company.verification.document"]}}
+    ) == ("under_review", ["company.verification.document"])
+    assert stripe_connect._verification_status(
+        {"charges_enabled": False, "payouts_enabled": False, "requirements": {"currently_due": ["external_account"]}}
+    ) == ("needs_information", ["external_account"])
+
+
 @pytest.mark.asyncio
 async def test_hosted_onboarding_creates_and_reuses_connected_account(client, db_session, monkeypatch):
     _configure(monkeypatch)

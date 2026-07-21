@@ -272,11 +272,13 @@ function OrderCard({
   const badge = isOnHold
     ? { label: 'On Hold', className: 'bg-orange-500/20 text-orange-300' }
     : order.pending_zelle_confirmation
-    ? { label: 'Pending Zelle', className: 'bg-yellow-500/20 text-yellow-300' }
+    ? { label: 'Zelle Review', className: 'bg-amber-500/20 text-amber-300' }
     : STATUS_BADGE[order.status] ?? { label: order.status.replace(/_/g, ' '), className: 'bg-gray-500/20 text-gray-300' }
 
   // Contextual sub-note shown below the customer/vehicle line
   const contextNote: { text: string; color: string } | null = (() => {
+    if (order.pending_zelle_confirmation)
+      return { text: 'Customer marked payment sent. Confirm receipt before closing.', color: 'text-amber-400' }
     if (order.status === 'quoted' || order.status === 'draft') {
       if (!order.quote_sent)
         return { text: 'Quote ready — not sent to customer yet', color: 'text-gray-400' }

@@ -176,6 +176,8 @@ interface ConnectStatus {
   payouts_enabled: boolean
   account_id: string | null
   connection_type: 'stripe_hosted' | 'standard_oauth' | 'express_legacy' | null
+  verification_status: 'not_connected' | 'setup_incomplete' | 'needs_information' | 'under_review' | 'restricted' | 'active'
+  requirements: string[]
 }
 
 interface QuickBooksConnectionStatus {
@@ -315,6 +317,7 @@ function PaymentIntegrationPanel({
   icon,
   title,
   summary,
+  status,
   open,
   onOpenChange,
   children,
@@ -322,15 +325,16 @@ function PaymentIntegrationPanel({
   icon: React.ReactNode
   title: string
   summary: string
+  status?: { label: string; variant: 'success' | 'warning' | 'error' | 'default'; led: 'active' | 'inactive' | 'warning' | 'error' }
   open: boolean
-  onOpenChange: () => void
+  onOpenChange: (nextOpen: boolean) => void
   children: React.ReactNode
 }) {
   return (
     <IndustrialCard>
       <button
         type="button"
-        onClick={onOpenChange}
+        onClick={() => onOpenChange(!open)}
         aria-expanded={open}
         className="flex w-full items-center gap-4 px-6 py-5 text-left transition-colors hover:bg-white/[0.02] sm:px-8"
       >
@@ -341,6 +345,12 @@ function PaymentIntegrationPanel({
           <span className="block text-sm font-semibold text-zinc-100">{title}</span>
           <span className="mt-1 block text-sm text-zinc-400">{summary}</span>
         </span>
+        {status && (
+          <IndustrialBadge variant={status.variant}>
+            <StatusLED status={status.led} />
+            {status.label}
+          </IndustrialBadge>
+        )}
         <ChevronDown className={`h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && <div className="border-t border-zinc-800/70 px-6 py-6 sm:px-8">{children}</div>}
@@ -1173,7 +1183,7 @@ function SecuritySection() {
 function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
-  const [isStripeOpen, setIsStripeOpen] = useState(false)
+  const [openPaymentPanel, setOpenPaymentPanel] = useState<'stripe' | 'zelle' | 'quickbooks' | null>('stripe')
   const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: status, isLoading, refetch } = useQuery<ConnectStatus>({
@@ -1182,6 +1192,7 @@ function PaymentsSection() {
       const response = await api.get('/stripe/connect/status')
       return response.data
     },
+    refetchInterval: 30_000,
   })
 
   useEffect(() => {
@@ -1243,6 +1254,15 @@ function PaymentsSection() {
       return { led: 'inactive' as const, title: 'NOT SET UP', desc: 'Set up your Stripe merchant account to receive invoice payments.' }
     }
     if (status.connection_type === 'express_legacy') return { led: 'warning' as const, title: 'LEGACY CONNECTION', desc: 'This account still uses the previous Stripe Express setup.' }
+    if (status.verification_status === 'under_review') {
+      return { led: 'warning' as const, title: 'VERIFICATION IN PROGRESS', desc: 'Stripe is reviewing your submitted business details. No action is needed unless Stripe requests more information.' }
+    }
+    if (status.verification_status === 'needs_information') {
+      return { led: 'warning' as const, title: 'ACTION REQUIRED', desc: 'Stripe needs additional business or payout details before payments can be enabled.' }
+    }
+    if (status.verification_status === 'restricted') {
+      return { led: 'error' as const, title: 'ACCOUNT RESTRICTED', desc: 'Stripe needs updated information before this account can accept payments or receive payouts.' }
+    }
     if (!status.onboarding_complete) {
       return { led: 'warning' as const, title: 'SETUP INCOMPLETE', desc: 'Please finish the Stripe onboarding process.' }
     }
@@ -1260,8 +1280,13 @@ function PaymentsSection() {
         icon={<CreditCard className="h-5 w-5" />}
         title="Stripe Payments"
         summary={statusConfig.desc}
-        open={isStripeOpen}
-        onOpenChange={() => setIsStripeOpen((open) => !open)}
+        status={{
+          label: statusConfig.title,
+          variant: statusConfig.led === 'active' ? 'success' : statusConfig.led === 'error' ? 'error' : statusConfig.led === 'warning' ? 'warning' : 'default',
+          led: statusConfig.led,
+        }}
+        open={openPaymentPanel === 'stripe'}
+        onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'stripe' : null)}
       >
 
         <div className="flex items-start gap-4 mb-6">
@@ -1284,6 +1309,13 @@ function PaymentsSection() {
               <StatusLED status={status.payouts_enabled ? 'active' : 'error'} />
               Payouts {status.payouts_enabled ? 'Enabled' : 'Disabled'}
             </IndustrialBadge>
+          </div>
+        )}
+
+        {status?.is_connected && status.requirements.length > 0 && status.verification_status !== 'under_review' && (
+          <div className="mb-6 rounded-lg border border-amber-800/40 bg-amber-950/20 px-4 py-3">
+            <p className="text-sm font-medium text-amber-200">Stripe needs:</p>
+            <p className="mt-1 text-sm text-amber-100/80">{status.requirements.join(', ')}</p>
           </div>
         )}
 
@@ -1310,9 +1342,11 @@ function PaymentsSection() {
             <p className="text-sm text-amber-300">The Stripe platform keys must be configured before this shop can begin setup.</p>
           ) : !status.configured && !status.onboarding_complete ? (
             <p className="text-sm text-amber-300">This account is connected, but DieselBridge platform configuration must be restored before onboarding can continue.</p>
+          ) : status.verification_status === 'under_review' ? (
+            <p className="text-sm text-sky-300">Verification is in progress. This page refreshes automatically while Stripe reviews your account.</p>
           ) : !status.onboarding_complete && status.connection_type !== 'express_legacy' ? (
             <button onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending || isRedirecting} className={industrialStyles.btnPrimary}>
-              {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Continue Stripe Setup'}
+              {connectMutation.isPending || isRedirecting ? 'Redirecting...' : status.verification_status === 'needs_information' || status.verification_status === 'restricted' ? 'Update Stripe Details' : 'Continue Stripe Setup'}
             </button>
           ) : status.connection_type !== 'express_legacy' ? (
             <div className="flex flex-wrap items-center gap-3">
@@ -1338,8 +1372,14 @@ function PaymentsSection() {
           onConfirm={() => disconnectMutation.mutate()}
         />
       )}
-      <ZelleSection />
-      <QuickBooksIntegrationCard />
+      <ZelleSection
+        open={openPaymentPanel === 'zelle'}
+        onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'zelle' : null)}
+      />
+      <QuickBooksIntegrationCard
+        open={openPaymentPanel === 'quickbooks'}
+        onOpenChange={(nextOpen) => setOpenPaymentPanel(nextOpen ? 'quickbooks' : null)}
+      />
     </div>
   )
 }
@@ -1456,10 +1496,9 @@ function PlatformIntegrationsSection() {
   )
 }
 
-function QuickBooksIntegrationCard() {
+function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOpenChange: (nextOpen: boolean) => void }) {
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
-  const [isQuickBooksOpen, setIsQuickBooksOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
     queryKey: ['quickbooks-status'],
@@ -1526,8 +1565,13 @@ function QuickBooksIntegrationCard() {
       icon={<Building2 className="h-5 w-5" />}
       title="QuickBooks Online"
       summary={isLoading ? 'Checking connection status...' : statusConfig.desc}
-      open={isQuickBooksOpen}
-      onOpenChange={() => setIsQuickBooksOpen((open) => !open)}
+      status={{
+        label: isLoading ? 'CHECKING STATUS' : statusConfig.title,
+        variant: isLoading ? 'default' : statusConfig.led === 'active' ? 'success' : statusConfig.led === 'warning' ? 'warning' : 'default',
+        led: isLoading ? 'inactive' : statusConfig.led,
+      }}
+      open={open}
+      onOpenChange={onOpenChange}
     >
 
       {isLoading ? (
@@ -1637,7 +1681,7 @@ function QuickBooksIntegrationCard() {
   )
 }
 
-function ZelleSection() {
+function ZelleSection({ open, onOpenChange }: { open: boolean; onOpenChange: (nextOpen: boolean) => void }) {
   const queryClient = useQueryClient()
   const [zelleQrPreview, setZelleQrPreview] = useState<string | null>(null)
   const [_isUploadingQr, setIsUploadingQr] = useState(false)
@@ -1647,7 +1691,6 @@ function ZelleSection() {
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [unlockPassword, setUnlockPassword] = useState('')
   const [unlockError, setUnlockError] = useState<string | null>(null)
-  const [isZelleOpen, setIsZelleOpen] = useState(false)
 
   const { data: garageProfile } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -1675,6 +1718,11 @@ function ZelleSection() {
       prevZelleSettings.current = zelleSettings
     }
   }, [zelleSettings, garageProfile, contactEditing])
+
+  const hasZellePaymentDetails = Boolean(zelleSettings?.zelle_email || zelleSettings?.zelle_phone)
+  const zelleStatus = hasZellePaymentDetails
+    ? { label: 'PAYMENT DETAILS READY', variant: 'success' as const, led: 'active' as const }
+    : { label: 'PAYMENT DETAILS NEEDED', variant: 'warning' as const, led: 'warning' as const }
 
   const unlockMutation = useMutation({
     mutationFn: async (password: string) => {
@@ -1751,9 +1799,10 @@ function ZelleSection() {
       <PaymentIntegrationPanel
         icon={<QrCode className="h-5 w-5" />}
         title="Zelle Payments"
-        summary="Configure the manual payment details your customers use to send Zelle transfers."
-        open={isZelleOpen}
-        onOpenChange={() => setIsZelleOpen((open) => !open)}
+        summary={hasZellePaymentDetails ? 'Customers can use your configured Zelle contact details for manual transfers.' : 'Add an email or phone number before customers can send Zelle transfers.'}
+        status={zelleStatus}
+        open={open}
+        onOpenChange={onOpenChange}
       >
 
         {!isUnlocked ? (
