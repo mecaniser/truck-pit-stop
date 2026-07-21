@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck
+  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -300,6 +300,58 @@ function IndustrialBadge({ children, variant = 'default' }: { children: React.Re
     <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border whitespace-nowrap ${variants[variant]}`}>
       {children}
     </span>
+  )
+}
+
+function DisconnectStripeDialog({ legacy, pending, onCancel, onConfirm }: {
+  legacy: boolean
+  pending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !pending) onCancel()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onCancel, pending])
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => event.target === event.currentTarget && !pending && onCancel()}
+    >
+      <div role="alertdialog" aria-modal="true" aria-labelledby="disconnect-stripe-title" aria-describedby="disconnect-stripe-description" className="w-full max-w-md rounded-xl border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-red-800/50 bg-red-950/70 text-red-400">
+              <AlertCircle className="h-5 w-5" />
+            </span>
+            <h3 id="disconnect-stripe-title" className="text-lg font-semibold text-zinc-100">
+              {legacy ? 'Disconnect legacy Stripe connection?' : 'Disconnect Stripe account?'}
+            </h3>
+          </div>
+          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close confirmation" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <p id="disconnect-stripe-description" className="mt-4 text-sm leading-6 text-zinc-400">
+          DieselBridge will stop routing new invoice payments to this connection. The Stripe account and its payment history will not be deleted.
+        </p>
+        {legacy && (
+          <p className="mt-3 rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+            After disconnecting, you can set up the new Stripe-hosted connection.
+          </p>
+        )}
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={pending} className={industrialStyles.btnSecondary}>Cancel</button>
+          <button type="button" onClick={onConfirm} disabled={pending} className={industrialStyles.btnDanger}>
+            {pending ? 'Disconnecting...' : 'Disconnect Stripe'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -1075,6 +1127,7 @@ function SecuritySection() {
 
 function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: status, isLoading, refetch } = useQuery<ConnectStatus>({
@@ -1121,6 +1174,7 @@ function PaymentsSection() {
   const disconnectMutation = useMutation({
     mutationFn: async () => (await api.post('/stripe/connect/disconnect')).data,
     onSuccess: () => {
+      setDisconnectKind(null)
       toast.success('Stripe connection removed. Your Stripe account was not deleted.')
       refetch()
     },
@@ -1217,17 +1271,25 @@ function PaymentsSection() {
               <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className={industrialStyles.btnSecondary}>
                 <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Manage in Stripe Dashboard</span>
               </a>
-              <button onClick={() => window.confirm('Disconnect your Stripe account? It will not be deleted.') && disconnectMutation.mutate()} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+              <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Stripe'}
               </button>
             </>
           ) : (
-            <button onClick={() => window.confirm('Disconnect the legacy Stripe connection? The legacy account will not be deleted.') && disconnectMutation.mutate()} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
+            <button onClick={() => setDisconnectKind('legacy')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
               {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Legacy Connection'}
             </button>
           )}
         </div>
       </IndustrialCard>
+      {disconnectKind && (
+        <DisconnectStripeDialog
+          legacy={disconnectKind === 'legacy'}
+          pending={disconnectMutation.isPending}
+          onCancel={() => setDisconnectKind(null)}
+          onConfirm={() => disconnectMutation.mutate()}
+        />
+      )}
       <ZelleSection />
       <QuickBooksIntegrationCard />
     </div>
