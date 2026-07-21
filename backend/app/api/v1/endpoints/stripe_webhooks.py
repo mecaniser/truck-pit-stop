@@ -9,9 +9,13 @@ from app.core.dependencies import get_db
 from app.core.logging import get_logger
 from app.core.metrics import record_payment, record_payment_error
 from app.db.models.tenant import Tenant
-from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice import Invoice
+from app.db.models.repair_order import RepairOrder
 from app.db.models.error_log import ErrorCategory, ErrorSeverity
 from app.services import error_service
+from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
+
+WEBHOOK_PAYMENT_NOTE = "Payment confirmed by Stripe webhook."
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 logger = get_logger(__name__)
@@ -62,9 +66,11 @@ async def stripe_connect_webhook(
                 detail="Invalid payload",
             )
     
-    # Handle the event
-    if event["type"] == "account.updated":
-        account = event["data"]["object"]
+    event_type = event["type"]
+    data_object = event["data"]["object"]
+
+    if event_type == "account.updated":
+        account = data_object
         account_id = account["id"]
         
         # Find tenant by stripe_account_id
@@ -83,10 +89,9 @@ async def stripe_connect_webhook(
                 tenant.stripe_onboarding_complete = onboarding_complete
                 await db.commit()
     
-    elif event["type"] == "account.application.deauthorized":
+    elif event_type == "account.application.deauthorized":
         # Tenant disconnected their Stripe account
-        account = event["data"]["object"]
-        account_id = account.get("id")
+        account_id = event.get("account")
         
         if account_id:
             result = await db.execute(
@@ -99,6 +104,15 @@ async def stripe_connect_webhook(
                 tenant.stripe_onboarding_complete = False
                 await db.commit()
                 logger.info("stripe_account_disconnected", tenant_id=str(tenant.id), account_id=account_id)
+
+    elif event_type == "payment_intent.payment_failed":
+        await _handle_payment_failed(db, data_object)
+    elif event_type == "charge.failed":
+        await _handle_charge_failed(db, data_object)
+    elif event_type == "charge.dispute.created":
+        await _handle_dispute_created(db, data_object)
+    elif event_type == "payment_intent.succeeded":
+        await _handle_payment_succeeded(db, data_object)
     
     return {"status": "success"}
 
@@ -322,7 +336,10 @@ async def _handle_payment_succeeded(db: AsyncSession, payment_intent: dict):
         invoice_uuid = UUID(invoice_id)
         result = await db.execute(
             select(Invoice)
-            .options(selectinload(Invoice.repair_order))
+            .options(
+                selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
+                selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle),
+            )
             .where(Invoice.id == invoice_uuid)
         )
         invoice = result.scalar_one_or_none()
@@ -330,23 +347,53 @@ async def _handle_payment_succeeded(db: AsyncSession, payment_intent: dict):
         if not invoice:
             logger.warning("payment_succeeded_invoice_not_found", payment_intent_id=payment_intent_id, invoice_id=invoice_id)
             return
-        
-        if invoice.status == InvoiceStatus.PAID:
-            # Already confirmed by frontend, nothing to do
-            logger.debug("payment_succeeded_already_paid", payment_intent_id=payment_intent_id, invoice_id=invoice_id)
+
+        if not invoice.repair_order:
+            logger.warning("payment_succeeded_invoice_missing_order", payment_intent_id=payment_intent_id, invoice_id=invoice_id)
             return
+
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+        tenant = tenant_result.scalar_one_or_none()
         
-        # Invoice not yet marked as paid - this is the backup path
         logger.info(
             "payment_succeeded_backup_confirmation",
             payment_intent_id=payment_intent_id,
             invoice_id=invoice_id,
         )
+
+        finalization = await finalize_stripe_invoice_payment(
+            db=db,
+            invoice=invoice,
+            order=invoice.repair_order,
+            customer=invoice.repair_order.customer,
+            tenant=tenant,
+            vehicle=invoice.repair_order.vehicle,
+            payment_intent=payment_intent,
+            payment_note=WEBHOOK_PAYMENT_NOTE,
+            allow_already_paid_without_payment=True,
+        )
+        if finalization.created:
+            logger.info(
+                "payment_succeeded_webhook_finalized_invoice",
+                payment_intent_id=payment_intent_id,
+                invoice_id=invoice_id,
+            )
+        else:
+            logger.debug(
+                "payment_succeeded_already_finalized",
+                payment_intent_id=payment_intent_id,
+                invoice_id=invoice_id,
+            )
         
-        # Note: We don't update the invoice here because we don't have the full
-        # context (payment record creation, etc.). The frontend should still call
-        # /confirm-payment. This webhook just logs that payment succeeded.
-        # If needed, implement full backup confirmation here.
-        
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_409_CONFLICT:
+            logger.info(
+                "payment_succeeded_invoice_already_paid_elsewhere",
+                payment_intent_id=payment_intent_id,
+                invoice_id=invoice_id,
+            )
+            return
+        raise
     except Exception as e:
         logger.error("payment_succeeded_handler_error", payment_intent_id=payment_intent_id, error=str(e))
+        raise

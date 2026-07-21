@@ -68,7 +68,9 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     
-    # Stripe Connect
+    # Stripe Connect. Client ID/redirect URI remain only for deployments that
+    # still have historical Standard OAuth connections; new accounts use
+    # Stripe-hosted onboarding and do not depend on either value.
     STRIPE_CONNECT_WEBHOOK_SECRET: str = ""
     STRIPE_CONNECT_CLIENT_ID: str = ""
     STRIPE_CONNECT_REDIRECT_URI: str = ""

@@ -1,12 +1,7 @@
-from datetime import datetime, timedelta, timezone
-from hashlib import sha256
-from secrets import token_urlsafe
-from typing import Optional
-from urllib.parse import urlencode
+from typing import Any, Optional
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,17 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, get_db, user_has_permission
 from app.core.logging import get_logger
-from app.db.models.stripe_oauth import StripeOAuthState
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 logger = get_logger(__name__)
 router = APIRouter()
-STRIPE_AUTHORIZE_URL = "https://connect.stripe.com/oauth/authorize"
+
+HOSTED_CONNECTION_TYPE = "stripe_hosted"
 
 
-class OAuthLinkResponse(BaseModel):
+class ConnectLinkResponse(BaseModel):
     url: str
 
 
@@ -42,13 +37,19 @@ class DisconnectResponse(BaseModel):
     is_connected: bool = False
 
 
+def _stripe_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
 def _require_garage_admin(current_user: User) -> None:
     if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN) or not user_has_permission(current_user, "payments"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to Stripe settings.")
 
 
-def _oauth_configured() -> bool:
-    return bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_CONNECT_CLIENT_ID and settings.STRIPE_CONNECT_REDIRECT_URI)
+def _connect_configured() -> bool:
+    return bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_PUBLISHABLE_KEY)
 
 
 async def _tenant_for(current_user: User, db: AsyncSession) -> Tenant:
@@ -60,94 +61,136 @@ async def _tenant_for(current_user: User, db: AsyncSession) -> Tenant:
     return tenant
 
 
-@router.post("/connect", response_model=OAuthLinkResponse)
-async def start_standard_oauth(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    """Redirect a garage owner to Stripe to authorize an existing Standard account."""
+def _account_is_ready(account: Any) -> bool:
+    return bool(_stripe_value(account, "charges_enabled") and _stripe_value(account, "payouts_enabled"))
+
+
+def _onboarding_urls() -> tuple[str, str]:
+    settings_url = f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/settings"
+    return f"{settings_url}?stripe=refresh", f"{settings_url}?stripe=return"
+
+
+def _create_hosted_account(tenant: Tenant) -> Any:
+    account_params: dict[str, Any] = {
+        "controller": {
+            "fees": {"payer": "account"},
+            "losses": {"payments": "stripe"},
+            "requirement_collection": "stripe",
+            "stripe_dashboard": {"type": "full"},
+        },
+        "metadata": {"tenant_id": str(tenant.id), "tenant_name": tenant.name},
+        "business_profile": {"product_description": f"Truck repair services provided by {tenant.name}"},
+    }
+    if tenant.email:
+        account_params["email"] = tenant.email
+    return stripe.Account.create(**account_params)
+
+
+@router.post("/connect", response_model=ConnectLinkResponse)
+async def start_hosted_onboarding(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create or resume Stripe-hosted onboarding for a garage merchant account."""
     _require_garage_admin(current_user)
-    if not _oauth_configured():
+    if not _connect_configured():
         raise HTTPException(status_code=503, detail="Stripe Connect is not available yet")
+
     tenant = await _tenant_for(current_user, db)
-    state = token_urlsafe(32)
-    db.add(StripeOAuthState(
-        state_hash=sha256(state.encode()).hexdigest(), tenant_id=tenant.id,
-        initiated_by_user_id=current_user.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(seconds=settings.STRIPE_CONNECT_OAUTH_STATE_TTL_SECONDS),
-    ))
-    await db.commit()
-    return OAuthLinkResponse(url=f"{STRIPE_AUTHORIZE_URL}?{urlencode({'response_type': 'code', 'client_id': settings.STRIPE_CONNECT_CLIENT_ID, 'scope': 'read_write', 'redirect_uri': settings.STRIPE_CONNECT_REDIRECT_URI, 'state': state})}")
-
-
-@router.post("/onboard", response_model=OAuthLinkResponse, deprecated=True)
-async def start_standard_oauth_compat(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    return await start_standard_oauth(db, current_user)
-
-
-@router.get("/oauth/callback", include_in_schema=False)
-async def stripe_oauth_callback(state: str = Query(..., min_length=20, max_length=512), code: Optional[str] = Query(None), error: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)):
-    state_record = (await db.execute(select(StripeOAuthState).where(StripeOAuthState.state_hash == sha256(state.encode()).hexdigest()))).scalar_one_or_none()
-    frontend = settings.FRONTEND_URL.rstrip("/")
-    expires_at = state_record.expires_at if state_record else None
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if not state_record or state_record.consumed_at or expires_at < datetime.now(timezone.utc):
-        return RedirectResponse(f"{frontend}/dashboard/settings?stripe=error", status_code=303)
-    state_record.consumed_at = datetime.now(timezone.utc)
-    await db.commit()
-    if error or not code:
-        return RedirectResponse(f"{frontend}/dashboard/settings?stripe=not-connected", status_code=303)
     try:
-        authorization = stripe.OAuth.token(api_key=settings.STRIPE_SECRET_KEY, grant_type="authorization_code", code=code)
-        account_id = authorization.get("stripe_user_id")
-        if not account_id:
-            raise ValueError("Stripe did not return an account")
-        account = stripe.Account.retrieve(account_id)
-    except Exception:
-        logger.exception("stripe_standard_oauth_exchange_failed", tenant_id=str(state_record.tenant_id))
-        return RedirectResponse(f"{frontend}/dashboard/settings?stripe=error", status_code=303)
-    tenant = (await db.execute(select(Tenant).where(Tenant.id == state_record.tenant_id))).scalar_one_or_none()
-    if not tenant:
-        return RedirectResponse(f"{frontend}/dashboard/settings?stripe=error", status_code=303)
-    if tenant.stripe_account_id and tenant.stripe_connection_type not in (None, "standard_oauth"):
-        return RedirectResponse(f"{frontend}/dashboard/settings?stripe=legacy-account", status_code=303)
-    owner = (await db.execute(select(Tenant).where(Tenant.stripe_account_id == account_id, Tenant.id != tenant.id))).scalar_one_or_none()
-    if owner:
-        return RedirectResponse(f"{frontend}/dashboard/settings?stripe=account-in-use", status_code=303)
-    tenant.stripe_account_id = account_id
-    tenant.stripe_connection_type = "standard_oauth"
-    tenant.stripe_onboarding_complete = bool(account.get("charges_enabled") and account.get("payouts_enabled"))
-    await db.commit()
-    logger.info("stripe_standard_oauth_connected", tenant_id=str(tenant.id), account_id=account_id)
-    return RedirectResponse(f"{frontend}/dashboard/settings?stripe=connected", status_code=303)
+        if tenant.stripe_account_id:
+            account = stripe.Account.retrieve(tenant.stripe_account_id)
+        else:
+            account = _create_hosted_account(tenant)
+            account_id = _stripe_value(account, "id")
+            if not account_id:
+                raise ValueError("Stripe did not return a connected account ID")
+            tenant.stripe_account_id = account_id
+            tenant.stripe_connection_type = HOSTED_CONNECTION_TYPE
+
+        tenant.stripe_onboarding_complete = _account_is_ready(account)
+        await db.commit()
+
+        refresh_url, return_url = _onboarding_urls()
+        account_link = stripe.AccountLink.create(
+            account=tenant.stripe_account_id,
+            refresh_url=refresh_url,
+            return_url=return_url,
+            type="account_onboarding",
+            collection_options={"fields": "eventually_due"},
+        )
+        link_url = _stripe_value(account_link, "url")
+        if not link_url:
+            raise ValueError("Stripe did not return an onboarding URL")
+    except stripe.error.StripeError as exc:
+        logger.exception("stripe_hosted_onboarding_failed", tenant_id=str(tenant.id), error=str(exc))
+        raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")
+    except ValueError as exc:
+        logger.error("stripe_hosted_onboarding_invalid_response", tenant_id=str(tenant.id), error=str(exc))
+        raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")
+
+    logger.info(
+        "stripe_hosted_onboarding_started",
+        tenant_id=str(tenant.id),
+        account_id=tenant.stripe_account_id,
+    )
+    return ConnectLinkResponse(url=link_url)
+
+
+@router.post("/onboard", response_model=ConnectLinkResponse, deprecated=True)
+async def start_hosted_onboarding_compat(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    return await start_hosted_onboarding(db, current_user)
 
 
 @router.get("/status", response_model=ConnectStatusResponse)
-async def get_connect_status(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+async def get_connect_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     _require_garage_admin(current_user)
     tenant = await _tenant_for(current_user, db)
     if not tenant.stripe_account_id:
-        return ConnectStatusResponse(configured=_oauth_configured(), is_connected=False, onboarding_complete=False, charges_enabled=False, payouts_enabled=False, account_id=None, connection_type=None)
+        return ConnectStatusResponse(
+            configured=_connect_configured(),
+            is_connected=False,
+            onboarding_complete=False,
+            charges_enabled=False,
+            payouts_enabled=False,
+            account_id=None,
+            connection_type=None,
+        )
     try:
         account = stripe.Account.retrieve(tenant.stripe_account_id)
-        charges_enabled, payouts_enabled = bool(account.get("charges_enabled")), bool(account.get("payouts_enabled"))
+        charges_enabled = bool(_stripe_value(account, "charges_enabled"))
+        payouts_enabled = bool(_stripe_value(account, "payouts_enabled"))
         complete = charges_enabled and payouts_enabled
         if tenant.stripe_onboarding_complete != complete:
             tenant.stripe_onboarding_complete = complete
             await db.commit()
-        return ConnectStatusResponse(configured=_oauth_configured(), is_connected=True, onboarding_complete=complete, charges_enabled=charges_enabled, payouts_enabled=payouts_enabled, account_id=tenant.stripe_account_id, connection_type=tenant.stripe_connection_type or "express_legacy")
+        return ConnectStatusResponse(
+            configured=_connect_configured(),
+            is_connected=True,
+            onboarding_complete=complete,
+            charges_enabled=charges_enabled,
+            payouts_enabled=payouts_enabled,
+            account_id=tenant.stripe_account_id,
+            connection_type=tenant.stripe_connection_type or "express_legacy",
+        )
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Unable to retrieve Stripe account status")
 
 
 @router.post("/disconnect", response_model=DisconnectResponse)
-async def disconnect_stripe_account(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
-    """Remove this garage's Stripe relationship without deleting its Stripe account."""
+async def disconnect_stripe_account(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Unlink the garage locally without deleting its Stripe account."""
     _require_garage_admin(current_user)
     tenant = await _tenant_for(current_user, db)
-    if tenant.stripe_account_id and tenant.stripe_connection_type == "standard_oauth":
-        try:
-            stripe.OAuth.deauthorize(api_key=settings.STRIPE_SECRET_KEY, client_id=settings.STRIPE_CONNECT_CLIENT_ID, stripe_user_id=tenant.stripe_account_id)
-        except stripe.error.StripeError:
-            raise HTTPException(status_code=502, detail="Unable to disconnect Stripe account")
     tenant.stripe_account_id = None
     tenant.stripe_connection_type = None
     tenant.stripe_onboarding_complete = False
@@ -155,12 +198,19 @@ async def disconnect_stripe_account(db: AsyncSession = Depends(get_db), current_
     return DisconnectResponse()
 
 
-@router.post("/dashboard", response_model=OAuthLinkResponse)
-async def create_dashboard_link(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
+@router.post("/dashboard", response_model=ConnectLinkResponse)
+async def create_dashboard_link(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
     _require_garage_admin(current_user)
     tenant = await _tenant_for(current_user, db)
-    if tenant.stripe_connection_type == "standard_oauth":
-        raise HTTPException(status_code=400, detail="Manage this account directly in Stripe Dashboard")
     if not tenant.stripe_account_id:
         raise HTTPException(status_code=400, detail="Stripe account not connected")
-    return OAuthLinkResponse(url=stripe.Account.create_login_link(tenant.stripe_account_id).url)
+    if tenant.stripe_connection_type in (HOSTED_CONNECTION_TYPE, "standard_oauth"):
+        return ConnectLinkResponse(url="https://dashboard.stripe.com/")
+    try:
+        login_link = stripe.Account.create_login_link(tenant.stripe_account_id)
+        return ConnectLinkResponse(url=_stripe_value(login_link, "url"))
+    except stripe.error.StripeError:
+        raise HTTPException(status_code=502, detail="Unable to open Stripe Dashboard")

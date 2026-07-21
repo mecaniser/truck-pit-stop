@@ -26,6 +26,7 @@ from app.core.websocket import broadcast_payment_received, broadcast_repair_orde
 from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.payment_number_service import allocate_next_payment_number
+from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
 
 logger = get_logger(__name__)
 
@@ -342,29 +343,15 @@ async def create_payment_intent_for_invoice(
             detail="Invoice amount is below the minimum charge amount ($0.50)",
         )
     
-    # Get customer for Stripe customer ID
     result = await db.execute(select(Customer).where(Customer.id == current_user.customer_id))
     customer = result.scalar_one_or_none()
-    
-    # Create or get Stripe customer
-    stripe_customer_id = None
+
+    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant or not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This shop has not finished setting up Stripe payments.")
+
     try:
-        if customer:
-            if not customer.stripe_customer_id:
-                stripe_customer = stripe.Customer.create(
-                    email=customer.email,
-                    name=f"{customer.first_name} {customer.last_name}",
-                    metadata={"customer_id": str(customer.id)},
-                )
-                customer.stripe_customer_id = stripe_customer.id
-                await db.commit()
-                logger.info("stripe_customer_created", customer_id=str(customer.id), stripe_customer_id=stripe_customer.id)
-            stripe_customer_id = customer.stripe_customer_id
-        
-        # Get tenant for Stripe Connect routing
-        result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-        tenant = result.scalar_one_or_none()
-        
         # Create PaymentIntent
         amount_cents = int(invoice.total_amount * 100)
         metadata = {
@@ -386,19 +373,10 @@ async def create_payment_intent_for_invoice(
             "automatic_payment_methods": {"enabled": True},
         }
         
-        # Route to connected account if tenant has Stripe Connect set up
-        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-            intent_params["stripe_account"] = tenant.stripe_account_id
-            # Calculate platform fee
-            platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
-            if platform_fee > 0:
-                intent_params["application_fee_amount"] = platform_fee
-            # Product decision: no connected-account customer mapping for now.
-            # In connected-account mode we intentionally omit `customer` and
-            # rely on metadata for dashboard context.
-        elif stripe_customer_id:
-            # Fallback to platform account (no Connect)
-            intent_params["customer"] = stripe_customer_id
+        intent_params["stripe_account"] = tenant.stripe_account_id
+        platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
+        if platform_fee > 0:
+            intent_params["application_fee_amount"] = platform_fee
         
         payment_intent = stripe.PaymentIntent.create(**intent_params)
         
@@ -407,19 +385,15 @@ async def create_payment_intent_for_invoice(
             invoice_id=str(invoice.id),
             payment_intent_id=payment_intent.id,
             amount=float(invoice.total_amount),
-            connected_account=tenant.stripe_account_id if tenant and tenant.stripe_account_id else None,
+            connected_account=tenant.stripe_account_id,
         )
         
         # Return connected account ID if using Stripe Connect
-        connected_account_id = None
-        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-            connected_account_id = tenant.stripe_account_id
-        
         return PaymentIntentResponse(
             client_secret=payment_intent.client_secret,
             payment_intent_id=payment_intent.id,
             amount=invoice.total_amount,
-            stripe_account_id=connected_account_id,
+            stripe_account_id=tenant.stripe_account_id,
         )
     except stripe.error.StripeError as e:
         logger.error(
@@ -503,78 +477,16 @@ async def confirm_payment(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment intent mismatch")
     
-    # Clear pending-Zelle tracking before finalizing payment.
-    invoice.zelle_pending_submitted_at = None
-    invoice.zelle_pending_sender_email = None
-    invoice.zelle_pending_sender_phone = None
-    invoice.zelle_pending_last_reminder_at = None
-    invoice.zelle_pending_reminder_count = 0
-
-    # Update invoice status
-    invoice.status = InvoiceStatus.PAID
-    invoice.paid_at = datetime.now(timezone.utc)
-    
-    # Update repair order status
-    invoice.repair_order.status = RepairOrderStatus.PAID
-    
-    # Create payment record
-    payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
-    payment = Payment(
-        tenant_id=invoice.tenant_id,
-        invoice_id=invoice.id,
-        payment_number=payment_number,
-        amount=invoice.total_amount,
-        method=PaymentMethodEnum.STRIPE,
-        status=PaymentStatus.COMPLETED,
-        stripe_payment_intent_id=body.payment_intent_id,
-        notes=PORTAL_PAYMENT_NOTE,
+    await finalize_stripe_invoice_payment(
+        db=db,
+        invoice=invoice,
+        order=invoice.repair_order,
+        customer=customer,
+        tenant=tenant,
+        vehicle=invoice.repair_order.vehicle,
+        payment_intent=payment_intent,
+        payment_note=PORTAL_PAYMENT_NOTE,
     )
-    db.add(payment)
-    
-    await db.commit()
-    await db.refresh(invoice)
-    await db.refresh(invoice.repair_order)
-    
-    # Broadcast WebSocket updates
-    await broadcast_payment_received(
-        tenant_id=str(invoice.tenant_id),
-        customer_id=str(invoice.repair_order.customer_id),
-        invoice_id=str(invoice.id),
-        order_id=str(invoice.repair_order_id),
-    )
-    await broadcast_repair_order_update(
-        tenant_id=str(invoice.tenant_id),
-        customer_id=str(invoice.repair_order.customer_id),
-        order_id=str(invoice.repair_order_id),
-        order_number=invoice.repair_order.order_number,
-        status=invoice.repair_order.status.value,
-        updated_at=invoice.repair_order.updated_at.isoformat() if invoice.repair_order.updated_at else None,
-    )
-    
-    # Record successful payment metric
-    record_payment(status="success", payment_method="stripe", tenant_id=str(invoice.tenant_id))
-    logger.info(
-        "payment_confirmed",
-        invoice_id=str(invoice.id),
-        payment_intent_id=body.payment_intent_id,
-        amount=float(invoice.total_amount),
-    )
-
-    try:
-        await send_invoice_payment_confirmation_email(
-            db=db,
-            invoice=invoice,
-            order=invoice.repair_order,
-            customer=customer,
-            tenant=tenant,
-            vehicle=invoice.repair_order.vehicle,
-        )
-    except Exception as exc:
-        logger.warning(
-            "invoice_paid_confirmation_email_failed",
-            invoice_id=str(invoice.id),
-            error=str(exc),
-        )
     
     return {
         "status": "success",

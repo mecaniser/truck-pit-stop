@@ -175,7 +175,7 @@ interface ConnectStatus {
   charges_enabled: boolean
   payouts_enabled: boolean
   account_id: string | null
-  connection_type: 'standard_oauth' | 'express_legacy' | null
+  connection_type: 'stripe_hosted' | 'standard_oauth' | 'express_legacy' | null
 }
 
 interface QuickBooksConnectionStatus {
@@ -194,7 +194,7 @@ interface QuickBooksPlatformStatus {
 
 interface StripePlatformStatus {
   platform_ready: boolean
-  callback_url: string
+  onboarding_mode: string
 }
 
 function apiErrorDetail(error: unknown, fallback: string): string {
@@ -1087,16 +1087,17 @@ function PaymentsSection() {
 
   useEffect(() => {
     const result = searchParams.get('stripe')
-    if (result === 'connected') {
-      toast.success('Your Stripe account is connected.')
+    if (result === 'return') {
+      toast.success('Stripe setup saved. We are checking your account status.')
+      refetch()
+      setSearchParams({}, { replace: true })
+    } else if (result === 'refresh') {
+      toast('Your Stripe setup session expired. Continue setup to resume.')
       refetch()
       setSearchParams({}, { replace: true })
     } else if (result) {
       const messages: Record<string, string> = {
-        'not-connected': 'Stripe connection was cancelled.',
-        'account-in-use': 'That Stripe account is already connected to another shop.',
-        'legacy-account': 'Disconnect the legacy Express account before connecting your own Stripe account.',
-        error: 'Stripe could not complete the connection. Please try again.',
+        error: 'Stripe could not complete setup. Please try again.',
       }
       toast.error(messages[result] || 'Stripe could not complete the connection.')
       setSearchParams({}, { replace: true })
@@ -1135,15 +1136,13 @@ function PaymentsSection() {
   }
 
   const getStatusConfig = () => {
-    if (!status?.configured) {
-      return { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling Stripe account connections.' }
-    }
     if (!status?.is_connected) {
-      return { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect your existing Stripe account to receive payments.' }
+      if (!status?.configured) {
+        return { led: 'warning' as const, title: 'PLATFORM SETUP REQUIRED', desc: 'DieselBridge must finish its Stripe platform configuration before this shop can connect.' }
+      }
+      return { led: 'inactive' as const, title: 'NOT SET UP', desc: 'Set up your Stripe merchant account to receive invoice payments.' }
     }
-    if (status.connection_type === 'express_legacy') {
-      return { led: 'warning' as const, title: 'LEGACY CONNECTION', desc: 'This is a DieselBridge-created Express account, not your independent Stripe account.' }
-    }
+    if (status.connection_type === 'express_legacy') return { led: 'warning' as const, title: 'LEGACY CONNECTION', desc: 'This account still uses the previous Stripe Express setup.' }
     if (!status.onboarding_complete) {
       return { led: 'warning' as const, title: 'SETUP INCOMPLETE', desc: 'Please finish the Stripe onboarding process.' }
     }
@@ -1187,9 +1186,7 @@ function PaymentsSection() {
         )}
 
         <div className="pt-4 border-t border-zinc-800/50">
-          {!status?.configured ? (
-            <p className="text-sm text-amber-300">DieselBridge will let you know when Stripe account connections are ready.</p>
-          ) : !status?.is_connected ? (
+          {!status?.is_connected && status?.configured ? (
             <button
               onClick={() => connectMutation.mutate()}
               disabled={connectMutation.isPending || isRedirecting}
@@ -1203,11 +1200,19 @@ function PaymentsSection() {
               ) : (
                 <span className="flex items-center gap-2">
                   <CreditCard className="w-4 h-4" />
-                  Connect My Stripe Account
+                  Set Up Stripe Payments
                 </span>
               )}
             </button>
-          ) : status.connection_type === 'standard_oauth' ? (
+          ) : !status?.is_connected ? (
+            <p className="text-sm text-amber-300">The Stripe platform keys must be configured before this shop can begin setup.</p>
+          ) : !status.configured && !status.onboarding_complete ? (
+            <p className="text-sm text-amber-300">This account is connected, but DieselBridge platform configuration must be restored before onboarding can continue.</p>
+          ) : !status.onboarding_complete && status.connection_type !== 'express_legacy' ? (
+            <button onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending || isRedirecting} className={industrialStyles.btnPrimary}>
+              {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Continue Stripe Setup'}
+            </button>
+          ) : status.connection_type !== 'express_legacy' ? (
             <>
               <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className={industrialStyles.btnSecondary}>
                 <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Manage in Stripe Dashboard</span>
@@ -1310,7 +1315,7 @@ function PlatformIntegrationsSection() {
       <IndustrialCard className="p-6 sm:p-8">
         <div className={industrialStyles.sectionHeader}>
           <CreditCard className="w-4 h-4 text-gold-400" />
-          <span>Stripe Standard Accounts</span>
+          <span>Stripe Connect</span>
         </div>
 
         {isStripeLoading ? (
@@ -1320,18 +1325,18 @@ function PlatformIntegrationsSection() {
         ) : stripe.platform_ready ? (
           <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/15 p-4 text-sm text-emerald-100/85">
             <div className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="w-4 h-4" /> Tenant connections enabled</div>
-            <p className="mt-2">Garages can connect their independently owned Stripe accounts from Payments &amp; Accounting. DieselBridge does not create Stripe accounts for them.</p>
+            <p className="mt-2">Garages can create or resume their connected merchant account from Payments &amp; Accounting. Stripe hosts onboarding and provides each garage with its own full Stripe Dashboard.</p>
           </div>
         ) : (
           <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
             <h5 className="text-sm font-semibold text-amber-200">DieselBridge administrator checklist</h5>
             <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
-              <li><span className="mr-2 font-semibold text-gold-400">1.</span>Create the DieselBridge Connect application in Stripe.</li>
-              <li className="break-words"><span className="mr-2 font-semibold text-gold-400">2.</span>Register this callback URL: <code className="text-amber-200">{stripe.callback_url}</code></li>
-              <li><span className="mr-2 font-semibold text-gold-400">3.</span>Store the Stripe secret key and Connect client ID in managed backend secrets, then redeploy.</li>
+              <li><span className="mr-2 font-semibold text-gold-400">1.</span>Activate Connect and configure your platform branding and onboarding options in Stripe.</li>
+              <li><span className="mr-2 font-semibold text-gold-400">2.</span>Store the Stripe secret and publishable keys in managed backend secrets, then redeploy.</li>
+              <li><span className="mr-2 font-semibold text-gold-400">3.</span>Create Connect and platform webhook destinations and store their signing secrets.</li>
             </ol>
-            <a href="https://docs.stripe.com/connect/oauth-standard-accounts" target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gold-400 hover:text-gold-300">
-              Open Stripe Standard OAuth guide <ExternalLink className="w-4 h-4" />
+            <a href="https://docs.stripe.com/connect/hosted-onboarding" target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gold-400 hover:text-gold-300">
+              Open Stripe-hosted onboarding guide <ExternalLink className="w-4 h-4" />
             </a>
           </div>
         )}
