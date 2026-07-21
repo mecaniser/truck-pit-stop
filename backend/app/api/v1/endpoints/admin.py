@@ -76,10 +76,10 @@ class QuickBooksPlatformStatusResponse(BaseModel):
 
 
 class StripePlatformStatusResponse(BaseModel):
-    """Read-only Stripe Standard OAuth readiness for DieselBridge admins."""
+    """Read-only Stripe-hosted Connect readiness for DieselBridge admins."""
 
     platform_ready: bool
-    callback_url: str
+    onboarding_mode: str
 
 
 def require_super_admin():
@@ -113,17 +113,10 @@ async def get_quickbooks_platform_status(
 async def get_stripe_platform_status(
     current_user: User = Depends(require_super_admin()),
 ):
-    """Show whether garages can connect independently owned Stripe accounts."""
-    callback_url = settings.STRIPE_CONNECT_REDIRECT_URI or (
-        f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/stripe/connect/oauth/callback"
-    )
+    """Show whether garages can start Stripe-hosted onboarding."""
     return StripePlatformStatusResponse(
-        platform_ready=bool(
-            settings.STRIPE_SECRET_KEY
-            and settings.STRIPE_CONNECT_CLIENT_ID
-            and settings.STRIPE_CONNECT_REDIRECT_URI
-        ),
-        callback_url=callback_url,
+        platform_ready=bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_PUBLISHABLE_KEY),
+        onboarding_mode="stripe_hosted",
     )
 
 

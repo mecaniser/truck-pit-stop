@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.dependencies import get_db
 from app.core.logging import get_logger
 from app.core.vehicle_display import vehicle_display_label
-from app.core.metrics import record_payment, record_payment_error
+from app.core.metrics import record_payment_error
 from app.core.rate_limit import limiter
 from app.core.redis import (
     get_consumed_invoice_access_payload,
@@ -29,12 +29,11 @@ from app.core.redis import (
 )
 from app.core.security import create_access_token, create_refresh_token, get_password_hash
 from app.core.phone import normalize_phone
-from app.core.websocket import broadcast_payment_received, broadcast_repair_order_update
+from app.core.websocket import broadcast_repair_order_update
 from app.core.password_policy import validate_password
 from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.payment import Payment, PaymentMethod as PaymentMethodEnum, PaymentStatus
-from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.repair_order import RepairOrder
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
@@ -43,10 +42,9 @@ from app.services.invoice_access_service import (
     PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS,
     generate_portal_enrollment_token,
 )
-from app.services.invoice_notification_service import send_invoice_payment_confirmation_email
 from app.services.pricing import get_order_checkout_breakdown
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
-from app.services.payment_number_service import allocate_next_payment_number
+from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -468,22 +466,12 @@ async def create_guest_payment_intent(
             detail="Invoice amount is below the minimum charge amount ($0.50).",
         )
 
-    stripe_customer_id = None
+    result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
+    tenant = result.scalar_one_or_none()
+    if not tenant or not tenant.stripe_account_id or not tenant.stripe_onboarding_complete:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This shop has not finished setting up Stripe payments.")
+
     try:
-        if not customer.stripe_customer_id:
-            stripe_customer = stripe.Customer.create(
-                email=customer.email,
-                name=f"{customer.first_name} {customer.last_name}",
-                metadata={"customer_id": str(customer.id)},
-            )
-            customer.stripe_customer_id = stripe_customer.id
-            await db.commit()
-            logger.info("stripe_customer_created", customer_id=str(customer.id), stripe_customer_id=stripe_customer.id)
-        stripe_customer_id = customer.stripe_customer_id
-
-        result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
-        tenant = result.scalar_one_or_none()
-
         amount_cents = int(invoice.total_amount * 100)
         metadata = {
             "invoice_id": str(invoice.id),
@@ -503,16 +491,10 @@ async def create_guest_payment_intent(
             "automatic_payment_methods": {"enabled": True},
         }
 
-        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-            intent_params["stripe_account"] = tenant.stripe_account_id
-            platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
-            if platform_fee > 0:
-                intent_params["application_fee_amount"] = platform_fee
-            # Product decision: no connected-account customer mapping for now.
-            # In connected-account mode we intentionally omit `customer` and
-            # rely on metadata for dashboard context.
-        elif stripe_customer_id:
-            intent_params["customer"] = stripe_customer_id
+        intent_params["stripe_account"] = tenant.stripe_account_id
+        platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
+        if platform_fee > 0:
+            intent_params["application_fee_amount"] = platform_fee
 
         payment_intent = stripe.PaymentIntent.create(**intent_params)
 
@@ -520,18 +502,14 @@ async def create_guest_payment_intent(
             "guest_payment_intent_created",
             invoice_id=str(invoice.id),
             payment_intent_id=payment_intent.id,
-            connected_account=tenant.stripe_account_id if tenant and tenant.stripe_account_id else None,
+            connected_account=tenant.stripe_account_id,
         )
-
-        connected_account_id = None
-        if tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete:
-            connected_account_id = tenant.stripe_account_id
 
         return GuestPaymentIntentResponse(
             client_secret=payment_intent.client_secret,
             payment_intent_id=payment_intent.id,
             amount=invoice.total_amount,
-            stripe_account_id=connected_account_id,
+            stripe_account_id=tenant.stripe_account_id,
         )
     except stripe.error.StripeError as e:
         logger.error(
@@ -555,48 +533,6 @@ async def confirm_guest_payment(
     invoice, order, customer, vehicle = await _load_invoice_context(db, payload["invoice_id"])
 
     _validate_invoice_link_subject(payload, invoice, order)
-
-    existing_payment_result = await db.execute(
-        select(Payment).where(
-            Payment.invoice_id == invoice.id,
-            Payment.stripe_payment_intent_id == body.payment_intent_id,
-        )
-    )
-    existing_payment = existing_payment_result.scalar_one_or_none()
-    if existing_payment:
-        # Keep behavior idempotent for retries: consume if still active, then
-        # issue a fresh short-lived portal enrollment token.
-        await consume_invoice_access_token(body.token)
-        portal_enrollment_token = None
-        portal_enrollment_expires_in = None
-        try:
-            portal_enrollment_token = await generate_portal_enrollment_token(
-                invoice=invoice,
-                order=order,
-                customer=customer,
-            )
-            portal_enrollment_expires_in = PORTAL_ENROLLMENT_TOKEN_TTL_SECONDS
-        except Exception as e:
-            logger.error(
-                "portal_enrollment_token_generation_failed_after_guest_payment_retry",
-                invoice_id=str(invoice.id),
-                error=str(e),
-            )
-        return ConfirmGuestPaymentResponse(
-            status="success",
-            message="Payment already confirmed",
-            invoice_id=str(invoice.id),
-            paid_at=invoice.paid_at,
-            portal_enrollment_token=portal_enrollment_token,
-            portal_enrollment_expires_in=portal_enrollment_expires_in,
-            payment_note=existing_payment.notes or GUEST_INVOICE_PAYMENT_NOTE,
-        )
-
-    if invoice.status == InvoiceStatus.PAID:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invoice already paid.",
-        )
 
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
@@ -622,31 +558,16 @@ async def confirm_guest_payment(
     if payment_intent.metadata.get("invoice_id") != str(invoice.id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment intent mismatch.")
 
-    invoice.zelle_pending_submitted_at = None
-    invoice.zelle_pending_sender_email = None
-    invoice.zelle_pending_sender_phone = None
-    invoice.zelle_pending_last_reminder_at = None
-    invoice.zelle_pending_reminder_count = 0
-    invoice.status = InvoiceStatus.PAID
-    invoice.paid_at = datetime.now(timezone.utc)
-    order.status = RepairOrderStatus.PAID
-
-    payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
-    payment = Payment(
-        tenant_id=invoice.tenant_id,
-        invoice_id=invoice.id,
-        payment_number=payment_number,
-        amount=invoice.total_amount,
-        method=PaymentMethodEnum.STRIPE,
-        status=PaymentStatus.COMPLETED,
-        stripe_payment_intent_id=body.payment_intent_id,
-        notes=GUEST_INVOICE_PAYMENT_NOTE,
+    finalization = await finalize_stripe_invoice_payment(
+        db=db,
+        invoice=invoice,
+        order=order,
+        customer=customer,
+        tenant=tenant,
+        vehicle=vehicle,
+        payment_intent=payment_intent,
+        payment_note=GUEST_INVOICE_PAYMENT_NOTE,
     )
-    db.add(payment)
-
-    await db.commit()
-    await db.refresh(invoice)
-    await db.refresh(order)
 
     portal_enrollment_token = None
     portal_enrollment_expires_in = None
@@ -671,47 +592,14 @@ async def confirm_guest_payment(
             error=str(e),
         )
 
-    await broadcast_payment_received(
-        tenant_id=str(invoice.tenant_id),
-        customer_id=str(order.customer_id),
-        invoice_id=str(invoice.id),
-        order_id=str(order.id),
-    )
-    await broadcast_repair_order_update(
-        tenant_id=str(invoice.tenant_id),
-        customer_id=str(order.customer_id),
-        order_id=str(order.id),
-        order_number=order.order_number,
-        status=order.status.value,
-        updated_at=order.updated_at.isoformat() if order.updated_at else None,
-    )
-
-    record_payment(status="success", payment_method="stripe", tenant_id=str(invoice.tenant_id))
-
-    try:
-        await send_invoice_payment_confirmation_email(
-            db=db,
-            invoice=invoice,
-            order=order,
-            customer=customer,
-            tenant=tenant,
-            vehicle=vehicle,
-        )
-    except Exception as exc:
-        logger.warning(
-            "invoice_paid_confirmation_email_failed",
-            invoice_id=str(invoice.id),
-            error=str(exc),
-        )
-
     return ConfirmGuestPaymentResponse(
         status="success",
-        message="Payment confirmed",
+        message="Payment confirmed" if finalization.created else "Payment already confirmed",
         invoice_id=str(invoice.id),
         paid_at=invoice.paid_at,
         portal_enrollment_token=portal_enrollment_token,
         portal_enrollment_expires_in=portal_enrollment_expires_in,
-        payment_note=GUEST_INVOICE_PAYMENT_NOTE,
+        payment_note=finalization.payment.notes or GUEST_INVOICE_PAYMENT_NOTE,
     )
 
 

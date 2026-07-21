@@ -57,3 +57,4 @@ e2e/test-results/
 
 # Finder-duplicated / working design handoff copies (the " 2" suffix)
 docs/design_handoff_analytics 2/
+truckpitstop.dump
