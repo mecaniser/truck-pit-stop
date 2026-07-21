@@ -60,6 +60,7 @@ export interface TenantBranding {
   name: string | null
   slug: string | null
   logo_url: string | null
+  state: string | null
 }
 
 export interface Customer {

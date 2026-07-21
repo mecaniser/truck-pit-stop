@@ -25,6 +25,7 @@ from app.core.config import settings
 from app.core.rate_limit import limiter
 from app.core.metrics import record_login, record_logout
 from app.core.phone import normalize_phone
+from app.services.tenant_branding import extract_us_state
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
 from app.db.models.customer import Customer
@@ -668,6 +669,7 @@ async def get_current_tenant_branding(
         name=tenant.name,
         slug=tenant.slug,
         logo_url=tenant.logo_url,
+        state=extract_us_state(tenant.address),
     )
 
 

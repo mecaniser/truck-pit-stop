@@ -68,3 +68,31 @@ async def test_super_admin_can_view_controls_and_set_forward_only_fee(client, db
 
     await db_session.refresh(tenant)
     assert tenant.stripe_platform_fee_percent == Decimal("2.250")
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_reset_a_stale_stripe_connection(client, db_session):
+    tenant = Tenant(
+        name="Stale Stripe Garage",
+        slug="stale-stripe-garage",
+        stripe_account_id="acct_no_longer_available",
+        stripe_connection_type="stripe_hosted",
+        stripe_onboarding_complete=True,
+        stripe_last_webhook_event="account.updated",
+    )
+    db_session.add(tenant)
+    await db_session.commit()
+    token = await _super_admin_token(db_session)
+
+    response = await client.post(
+        f"/api/v1/admin/payments-control/tenants/{tenant.id}/reset-stripe-connection",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_started"
+    await db_session.refresh(tenant)
+    assert tenant.stripe_account_id is None
+    assert tenant.stripe_connection_type is None
+    assert tenant.stripe_onboarding_complete is False
+    assert tenant.stripe_last_webhook_event is None

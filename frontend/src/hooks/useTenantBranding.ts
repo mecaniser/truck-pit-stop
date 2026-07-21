@@ -25,6 +25,7 @@ export default function useTenantBranding() {
           name: user?.tenant_name ?? null,
           slug: user?.tenant_slug ?? null,
           logo_url: user?.tenant_logo_url ?? null,
+          state: null,
         }
       : undefined,
     staleTime: 60_000,
