@@ -84,6 +84,7 @@ class Settings(BaseSettings):
     QUICKBOOKS_CLIENT_SECRET: str = ""
     QUICKBOOKS_REDIRECT_URI: str = ""
     QUICKBOOKS_TOKEN_ENCRYPTION_KEY: str = ""
+    QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN: str = ""
     QUICKBOOKS_HTTP_TIMEOUT_SECONDS: float = Field(default=15.0, gt=0, le=60)
     QUICKBOOKS_OAUTH_STATE_TTL_SECONDS: int = Field(default=600, ge=60, le=1800)
     

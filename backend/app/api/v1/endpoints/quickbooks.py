@@ -6,11 +6,15 @@ accept card data and do not yet create QuickBooks invoices or charges.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import base64
+import hashlib
+import hmac
+import json
 from hashlib import sha256
 from secrets import token_urlsafe
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -30,6 +34,7 @@ from app.services.quickbooks_service import (
     ensure_quickbooks_configured,
     exchange_authorization_code,
     is_quickbooks_configured,
+    refresh_access_token,
     save_token_set,
 )
 
@@ -48,6 +53,12 @@ class QuickBooksConnectionStatusResponse(BaseModel):
     realm_id: Optional[str] = None
     scopes: list[str] = Field(default_factory=list)
     connected_at: Optional[datetime] = None
+    token_health: str = "not_connected"
+    last_token_refresh_at: Optional[datetime] = None
+    last_token_refresh_error: Optional[str] = None
+    last_webhook_at: Optional[datetime] = None
+    last_webhook_event: Optional[str] = None
+    last_webhook_error: Optional[str] = None
 
 
 def _require_quickbooks_admin(current_user: User) -> None:
@@ -82,13 +93,20 @@ async def _get_connection(db: AsyncSession, tenant_id) -> Optional[QuickBooksCon
     return result.scalar_one_or_none()
 
 
-@router.get("/status", response_model=QuickBooksConnectionStatusResponse)
-async def quickbooks_status(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    _require_quickbooks_admin(current_user)
-    connection = await _get_connection(db, current_user.tenant_id)
+def _connection_token_health(connection: Optional[QuickBooksConnection]) -> str:
+    if not connection or connection.status != "connected" or not connection.realm_id:
+        return "not_connected"
+    if not connection.encrypted_access_token or not connection.encrypted_refresh_token:
+        return "reconnect_required"
+    now = datetime.now(timezone.utc)
+    if connection.refresh_token_expires_at and connection.refresh_token_expires_at <= now:
+        return "reconnect_required"
+    if connection.access_token_expires_at and connection.access_token_expires_at <= now + timedelta(minutes=5):
+        return "refresh_required"
+    return "healthy"
+
+
+def _status_response(connection: Optional[QuickBooksConnection]) -> QuickBooksConnectionStatusResponse:
     is_connected = bool(connection and connection.status == "connected" and connection.realm_id)
     return QuickBooksConnectionStatusResponse(
         configured=is_quickbooks_configured(),
@@ -96,7 +114,45 @@ async def quickbooks_status(
         realm_id=connection.realm_id if is_connected else None,
         scopes=connection.scopes.split() if is_connected and connection.scopes else [],
         connected_at=connection.connected_at if is_connected else None,
+        token_health=_connection_token_health(connection),
+        last_token_refresh_at=connection.last_token_refresh_at if connection else None,
+        last_token_refresh_error=connection.last_token_refresh_error if connection else None,
+        last_webhook_at=connection.last_webhook_at if connection else None,
+        last_webhook_event=connection.last_webhook_event if connection else None,
+        last_webhook_error=connection.last_webhook_error if connection else None,
     )
+
+
+@router.get("/status", response_model=QuickBooksConnectionStatusResponse)
+async def quickbooks_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    _require_quickbooks_admin(current_user)
+    connection = await _get_connection(db, current_user.tenant_id)
+    return _status_response(connection)
+
+
+@router.post("/health/check", response_model=QuickBooksConnectionStatusResponse)
+async def check_quickbooks_connection_health(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Refresh an expiring tenant token and return secret-free connection health."""
+    _require_quickbooks_admin(current_user)
+    connection = await _get_connection(db, current_user.tenant_id)
+    if not connection:
+        return _status_response(None)
+    if _connection_token_health(connection) == "refresh_required":
+        try:
+            token_set = await refresh_access_token(connection)
+            save_token_set(connection, realm_id=connection.realm_id or "", token_set=token_set)
+            connection.last_token_refresh_at = datetime.now(timezone.utc)
+            connection.last_token_refresh_error = None
+        except (QuickBooksConfigurationError, QuickBooksOAuthError) as exc:
+            connection.last_token_refresh_error = str(exc)
+        await db.commit()
+    return _status_response(connection)
 
 
 @router.post("/connect", response_model=QuickBooksAuthorizationResponse)
@@ -212,4 +268,42 @@ async def disconnect_quickbooks(
         disconnect(connection)
         await db.commit()
         logger.info("quickbooks_connection_disconnected", tenant_id=str(current_user.tenant_id))
-    return QuickBooksConnectionStatusResponse(configured=is_quickbooks_configured(), is_connected=False)
+    return _status_response(connection)
+
+
+@router.post("/webhook", include_in_schema=False)
+async def quickbooks_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Verify Intuit webhook signatures and retain only delivery health metadata."""
+    verifier = settings.QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN.strip()
+    if not verifier:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="QuickBooks webhooks are not configured")
+    payload = await request.body()
+    supplied_signature = request.headers.get("intuit-signature", "")
+    expected_signature = base64.b64encode(
+        hmac.new(verifier.encode("utf-8"), payload, hashlib.sha256).digest()
+    ).decode("ascii")
+    if not supplied_signature or not hmac.compare_digest(expected_signature, supplied_signature):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Intuit signature")
+    try:
+        events = json.loads(payload)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid QuickBooks webhook payload")
+    if not isinstance(events, list):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid QuickBooks webhook payload")
+
+    now = datetime.now(timezone.utc)
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        realm_id = str(event.get("intuitaccountid") or "")
+        if not realm_id:
+            continue
+        connection = (await db.execute(
+            select(QuickBooksConnection).where(QuickBooksConnection.realm_id == realm_id)
+        )).scalar_one_or_none()
+        if connection:
+            connection.last_webhook_at = now
+            connection.last_webhook_event = str(event.get("type") or "unknown")[:160]
+            connection.last_webhook_error = None
+    await db.commit()
+    return {"status": "success"}

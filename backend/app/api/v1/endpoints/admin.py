@@ -72,6 +72,8 @@ class QuickBooksPlatformStatusResponse(BaseModel):
 
     platform_ready: bool
     callback_url: str
+    webhook_ready: bool
+    webhook_url: str
     scopes: List[str]
 
 
@@ -102,9 +104,12 @@ async def get_quickbooks_platform_status(
     callback_url = settings.QUICKBOOKS_REDIRECT_URI or (
         f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/quickbooks/oauth/callback"
     )
+    webhook_url = f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/quickbooks/webhook"
     return QuickBooksPlatformStatusResponse(
         platform_ready=is_quickbooks_configured(),
         callback_url=callback_url,
+        webhook_ready=bool(settings.QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN),
+        webhook_url=webhook_url,
         scopes=[QUICKBOOKS_ACCOUNTING_SCOPE, QUICKBOOKS_PAYMENTS_SCOPE],
     )
 

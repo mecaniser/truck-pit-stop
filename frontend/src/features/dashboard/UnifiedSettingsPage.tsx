@@ -184,11 +184,19 @@ interface QuickBooksConnectionStatus {
   realm_id: string | null
   scopes: string[]
   connected_at: string | null
+  token_health: 'healthy' | 'refresh_required' | 'reconnect_required' | 'not_connected'
+  last_token_refresh_at: string | null
+  last_token_refresh_error: string | null
+  last_webhook_at: string | null
+  last_webhook_event: string | null
+  last_webhook_error: string | null
 }
 
 interface QuickBooksPlatformStatus {
   platform_ready: boolean
   callback_url: string
+  webhook_ready: boolean
+  webhook_url: string
   scopes: string[]
 }
 
@@ -1398,7 +1406,8 @@ function PlatformIntegrationsSection() {
                 <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
                   <li><span className="mr-2 font-semibold text-gold-400">1.</span>Create a DieselBridge Intuit Developer app with QuickBooks Online Accounting and Payments enabled.</li>
                   <li className="break-words"><span className="mr-2 font-semibold text-gold-400">2.</span>Register this production callback URL: <code className="text-amber-200">{quickBooks.callback_url}</code></li>
-                  <li><span className="mr-2 font-semibold text-gold-400">3.</span>Store the Intuit client ID, client secret, and a dedicated token-encryption key in managed backend secrets, then redeploy.</li>
+                  <li className="break-words"><span className="mr-2 font-semibold text-gold-400">3.</span>Register this Intuit webhook URL: <code className="text-amber-200">{quickBooks.webhook_url}</code></li>
+                  <li><span className="mr-2 font-semibold text-gold-400">4.</span>Store the Intuit client ID, client secret, webhook verifier token, and a dedicated token-encryption key in managed backend secrets, then redeploy.</li>
                 </ol>
                 <a
                   href="https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/oauth-2.0"
@@ -1496,6 +1505,16 @@ function QuickBooksIntegrationCard() {
     },
   })
 
+  const healthMutation = useMutation({
+    mutationFn: async () => (await api.post('/quickbooks/health/check')).data as QuickBooksConnectionStatus,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['quickbooks-status'], data)
+      if (data.token_health === 'healthy') toast.success('QuickBooks connection is healthy')
+      else toast.error('QuickBooks needs attention before it can sync or take payments')
+    },
+    onError: (error: unknown) => toast.error(apiErrorDetail(error, 'Unable to check QuickBooks connection')),
+  })
+
   const statusConfig = !status?.configured
     ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
     : status.is_connected
@@ -1551,6 +1570,26 @@ function QuickBooksIntegrationCard() {
             </div>
           )}
 
+          {status?.is_connected && (
+            <div className={`mb-6 rounded-xl border p-4 text-sm ${
+              status.token_health === 'healthy'
+                ? 'border-emerald-700/35 bg-emerald-950/15 text-emerald-100/85'
+                : 'border-amber-700/40 bg-amber-950/20 text-amber-100/85'
+            }`}>
+              <p className="font-medium">
+                {status.token_health === 'healthy' ? 'Connection health: ready' : 'Connection health: attention needed'}
+              </p>
+              <p className="mt-1 text-zinc-300">
+                {status.token_health === 'healthy'
+                  ? 'Authorization tokens are current. Accounting sync and QuickBooks Payments activation will be enabled after the sandbox payment flow is validated.'
+                  : status.last_token_refresh_error || 'Check the connection to refresh Intuit authorization before enabling sync or payments.'}
+              </p>
+              {status.last_webhook_at && (
+                <p className="mt-2 text-xs text-zinc-400">Last Intuit event: {status.last_webhook_event || 'received'} at {new Date(status.last_webhook_at).toLocaleString()}</p>
+              )}
+            </div>
+          )}
+
           <div className="pt-4 border-t border-zinc-800/50 flex flex-wrap items-center gap-3">
             {!status?.configured ? (
               <p className="text-sm text-amber-300">DieselBridge will let you know when QuickBooks is ready to connect.</p>
@@ -1558,8 +1597,15 @@ function QuickBooksIntegrationCard() {
               <>
                 <IndustrialBadge variant="success">
                   <StatusLED status="active" />
-                  Accounting + Payments Authorized — Sync Not Active
+                  Accounting + Payments Authorized
                 </IndustrialBadge>
+                <button
+                  onClick={() => healthMutation.mutate()}
+                  disabled={healthMutation.isPending}
+                  className={industrialStyles.btnSecondary}
+                >
+                  {healthMutation.isPending ? 'Checking...' : 'Check Connection'}
+                </button>
                 <button
                   onClick={() => {
                     if (window.confirm('Disconnect QuickBooks? This removes local authorization tokens and stops future sync.')) {

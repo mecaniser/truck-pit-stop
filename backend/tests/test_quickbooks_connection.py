@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import base64
+import hashlib
+import hmac
+import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -143,6 +147,13 @@ async def test_quickbooks_connection_status_is_tenant_scoped_and_disconnect_forg
     assert other_status.json()["is_connected"] is False
     assert other_status.json()["realm_id"] is None
 
+    healthy_status = await client.get(
+        "/api/v1/quickbooks/status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert healthy_status.status_code == 200
+    assert healthy_status.json()["token_health"] == "healthy"
+
     disconnect_response = await client.post(
         "/api/v1/quickbooks/disconnect",
         headers={"Authorization": f"Bearer {token}"},
@@ -155,6 +166,45 @@ async def test_quickbooks_connection_status_is_tenant_scoped_and_disconnect_forg
     assert connection.realm_id is None
     assert connection.encrypted_access_token is None
     assert connection.encrypted_refresh_token is None
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_webhook_verifies_signature_and_records_tenant_health(client, db_session, monkeypatch):
+    _configure_quickbooks(monkeypatch)
+    verifier = "quickbooks-webhook-verifier"
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN", verifier)
+    tenant, _user, _token = await _owner_with_token(db_session, suffix="webhook")
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="913035829570099",
+        scopes="com.intuit.quickbooks.accounting com.intuit.quickbooks.payment",
+        status="connected",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+
+    payload = json.dumps([{
+        "id": "event-1",
+        "type": "qbo.invoice.updated.v1",
+        "intuitaccountid": "913035829570099",
+    }]).encode()
+    signature = base64.b64encode(hmac.new(verifier.encode(), payload, hashlib.sha256).digest()).decode()
+    response = await client.post(
+        "/api/v1/quickbooks/webhook",
+        content=payload,
+        headers={"intuit-signature": signature, "content-type": "application/json"},
+    )
+    assert response.status_code == 200
+    await db_session.refresh(connection)
+    assert connection.last_webhook_event == "qbo.invoice.updated.v1"
+    assert connection.last_webhook_at is not None
+
+    invalid = await client.post(
+        "/api/v1/quickbooks/webhook",
+        content=payload,
+        headers={"intuit-signature": "not-valid", "content-type": "application/json"},
+    )
+    assert invalid.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -187,6 +237,8 @@ async def test_quickbooks_platform_readiness_is_super_admin_only_and_secret_free
     assert response.json() == {
         "platform_ready": True,
         "callback_url": "https://app.example.com/api/v1/quickbooks/oauth/callback",
+        "webhook_ready": False,
+        "webhook_url": "http://localhost:8000/api/v1/quickbooks/webhook",
         "scopes": [
             "com.intuit.quickbooks.accounting",
             "com.intuit.quickbooks.payment",

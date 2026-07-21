@@ -32,6 +32,11 @@ class QuickBooksConnection(BaseModel):
     refresh_token_expires_at = Column(DateTime(timezone=True), nullable=True)
     connected_at = Column(DateTime(timezone=True), nullable=True)
     disconnected_at = Column(DateTime(timezone=True), nullable=True)
+    last_token_refresh_at = Column(DateTime(timezone=True), nullable=True)
+    last_token_refresh_error = Column(Text, nullable=True)
+    last_webhook_at = Column(DateTime(timezone=True), nullable=True)
+    last_webhook_event = Column(String(160), nullable=True)
+    last_webhook_error = Column(Text, nullable=True)
 
 
 class QuickBooksOAuthState(BaseModel):
