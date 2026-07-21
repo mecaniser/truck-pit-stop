@@ -90,3 +90,24 @@ async def test_hosted_onboarding_requires_platform_keys(client, db_session, monk
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_hosted_onboarding_reports_unactivated_platform(client, db_session, monkeypatch):
+    _configure(monkeypatch)
+    _tenant, token = await _owner(db_session)
+
+    def create_account(**_params):
+        raise stripe_connect.stripe.error.InvalidRequestError(
+            "Your account must be activated in order to create accounts.",
+            None,
+        )
+
+    monkeypatch.setattr(stripe_connect.stripe.Account, "create", create_account)
+    response = await client.post(
+        "/api/v1/stripe/connect/connect",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 409
+    assert "platform activation" in response.json()["detail"]

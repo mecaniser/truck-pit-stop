@@ -122,6 +122,17 @@ async def start_hosted_onboarding(
         link_url = _stripe_value(account_link, "url")
         if not link_url:
             raise ValueError("Stripe did not return an onboarding URL")
+    except stripe.error.InvalidRequestError as exc:
+        # Stripe rejects Connect account creation until the platform's own live
+        # account has completed activation. That is a platform action, not a
+        # tenant onboarding failure, so make it clear to the garage.
+        if "must be activated in order to create accounts" in str(exc).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="DieselBridge must complete its Stripe platform activation before shops can connect. Please contact a platform administrator.",
+            )
+        logger.exception("stripe_hosted_onboarding_failed", tenant_id=str(tenant.id), error=str(exc))
+        raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")
     except stripe.error.StripeError as exc:
         logger.exception("stripe_hosted_onboarding_failed", tenant_id=str(tenant.id), error=str(exc))
         raise HTTPException(status_code=502, detail="Unable to start Stripe onboarding")

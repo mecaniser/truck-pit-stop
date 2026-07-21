@@ -28,6 +28,10 @@ export default function useTenantBranding() {
           state: null,
         }
       : undefined,
+    // initialData above is a guess (no `state`, since the auth store doesn't
+    // carry it) — mark it as already stale so the real fetch still runs on
+    // every mount instead of sitting on the guessed value for staleTime.
+    initialDataUpdatedAt: 0,
     staleTime: 60_000,
   })
 }
