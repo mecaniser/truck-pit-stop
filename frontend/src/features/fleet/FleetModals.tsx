@@ -11,6 +11,7 @@ import BaseSelect from '@/components/BaseSelect'
 import QuantityStepper from '@/components/QuantityStepper'
 import DurationStepper from '@/components/DurationStepper'
 import SuggestingTextarea from '@/components/SuggestingTextarea'
+import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
@@ -1063,7 +1064,18 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
           ))}
         </div>
       </div>
-      <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="I-85 mile 42, Charlotte NC" /></Field>
+      <Field label="Location">
+        <MapboxAddressInput
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          autoComplete="street-address"
+          placeholder="I-85 mile 42, Charlotte NC"
+          options={{ language: 'en', country: 'US' }}
+          onAddressSelect={({ formatted }) => {
+            if (formatted) setLocation(formatted)
+          }}
+        />
+      </Field>
       <div style={{ marginTop: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened? <span style={{ color: 'var(--red)' }}>*</span></span>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
@@ -1161,7 +1173,18 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
           ))}
         </div>
       </div>
-      <Field label="Location"><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="I-85 mile 42, Charlotte NC" /></Field>
+      <Field label="Location">
+        <MapboxAddressInput
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          autoComplete="street-address"
+          placeholder="I-85 mile 42, Charlotte NC"
+          options={{ language: 'en', country: 'US' }}
+          onAddressSelect={({ formatted }) => {
+            if (formatted) setLocation(formatted)
+          }}
+        />
+      </Field>
       <div style={{ marginTop: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>What happened? <span style={{ color: 'var(--red)' }}>*</span></span>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
