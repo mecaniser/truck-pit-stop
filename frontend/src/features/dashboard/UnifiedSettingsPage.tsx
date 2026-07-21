@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
+  ChevronRight, ChevronDown, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -300,6 +300,43 @@ function IndustrialBadge({ children, variant = 'default' }: { children: React.Re
     <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border whitespace-nowrap ${variants[variant]}`}>
       {children}
     </span>
+  )
+}
+
+function PaymentIntegrationPanel({
+  icon,
+  title,
+  summary,
+  open,
+  onOpenChange,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  summary: string
+  open: boolean
+  onOpenChange: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <IndustrialCard>
+      <button
+        type="button"
+        onClick={onOpenChange}
+        aria-expanded={open}
+        className="flex w-full items-center gap-4 px-6 py-5 text-left transition-colors hover:bg-white/[0.02] sm:px-8"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-700/50 bg-zinc-800/60 text-[var(--accent-400)]">
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-zinc-100">{title}</span>
+          <span className="mt-1 block text-sm text-zinc-400">{summary}</span>
+        </span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="border-t border-zinc-800/70 px-6 py-6 sm:px-8">{children}</div>}
+    </IndustrialCard>
   )
 }
 
@@ -1128,6 +1165,7 @@ function SecuritySection() {
 function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
+  const [isStripeOpen, setIsStripeOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: status, isLoading, refetch } = useQuery<ConnectStatus>({
@@ -1210,11 +1248,13 @@ function PaymentsSection() {
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
         Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks prepares accounting sync and future Intuit payment processing.
       </div>
-      <IndustrialCard className="p-6 sm:p-8">
-        <div className={industrialStyles.sectionHeader}>
-          <CreditCard className="w-4 h-4 text-[var(--accent-400)]" />
-          <span>Stripe Payments</span>
-        </div>
+      <PaymentIntegrationPanel
+        icon={<CreditCard className="h-5 w-5" />}
+        title="Stripe Payments"
+        summary={statusConfig.desc}
+        open={isStripeOpen}
+        onOpenChange={() => setIsStripeOpen((open) => !open)}
+      >
 
         <div className="flex items-start gap-4 mb-6">
           <div className="p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
@@ -1281,7 +1321,7 @@ function PaymentsSection() {
             </button>
           )}
         </div>
-      </IndustrialCard>
+      </PaymentIntegrationPanel>
       {disconnectKind && (
         <DisconnectStripeDialog
           legacy={disconnectKind === 'legacy'}
@@ -1410,6 +1450,7 @@ function PlatformIntegrationsSection() {
 function QuickBooksIntegrationCard() {
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [isQuickBooksOpen, setIsQuickBooksOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
     queryKey: ['quickbooks-status'],
@@ -1462,11 +1503,13 @@ function QuickBooksIntegrationCard() {
       : { led: 'inactive' as const, title: 'CONNECT YOUR COMPANY', desc: 'Sign in to your QuickBooks Online company to authorize this garage.' }
 
   return (
-    <IndustrialCard className="p-6 sm:p-8">
-      <div className={industrialStyles.sectionHeader}>
-        <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
-        <span>QuickBooks Online</span>
-      </div>
+    <PaymentIntegrationPanel
+      icon={<Building2 className="h-5 w-5" />}
+      title="QuickBooks Online"
+      summary={isLoading ? 'Checking connection status...' : statusConfig.desc}
+      open={isQuickBooksOpen}
+      onOpenChange={() => setIsQuickBooksOpen((open) => !open)}
+    >
 
       {isLoading ? (
         <div className="flex justify-center py-8">
@@ -1544,7 +1587,7 @@ function QuickBooksIntegrationCard() {
           </div>
         </>
       )}
-    </IndustrialCard>
+    </PaymentIntegrationPanel>
   )
 }
 
@@ -1558,6 +1601,7 @@ function ZelleSection() {
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [unlockPassword, setUnlockPassword] = useState('')
   const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [isZelleOpen, setIsZelleOpen] = useState(false)
 
   const { data: garageProfile } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -1657,12 +1701,14 @@ function ZelleSection() {
   }
 
   return (
-    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
-      <IndustrialCard className="p-6 sm:p-8">
-        <div className={industrialStyles.sectionHeader}>
-          <QrCode className="w-4 h-4 text-[var(--accent-400)]" />
-          <span>Zelle Payments</span>
-        </div>
+    <div className="animate-[fadeIn_0.4s_ease-out]">
+      <PaymentIntegrationPanel
+        icon={<QrCode className="h-5 w-5" />}
+        title="Zelle Payments"
+        summary="Configure the manual payment details your customers use to send Zelle transfers."
+        open={isZelleOpen}
+        onOpenChange={() => setIsZelleOpen((open) => !open)}
+      >
 
         {!isUnlocked ? (
           /* Lock gate */
@@ -1838,7 +1884,7 @@ function ZelleSection() {
             </div>
           </div>
         )}
-      </IndustrialCard>
+      </PaymentIntegrationPanel>
     </div>
   )
 }
