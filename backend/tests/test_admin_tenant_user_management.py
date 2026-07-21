@@ -95,6 +95,29 @@ async def test_create_tenant_user_unknown_tenant_404(db_session):
 
 
 @pytest.mark.asyncio
+async def test_deactivate_and_reactivate_tenant_preserves_the_shop(db_session):
+    sa = await _super_admin(db_session)
+    tenant, _ = await _tenant_with_owner(db_session)
+
+    await admin.deactivate_tenant(tenant_id=tenant.id, db=db_session, current_user=sa)
+    inactive = (await db_session.execute(
+        sqlalchemy.select(Tenant).where(Tenant.id == tenant.id)
+    )).scalar_one()
+    assert inactive.is_active is False
+
+    await admin.update_tenant(
+        tenant_id=tenant.id,
+        tenant_data=admin.TenantUpdate(is_active=True),
+        db=db_session,
+        current_user=sa,
+    )
+    reactivated = (await db_session.execute(
+        sqlalchemy.select(Tenant).where(Tenant.id == tenant.id)
+    )).scalar_one()
+    assert reactivated.is_active is True
+
+
+@pytest.mark.asyncio
 async def test_list_tenant_users_marks_owner(db_session):
     sa = await _super_admin(db_session)
     tenant, owner = await _tenant_with_owner(db_session)

@@ -673,7 +673,7 @@ export default function MessagesInboxPage() {
                       }`}
                       style={isOutbound ? { backgroundColor: accentColors[600] } : undefined}
                     >
-                      <p className="leading-relaxed">{message.body}</p>
+                      <p className="leading-relaxed break-words">{message.body}</p>
                       {isOutbound && (
                         <div className="flex items-center justify-end gap-1 mt-1 opacity-70">
                           <DeliveryIcon status={message.delivery_status} />

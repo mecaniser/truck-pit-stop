@@ -1,7 +1,7 @@
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, Truck } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, Truck, CreditCard } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -14,6 +14,7 @@ import GaragesPage from '@/features/platform-admin/GaragesPage'
 import GarageAnalyticsPage from '@/features/platform-admin/GarageAnalyticsPage'
 import PlatformAnalyticsPage from '@/features/platform-admin/PlatformAnalyticsPage'
 import PendingEnrollmentsPage from '@/features/platform-admin/PendingEnrollmentsPage'
+import PaymentControlCenter from '@/features/platform-admin/PaymentControlCenter'
 import MessagesInboxPage from '@/features/messages/MessagesInboxPage'
 import MechanicsBoardPage from '@/features/dashboard/MechanicsBoardPage'
 import MechanicBoardDetailPage from '@/features/dashboard/MechanicBoardDetailPage'
@@ -66,6 +67,7 @@ export default function DashboardLayout() {
         { to: '/dashboard/garages', label: 'Shops', mobileLabel: 'Shops', icon: LayoutGrid },
         { to: '/dashboard/pending-enrollments', label: 'Enrollments', mobileLabel: 'Enroll', icon: UserCheck },
         { to: '/dashboard/analytics', label: 'Analytics', mobileLabel: 'Stats', icon: BarChart3 },
+        { to: '/dashboard/payments', label: 'Payments', mobileLabel: 'Pay', icon: CreditCard },
       ]
     : [
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
@@ -254,6 +256,7 @@ export default function DashboardLayout() {
                 <Route path="garages/:garageId/analytics" element={<GarageAnalyticsPage />} />
                 <Route path="pending-enrollments" element={<PendingEnrollmentsPage />} />
                 <Route path="analytics" element={<PlatformAnalyticsPage />} />
+                <Route path="payments" element={<PaymentControlCenter />} />
                 <Route path="settings" element={<UnifiedSettingsPage />} />
                 <Route path="" element={<PlatformDashboard />} />
               </>

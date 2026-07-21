@@ -1,7 +1,10 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Request, HTTPException, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from uuid import UUID
 import stripe
 
 from app.core.config import settings
@@ -21,6 +24,33 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 logger = get_logger(__name__)
 
 router = APIRouter()
+
+
+async def _record_webhook_delivery(db: AsyncSession, event, event_type: str, data_object):
+    """Store minimal delivery health without retaining Stripe event payloads."""
+    account_id = event.get("account")
+    if event_type == "account.updated":
+        account_id = data_object.get("id")
+
+    tenant = None
+    if account_id:
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.stripe_account_id == account_id))
+        ).scalar_one_or_none()
+    if not tenant:
+        tenant_id = data_object.get("metadata", {}).get("tenant_id")
+        if tenant_id:
+            try:
+                tenant = (
+                    await db.execute(select(Tenant).where(Tenant.id == UUID(tenant_id)))
+                ).scalar_one_or_none()
+            except ValueError:
+                pass
+    if tenant:
+        tenant.stripe_last_webhook_at = datetime.now(timezone.utc)
+        tenant.stripe_last_webhook_event = event_type
+        tenant.stripe_last_webhook_error = None
+    return tenant
 
 
 @router.post("/connect")
@@ -68,6 +98,7 @@ async def stripe_connect_webhook(
     
     event_type = event["type"]
     data_object = event["data"]["object"]
+    delivery_tenant = await _record_webhook_delivery(db, event, event_type, data_object)
 
     if event_type == "account.updated":
         account = data_object
@@ -85,9 +116,7 @@ async def stripe_connect_webhook(
             payouts_enabled = account.get("payouts_enabled", False)
             onboarding_complete = charges_enabled and payouts_enabled
             
-            if tenant.stripe_onboarding_complete != onboarding_complete:
-                tenant.stripe_onboarding_complete = onboarding_complete
-                await db.commit()
+            tenant.stripe_onboarding_complete = onboarding_complete
     
     elif event_type == "account.application.deauthorized":
         # Tenant disconnected their Stripe account
@@ -102,7 +131,6 @@ async def stripe_connect_webhook(
             if tenant:
                 tenant.stripe_account_id = None
                 tenant.stripe_onboarding_complete = False
-                await db.commit()
                 logger.info("stripe_account_disconnected", tenant_id=str(tenant.id), account_id=account_id)
 
     elif event_type == "payment_intent.payment_failed":
@@ -113,6 +141,13 @@ async def stripe_connect_webhook(
         await _handle_dispute_created(db, data_object)
     elif event_type == "payment_intent.succeeded":
         await _handle_payment_succeeded(db, data_object)
+
+    if delivery_tenant:
+        if event_type == "payment_intent.payment_failed":
+            delivery_tenant.stripe_last_webhook_error = data_object.get("last_payment_error", {}).get("message") or "Payment failed"
+        elif event_type == "charge.failed":
+            delivery_tenant.stripe_last_webhook_error = data_object.get("failure_message") or "Charge failed"
+        await db.commit()
     
     return {"status": "success"}
 
@@ -169,6 +204,7 @@ async def stripe_payment_webhook(
     
     event_type = event["type"]
     data_object = event["data"]["object"]
+    delivery_tenant = await _record_webhook_delivery(db, event, event_type, data_object)
     
     logger.info("stripe_webhook_received", event_type=event_type, event_id=event.get("id"))
     
@@ -187,6 +223,13 @@ async def stripe_payment_webhook(
     # Handle payment_intent.succeeded (backup confirmation)
     elif event_type == "payment_intent.succeeded":
         await _handle_payment_succeeded(db, data_object)
+
+    if delivery_tenant:
+        if event_type == "payment_intent.payment_failed":
+            delivery_tenant.stripe_last_webhook_error = data_object.get("last_payment_error", {}).get("message") or "Payment failed"
+        elif event_type == "charge.failed":
+            delivery_tenant.stripe_last_webhook_error = data_object.get("failure_message") or "Charge failed"
+        await db.commit()
     
     return {"status": "success"}
 

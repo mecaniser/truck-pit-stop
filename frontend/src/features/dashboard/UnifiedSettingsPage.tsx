@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 import { 
   User, Lock, CreditCard, Bell, Percent, QrCode, Globe, Building2,
   AlertCircle, ExternalLink, RefreshCw, Save, Trash2, Palette, Check, RotateCcw, Type,
-  ChevronRight, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
+  ChevronRight, ChevronDown, Zap, Shield, Settings2, Truck, MessageSquare, Landmark, ShieldCheck, X
 } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS, NOTIFICATION_POSITION_OPTIONS } from '../../contexts/ThemeContext'
 
@@ -184,11 +184,19 @@ interface QuickBooksConnectionStatus {
   realm_id: string | null
   scopes: string[]
   connected_at: string | null
+  token_health: 'healthy' | 'refresh_required' | 'reconnect_required' | 'not_connected'
+  last_token_refresh_at: string | null
+  last_token_refresh_error: string | null
+  last_webhook_at: string | null
+  last_webhook_event: string | null
+  last_webhook_error: string | null
 }
 
 interface QuickBooksPlatformStatus {
   platform_ready: boolean
   callback_url: string
+  webhook_ready: boolean
+  webhook_url: string
   scopes: string[]
 }
 
@@ -300,6 +308,43 @@ function IndustrialBadge({ children, variant = 'default' }: { children: React.Re
     <span className={`inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border whitespace-nowrap ${variants[variant]}`}>
       {children}
     </span>
+  )
+}
+
+function PaymentIntegrationPanel({
+  icon,
+  title,
+  summary,
+  open,
+  onOpenChange,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  summary: string
+  open: boolean
+  onOpenChange: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <IndustrialCard>
+      <button
+        type="button"
+        onClick={onOpenChange}
+        aria-expanded={open}
+        className="flex w-full items-center gap-4 px-6 py-5 text-left transition-colors hover:bg-white/[0.02] sm:px-8"
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-700/50 bg-zinc-800/60 text-[var(--accent-400)]">
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-zinc-100">{title}</span>
+          <span className="mt-1 block text-sm text-zinc-400">{summary}</span>
+        </span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="border-t border-zinc-800/70 px-6 py-6 sm:px-8">{children}</div>}
+    </IndustrialCard>
   )
 }
 
@@ -1128,6 +1173,7 @@ function SecuritySection() {
 function PaymentsSection() {
   const [isRedirecting, setIsRedirecting] = useState(false)
   const [disconnectKind, setDisconnectKind] = useState<'current' | 'legacy' | null>(null)
+  const [isStripeOpen, setIsStripeOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
 
   const { data: status, isLoading, refetch } = useQuery<ConnectStatus>({
@@ -1210,11 +1256,13 @@ function PaymentsSection() {
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
         Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks prepares accounting sync and future Intuit payment processing.
       </div>
-      <IndustrialCard className="p-6 sm:p-8">
-        <div className={industrialStyles.sectionHeader}>
-          <CreditCard className="w-4 h-4 text-[var(--accent-400)]" />
-          <span>Stripe Payments</span>
-        </div>
+      <PaymentIntegrationPanel
+        icon={<CreditCard className="h-5 w-5" />}
+        title="Stripe Payments"
+        summary={statusConfig.desc}
+        open={isStripeOpen}
+        onOpenChange={() => setIsStripeOpen((open) => !open)}
+      >
 
         <div className="flex items-start gap-4 mb-6">
           <div className="p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
@@ -1281,7 +1329,7 @@ function PaymentsSection() {
             </button>
           )}
         </div>
-      </IndustrialCard>
+      </PaymentIntegrationPanel>
       {disconnectKind && (
         <DisconnectStripeDialog
           legacy={disconnectKind === 'legacy'}
@@ -1358,7 +1406,8 @@ function PlatformIntegrationsSection() {
                 <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
                   <li><span className="mr-2 font-semibold text-gold-400">1.</span>Create a DieselBridge Intuit Developer app with QuickBooks Online Accounting and Payments enabled.</li>
                   <li className="break-words"><span className="mr-2 font-semibold text-gold-400">2.</span>Register this production callback URL: <code className="text-amber-200">{quickBooks.callback_url}</code></li>
-                  <li><span className="mr-2 font-semibold text-gold-400">3.</span>Store the Intuit client ID, client secret, and a dedicated token-encryption key in managed backend secrets, then redeploy.</li>
+                  <li className="break-words"><span className="mr-2 font-semibold text-gold-400">3.</span>Register this Intuit webhook URL: <code className="text-amber-200">{quickBooks.webhook_url}</code></li>
+                  <li><span className="mr-2 font-semibold text-gold-400">4.</span>Store the Intuit client ID, client secret, webhook verifier token, and a dedicated token-encryption key in managed backend secrets, then redeploy.</li>
                 </ol>
                 <a
                   href="https://developer.intuit.com/app/developer/qbo/docs/develop/authentication-and-authorization/oauth-2.0"
@@ -1410,6 +1459,7 @@ function PlatformIntegrationsSection() {
 function QuickBooksIntegrationCard() {
   const queryClient = useQueryClient()
   const [isRedirecting, setIsRedirecting] = useState(false)
+  const [isQuickBooksOpen, setIsQuickBooksOpen] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { data: status, isLoading } = useQuery<QuickBooksConnectionStatus>({
     queryKey: ['quickbooks-status'],
@@ -1455,6 +1505,16 @@ function QuickBooksIntegrationCard() {
     },
   })
 
+  const healthMutation = useMutation({
+    mutationFn: async () => (await api.post('/quickbooks/health/check')).data as QuickBooksConnectionStatus,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['quickbooks-status'], data)
+      if (data.token_health === 'healthy') toast.success('QuickBooks connection is healthy')
+      else toast.error('QuickBooks needs attention before it can sync or take payments')
+    },
+    onError: (error: unknown) => toast.error(apiErrorDetail(error, 'Unable to check QuickBooks connection')),
+  })
+
   const statusConfig = !status?.configured
     ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
     : status.is_connected
@@ -1462,11 +1522,13 @@ function QuickBooksIntegrationCard() {
       : { led: 'inactive' as const, title: 'CONNECT YOUR COMPANY', desc: 'Sign in to your QuickBooks Online company to authorize this garage.' }
 
   return (
-    <IndustrialCard className="p-6 sm:p-8">
-      <div className={industrialStyles.sectionHeader}>
-        <Building2 className="w-4 h-4 text-[var(--accent-400)]" />
-        <span>QuickBooks Online</span>
-      </div>
+    <PaymentIntegrationPanel
+      icon={<Building2 className="h-5 w-5" />}
+      title="QuickBooks Online"
+      summary={isLoading ? 'Checking connection status...' : statusConfig.desc}
+      open={isQuickBooksOpen}
+      onOpenChange={() => setIsQuickBooksOpen((open) => !open)}
+    >
 
       {isLoading ? (
         <div className="flex justify-center py-8">
@@ -1508,6 +1570,26 @@ function QuickBooksIntegrationCard() {
             </div>
           )}
 
+          {status?.is_connected && (
+            <div className={`mb-6 rounded-xl border p-4 text-sm ${
+              status.token_health === 'healthy'
+                ? 'border-emerald-700/35 bg-emerald-950/15 text-emerald-100/85'
+                : 'border-amber-700/40 bg-amber-950/20 text-amber-100/85'
+            }`}>
+              <p className="font-medium">
+                {status.token_health === 'healthy' ? 'Connection health: ready' : 'Connection health: attention needed'}
+              </p>
+              <p className="mt-1 text-zinc-300">
+                {status.token_health === 'healthy'
+                  ? 'Authorization tokens are current. Accounting sync and QuickBooks Payments activation will be enabled after the sandbox payment flow is validated.'
+                  : status.last_token_refresh_error || 'Check the connection to refresh Intuit authorization before enabling sync or payments.'}
+              </p>
+              {status.last_webhook_at && (
+                <p className="mt-2 text-xs text-zinc-400">Last Intuit event: {status.last_webhook_event || 'received'} at {new Date(status.last_webhook_at).toLocaleString()}</p>
+              )}
+            </div>
+          )}
+
           <div className="pt-4 border-t border-zinc-800/50 flex flex-wrap items-center gap-3">
             {!status?.configured ? (
               <p className="text-sm text-amber-300">DieselBridge will let you know when QuickBooks is ready to connect.</p>
@@ -1515,8 +1597,15 @@ function QuickBooksIntegrationCard() {
               <>
                 <IndustrialBadge variant="success">
                   <StatusLED status="active" />
-                  Accounting + Payments Authorized — Sync Not Active
+                  Accounting + Payments Authorized
                 </IndustrialBadge>
+                <button
+                  onClick={() => healthMutation.mutate()}
+                  disabled={healthMutation.isPending}
+                  className={industrialStyles.btnSecondary}
+                >
+                  {healthMutation.isPending ? 'Checking...' : 'Check Connection'}
+                </button>
                 <button
                   onClick={() => {
                     if (window.confirm('Disconnect QuickBooks? This removes local authorization tokens and stops future sync.')) {
@@ -1544,7 +1633,7 @@ function QuickBooksIntegrationCard() {
           </div>
         </>
       )}
-    </IndustrialCard>
+    </PaymentIntegrationPanel>
   )
 }
 
@@ -1558,6 +1647,7 @@ function ZelleSection() {
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [unlockPassword, setUnlockPassword] = useState('')
   const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [isZelleOpen, setIsZelleOpen] = useState(false)
 
   const { data: garageProfile } = useQuery<GarageProfile>({
     queryKey: ['garage-profile'],
@@ -1657,12 +1747,14 @@ function ZelleSection() {
   }
 
   return (
-    <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
-      <IndustrialCard className="p-6 sm:p-8">
-        <div className={industrialStyles.sectionHeader}>
-          <QrCode className="w-4 h-4 text-[var(--accent-400)]" />
-          <span>Zelle Payments</span>
-        </div>
+    <div className="animate-[fadeIn_0.4s_ease-out]">
+      <PaymentIntegrationPanel
+        icon={<QrCode className="h-5 w-5" />}
+        title="Zelle Payments"
+        summary="Configure the manual payment details your customers use to send Zelle transfers."
+        open={isZelleOpen}
+        onOpenChange={() => setIsZelleOpen((open) => !open)}
+      >
 
         {!isUnlocked ? (
           /* Lock gate */
@@ -1838,7 +1930,7 @@ function ZelleSection() {
             </div>
           </div>
         )}
-      </IndustrialCard>
+      </PaymentIntegrationPanel>
     </div>
   )
 }

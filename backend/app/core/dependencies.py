@@ -8,6 +8,7 @@ from app.core.security import decode_token
 from app.core.redis import is_token_blacklisted, get_token_version
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
+from app.db.models.tenant import Tenant
 
 security = HTTPBearer(auto_error=False)
 
@@ -113,6 +114,19 @@ async def get_current_user(
         # Set the active tenant context for this request (not persisted to DB)
         user.tenant_id = link.tenant_id
         user.customer_id = link.customer_id
+
+    # A tenant can be offboarded without deleting its records. Honor that
+    # platform-level switch for every tenant-scoped request while allowing
+    # super admins to continue managing the platform.
+    if user.role != UserRole.SUPER_ADMIN and user.tenant_id:
+        tenant_result = await db.execute(
+            select(Tenant.is_active).where(Tenant.id == user.tenant_id)
+        )
+        if tenant_result.scalar_one_or_none() is not True:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This shop is inactive. Please contact DieselBridge support.",
+            )
 
     return user
 

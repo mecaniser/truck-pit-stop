@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
-import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar, MessageSquare, X } from 'lucide-react'
+import { Building2, CheckCircle, XCircle, User, Phone, Mail, MapPin, Calendar, MessageSquare, X, Power } from 'lucide-react'
 import api from '../../lib/api'
 import toast from 'react-hot-toast'
 import { GlassNoirCard, GlassNoirButton, GlassNoirBadge } from '../../components/ui/GlassNoirCard'
@@ -48,6 +48,8 @@ export default function GaragesPage() {
   const [smsProvisionError, setSmsProvisionError] = useState<string | null>(null)
   const [smsStateUpdatingGarageId, setSmsStateUpdatingGarageId] = useState<string | null>(null)
   const [teamModalGarage, setTeamModalGarage] = useState<Tenant | null>(null)
+  const [activationModalGarage, setActivationModalGarage] = useState<Tenant | null>(null)
+  const [activationUpdating, setActivationUpdating] = useState(false)
   const isFirstLoadRef = useRef(true)
   const smsModalRef = useRef<HTMLDivElement | null>(null)
   const areaCodeInputRef = useRef<HTMLInputElement | null>(null)
@@ -176,6 +178,33 @@ export default function GaragesPage() {
       console.error(err)
     } finally {
       setSmsStateUpdatingGarageId(null)
+    }
+  }
+
+  const closeActivationModal = () => {
+    if (!activationUpdating) setActivationModalGarage(null)
+  }
+
+  const handleActivationChange = async () => {
+    if (!activationModalGarage) return
+
+    const garage = activationModalGarage
+    try {
+      setActivationUpdating(true)
+      if (garage.is_active) {
+        await api.delete(`/admin/tenants/${garage.id}`)
+        toast.success(`${garage.name} is now inactive`)
+      } else {
+        await api.put(`/admin/tenants/${garage.id}`, { is_active: true })
+        toast.success(`${garage.name} has been reactivated`)
+      }
+      setActivationModalGarage(null)
+      await fetchGarages('refresh')
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || `Failed to ${garage.is_active ? 'deactivate' : 'reactivate'} ${garage.name}`)
+      console.error(err)
+    } finally {
+      setActivationUpdating(false)
     }
   }
 
@@ -488,16 +517,17 @@ export default function GaragesPage() {
                     </span>
                   </GlassNoirButton>
                 )}
-                {!garage.is_active && (
-                  <GlassNoirButton
-                    variant="secondary"
-                    size="sm"
-                    className="sm:ml-auto"
-                    onClick={() => alert(`Activate ${garage.name} - Coming soon!`)}
-                  >
-                    Activate
-                  </GlassNoirButton>
-                )}
+                <GlassNoirButton
+                  variant={garage.is_active ? 'ghost' : 'secondary'}
+                  size="sm"
+                  className={garage.is_active ? 'text-red-400 hover:bg-red-500/10 sm:ml-auto' : 'sm:ml-auto'}
+                  onClick={() => setActivationModalGarage(garage)}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Power className="w-3.5 h-3.5" />
+                    {garage.is_active ? 'Deactivate Shop' : 'Reactivate Shop'}
+                  </span>
+                </GlassNoirButton>
               </div>
             </GlassNoirCard>
           ))
@@ -510,6 +540,63 @@ export default function GaragesPage() {
           garageName={teamModalGarage.name}
           onClose={() => setTeamModalGarage(null)}
         />
+      )}
+
+      {activationModalGarage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shop-activation-modal-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-white/10 bg-noir-800 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-4">
+              <div>
+                <h2 id="shop-activation-modal-title" className="text-lg font-semibold text-white">
+                  {activationModalGarage.is_active ? 'Deactivate shop?' : 'Reactivate shop?'}
+                </h2>
+                <p className="mt-1 text-sm text-gray-400">{activationModalGarage.name}</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={closeActivationModal}
+                disabled={activationUpdating}
+                className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              {activationModalGarage.is_active ? (
+                <p className="text-sm leading-6 text-gray-300">
+                  This immediately prevents the shop and its users from accessing DieselBridge. Its records, invoices, Stripe connection, and payment history will remain intact. You can reactivate it later.
+                </p>
+              ) : (
+                <p className="text-sm leading-6 text-gray-300">
+                  This restores DieselBridge access for the shop and its existing users. Its records and connected payment setup remain unchanged.
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 border-t border-white/10 px-6 py-4">
+              <GlassNoirButton type="button" variant="ghost" size="sm" onClick={closeActivationModal} disabled={activationUpdating}>
+                Cancel
+              </GlassNoirButton>
+              <GlassNoirButton
+                type="button"
+                size="sm"
+                className={activationModalGarage.is_active ? 'bg-red-600 hover:bg-red-500 text-white' : ''}
+                onClick={handleActivationChange}
+                disabled={activationUpdating}
+              >
+                <span className="inline-flex items-center gap-2">
+                  {activationUpdating ? <Spinner size="xs" /> : null}
+                  {activationModalGarage.is_active ? 'Deactivate Shop' : 'Reactivate Shop'}
+                </span>
+              </GlassNoirButton>
+            </div>
+          </div>
+        </div>
       )}
 
       {smsModalGarage && (

@@ -17,6 +17,7 @@ import httpx
 from app.core.config import settings
 from app.core.quickbooks_crypto import (
     QuickBooksTokenEncryptionError,
+    decrypt_quickbooks_token,
     encrypt_quickbooks_token,
     validate_quickbooks_token_encryption_key,
 )
@@ -149,6 +150,50 @@ async def exchange_authorization_code(code: str) -> QuickBooksTokenSet:
     )
 
 
+async def refresh_access_token(connection: QuickBooksConnection) -> QuickBooksTokenSet:
+    """Rotate an Intuit token set without exposing token material to callers."""
+    ensure_quickbooks_configured()
+    if not connection.encrypted_refresh_token:
+        raise QuickBooksOAuthError("QuickBooks refresh token is unavailable")
+
+    try:
+        refresh_token = decrypt_quickbooks_token(connection.encrypted_refresh_token)
+        timeout = httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                INTUIT_TOKEN_URL,
+                auth=(settings.QUICKBOOKS_CLIENT_ID, settings.QUICKBOOKS_CLIENT_SECRET),
+                headers={"Accept": "application/json"},
+                data={"grant_type": "refresh_token", "refresh_token": refresh_token},
+            )
+    except (QuickBooksTokenEncryptionError, httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+        raise QuickBooksOAuthError("Could not refresh the QuickBooks connection") from exc
+
+    if response.status_code >= 400:
+        raise QuickBooksOAuthError("QuickBooks requires this shop to reconnect")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise QuickBooksOAuthError("Intuit returned an invalid refresh response") from exc
+    if not isinstance(payload, dict):
+        raise QuickBooksOAuthError("Intuit returned an invalid refresh response")
+
+    access_token = payload.get("access_token")
+    next_refresh_token = payload.get("refresh_token")
+    if not isinstance(access_token, str) or not isinstance(next_refresh_token, str):
+        raise QuickBooksOAuthError("Intuit did not return refreshed credentials")
+    expires_in = _parse_positive_int(payload.get("expires_in"), field_name="expires_in", required=True)
+    refresh_expires = _parse_positive_int(
+        payload.get("x_refresh_token_expires_in"), field_name="x_refresh_token_expires_in", required=False
+    )
+    return QuickBooksTokenSet(
+        access_token=access_token,
+        refresh_token=next_refresh_token,
+        expires_in=expires_in or 0,
+        refresh_token_expires_in=refresh_expires,
+    )
+
+
 def save_token_set(
     connection: QuickBooksConnection,
     *,
@@ -171,7 +216,7 @@ def save_token_set(
         if token_set.refresh_token_expires_in
         else None
     )
-    connection.connected_at = now
+    connection.connected_at = connection.connected_at or now
     connection.disconnected_at = None
 
 
