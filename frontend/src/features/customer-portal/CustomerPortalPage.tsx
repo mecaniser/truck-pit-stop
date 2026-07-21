@@ -416,7 +416,7 @@ function CustomerDashboard() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                        <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
                           {order.status.replace('_', ' ')}
                         </span>
                         <div className="text-xs sm:text-sm font-medium text-white">
@@ -471,7 +471,7 @@ function CustomerDashboard() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                      <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
                         {order.status.replace('_', ' ')}
                       </span>
                       <div className="text-xs sm:text-sm font-medium text-white">
@@ -952,7 +952,7 @@ function CustomerRepairs() {
               {format(new Date(selectedOrder.created_at), 'MMMM d, yyyy')}
             </p>
           </div>
-          <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium ${STATUS_BADGE_COLORS[selectedOrder.status] || 'bg-gray-100 text-gray-700'}`}>
+          <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[selectedOrder.status] || 'bg-gray-100 text-gray-700'}`}>
             {selectedOrder.status.replace('_', ' ')}
           </span>
         </div>
@@ -1329,7 +1329,7 @@ function CustomerRepairs() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
                         {order.status.replace('_', ' ')}
                       </span>
                       <div className="text-right">
