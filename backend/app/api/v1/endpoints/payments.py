@@ -27,6 +27,7 @@ from app.services.invoice_notification_service import send_invoice_payment_confi
 from app.services.pending_zelle_staff_notification_service import send_pending_zelle_submission_alert
 from app.services.payment_number_service import allocate_next_payment_number
 from app.services.stripe_payment_finalization import finalize_stripe_invoice_payment
+from app.services.stripe_platform_fee import platform_fee_amount_cents, platform_fee_percent_for
 
 logger = get_logger(__name__)
 
@@ -373,8 +374,12 @@ async def create_payment_intent_for_invoice(
             "automatic_payment_methods": {"enabled": True},
         }
         
+        fee_percent = platform_fee_percent_for(tenant)
+        platform_fee = platform_fee_amount_cents(amount_cents, fee_percent)
+        metadata["platform_fee_percent"] = str(fee_percent)
+        metadata["platform_fee_amount_cents"] = str(platform_fee)
+        metadata["stripe_connected_account_id"] = tenant.stripe_account_id
         intent_params["stripe_account"] = tenant.stripe_account_id
-        platform_fee = int(amount_cents * (settings.PLATFORM_FEE_PERCENT / 100))
         if platform_fee > 0:
             intent_params["application_fee_amount"] = platform_fee
         
@@ -386,6 +391,8 @@ async def create_payment_intent_for_invoice(
             payment_intent_id=payment_intent.id,
             amount=float(invoice.total_amount),
             connected_account=tenant.stripe_account_id,
+            platform_fee_percent=str(fee_percent),
+            platform_fee_amount_cents=platform_fee,
         )
         
         # Return connected account ID if using Stripe Connect

@@ -148,7 +148,12 @@ async def test_finalize_stripe_invoice_payment_creates_payment_and_marks_paid(mo
         vehicle=None,
         payment_intent={
             "id": "pi_succeeded",
-            "metadata": {"invoice_id": str(invoice.id)},
+            "metadata": {
+                "invoice_id": str(invoice.id),
+                "stripe_connected_account_id": "acct_123",
+                "platform_fee_percent": "1.500",
+                "platform_fee_amount_cents": "155",
+            },
             "latest_charge": "ch_123",
         },
         payment_note="Payment made by test.",
@@ -165,6 +170,9 @@ async def test_finalize_stripe_invoice_payment_creates_payment_and_marks_paid(mo
     assert payment.status == PaymentStatus.COMPLETED
     assert payment.stripe_payment_intent_id == "pi_succeeded"
     assert payment.stripe_charge_id == "ch_123"
+    assert payment.stripe_connected_account_id == "acct_123"
+    assert payment.stripe_platform_fee_percent == Decimal("1.500")
+    assert payment.stripe_platform_fee_amount == Decimal("1.55")
     assert len(broadcasts) == 2
     assert len(emails) == 1
 

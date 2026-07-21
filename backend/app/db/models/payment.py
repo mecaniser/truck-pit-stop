@@ -46,11 +46,13 @@ class Payment(BaseModel):
     
     stripe_payment_intent_id = Column(String(255), nullable=True, unique=True, index=True)
     stripe_charge_id = Column(String(255), nullable=True)
+    stripe_connected_account_id = Column(String(255), nullable=True, index=True)
+    stripe_platform_fee_amount = Column(Numeric(10, 2), nullable=True)
+    stripe_platform_fee_percent = Column(Numeric(5, 3), nullable=True)
     
     notes = Column(Text, nullable=True)
     receipt_url = Column(String(500), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     recorded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     recorded_by_user = relationship("User", foreign_keys=[recorded_by_user_id])
-
 

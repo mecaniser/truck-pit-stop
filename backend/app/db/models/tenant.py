@@ -30,6 +30,17 @@ class Tenant(BaseModel):
     stripe_account_id = Column(String(255), unique=True, nullable=True, index=True)
     stripe_onboarding_complete = Column(Boolean, default=False, nullable=False)
     stripe_connection_type = Column(String(32), nullable=True)
+    # Optional platform fee override. When unset, the deployment-level default
+    # is used for new connected-account PaymentIntents.
+    stripe_platform_fee_percent = Column(Numeric(5, 3), nullable=True)
+    stripe_platform_fee_updated_at = Column(DateTime(timezone=True), nullable=True)
+    stripe_platform_fee_updated_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    stripe_platform_fee_updated_by = relationship("User", foreign_keys=[stripe_platform_fee_updated_by_id])
+    # Lightweight delivery health for the Connect endpoint. The full Stripe
+    # event payload remains in Stripe rather than being retained locally.
+    stripe_last_webhook_at = Column(DateTime(timezone=True), nullable=True)
+    stripe_last_webhook_event = Column(String(100), nullable=True)
+    stripe_last_webhook_error = Column(Text, nullable=True)
     
     # Zelle payment info
     zelle_email = Column(String(255), nullable=True)

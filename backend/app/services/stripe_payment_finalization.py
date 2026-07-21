@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -57,6 +58,16 @@ def _latest_charge_id(payment_intent: Any) -> Optional[str]:
         return charge_id if isinstance(charge_id, str) else None
     charge_id = getattr(latest_charge, "id", None)
     return charge_id if isinstance(charge_id, str) else None
+
+
+def _metadata_decimal(metadata: dict, key: str, scale: str) -> Optional[Decimal]:
+    value = metadata.get(key)
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value)).quantize(Decimal(scale))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 async def find_stripe_payment(
@@ -129,6 +140,7 @@ async def finalize_stripe_invoice_payment(
     order.status = RepairOrderStatus.PAID
 
     payment_number = await allocate_next_payment_number(db, invoice.tenant_id)
+    platform_fee_cents = _metadata_decimal(metadata, "platform_fee_amount_cents", "1")
     payment = Payment(
         tenant_id=invoice.tenant_id,
         invoice_id=invoice.id,
@@ -138,6 +150,13 @@ async def finalize_stripe_invoice_payment(
         status=PaymentStatus.COMPLETED,
         stripe_payment_intent_id=payment_intent_id,
         stripe_charge_id=_latest_charge_id(payment_intent),
+        stripe_connected_account_id=metadata.get("stripe_connected_account_id"),
+        stripe_platform_fee_amount=(
+            platform_fee_cents / Decimal("100")
+            if platform_fee_cents is not None
+            else None
+        ),
+        stripe_platform_fee_percent=_metadata_decimal(metadata, "platform_fee_percent", "0.001"),
         notes=payment_note,
     )
     db.add(payment)
