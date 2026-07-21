@@ -8,6 +8,7 @@ from app.db.base import BaseModel
 
 class PaymentMethod(str, enum.Enum):
     STRIPE = "stripe"
+    QUICKBOOKS = "quickbooks"
     CASH = "cash"
     CHECK = "check"
     ACH = "ach"
@@ -49,10 +50,15 @@ class Payment(BaseModel):
     stripe_connected_account_id = Column(String(255), nullable=True, index=True)
     stripe_platform_fee_amount = Column(Numeric(10, 2), nullable=True)
     stripe_platform_fee_percent = Column(Numeric(5, 3), nullable=True)
+
+    # Intuit identifiers are intentionally provider-specific. The opaque
+    # browser token is never persisted; it can be used only once at Intuit.
+    quickbooks_charge_id = Column(String(255), nullable=True, unique=True, index=True)
+    quickbooks_charge_status = Column(String(50), nullable=True, index=True)
+    quickbooks_idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
     
     notes = Column(Text, nullable=True)
     receipt_url = Column(String(500), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     recorded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     recorded_by_user = relationship("User", foreign_keys=[recorded_by_user_id])
-

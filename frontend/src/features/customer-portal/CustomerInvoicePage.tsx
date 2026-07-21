@@ -15,6 +15,7 @@ import { formatUSPhone } from '../../utils/phone'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
 import { useAuthStore } from '../../stores/authStore'
 import ZellePaymentPanel from './ZellePaymentPanel'
+import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 
 const getErrorDetail = (error: unknown, fallback: string): string => {
   if (error instanceof AxiosError) {
@@ -169,6 +170,12 @@ interface ZelleInfoResponse {
   garage_name: string
 }
 
+interface QuickBooksPaymentAvailability {
+  available: boolean
+  token_url: string | null
+  message: string | null
+}
+
 export default function CustomerInvoicePage() {
   const { invoiceId } = useParams<{ invoiceId: string }>()
   const { user } = useAuthStore()
@@ -176,6 +183,7 @@ export default function CustomerInvoicePage() {
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
   const [stripeInstance, setStripeInstance] = useState<Stripe | null>(null)
   const [showPayment, setShowPayment] = useState(false)
+  const [showQuickBooksPayment, setShowQuickBooksPayment] = useState(false)
   const [zelleSenderEmail, setZelleSenderEmail] = useState('')
   const [zelleSenderPhone, setZelleSenderPhone] = useState('')
   const [zelleNotes, setZelleNotes] = useState('')
@@ -197,6 +205,12 @@ export default function CustomerInvoicePage() {
       const response = await api.get(`/payments/zelle-info/${invoice!.id}`)
       return response.data as ZelleInfoResponse
     },
+    enabled: !!invoice && invoice.status !== 'paid',
+  })
+
+  const { data: quickBooksPayment } = useQuery<QuickBooksPaymentAvailability>({
+    queryKey: ['quickbooks-payment-availability', invoice?.id],
+    queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
     enabled: !!invoice && invoice.status !== 'paid',
   })
 
@@ -258,6 +272,7 @@ export default function CustomerInvoicePage() {
     queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
     setShowPayment(false)
     setStripeOptions(null)
+    setShowQuickBooksPayment(false)
   }
 
   const submitZelleMutation = useMutation({
@@ -435,6 +450,26 @@ export default function CustomerInvoicePage() {
                 </div>
               )}
             </div>
+            )}
+            {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
+              <div className="border-t border-gray-700 pt-5">
+                <p className="mb-2 text-xs uppercase tracking-wide text-gray-400">Pay with your shop's QuickBooks account</p>
+                {!showQuickBooksPayment ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickBooksPayment(true)}
+                    className="w-full rounded-lg border border-emerald-500/60 py-3 font-semibold text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    Pay with QuickBooks
+                  </button>
+                ) : (
+                  <QuickBooksPaymentPanel
+                    invoiceId={invoice.id}
+                    tokenUrl={quickBooksPayment.token_url}
+                    onSuccess={handlePaymentSuccess}
+                  />
+                )}
+              </div>
             )}
           </div>
         )}

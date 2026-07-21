@@ -6,9 +6,11 @@ import hashlib
 import hmac
 import json
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 import pytest
 from cryptography.fernet import Fernet
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.api.v1.endpoints import quickbooks
@@ -18,6 +20,7 @@ from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooks
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.services.quickbooks_service import QuickBooksTokenSet
+from app.services.quickbooks_payments_service import payments_base_url
 
 
 async def _owner_with_token(db_session, *, suffix: str = "one"):
@@ -57,6 +60,26 @@ def _configure_quickbooks(monkeypatch):
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_CLIENT_SECRET", "test-client-secret")
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_REDIRECT_URI", "https://app.example.com/api/v1/quickbooks/oauth/callback")
     monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+
+def test_quickbooks_payment_charge_request_accepts_only_an_opaque_token(monkeypatch):
+    request = quickbooks.QuickBooksChargeRequest(
+        invoice_id=uuid4(),
+        token="opaque-intuit-token",
+        idempotency_key="quickbooks-payment-request-001",
+    )
+    assert request.token == "opaque-intuit-token"
+
+    with pytest.raises(ValidationError):
+        quickbooks.QuickBooksChargeRequest(
+            invoice_id=uuid4(),
+            token="opaque-intuit-token",
+            idempotency_key="quickbooks-payment-request-002",
+            card={"number": "4111111111111111"},
+        )
+
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_PAYMENTS_ENVIRONMENT", "sandbox")
+    assert payments_base_url() == "https://sandbox.api.intuit.com"
 
 
 @pytest.mark.asyncio
@@ -208,7 +231,11 @@ async def test_quickbooks_webhook_verifies_signature_and_records_tenant_health(c
 
 
 @pytest.mark.asyncio
-async def test_quickbooks_connect_requires_deployment_credentials(client, db_session):
+async def test_quickbooks_connect_requires_deployment_credentials(client, db_session, monkeypatch):
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_CLIENT_ID", "")
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_CLIENT_SECRET", "")
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_REDIRECT_URI", "")
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_TOKEN_ENCRYPTION_KEY", "")
     _tenant, _user, token = await _owner_with_token(db_session, suffix="unconfigured")
 
     response = await client.post(
@@ -225,6 +252,7 @@ async def test_quickbooks_connect_requires_deployment_credentials(client, db_ses
 @pytest.mark.asyncio
 async def test_quickbooks_platform_readiness_is_super_admin_only_and_secret_free(client, db_session, monkeypatch):
     _configure_quickbooks(monkeypatch)
+    monkeypatch.setattr(quickbooks.settings, "QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN", "")
     super_admin_token = await _super_admin_token(db_session)
     _tenant, _owner, owner_token = await _owner_with_token(db_session, suffix="platform-access")
 
