@@ -216,3 +216,31 @@ async def update_tenant_platform_fee(
         "uses_default_fee": tenant.stripe_platform_fee_percent is None,
         "effective_for": "new PaymentIntents only",
     }
+
+
+@router.post("/tenants/{tenant_id}/reset-stripe-connection")
+async def reset_tenant_stripe_connection(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Clear a stale local Stripe link so a merchant can start onboarding again."""
+    _require_super_admin(current_user)
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    if not tenant.stripe_account_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant has no Stripe connection to reset")
+
+    tenant.stripe_account_id = None
+    tenant.stripe_connection_type = None
+    tenant.stripe_onboarding_complete = False
+    tenant.stripe_last_webhook_at = None
+    tenant.stripe_last_webhook_event = None
+    tenant.stripe_last_webhook_error = None
+    await db.commit()
+    return {
+        "tenant_id": str(tenant.id),
+        "status": "not_started",
+        "message": "The local Stripe connection was reset. The merchant can begin Stripe setup again.",
+    }

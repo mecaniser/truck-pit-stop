@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, BadgeDollarSign, CircleAlert, Copy, CreditCard, ExternalLink, RefreshCw, ShieldCheck, Webhook } from 'lucide-react'
+import { AlertTriangle, BadgeDollarSign, CircleAlert, Copy, CreditCard, ExternalLink, RefreshCw, ShieldCheck, Webhook, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { Spinner } from '@/components/ui'
@@ -88,6 +88,8 @@ export default function PaymentControlCenter() {
   const [refreshing, setRefreshing] = useState(false)
   const [feeDrafts, setFeeDrafts] = useState<Record<string, string>>({})
   const [savingTenantId, setSavingTenantId] = useState<string | null>(null)
+  const [resetCandidate, setResetCandidate] = useState<Merchant | null>(null)
+  const [resettingTenantId, setResettingTenantId] = useState<string | null>(null)
 
   const load = async (refresh = false) => {
     try {
@@ -125,6 +127,21 @@ export default function PaymentControlCenter() {
       toast.error(error.response?.data?.detail || 'Unable to update platform fee')
     } finally {
       setSavingTenantId(null)
+    }
+  }
+
+  const resetStripeConnection = async () => {
+    if (!resetCandidate) return
+    try {
+      setResettingTenantId(resetCandidate.tenant_id)
+      await api.post(`/admin/payments-control/tenants/${resetCandidate.tenant_id}/reset-stripe-connection`)
+      toast.success(`Reset Stripe connection for ${resetCandidate.tenant_name}`)
+      setResetCandidate(null)
+      await load(true)
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Unable to reset Stripe connection')
+    } finally {
+      setResettingTenantId(null)
     }
   }
 
@@ -183,13 +200,15 @@ export default function PaymentControlCenter() {
 
       <GlassNoirCard padding="none" className="overflow-hidden">
         <div className="p-6"><div className="flex items-center gap-3"><BadgeDollarSign className="h-5 w-5 text-gold-400" /><div><h2 className="font-semibold text-white">Merchant readiness and platform fees</h2><p className="mt-1 text-sm text-zinc-400">Default fee: {overview.platform_fee_default_percent}%. Overrides affect new PaymentIntents only.</p></div></div></div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><thead className="border-y border-zinc-800 bg-zinc-950/45 text-xs uppercase tracking-[0.12em] text-zinc-500"><tr><th className="px-6 py-3">Merchant</th><th className="px-4 py-3">Readiness</th><th className="px-4 py-3">Requirements</th><th className="px-4 py-3">Fee override</th><th className="px-4 py-3">Webhook delivery</th></tr></thead><tbody className="divide-y divide-zinc-800">{overview.merchants.map((merchant) => <tr key={merchant.tenant_id} className="align-top"><td className="px-6 py-4"><p className="font-medium text-zinc-100">{merchant.tenant_name}</p><p className="mt-1 text-xs text-zinc-500">{merchant.owner_email || 'No owner email'}</p></td><td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${statusStyles[merchant.status]}`}>{merchant.status.replace('_', ' ')}</span><p className="mt-2 text-xs text-zinc-500">Charges: {merchant.charges_enabled ? 'on' : 'off'} · Payouts: {merchant.payouts_enabled ? 'on' : 'off'}</p></td><td className="max-w-xs px-4 py-4 text-xs text-zinc-400">{merchant.requirements.length ? merchant.requirements.join(', ') : merchant.disabled_reason || 'None reported'}</td><td className="px-4 py-4"><div className="flex items-center gap-2"><input aria-label={`Platform fee for ${merchant.tenant_name}`} value={feeDrafts[merchant.tenant_id] ?? ''} onChange={(event) => setFeeDrafts((current) => ({ ...current, [merchant.tenant_id]: event.target.value }))} placeholder={`${overview.platform_fee_default_percent}% default`} inputMode="decimal" className="w-28 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-2 text-sm text-white outline-none focus:border-gold-500" /><GlassNoirButton size="sm" onClick={() => saveFee(merchant)} disabled={savingTenantId === merchant.tenant_id}>{savingTenantId === merchant.tenant_id ? 'Saving' : 'Save'}</GlassNoirButton></div><button onClick={() => saveFee(merchant, null)} className="mt-2 text-xs text-zinc-500 hover:text-gold-300">Use platform default</button></td><td className="px-4 py-4"><p className="text-xs text-zinc-300">{dateTime(merchant.last_webhook_at)}</p><p className="mt-1 text-xs text-zinc-500">{merchant.last_webhook_event || 'No event'}{merchant.last_webhook_error ? ` · ${merchant.last_webhook_error}` : ''}</p></td></tr>)}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-left text-sm"><thead className="border-y border-zinc-800 bg-zinc-950/45 text-xs uppercase tracking-[0.12em] text-zinc-500"><tr><th className="px-6 py-3">Merchant</th><th className="px-4 py-3">Readiness</th><th className="px-4 py-3">Requirements</th><th className="px-4 py-3">Fee override</th><th className="px-4 py-3">Webhook delivery</th><th className="px-4 py-3">Recovery</th></tr></thead><tbody className="divide-y divide-zinc-800">{overview.merchants.map((merchant) => <tr key={merchant.tenant_id} className="align-top"><td className="px-6 py-4"><p className="font-medium text-zinc-100">{merchant.tenant_name}</p><p className="mt-1 text-xs text-zinc-500">{merchant.owner_email || 'No owner email'}</p></td><td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${statusStyles[merchant.status]}`}>{merchant.status.replace('_', ' ')}</span><p className="mt-2 text-xs text-zinc-500">Charges: {merchant.charges_enabled ? 'on' : 'off'} · Payouts: {merchant.payouts_enabled ? 'on' : 'off'}</p></td><td className="max-w-xs px-4 py-4 text-xs text-zinc-400">{merchant.requirements.length ? merchant.requirements.join(', ') : merchant.disabled_reason || 'None reported'}</td><td className="px-4 py-4"><div className="flex items-center gap-2"><input aria-label={`Platform fee for ${merchant.tenant_name}`} value={feeDrafts[merchant.tenant_id] ?? ''} onChange={(event) => setFeeDrafts((current) => ({ ...current, [merchant.tenant_id]: event.target.value }))} placeholder={`${overview.platform_fee_default_percent}% default`} inputMode="decimal" className="w-28 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-2 text-sm text-white outline-none focus:border-gold-500" /><GlassNoirButton size="sm" onClick={() => saveFee(merchant)} disabled={savingTenantId === merchant.tenant_id}>{savingTenantId === merchant.tenant_id ? 'Saving' : 'Save'}</GlassNoirButton></div><button onClick={() => saveFee(merchant, null)} className="mt-2 text-xs text-zinc-500 hover:text-gold-300">Use platform default</button></td><td className="px-4 py-4"><p className="text-xs text-zinc-300">{dateTime(merchant.last_webhook_at)}</p><p className="mt-1 text-xs text-zinc-500">{merchant.last_webhook_event || 'No event'}{merchant.last_webhook_error ? ` · ${merchant.last_webhook_error}` : ''}</p></td><td className="px-4 py-4">{merchant.status === 'unreachable' ? <GlassNoirButton variant="danger" size="sm" onClick={() => setResetCandidate(merchant)} disabled={resettingTenantId === merchant.tenant_id}>{resettingTenantId === merchant.tenant_id ? 'Resetting' : 'Reset Stripe'}</GlassNoirButton> : <span className="text-xs text-zinc-500">No action needed</span>}</td></tr>)}</tbody></table></div>
       </GlassNoirCard>
 
       <GlassNoirCard padding="none" className="overflow-hidden">
         <div className="p-6"><h2 className="font-semibold text-white">Recent Stripe payment ledger</h2><p className="mt-1 text-sm text-zinc-400">Fee data appears for PaymentIntents created after this control center is deployed.</p></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-y border-zinc-800 bg-zinc-950/45 text-xs uppercase tracking-[0.12em] text-zinc-500"><tr><th className="px-6 py-3">Date</th><th className="px-4 py-3">Merchant</th><th className="px-4 py-3">Invoice</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">Platform fee</th><th className="px-4 py-3">Stripe</th></tr></thead><tbody className="divide-y divide-zinc-800">{ledger.entries.map((entry) => <tr key={entry.payment_id}><td className="px-6 py-3 text-xs text-zinc-400">{dateTime(entry.created_at)}</td><td className="px-4 py-3 text-zinc-200">{entry.tenant_name}</td><td className="px-4 py-3 text-zinc-300">{entry.invoice_number}</td><td className="px-4 py-3 font-medium text-zinc-100">{money(entry.amount)}</td><td className="px-4 py-3">{entry.platform_fee_amount ? <span className="text-gold-400">{money(entry.platform_fee_amount)} ({entry.platform_fee_percent}%)</span> : <span className="text-zinc-400">Not recorded</span>}</td><td className="px-4 py-3"><a href={`https://dashboard.stripe.com/payments/${entry.payment_intent_id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-sky-300 hover:text-sky-200">Open <ExternalLink className="h-3 w-3" /></a></td></tr>)}</tbody></table></div>
       </GlassNoirCard>
+
+      {resetCandidate && <div className="fixed inset-0 z-[100] grid place-items-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && !resettingTenantId && setResetCandidate(null)}><div role="alertdialog" aria-modal="true" aria-labelledby="reset-stripe-title" aria-describedby="reset-stripe-description" className="w-full max-w-md rounded-lg border border-red-800/50 bg-zinc-950 p-6 shadow-2xl shadow-black/60"><div className="flex items-start justify-between gap-4"><div><h3 id="reset-stripe-title" className="text-lg font-semibold text-zinc-100">Reset Stripe connection?</h3><p id="reset-stripe-description" className="mt-3 text-sm leading-6 text-zinc-400">This clears the stale Stripe account link for <span className="font-medium text-zinc-200">{resetCandidate.tenant_name}</span>. It does not delete the Stripe account or prior payment history.</p></div><button type="button" onClick={() => setResetCandidate(null)} disabled={Boolean(resettingTenantId)} aria-label="Close confirmation" className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"><X className="h-5 w-5" /></button></div><div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><GlassNoirButton variant="secondary" onClick={() => setResetCandidate(null)} disabled={Boolean(resettingTenantId)}>Cancel</GlassNoirButton><GlassNoirButton variant="danger" onClick={resetStripeConnection} disabled={Boolean(resettingTenantId)}>{resettingTenantId ? 'Resetting...' : 'Reset connection'}</GlassNoirButton></div></div></div>}
     </div>
   )
 }

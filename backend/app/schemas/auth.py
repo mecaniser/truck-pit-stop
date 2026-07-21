@@ -82,6 +82,7 @@ class TenantBrandingResponse(BaseModel):
     name: Optional[str] = None
     slug: Optional[str] = None
     logo_url: Optional[str] = None
+    state: Optional[str] = None
 
 
 class ForgotPasswordRequest(BaseModel):
