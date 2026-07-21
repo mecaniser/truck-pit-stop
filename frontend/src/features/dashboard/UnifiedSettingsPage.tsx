@@ -1267,14 +1267,14 @@ function PaymentsSection() {
               {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Continue Stripe Setup'}
             </button>
           ) : status.connection_type !== 'express_legacy' ? (
-            <>
-              <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className={industrialStyles.btnSecondary}>
-                <span className="flex items-center gap-2"><ExternalLink className="w-4 h-4" />Manage in Stripe Dashboard</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <a href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer" className={`${industrialStyles.btnSecondary} inline-flex items-center justify-center`}>
+                <span className="inline-flex items-center gap-2"><ExternalLink className="w-4 h-4" />Manage in Stripe Dashboard</span>
               </a>
               <button onClick={() => setDisconnectKind('current')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
                 {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Stripe'}
               </button>
-            </>
+            </div>
           ) : (
             <button onClick={() => setDisconnectKind('legacy')} disabled={disconnectMutation.isPending} className={industrialStyles.btnSecondary}>
               {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Legacy Connection'}
