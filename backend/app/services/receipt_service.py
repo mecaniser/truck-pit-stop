@@ -37,6 +37,15 @@ def generate_receipt_pdf(payment: Payment, invoice: Invoice, repair_order: Repai
     c.drawString(50, y, f"Method: {payment.method.value}")
     y -= 15
     c.drawString(50, y, f"Status: {payment.status.value}")
+    if payment.payment_provider:
+        y -= 15
+        c.drawString(50, y, f"Provider: {payment.payment_provider}")
+    if payment.reference_number:
+        y -= 15
+        c.drawString(50, y, f"Reference: {payment.reference_number}")
+    if payment.authorization_number:
+        y -= 15
+        c.drawString(50, y, f"Authorization: {payment.authorization_number}")
     
     # Repair order info
     y -= 30
@@ -53,5 +62,4 @@ def generate_receipt_pdf(payment: Payment, invoice: Invoice, repair_order: Repai
     c.save()
     buffer.seek(0)
     return buffer
-
 

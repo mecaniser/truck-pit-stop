@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw, Search } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -99,6 +99,15 @@ type ApiErrorLike = {
 }
 
 type ZelleModalMode = 'collect' | 'confirm_pending'
+type EvidencePaymentMethod = 'check' | 'ach' | 'fleet_payment'
+
+const EVIDENCE_PAYMENT_METHODS: EvidencePaymentMethod[] = ['check', 'ach', 'fleet_payment']
+const FLEET_PAYMENT_PROVIDERS = [
+  { value: 'EFS', label: 'EFS / MoneyCode' },
+  { value: 'Comchek', label: 'Comchek' },
+  { value: 'T-Chek', label: 'T-Chek' },
+  { value: 'Other', label: 'Other provider' },
+]
 
 type ManualPaymentResponse = {
   status: string
@@ -276,7 +285,8 @@ export default function RepairOrdersPage() {
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const [showResendInvoice, setShowResendInvoice] = useState(false)
   const [resendCustomEmail, setResendCustomEmail] = useState('')
-  const [showDeleteInvoiceConfirm, setShowDeleteInvoiceConfirm] = useState(false)
+  const [showVoidInvoiceConfirm, setShowVoidInvoiceConfirm] = useState(false)
+  const [voidInvoiceReason, setVoidInvoiceReason] = useState('')
   const [showReassignMechanic, setShowReassignMechanic] = useState(false)
   const [assignMechanicOpen, setAssignMechanicOpen] = useState(true)
   const [reviewNotes, setReviewNotes] = useState('')
@@ -286,6 +296,12 @@ export default function RepairOrdersPage() {
   const [showInvoiceCreateOptions, setShowInvoiceCreateOptions] = useState(false)
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
+  const [showManualPaymentConfirmation, setShowManualPaymentConfirmation] = useState(false)
+  const [manualPaymentReference, setManualPaymentReference] = useState('')
+  const [manualPaymentAuthorization, setManualPaymentAuthorization] = useState('')
+  const [manualPaymentProvider, setManualPaymentProvider] = useState('')
+  const [manualPaymentCustomProvider, setManualPaymentCustomProvider] = useState('')
+  const [manualPaymentNotes, setManualPaymentNotes] = useState('')
   const [showZelleQrModal, setShowZelleQrModal] = useState(false)
   const [zelleModalMode, setZelleModalMode] = useState<ZelleModalMode>('collect')
   const [zelleSenderEmail, setZelleSenderEmail] = useState('')
@@ -308,6 +324,26 @@ export default function RepairOrdersPage() {
     setZelleSenderPhone('')
     setShowAmountBreakdown(false)
     setShowZelleQrModal(true)
+  }
+
+  const resetManualPaymentConfirmation = () => {
+    setShowManualPaymentConfirmation(false)
+    setManualPaymentReference('')
+    setManualPaymentAuthorization('')
+    setManualPaymentProvider('')
+    setManualPaymentCustomProvider('')
+    setManualPaymentNotes('')
+  }
+
+  const openManualPaymentConfirmation = (method: EvidencePaymentMethod) => {
+    setShowInvoicePaymentOptions(false)
+    setSelectedPaymentMethod(method)
+    setManualPaymentReference('')
+    setManualPaymentAuthorization('')
+    setManualPaymentProvider('')
+    setManualPaymentCustomProvider('')
+    setManualPaymentNotes('')
+    setShowManualPaymentConfirmation(true)
   }
 
   useEffect(() => {
@@ -837,6 +873,7 @@ export default function RepairOrdersPage() {
     }`
 
   const canEditPriceBuilderByRole = ['garage_owner', 'garage_admin', 'receptionist'].includes(currentUser?.role || '')
+  const canVoidInvoices = ['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
   const showLegacyPriceEditor = false
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
   const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
@@ -951,10 +988,10 @@ export default function RepairOrdersPage() {
 
       const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
       toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
-    } catch (error: any) {
+    } catch (error: unknown) {
       setFormErrors((current) => ({
         ...current,
-        vehicleVin: error.response?.data?.detail || 'Failed to decode VIN. Check the VIN or enter truck details manually.',
+        vehicleVin: getErrorDetail(error, 'Failed to decode VIN. Check the VIN or enter truck details manually.'),
       }))
     } finally {
       setIsDecodingNewVehicleVin(false)
@@ -1226,6 +1263,9 @@ export default function RepairOrdersPage() {
       zelleSenderEmail,
       zelleSenderPhone,
       updateCustomerFromSender,
+      paymentProvider,
+      referenceNumber,
+      authorizationNumber,
     }: {
       invoiceId: string
       method: string
@@ -1233,6 +1273,9 @@ export default function RepairOrdersPage() {
       zelleSenderEmail?: string
       zelleSenderPhone?: string
       updateCustomerFromSender?: boolean
+      paymentProvider?: string
+      referenceNumber?: string
+      authorizationNumber?: string
     }) => {
       const response = await api.post('/payments/record-manual', { 
         invoice_id: invoiceId,
@@ -1241,6 +1284,9 @@ export default function RepairOrdersPage() {
         zelle_sender_email: zelleSenderEmail || null,
         zelle_sender_phone: zelleSenderPhone || null,
         update_customer_from_sender: !!updateCustomerFromSender,
+        payment_provider: paymentProvider || null,
+        reference_number: referenceNumber || null,
+        authorization_number: authorizationNumber || null,
       })
       return response.data as ManualPaymentResponse
     },
@@ -1254,6 +1300,7 @@ export default function RepairOrdersPage() {
       }
       setShowInvoicePaymentOptions(false)
       setSelectedPaymentMethod('')
+      resetManualPaymentConfirmation()
       setShowZelleQrModal(false)
       setZelleSenderEmail('')
       setZelleSenderPhone('')
@@ -1303,18 +1350,21 @@ export default function RepairOrdersPage() {
     },
   })
 
-  const deleteInvoiceMutation = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      await api.delete(`/invoices/${invoiceId}`)
+  const voidInvoiceMutation = useMutation({
+    mutationFn: async ({ invoiceId, reason }: { invoiceId: string; reason: string }) => {
+      const response = await api.post(`/invoices/${invoiceId}/void`, { reason })
+      return response.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['invoice-for-order'] })
-      setSelectedOrder(prev => prev ? { ...prev, status: 'completed' } : null)
-      toast.success('Invoice reset. Order is back to Completed — you can issue a new invoice.')
+      setSelectedOrder(prev => prev ? { ...prev, status: 'pending_review' } : null)
+      setShowVoidInvoiceConfirm(false)
+      setVoidInvoiceReason('')
+      toast.success('Invoice voided and preserved. The order is open for revision.')
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to delete invoice'))
+      toast.error(getErrorDetail(error, 'Failed to void invoice'))
     },
   })
 
@@ -3535,7 +3585,7 @@ export default function RepairOrdersPage() {
                     invoice={invoiceForOrder ?? null}
                     invoiceActionPending={
                       resendInvoiceMutation.isPending ||
-                      deleteInvoiceMutation.isPending ||
+                      voidInvoiceMutation.isPending ||
                       recordManualPaymentMutation.isPending ||
                       clearPendingZelleMutation.isPending
                     }
@@ -3545,10 +3595,17 @@ export default function RepairOrdersPage() {
                       }
                     }}
                     onRecordPayment={() => {
+                      if (invoiceForOrder?.pending_zelle_confirmation) {
+                        openZellePaymentModal('confirm_pending')
+                        return
+                      }
                       setSelectedPaymentMethod('')
                       setShowInvoicePaymentOptions(true)
                     }}
-                    onDeleteInvoice={() => setShowDeleteInvoiceConfirm(true)}
+                    onVoidInvoice={canVoidInvoices ? () => {
+                      setVoidInvoiceReason('')
+                      setShowVoidInvoiceConfirm(true)
+                    } : undefined}
                     historyEvents={priceBuilderHistoryEvents}
                     onClose={closeDetail}
                     onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
@@ -4315,16 +4372,21 @@ export default function RepairOrdersPage() {
                             </svg>
                             Resend Invoice
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowDeleteInvoiceConfirm(true)}
-                            disabled={deleteInvoiceMutation.isPending}
-                            className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors"
-                            title="Void this invoice and return the order to Completed so you can re-issue it"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                            Reset
-                          </button>
+                          {canVoidInvoices && !invoiceForOrder.pending_zelle_confirmation && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVoidInvoiceReason('')
+                                setShowVoidInvoiceConfirm(true)
+                              }}
+                              disabled={voidInvoiceMutation.isPending}
+                              className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors"
+                              title="Preserve this invoice as voided and reopen the order for revision"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              Void &amp; revise
+                            </button>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -4350,7 +4412,8 @@ export default function RepairOrdersPage() {
                             { value: 'cash', label: 'Cash', icon: '💵' },
                             { value: 'zelle', label: 'Zelle', icon: '📱' },
                             { value: 'check', label: 'Check', icon: '📝' },
-                            { value: 'ach', label: 'Account Transfer', icon: '🏦' },
+                            { value: 'ach', label: 'ACH / Bank Transfer', icon: '🏦' },
+                            { value: 'fleet_payment', label: 'Fleet Check / Code', icon: '🚛' },
                           ].map((method) => (
                             <button
                               key={method.value}
@@ -4358,10 +4421,14 @@ export default function RepairOrdersPage() {
                               onClick={() => {
                                 setSelectedPaymentMethod(method.value)
                                 if (method.value === 'zelle') {
-                                  openZellePaymentModal()
+                                  openZellePaymentModal(
+                                    invoiceForOrder.pending_zelle_confirmation ? 'confirm_pending' : 'collect',
+                                  )
                                 }
                               }}
                               className={`py-2 px-3 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 text-sm font-medium ${
+                                method.value === 'fleet_payment' ? 'col-span-2 ' : ''
+                              }${
                                 selectedPaymentMethod === method.value
                                   ? 'border-green-500 bg-green-50 text-green-700'
                                   : 'border-gray-200 hover:border-gray-300 text-gray-700'
@@ -4387,6 +4454,10 @@ export default function RepairOrdersPage() {
                             type="button"
                             onClick={() => {
                               if (selectedPaymentMethod && invoiceForOrder) {
+                                if (EVIDENCE_PAYMENT_METHODS.includes(selectedPaymentMethod as EvidencePaymentMethod)) {
+                                  openManualPaymentConfirmation(selectedPaymentMethod as EvidencePaymentMethod)
+                                  return
+                                }
                                 recordManualPaymentMutation.mutate({
                                   invoiceId: invoiceForOrder.id,
                                   method: selectedPaymentMethod,
@@ -4399,7 +4470,11 @@ export default function RepairOrdersPage() {
                             {recordManualPaymentMutation.isPending ? (
                               <Spinner size="xs" className="border-white/40 border-t-white" />
                             ) : (
-                              selectedPaymentMethod === 'zelle' ? 'Use Zelle Modal' : 'Mark as Paid'
+                              selectedPaymentMethod === 'zelle'
+                                ? 'Use Zelle Modal'
+                                : EVIDENCE_PAYMENT_METHODS.includes(selectedPaymentMethod as EvidencePaymentMethod)
+                                  ? 'Continue'
+                                  : 'Confirm cash received'
                             )}
                           </button>
                         </div>
@@ -4746,14 +4821,27 @@ export default function RepairOrdersPage() {
         </div>
       )}
 
-      {/* Delete Invoice Confirmation Modal */}
+      {/* Record payment method modal */}
       {showInvoicePaymentOptions && priceBuilderOwnsShell && invoiceForOrder && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="mb-4">
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <button
+              type="button"
+              aria-label="Close payment modal"
+              onClick={() => {
+                setShowInvoicePaymentOptions(false)
+                setSelectedPaymentMethod('')
+              }}
+              className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="mb-4 pr-10">
               <p className="text-lg font-semibold text-gray-900">Record payment</p>
               <p className="text-sm text-gray-500">
-                Invoice {invoiceForOrder.invoice_number} · {formatMoney(invoiceForOrder.total_amount)}
+                Invoice {invoiceForOrder.invoice_number} · {formatMoney(
+                  Math.max(0, parseMoney(invoiceForOrder.total_amount) - parseMoney(invoiceForOrder.service_fee_amount)),
+                )}
               </p>
               {invoiceForOrder.pending_zelle_confirmation && (
                 <p className="mt-2 text-xs leading-5 text-amber-800">
@@ -4766,13 +4854,16 @@ export default function RepairOrdersPage() {
                 { value: 'cash', label: 'Cash' },
                 { value: 'zelle', label: 'Zelle' },
                 { value: 'check', label: 'Check' },
-                { value: 'ach', label: 'Account Transfer' },
+                { value: 'ach', label: 'ACH / Bank Transfer' },
+                { value: 'fleet_payment', label: 'Fleet Check / Code' },
               ].map((method) => (
                 <button
                   key={method.value}
                   type="button"
                   onClick={() => setSelectedPaymentMethod(method.value)}
                   className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
+                    method.value === 'fleet_payment' ? 'col-span-2 ' : ''
+                  }${
                     selectedPaymentMethod === method.value
                       ? 'border-green-500 bg-green-50 text-green-800'
                       : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
@@ -4782,17 +4873,7 @@ export default function RepairOrdersPage() {
                 </button>
               ))}
             </div>
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowInvoicePaymentOptions(false)
-                  setSelectedPaymentMethod('')
-                }}
-                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
-              >
-                Cancel
-              </button>
+            <div className="mt-5">
               <button
                 type="button"
                 disabled={!selectedPaymentMethod || recordManualPaymentMutation.isPending}
@@ -4800,7 +4881,13 @@ export default function RepairOrdersPage() {
                   if (!selectedPaymentMethod) return
                   if (selectedPaymentMethod === 'zelle') {
                     setShowInvoicePaymentOptions(false)
-                    openZellePaymentModal()
+                    openZellePaymentModal(
+                      invoiceForOrder.pending_zelle_confirmation ? 'confirm_pending' : 'collect',
+                    )
+                    return
+                  }
+                  if (EVIDENCE_PAYMENT_METHODS.includes(selectedPaymentMethod as EvidencePaymentMethod)) {
+                    openManualPaymentConfirmation(selectedPaymentMethod as EvidencePaymentMethod)
                     return
                   }
                   recordManualPaymentMutation.mutate({
@@ -4808,21 +4895,197 @@ export default function RepairOrdersPage() {
                     method: selectedPaymentMethod,
                   })
                 }}
-                className="flex-1 rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
+                className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
               >
-                {recordManualPaymentMutation.isPending ? 'Recording...' : selectedPaymentMethod === 'zelle' ? 'Continue' : 'Mark paid'}
+                {recordManualPaymentMutation.isPending
+                  ? 'Recording...'
+                  : selectedPaymentMethod === 'zelle'
+                    ? 'Continue'
+                    : EVIDENCE_PAYMENT_METHODS.includes(selectedPaymentMethod as EvidencePaymentMethod)
+                      ? 'Continue'
+                      : 'Confirm cash received'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {showDeleteInvoiceConfirm && invoiceForOrder && (
+      {showManualPaymentConfirmation && invoiceForOrder && (() => {
+        const method = selectedPaymentMethod as EvidencePaymentMethod
+        const isFleetPayment = method === 'fleet_payment'
+        const resolvedProvider = manualPaymentProvider === 'Other'
+          ? manualPaymentCustomProvider.trim()
+          : manualPaymentProvider
+        const referenceLabel = method === 'ach'
+          ? 'Bank trace or transfer reference'
+          : method === 'check'
+            ? 'Check number'
+            : 'Fleet check or payment code'
+        const title = method === 'ach'
+          ? 'Confirm bank transfer'
+          : method === 'check'
+            ? 'Confirm check received'
+            : 'Confirm fleet payment'
+        const confirmationLabel = method === 'ach'
+          ? 'Confirm transfer received'
+          : method === 'check'
+            ? 'Confirm check received'
+            : 'Confirm fleet payment'
+        const canConfirm = manualPaymentReference.trim().length > 0
+          && (!isFleetPayment || (
+            resolvedProvider.length > 0
+            && manualPaymentAuthorization.trim().length > 0
+          ))
+        const manualAmount = Math.max(
+          0,
+          parseMoney(invoiceForOrder.total_amount) - parseMoney(invoiceForOrder.service_fee_amount),
+        )
+
+        return (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4">
+            <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+              <button
+                type="button"
+                aria-label="Close payment confirmation"
+                onClick={() => {
+                  resetManualPaymentConfirmation()
+                  setSelectedPaymentMethod('')
+                }}
+                className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="mb-4 pr-10">
+                <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+                <p className="text-sm text-gray-500">
+                  Invoice {invoiceForOrder.invoice_number} · {formatMoney(manualAmount)}
+                </p>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-5 text-blue-900">
+                {method === 'ach' && 'Verify that the funds appear in the shop bank account before confirming this transfer.'}
+                {method === 'check' && 'Record the check identifier before marking the invoice paid. This confirms receipt, not bank clearance.'}
+                {isFleetPayment && 'Authorize or redeem the fleet instrument with its provider before confirming the invoice as paid.'}
+              </div>
+
+              {invoiceForOrder.pending_zelle_confirmation && (
+                <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                  Confirming this payment will dismiss the customer&apos;s unconfirmed Zelle claim.
+                </p>
+              )}
+
+              <div className="space-y-4">
+                {isFleetPayment && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-gray-800">Provider</span>
+                    <select
+                      value={manualPaymentProvider}
+                      onChange={(event) => setManualPaymentProvider(event.target.value)}
+                      className="h-11 w-full rounded-xl border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                    >
+                      <option value="">Select provider</option>
+                      {FLEET_PAYMENT_PROVIDERS.map((provider) => (
+                        <option key={provider.value} value={provider.value}>{provider.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {isFleetPayment && manualPaymentProvider === 'Other' && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-gray-800">Provider name</span>
+                    <input
+                      type="text"
+                      value={manualPaymentCustomProvider}
+                      onChange={(event) => setManualPaymentCustomProvider(event.target.value)}
+                      maxLength={100}
+                      placeholder="Enter fleet payment provider"
+                      className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                    />
+                  </label>
+                )}
+
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-gray-800">{referenceLabel}</span>
+                  <input
+                    type="text"
+                    value={manualPaymentReference}
+                    onChange={(event) => setManualPaymentReference(event.target.value)}
+                    maxLength={255}
+                    placeholder={method === 'ach' ? 'ACH trace, wire reference, or bank confirmation' : method === 'check' ? 'Enter check number' : 'Enter EFS, Comchek, or T-Chek code'}
+                    className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  />
+                </label>
+
+                {isFleetPayment && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-gray-800">Authorization or approval number</span>
+                    <input
+                      type="text"
+                      value={manualPaymentAuthorization}
+                      onChange={(event) => setManualPaymentAuthorization(event.target.value)}
+                      maxLength={255}
+                      placeholder="Enter provider authorization"
+                      className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                    />
+                  </label>
+                )}
+
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-gray-800">Notes <span className="font-normal text-gray-400">(optional)</span></span>
+                  <textarea
+                    value={manualPaymentNotes}
+                    onChange={(event) => setManualPaymentNotes(event.target.value)}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder="Add bank, payer, or verification details"
+                    className="w-full resize-none rounded-xl border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-100"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetManualPaymentConfirmation()
+                    setSelectedPaymentMethod('')
+                    setShowInvoicePaymentOptions(true)
+                  }}
+                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Use another method
+                </button>
+                <button
+                  type="button"
+                  disabled={!canConfirm || recordManualPaymentMutation.isPending}
+                  onClick={() => {
+                    recordManualPaymentMutation.mutate({
+                      invoiceId: invoiceForOrder.id,
+                      method,
+                      notes: manualPaymentNotes.trim(),
+                      paymentProvider: isFleetPayment ? resolvedProvider : undefined,
+                      referenceNumber: manualPaymentReference.trim(),
+                      authorizationNumber: isFleetPayment ? manualPaymentAuthorization.trim() : undefined,
+                    })
+                  }}
+                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-xl bg-green-600 px-2 text-center text-xs font-semibold text-white hover:bg-green-700 disabled:bg-gray-300"
+                >
+                  {recordManualPaymentMutation.isPending ? 'Recording…' : confirmationLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {canVoidInvoices && showVoidInvoiceConfirm && invoiceForOrder && (
         <div className="fixed inset-0 z-[60] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
             <div 
               className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowDeleteInvoiceConfirm(false)}
+              onClick={() => setShowVoidInvoiceConfirm(false)}
             />
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
               <div className="flex items-center gap-4 mb-4">
@@ -4830,42 +5093,56 @@ export default function RepairOrdersPage() {
                   <RotateCcw className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Reset Invoice</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Void &amp; revise invoice</h3>
                   <p className="text-sm text-gray-500">#{invoiceForOrder.invoice_number}</p>
                 </div>
               </div>
 
               <p className="text-gray-600 mb-4">
-                Void this invoice and start over?
+                Preserve this invoice and reopen the repair order for correction.
               </p>
 
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-6">
                 <p className="text-sm text-amber-800">
-                  The invoice will be voided and the repair order returns to <strong>"completed"</strong> status, so you can issue a new invoice. Nothing on the order is lost.
+                  The original invoice remains in financial history as <strong>voided</strong>. The order returns to manager review so labor, parts, and pricing can be revised before a replacement invoice is issued.
                 </p>
               </div>
+
+              <label className="mb-6 block">
+                <span className="mb-1.5 block text-sm font-semibold text-gray-800">Reason for revision</span>
+                <textarea
+                  value={voidInvoiceReason}
+                  onChange={(event) => setVoidInvoiceReason(event.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="Describe what needs to be corrected"
+                  className="w-full resize-none rounded-xl border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                />
+              </label>
               
               <div className="flex gap-3 justify-end">
                 <button
                   type="button"
-                  onClick={() => setShowDeleteInvoiceConfirm(false)}
+                  onClick={() => setShowVoidInvoiceConfirm(false)}
                   className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={deleteInvoiceMutation.isPending}
+                  disabled={voidInvoiceMutation.isPending || voidInvoiceReason.trim().length < 3}
                   onClick={() => {
-                    deleteInvoiceMutation.mutate(invoiceForOrder.id)
-                    setShowDeleteInvoiceConfirm(false)
+                    voidInvoiceMutation.mutate({
+                      invoiceId: invoiceForOrder.id,
+                      reason: voidInvoiceReason.trim(),
+                    })
                   }}
                   className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
                 >
-                  {deleteInvoiceMutation.isPending && (
+                  {voidInvoiceMutation.isPending && (
                     <Spinner size="xs" className="border-white/40 border-t-white" />
                   )}
-                  Reset Invoice
+                  Void &amp; reopen
                 </button>
               </div>
             </div>
@@ -4876,9 +5153,21 @@ export default function RepairOrdersPage() {
       {/* Zelle QR Code Modal */}
       {showZelleQrModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
+          <div className="relative bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 overflow-hidden">
+              <button
+                type="button"
+                aria-label="Close payment modal"
+                onClick={() => {
+                  setShowAmountBreakdown(false)
+                  setShowZelleQrModal(false)
+                  setSelectedPaymentMethod('')
+                }}
+                className="absolute right-4 top-4 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
               <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 pr-10">
                 <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
                   <span className="text-xl">📱</span>
                 </div>
@@ -4939,6 +5228,18 @@ export default function RepairOrdersPage() {
                       Sender phone: {invoiceForOrder.zelle_pending_sender_phone}
                     </p>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!invoiceForOrder) return
+                      setShowZelleQrModal(false)
+                      clearPendingZelleMutation.mutate({ invoiceId: invoiceForOrder.id })
+                    }}
+                    disabled={clearPendingZelleMutation.isPending}
+                    className="pt-1 text-left text-xs font-semibold text-blue-800 underline underline-offset-2 hover:text-blue-950 disabled:opacity-50"
+                  >
+                    {clearPendingZelleMutation.isPending ? 'Dismissing claim…' : 'Payment not received? Dismiss claim'}
+                  </button>
                 </div>
               )}
 
@@ -5082,31 +5383,19 @@ export default function RepairOrdersPage() {
                 </div>
               )}
 
-              <div className="flex gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => {
                     setShowAmountBreakdown(false)
                     setShowZelleQrModal(false)
+                    setSelectedPaymentMethod('')
+                    setShowInvoicePaymentOptions(true)
                   }}
-                  className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-colors"
+                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-3 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-100"
                 >
-                  Close
+                  Use another method
                 </button>
-                {zelleModalMode === 'confirm_pending' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAmountBreakdown(false)
-                      setShowZelleQrModal(false)
-                      setSelectedPaymentMethod('')
-                      setShowInvoicePaymentOptions(true)
-                    }}
-                    className="flex-1 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-medium rounded-lg transition-colors"
-                  >
-                    Use Another Method
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -5122,13 +5411,13 @@ export default function RepairOrdersPage() {
                     }
                   }}
                   disabled={recordManualPaymentMutation.isPending}
-                  className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
+                  className="inline-flex h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-lg bg-green-600 px-3 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:bg-gray-400"
                 >
                   {recordManualPaymentMutation.isPending
                     ? 'Recording...'
                     : zelleModalMode === 'confirm_pending'
-                      ? 'Confirm Received'
-                      : 'Payment Received'}
+                      ? 'Confirm received'
+                      : 'Payment received'}
                 </button>
               </div>
             </div>

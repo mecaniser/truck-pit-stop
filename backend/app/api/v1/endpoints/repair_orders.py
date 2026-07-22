@@ -898,7 +898,10 @@ async def list_repair_orders(
                 Invoice.created_at,
                 Invoice.due_date,
             )
-            .where(Invoice.repair_order_id.in_(order_ids))
+            .where(
+                Invoice.repair_order_id.in_(order_ids),
+                Invoice.status != InvoiceStatus.CANCELLED,
+            )
         )
         invoice_rows = invoice_result.fetchall()
         pending_zelle_map = {row[0]: (row[2] is not None and row[1] != InvoiceStatus.PAID) for row in invoice_rows}
@@ -1026,7 +1029,13 @@ async def get_repair_order_detail(
     ]
 
     invoice_result = await db.execute(
-        select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
+        select(Invoice)
+        .where(
+            Invoice.repair_order_id == order.id,
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
     )
     invoice = invoice_result.scalar_one_or_none()
     pending_zelle_confirmation = bool(
@@ -1265,7 +1274,13 @@ async def get_repair_order(
         )
     
     invoice_result = await db.execute(
-        select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
+        select(Invoice)
+        .where(
+            Invoice.repair_order_id == order.id,
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
     )
     invoice = invoice_result.scalar_one_or_none()
     pending_zelle_confirmation = bool(

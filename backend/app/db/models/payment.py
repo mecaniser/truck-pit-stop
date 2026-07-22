@@ -13,6 +13,7 @@ class PaymentMethod(str, enum.Enum):
     CHECK = "check"
     ACH = "ach"
     ZELLE = "zelle"
+    FLEET_PAYMENT = "fleet_payment"
     OTHER = "other"
 
 
@@ -58,6 +59,12 @@ class Payment(BaseModel):
     quickbooks_idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
     
     notes = Column(Text, nullable=True)
+    # Manual-payment audit details. These are intentionally provider-neutral:
+    # reference_number stores a bank trace, paper-check number, or fleet code;
+    # provider and authorization_number identify verified fleet instruments.
+    payment_provider = Column(String(100), nullable=True)
+    reference_number = Column(String(255), nullable=True)
+    authorization_number = Column(String(255), nullable=True)
     receipt_url = Column(String(500), nullable=True)
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     recorded_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
