@@ -135,7 +135,8 @@ def upgrade() -> None:
               'assigned_at', repair_order.assigned_at,
               'acknowledged_at', repair_order.acknowledged_at,
               'pricing_locked_at', repair_order.pricing_locked_at,
-              'pricing_lock_reason', repair_order.pricing_lock_reason,
+              'pricing_lock_reason', repair_order.pricing_lock_reason
+            ) || jsonb_build_object(
               'quote_sent', quote.sent_to_customer,
               'quote_approved', quote.is_approved,
               'quote_sent_at', quote.sent_at,

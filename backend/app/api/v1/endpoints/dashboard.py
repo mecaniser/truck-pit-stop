@@ -451,10 +451,18 @@ async def get_dashboard_stats(
                     RepairOrderStatus.COMPLETED,
                     RepairOrderStatus.INVOICED,
                 ]),
+                # ETS includes closed historical service records as completed
+                # $0 orders without a local invoice. They are history, not work
+                # that the shop still needs to invoice.
+                or_(
+                    RepairOrder.source.is_(None),
+                    RepairOrder.source != "easy_truck_shop_import",
+                    RepairOrder.status != RepairOrderStatus.COMPLETED,
+                    RepairOrder.total_cost > 0,
+                ),
             )
         )
         .order_by(ready_to_close_priority.asc(), RepairOrder.updated_at.desc())
-        .limit(10)
     )
     ready_rows = result.all()
     ready_order_ids = [o.id for o, _, _, _ in ready_rows]
