@@ -222,6 +222,15 @@ async def create_vehicle_relationship(
         # Compatibility pointer for old customer-specific screens. Historical
         # repair orders retain their own customer_id and are never rewritten.
         vehicle.customer_id = customer.id
+    if body.relationship_type == "operator" and customer.fleet_enabled:
+        # Linking a truck to a fleet-enabled company from the main dashboard
+        # must be reciprocal with Fleet Board's "Link existing truck" flow.
+        await ensure_fleet_membership(
+            db,
+            tenant_id=vehicle.tenant_id,
+            vehicle_id=vehicle.id,
+            fleet_customer_id=customer.id,
+        )
     await db.commit()
     await db.refresh(relationship)
     return VehicleRelationshipResponse(

@@ -86,6 +86,19 @@ interface DuplicateVinConflict {
   vehicle?: DuplicateVinVehicleSummary | null
 }
 
+type VehicleRelationshipType = 'owner' | 'operator' | 'default_payer'
+
+interface VehicleLinkCandidate {
+  id: string
+  customer_id: string
+  make: string
+  model: string
+  year?: number | null
+  unit_number?: string | null
+  license_plate?: string | null
+  vin?: string | null
+}
+
 const duplicateVinFieldError = (error: any): DuplicateVinConflict | null => {
   const detail = error.response?.data?.detail
   if (error.response?.status !== 409) {
@@ -343,6 +356,12 @@ export default function CustomersPage() {
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [vehicleFormData, setVehicleFormData] = useState<VehicleFormData>(emptyVehicleForm)
   const [vehicleVinError, setVehicleVinError] = useState<DuplicateVinConflict | null>(null)
+  const [vehicleModalMode, setVehicleModalMode] = useState<'new' | 'existing'>('new')
+  const [vehicleLinkSearch, setVehicleLinkSearch] = useState('')
+  const debouncedVehicleLinkSearch = useDebouncedValue(vehicleLinkSearch.trim(), 250)
+  const [selectedLinkVehicle, setSelectedLinkVehicle] = useState<VehicleLinkCandidate | null>(null)
+  const [vehicleRelationshipType, setVehicleRelationshipType] = useState<VehicleRelationshipType>('operator')
+  const [makeRelationshipPrimary, setMakeRelationshipPrimary] = useState(false)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
   // Contact form state
@@ -434,6 +453,25 @@ export default function CustomersPage() {
     },
     enabled: !!selectedCustomer?.id && isDetailOpen,
   })
+
+  const { data: vehicleLinkCandidates = [], isFetching: isFetchingVehicleLinkCandidates } = useQuery<VehicleLinkCandidate[]>({
+    queryKey: ['vehicle-link-candidates', debouncedVehicleLinkSearch],
+    queryFn: async ({ signal }) => {
+      const response = await api.get('/vehicles/typeahead', {
+        signal,
+        params: { q: debouncedVehicleLinkSearch || undefined, limit: 50 },
+      })
+      return response.data
+    },
+    enabled: isVehicleModalOpen && !editingVehicle && vehicleModalMode === 'existing',
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  })
+
+  const availableVehicleLinkCandidates = useMemo(() => {
+    const linkedIds = new Set((customerVehicles || []).map((vehicle) => vehicle.id))
+    return vehicleLinkCandidates.filter((vehicle) => !linkedIds.has(vehicle.id))
+  }, [customerVehicles, vehicleLinkCandidates])
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -849,6 +887,38 @@ export default function CustomersPage() {
     },
   })
 
+  const linkVehicleMutation = useMutation({
+    mutationFn: async ({
+      vehicleId,
+      relationshipType,
+      makePrimary,
+    }: {
+      vehicleId: string
+      relationshipType: VehicleRelationshipType
+      makePrimary: boolean
+    }) => {
+      if (!selectedCustomer) throw new Error('Select a customer before linking a truck')
+      const response = await api.post(`/vehicles/${vehicleId}/relationships`, {
+        customer_id: selectedCustomer.id,
+        relationship_type: relationshipType,
+        is_primary: makePrimary,
+        replace_primary: makePrimary,
+      })
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles', selectedCustomer?.id] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-typeahead'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-link-candidates'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
+      closeVehicleModal()
+      toast.success('Existing truck linked to customer')
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || error.message || 'Failed to link truck')
+    },
+  })
+
   const deleteVehicleMutation = useMutation({
     mutationFn: async ({ customerId, vehicleId }: { customerId: string; vehicleId: string }) => {
       await api.delete(`/customers/${customerId}/vehicles/${vehicleId}`)
@@ -1000,6 +1070,11 @@ export default function CustomersPage() {
     setEditingVehicle(null)
     setVehicleFormData(emptyVehicleForm)
     setVehicleVinError(null)
+    setVehicleModalMode('new')
+    setVehicleLinkSearch('')
+    setSelectedLinkVehicle(null)
+    setVehicleRelationshipType('operator')
+    setMakeRelationshipPrimary(false)
     lastDecodedVehicleVin.current = ''
     setIsVehicleModalOpen(true)
   }
@@ -1007,6 +1082,7 @@ export default function CustomersPage() {
   const openEditVehicleModal = (vehicle: Vehicle) => {
     setEditingVehicle(vehicle)
     setVehicleVinError(null)
+    setVehicleModalMode('new')
     lastDecodedVehicleVin.current = (vehicle.vin || '').trim().toUpperCase()
     setVehicleFormData({
       make: vehicle.make,
@@ -1027,7 +1103,31 @@ export default function CustomersPage() {
     setEditingVehicle(null)
     setVehicleFormData(emptyVehicleForm)
     setVehicleVinError(null)
+    setVehicleModalMode('new')
+    setVehicleLinkSearch('')
+    setSelectedLinkVehicle(null)
+    setVehicleRelationshipType('operator')
+    setMakeRelationshipPrimary(false)
     lastDecodedVehicleVin.current = ''
+  }
+
+  const selectExistingTruckFromConflict = (vehicle: DuplicateVinVehicleSummary) => {
+    setEditingVehicle(null)
+    setVehicleVinError(null)
+    setVehicleModalMode('existing')
+    setVehicleLinkSearch(vehicle.vin || vehicle.unit_number || '')
+    setSelectedLinkVehicle({
+      id: vehicle.id,
+      customer_id: vehicle.customer_id || '',
+      make: vehicle.make || '',
+      model: vehicle.model || '',
+      year: vehicle.year,
+      unit_number: vehicle.unit_number,
+      license_plate: vehicle.license_plate,
+      vin: vehicle.vin,
+    })
+    setVehicleRelationshipType('operator')
+    setMakeRelationshipPrimary(false)
   }
 
   const handleVehicleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -1104,6 +1204,19 @@ export default function CustomersPage() {
         data: vehicleFormData,
       })
     }
+  }
+
+  const handleVehicleLinkSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedLinkVehicle) {
+      toast.error('Select an existing truck to link')
+      return
+    }
+    linkVehicleMutation.mutate({
+      vehicleId: selectedLinkVehicle.id,
+      relationshipType: vehicleRelationshipType,
+      makePrimary: makeRelationshipPrimary,
+    })
   }
 
   const handleDeleteVehicleClick = (vehicle: Vehicle) => {
@@ -1852,8 +1965,165 @@ export default function CustomersPage() {
     </form>
   )
 
+  const renderVehicleModeTabs = () => (
+    <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+      <button
+        type="button"
+        onClick={() => setVehicleModalMode('new')}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          vehicleModalMode === 'new' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+        }`}
+      >
+        New truck
+      </button>
+      <button
+        type="button"
+        onClick={() => setVehicleModalMode('existing')}
+        className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          vehicleModalMode === 'existing' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+        }`}
+      >
+        Link existing truck
+      </button>
+    </div>
+  )
+
+  const renderLinkVehicleForm = () => (
+    <form onSubmit={handleVehicleLinkSubmit} className="p-6 space-y-5">
+      {renderVehicleModeTabs()}
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Find the existing truck</label>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={vehicleLinkSearch}
+            onChange={(event) => {
+              setVehicleLinkSearch(event.target.value)
+              setSelectedLinkVehicle(null)
+            }}
+            className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-4 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+            placeholder="Search VIN, unit, plate, make, or model…"
+            autoFocus
+          />
+          {isFetchingVehicleLinkCandidates && (
+            <Spinner size="xs" className="absolute right-3 top-1/2 -translate-y-1/2" />
+          )}
+        </div>
+        <p className="mt-1 text-xs text-gray-500">This searches every truck in the shop, not only this customer.</p>
+      </div>
+
+      <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-2">
+        {selectedLinkVehicle && !availableVehicleLinkCandidates.some((vehicle) => vehicle.id === selectedLinkVehicle.id) && (
+          <button
+            type="button"
+            className="w-full rounded-lg border border-amber-400 bg-amber-50 p-3 text-left"
+          >
+            <span className="block font-semibold text-gray-900">
+              {[
+                selectedLinkVehicle.unit_number ? `Unit ${selectedLinkVehicle.unit_number}` : null,
+                selectedLinkVehicle.year,
+                selectedLinkVehicle.make,
+                selectedLinkVehicle.model,
+              ].filter(Boolean).join(' · ') || 'Existing truck'}
+            </span>
+            <span className="mt-1 block text-xs text-gray-600">
+              {[selectedLinkVehicle.license_plate ? `Plate ${selectedLinkVehicle.license_plate}` : null, selectedLinkVehicle.vin ? `VIN ${selectedLinkVehicle.vin}` : null].filter(Boolean).join(' · ')}
+            </span>
+          </button>
+        )}
+        {availableVehicleLinkCandidates.map((vehicle) => {
+          const selected = selectedLinkVehicle?.id === vehicle.id
+          return (
+            <button
+              key={vehicle.id}
+              type="button"
+              onClick={() => setSelectedLinkVehicle(vehicle)}
+              className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                selected ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/50'
+              }`}
+            >
+              <span className="block font-semibold text-gray-900">
+                {[
+                  vehicle.unit_number ? `Unit ${vehicle.unit_number}` : null,
+                  vehicle.year,
+                  vehicle.make,
+                  vehicle.model,
+                ].filter(Boolean).join(' · ') || 'Truck'}
+              </span>
+              <span className="mt-1 block text-xs text-gray-600">
+                {[vehicle.license_plate ? `Plate ${vehicle.license_plate}` : null, vehicle.vin ? `VIN ${vehicle.vin}` : null].filter(Boolean).join(' · ') || 'No plate or VIN recorded'}
+              </span>
+            </button>
+          )
+        })}
+        {!isFetchingVehicleLinkCandidates && availableVehicleLinkCandidates.length === 0 && !selectedLinkVehicle && (
+          <p className="px-3 py-6 text-center text-sm text-gray-500">
+            {vehicleLinkSearch.trim() ? 'No unlinked trucks match this search.' : 'Search to select a truck already in the shop.'}
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">How is this customer connected?</label>
+        <select
+          value={vehicleRelationshipType}
+          onChange={(event) => {
+            const relationshipType = event.target.value as VehicleRelationshipType
+            setVehicleRelationshipType(relationshipType)
+            if (relationshipType === 'operator') setMakeRelationshipPrimary(false)
+          }}
+          className="w-full rounded-lg border border-gray-300 px-4 py-2.5 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+        >
+          <option value="operator">Operator — this company runs the truck</option>
+          <option value="owner">Owner — this company owns the truck</option>
+          <option value="default_payer">Default payer — normally invoices this company</option>
+        </select>
+        <p className="mt-1 text-xs text-gray-500">
+          Operator links automatically appear on Fleet Board when this customer is fleet-enabled.
+        </p>
+      </div>
+
+      {vehicleRelationshipType !== 'operator' && (
+        <label className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={makeRelationshipPrimary}
+            onChange={(event) => setMakeRelationshipPrimary(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            {vehicleRelationshipType === 'owner'
+              ? 'Make this the current primary owner and close the previous primary ownership period.'
+              : 'Make this company the truck’s primary default payer.'}
+          </span>
+        </label>
+      )}
+
+      <div className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
+        <button
+          type="button"
+          onClick={closeVehicleModal}
+          className="rounded-lg px-5 py-2.5 font-medium text-gray-700 hover:bg-gray-100"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={!selectedLinkVehicle || linkVehicleMutation.isPending}
+          className="flex items-center gap-2 rounded-lg px-5 py-2.5 font-medium text-white disabled:opacity-50"
+          style={{ backgroundColor: accentColors[500] }}
+        >
+          {linkVehicleMutation.isPending && <Spinner size="xs" className="border-white/40 border-t-white" />}
+          Link Truck
+        </button>
+      </div>
+    </form>
+  )
+
   const renderVehicleForm = () => (
     <form onSubmit={handleVehicleSubmit} className="p-6 space-y-4">
+      {!editingVehicle && renderVehicleModeTabs()}
       {/* Make & Model */}
       <div className="grid grid-cols-2 gap-4">
         <div>
@@ -1978,9 +2248,17 @@ export default function CustomersPage() {
                   </span>
                 </span>
               )}
-              <span className="mt-2 block text-xs">
-                Keep this truck as the primary record, then use Fleet Board → Add truck → Link existing truck to connect it to this company.
-              </span>
+              {vehicleVinError.vehicle ? (
+                <button
+                  type="button"
+                  onClick={() => selectExistingTruckFromConflict(vehicleVinError.vehicle!)}
+                  className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Use and link this existing truck
+                </button>
+              ) : (
+                <span className="mt-2 block text-xs">Switch to “Link existing truck” and search this VIN.</span>
+              )}
             </span>
           </p>
         ) : (
@@ -3183,7 +3461,7 @@ export default function CustomersPage() {
                           className="px-3 py-1.5 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
                         >
                           <Plus className="w-3.5 h-3.5" />
-                          Add
+                          Add / Link
                         </button>
                       </div>
                     </div>
@@ -3555,7 +3833,7 @@ export default function CustomersPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">
-                      {editingVehicle ? 'Edit Vehicle' : 'Add Vehicle'}
+                      {editingVehicle ? 'Edit Vehicle' : vehicleModalMode === 'existing' ? 'Link Existing Truck' : 'Add Vehicle'}
                     </h2>
                     <p className="text-sm text-gray-500">
                       for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}
@@ -3571,7 +3849,7 @@ export default function CustomersPage() {
               </div>
 
               {/* Form */}
-              {renderVehicleForm()}
+              {!editingVehicle && vehicleModalMode === 'existing' ? renderLinkVehicleForm() : renderVehicleForm()}
             </div>
           </div>
         </div>
