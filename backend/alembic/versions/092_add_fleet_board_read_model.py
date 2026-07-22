@@ -36,7 +36,7 @@ def upgrade() -> None:
     )
     op.execute(
         "CREATE INDEX ix_fleet_incidents_fleet_board_open "
-        "ON fleet_incidents (vehicle_id) WHERE status::text <> 'resolved'"
+        "ON fleet_incidents (vehicle_id) WHERE status <> 'resolved'::incidentstatus"
     )
 
     # One recomputation function is shared by all fleet writers, including
