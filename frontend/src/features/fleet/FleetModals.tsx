@@ -304,7 +304,10 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
           onChange={(e) => setF((prev) => ({ ...prev, bill_labor_at_customer_rate: e.target.checked }))}
           style={{ width: 'auto', marginTop: 2 }}
         />
-        <span>Bill labor at customer rate <span style={{ color: 'var(--muted-2)' }}>Parts always use garage cost. This applies to new work orders.</span></span>
+        <span style={{ display: 'grid', gap: 3 }}>
+          <span>Bill labor at customer rate</span>
+          <span style={{ color: 'var(--muted-2)' }}>Parts always use garage cost. This applies to new work orders.</span>
+        </span>
       </label>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
