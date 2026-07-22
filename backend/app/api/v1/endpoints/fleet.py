@@ -1976,7 +1976,9 @@ async def _load_fleet_ro_or_404(
         )
     )
     if for_update:
-        stmt = stmt.with_for_update()
+        # PostgreSQL cannot lock the nullable side of the FleetMembership outer
+        # join. Lock only the repair order row that this completion flow mutates.
+        stmt = stmt.with_for_update(of=RepairOrder)
     result = await db.execute(stmt)
     ro = result.scalar_one_or_none()
     if not ro:

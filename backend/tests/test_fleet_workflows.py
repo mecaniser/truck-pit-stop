@@ -9,6 +9,7 @@ import os
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 from starlette.datastructures import Headers, UploadFile
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
@@ -709,6 +710,38 @@ async def test_complete_requires_in_progress(db_session):
     with pytest.raises(HTTPException) as exc:
         await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
     assert exc.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_locked_fleet_order_query_locks_only_repair_order_row():
+    """The optional membership join must not make PostgreSQL reject FOR UPDATE."""
+
+    class CapturingSession:
+        statement = None
+
+        async def execute(self, statement):
+            self.statement = statement
+
+            class EmptyResult:
+                @staticmethod
+                def scalar_one_or_none():
+                    return None
+
+            return EmptyResult()
+
+    db = CapturingSession()
+    with pytest.raises(HTTPException) as exc:
+        await fleet._load_fleet_ro_or_404(
+            db,
+            uuid4(),
+            uuid4(),
+            for_update=True,
+        )
+
+    assert exc.value.status_code == 404
+    sql = str(db.statement.compile(dialect=postgresql.dialect()))
+    assert "LEFT OUTER JOIN fleet_memberships" in sql
+    assert "FOR UPDATE OF repair_orders" in sql
 
 
 @pytest.mark.asyncio
