@@ -10,10 +10,11 @@ from sqlalchemy import select
 from app.api.v1.endpoints import repair_orders
 from app.db.models.customer import Customer
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.repair_order_read_model import RepairOrderReadModel
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
-from app.schemas.repair_order import RepairOrderUpdate
+from app.schemas.repair_order import RepairOrderResponse, RepairOrderUpdate
 
 
 async def _seed_context(db_session):
@@ -384,3 +385,50 @@ async def test_list_repair_orders_excludes_deleted(db_session, monkeypatch):
         db=db_session, current_user=user,
     )
     assert order.id in [o.id for o in deleted_list]
+
+
+@pytest.mark.asyncio
+async def test_list_repair_orders_uses_the_read_projection(db_session, monkeypatch):
+    user, customer, vehicle = await _seed_context(db_session)
+    order = await _create_order(
+        db_session,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=RepairOrderStatus.DRAFT,
+    )
+
+    payload = RepairOrderResponse.model_validate(order).model_dump(mode="json")
+    projection = RepairOrderReadModel(
+        repair_order_id=order.id,
+        tenant_id=user.tenant_id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        status=order.status.value,
+        is_internal=False,
+        is_deleted=False,
+        created_at=order.created_at,
+        search_document=order.order_number,
+        search_compact=order.order_number,
+        payload=payload,
+    )
+    db_session.add(projection)
+    await db_session.flush()
+
+    async def _legacy_path_must_not_run(**_kwargs):
+        raise AssertionError("a projected order must not use the legacy list query")
+
+    monkeypatch.setattr(repair_orders, "_list_repair_orders_legacy", _legacy_path_must_not_run)
+    orders = await repair_orders.list_repair_orders(
+        customer_id=None,
+        vehicle_id=None,
+        status=None,
+        deleted=False,
+        skip=0,
+        limit=50,
+        paginated=False,
+        db=db_session,
+        current_user=user,
+    )
+
+    assert [item.id for item in orders] == [order.id]

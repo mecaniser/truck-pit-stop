@@ -17,6 +17,7 @@ from app.core.search import build_search
 from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.repair_order_read_model import RepairOrderReadModel
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
 from app.db.models.invoice import Invoice, InvoiceStatus
@@ -770,6 +771,126 @@ async def regenerate_description_library_endpoint(
 
 @router.get("", response_model=List[RepairOrderResponse])
 async def list_repair_orders(
+    customer_id: Optional[UUID] = Query(None),
+    vehicle_id: Optional[UUID] = Query(None),
+    status: Optional[RepairOrderStatus] = Query(None),
+    search: Optional[str] = Query(None, description="Filter by order number or description"),
+    deleted: bool = Query(False, description="Show only soft-deleted orders (owner/admin only)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return a bounded repair-order list from its screen-specific projection.
+
+    The legacy query remains only for databases restored without the projection
+    backfill. A healthy migrated tenant takes two bounded queries: one count
+    and one indexed projection read, regardless of its invoice/quote history.
+    """
+    if deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if current_user.role == UserRole.CUSTOMER:
+        if not current_user.customer_id:
+            return paginated_or_list([], 0, skip, limit, paginated)
+        projection_filters = [RepairOrderReadModel.customer_id == current_user.customer_id]
+        source_filters = [RepairOrder.customer_id == current_user.customer_id]
+    else:
+        if not current_user.tenant_id:
+            return paginated_or_list([], 0, skip, limit, paginated)
+        projection_filters = [RepairOrderReadModel.tenant_id == current_user.tenant_id]
+        source_filters = [RepairOrder.tenant_id == current_user.tenant_id]
+        if current_user.role == UserRole.FLEET_MANAGER:
+            projection_filters.append(RepairOrderReadModel.is_internal.is_(True))
+            source_filters.append(RepairOrder.is_internal.is_(True))
+        if customer_id:
+            projection_filters.append(RepairOrderReadModel.customer_id == customer_id)
+            source_filters.append(RepairOrder.customer_id == customer_id)
+
+    if vehicle_id:
+        projection_filters.append(RepairOrderReadModel.vehicle_id == vehicle_id)
+        source_filters.append(RepairOrder.vehicle_id == vehicle_id)
+    if status:
+        projection_filters.append(RepairOrderReadModel.status == status.value)
+        source_filters.append(RepairOrder.status == status)
+
+    projection_filters.append(RepairOrderReadModel.is_deleted.is_(deleted))
+    source_filters.append(
+        RepairOrder.deleted_at.isnot(None) if deleted else RepairOrder.deleted_at.is_(None)
+    )
+
+    # Compare source and projection counts in one query. Any mismatch means a
+    # restored database has rows awaiting backfill, so preserve correctness by
+    # falling back to the pre-projection implementation for that request.
+    source_count, projected_count = (
+        await db.execute(
+            select(
+                func.count(RepairOrder.id),
+                func.count(RepairOrderReadModel.repair_order_id),
+            )
+            .select_from(RepairOrder)
+            .outerjoin(
+                RepairOrderReadModel,
+                RepairOrderReadModel.repair_order_id == RepairOrder.id,
+            )
+            .where(*source_filters)
+        )
+    ).one()
+    total = source_count or 0
+    if total != (projected_count or 0):
+        return await _list_repair_orders_legacy(
+            customer_id=customer_id,
+            vehicle_id=vehicle_id,
+            status=status,
+            search=search,
+            deleted=deleted,
+            skip=skip,
+            limit=limit,
+            paginated=paginated,
+            db=db,
+            current_user=current_user,
+        )
+
+    search_term = (search if isinstance(search, str) else "").strip()
+    if search_term:
+        compact_term = re.sub(r"[^A-Za-z0-9]", "", search_term)
+        search_filters = [RepairOrderReadModel.search_document.ilike(f"%{search_term}%")]
+        if compact_term:
+            search_filters.append(RepairOrderReadModel.search_compact.ilike(f"%{compact_term}%"))
+        projection_filters.append(or_(*search_filters))
+        total = (
+            await db.execute(
+                select(func.count(RepairOrderReadModel.repair_order_id)).where(*projection_filters)
+            )
+        ).scalar() or 0
+
+    result = await db.execute(
+        select(RepairOrderReadModel.payload)
+        .where(*projection_filters)
+        .order_by(RepairOrderReadModel.created_at.desc(), RepairOrderReadModel.repair_order_id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    items = [RepairOrderResponse.model_validate(payload) for payload in result.scalars().all()]
+    if current_user.role == UserRole.CUSTOMER:
+        items = [
+            item.model_copy(
+                update={
+                    "internal_notes": None,
+                    "total_parts_cost": Decimal("0.00"),
+                    "total_labor_cost": Decimal("0.00"),
+                    "total_cost": Decimal("0.00"),
+                }
+            )
+            if item.status not in (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)
+            else item
+            for item in items
+        ]
+    return paginated_or_list(items, total, skip, limit, paginated)
+
+
+async def _list_repair_orders_legacy(
     customer_id: Optional[UUID] = Query(None),
     vehicle_id: Optional[UUID] = Query(None),
     status: Optional[RepairOrderStatus] = Query(None),
