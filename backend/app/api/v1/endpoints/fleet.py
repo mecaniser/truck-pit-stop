@@ -1784,10 +1784,19 @@ async def truck_detail(
         fleet_account_billing_address=billing_address(fleet_account),
         bill_to_customer_id=bill_to_account.id if bill_to_account else None,
         bill_to_company_name=customer_name(bill_to_account),
+        bill_to_first_name=bill_to_account.first_name if bill_to_account else None,
+        bill_to_last_name=bill_to_account.last_name if bill_to_account else None,
         bill_to_contact_name=contact_name(bill_to_account),
         bill_to_email=bill_to_account.email if bill_to_account else None,
         bill_to_phone=bill_to_account.phone if bill_to_account else None,
         bill_to_billing_address=billing_address(bill_to_account),
+        bill_to_billing_address_line1=bill_to_account.billing_address_line1 if bill_to_account else None,
+        bill_to_billing_address_line2=bill_to_account.billing_address_line2 if bill_to_account else None,
+        bill_to_billing_city=bill_to_account.billing_city if bill_to_account else None,
+        bill_to_billing_state=bill_to_account.billing_state if bill_to_account else None,
+        bill_to_billing_zip=bill_to_account.billing_zip if bill_to_account else None,
+        bill_to_billing_country=bill_to_account.billing_country if bill_to_account else None,
+        bill_to_is_internal=bool(bill_to_account and bill_to_account.is_internal_fleet),
         bill_to_relationship_type=(
             bill_to_relationship.relationship_type if bill_to_relationship else None
         ),
@@ -1849,6 +1858,45 @@ async def update_truck(
         vehicle.billing_contact_phone = normalize_phone(body.billing_contact_phone)
     if body.bill_labor_at_customer_rate is not None:
         vehicle.bill_labor_at_customer_rate = body.bill_labor_at_customer_rate
+    if body.bill_to_customer is not None:
+        customer_update = body.bill_to_customer
+        linked = (await db.execute(select(VehicleCustomerRelationship.id).where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.customer_id == customer_update.customer_id,
+            VehicleCustomerRelationship.tenant_id == current_user.tenant_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        ))).scalars().first()
+        if not linked:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The selected bill-to company is no longer connected to this truck",
+            )
+        bill_to_customer = (await db.execute(select(Customer).where(
+            Customer.id == customer_update.customer_id,
+            Customer.tenant_id == current_user.tenant_id,
+            Customer.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if not bill_to_customer:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill-to customer not found")
+
+        customer_fields = customer_update.model_dump(exclude={"customer_id"}, exclude_unset=True)
+        for required_field in ("first_name", "last_name", "email"):
+            if required_field in customer_fields and not (customer_fields[required_field] or "").strip():
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"{required_field.replace('_', ' ').title()} is required",
+                )
+        if "phone" in customer_fields:
+            customer_fields["phone"] = normalize_phone(customer_fields["phone"])
+        if "email" in customer_fields and customer_fields["email"] is not None:
+            customer_fields["email"] = customer_fields["email"].strip().lower()
+        if "company_name" in customer_fields:
+            customer_fields["company_name"] = (customer_fields["company_name"] or "").strip() or None
+        for field, value in customer_fields.items():
+            if isinstance(value, str) and field not in {"email", "phone"}:
+                value = value.strip() or None
+            setattr(bill_to_customer, field, value)
     if body.odometer is not None:
         vehicle.mileage = body.odometer
     if body.pm_interval_miles is not None:

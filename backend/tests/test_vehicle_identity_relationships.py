@@ -12,6 +12,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
 from app.schemas.customer import CustomerUpdate
+from app.schemas.fleet import FleetBillToCustomerUpdate, TruckUpdate
 from app.schemas.vehicle import VehicleBase, VehicleRelationshipCreate, VehicleRelationshipSync, VehicleUpdate
 from app.services.vehicle_identity import (
     ensure_fleet_membership,
@@ -293,6 +294,36 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
     assert relinked_detail.bill_to_email == owner.email
     assert relinked_detail.fleet_account_company_name == "77 Cargo"
 
+    updated_email = f"billing-{uuid4().hex[:6]}@els.example.com"
+    await fleet.update_truck(
+        vehicle_id=truck.id,
+        body=TruckUpdate(bill_to_customer=FleetBillToCustomerUpdate(
+            customer_id=owner.id,
+            company_name="ELS Logistics Updated LLC",
+            first_name="Accounts",
+            last_name="Payable",
+            email=updated_email,
+            phone="17045550199",
+            billing_address_line1="100 Fleet Way",
+            billing_city="Charlotte",
+            billing_state="NC",
+            billing_zip="28202",
+            billing_country="USA",
+        )),
+        db=db_session,
+        current_user=manager,
+    )
+    await db_session.refresh(owner)
+    assert owner.company_name == "ELS Logistics Updated LLC"
+    assert owner.email == updated_email
+    assert owner.phone == "17045550199"
+    updated_detail = await fleet.truck_detail(
+        vehicle_id=truck.id, db=db_session, current_user=manager,
+    )
+    assert updated_detail.bill_to_company_name == "ELS Logistics Updated LLC"
+    assert updated_detail.bill_to_email == updated_email
+    assert updated_detail.truck.display_unit_number == "ELS Logistics Updated LLC 603"
+
     await vehicles.sync_vehicle_relationships(
         vehicle_id=truck.id,
         body=VehicleRelationshipSync(
@@ -316,7 +347,7 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
         current_user=manager,
     )
     relinked_board = await fleet.fleet_board(db=db_session, current_user=manager)
-    assert relinked_board.trucks[0].display_unit_number == "ELS Logistics LLC 603"
+    assert relinked_board.trucks[0].display_unit_number == "ELS Logistics Updated LLC 603"
     operator_periods = list((await db_session.execute(select(VehicleCustomerRelationship).where(
         VehicleCustomerRelationship.vehicle_id == truck.id,
         VehicleCustomerRelationship.customer_id == operator.id,
