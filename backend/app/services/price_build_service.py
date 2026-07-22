@@ -285,34 +285,37 @@ class PriceBuildService:
             None,
         )
         if existing_line:
-            existing_line.description = service.name
-            existing_line.hours = total_hours
-            existing_line.hourly_rate = hourly_rate
-            existing_line.total_cost = _money(total_hours * hourly_rate)
-            existing_line.line_type = LaborLineType.MANUAL
-            existing_line.auto_recalc_enabled = True
+            line = existing_line
+            line.description = service.name
+            line.hours = total_hours
+            line.hourly_rate = hourly_rate
+            line.total_cost = _money(total_hours * hourly_rate)
+            line.line_type = LaborLineType.MANUAL
+            line.auto_recalc_enabled = True
             # Reset previously-attached parts so we can re-snapshot at current prices/stock.
             await self._restore_service_parts(db, order, service.id)
         else:
-            db.add(
-                Labor(
-                    tenant_id=order.tenant_id,
-                    repair_order_id=order.id,
-                    service_code=None,
-                    description=service.name,
-                    hours=total_hours,
-                    hourly_rate=hourly_rate,
-                    total_cost=_money(total_hours * hourly_rate),
-                    line_type=LaborLineType.MANUAL,
-                    provider=None,
-                    provider_operation_id=None,
-                    auto_recalc_enabled=True,
-                    source_service_id=service.id,
-                )
+            line = Labor(
+                tenant_id=order.tenant_id,
+                repair_order_id=order.id,
+                service_code=None,
+                description=service.name,
+                hours=total_hours,
+                hourly_rate=hourly_rate,
+                total_cost=_money(total_hours * hourly_rate),
+                line_type=LaborLineType.MANUAL,
+                provider=None,
+                provider_operation_id=None,
+                auto_recalc_enabled=True,
+                source_service_id=service.id,
             )
+            db.add(line)
+            await db.flush()
 
         # Auto-attach parts bundled with this service. Skip inventory items whose
-        # stock would go negative — admin should fix stock before repeating.
+        # stock would go negative and return an inline warning on the service labor
+        # line. Operators can add/override that part explicitly from the operation.
+        warnings: list[OperationWarning] = []
         for sp in service.service_parts:
             inv = sp.inventory_item
             if not inv or inv.deleted_at is not None:
@@ -320,9 +323,18 @@ class PriceBuildService:
             required_qty = sp.quantity * quantity
             packages_needed = _packages_consumed(required_qty)
             if (inv.stock_quantity or 0) < packages_needed:
-                raise PriceBuildValidationError(
-                    f"Insufficient stock for '{inv.name}': have {inv.stock_quantity}, need {required_qty} ({packages_needed} package(s))"
+                warnings.append(
+                    OperationWarning(
+                        code="service_part_stock_shortage",
+                        line_id=line.id,
+                        message=(
+                            f"Inventory shortage for bundled part '{inv.name}': "
+                            f"have {inv.stock_quantity or 0}, need {required_qty} ({packages_needed} package(s)). "
+                            "The service was added without this part."
+                        ),
+                    )
                 )
+                continue
             unit_price = _part_unit_price_for(order, inv)
             line_total = _money(unit_price * Decimal(required_qty))
             db.add(
@@ -342,7 +354,9 @@ class PriceBuildService:
 
         await db.commit()
         order = await self.load_order(db, order.id)
-        return await self.recalculate_order(db, order)
+        result = await self.recalculate_order(db, order)
+        result.warnings.extend(warnings)
+        return result
 
     async def _search_service_catalog(
         self,

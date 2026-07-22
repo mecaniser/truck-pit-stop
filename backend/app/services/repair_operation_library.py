@@ -4,12 +4,14 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
+from uuid import UUID
 
 
 @dataclass
 class OperationWarning:
     code: str
     message: str
+    line_id: Optional[UUID] = None
 
 
 @dataclass

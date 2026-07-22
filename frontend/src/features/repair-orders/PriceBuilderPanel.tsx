@@ -108,6 +108,12 @@ type StockShortage = {
   shortfallPackages: number
 }
 
+type LineWarning = {
+  code: string
+  message: string
+  line_id?: string | null
+}
+
 type Props = {
   orderId: string
   orderStatus: RepairOrderStatus
@@ -213,6 +219,7 @@ type Props = {
   deleteRecommendedPending?: boolean
   onRecommendedServicesOpenChange?: (open: boolean) => void
   onUpdated?: () => void
+  initialLineWarnings?: LineWarning[]
 }
 
 type SearchResponse = {
@@ -934,6 +941,7 @@ export default function PriceBuilderPanel({
   deleteRecommendedPending,
   onRecommendedServicesOpenChange,
   onUpdated,
+  initialLineWarnings = [],
 }: Props) {
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
@@ -963,6 +971,7 @@ export default function PriceBuilderPanel({
   const [woMileageOut, setWoMileageOut] = useState('')
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
   const [stockShortages, setStockShortages] = useState<Record<string, StockShortage>>({})
+  const [lineWarnings, setLineWarnings] = useState<Record<string, LineWarning[]>>({})
   const [partQuantityOverrides, setPartQuantityOverrides] = useState<Record<string, number>>({})
   const [partQuantitySavingKey, setPartQuantitySavingKey] = useState<string | null>(null)
   const [operationPartPickerLineId, setOperationPartPickerLineId] = useState<string | null>(null)
@@ -980,9 +989,30 @@ export default function PriceBuilderPanel({
 
   useEffect(() => {
     setStockShortages({})
+    setLineWarnings({})
     setPartQuantityOverrides({})
     setPartQuantitySavingKey(null)
   }, [orderId])
+
+  useEffect(() => {
+    const targetedWarnings = initialLineWarnings.filter((warning) => warning.line_id)
+    if (!targetedWarnings.length) return
+    setLineWarnings((current) => {
+      const next = { ...current }
+      for (const warning of targetedWarnings) {
+        const lineId = warning.line_id as string
+        next[lineId] = [...(next[lineId] || []).filter((item) => item.code !== warning.code || item.message !== warning.message), warning]
+      }
+      return next
+    })
+    setOpenLineIds((current) => {
+      const next = new Set(current)
+      targetedWarnings.forEach((warning) => {
+        if (warning.line_id) next.add(warning.line_id)
+      })
+      return next
+    })
+  }, [initialLineWarnings])
   const initialLaborBookTimeForm = (): LaborBookTimeForm => ({
     operation_name: searchTerm.trim(),
     operation_description: '',
@@ -1154,6 +1184,23 @@ export default function PriceBuilderPanel({
     return { ...line, hours: String(override.hours), hourly_rate: String(override.hourly_rate), total_cost }
   })
   const effectiveLaborTotal = effectiveLaborLines.reduce((sum, l) => sum + (parseFloat(l.total_cost || '0') || 0), 0)
+
+  useEffect(() => {
+    if (!summary?.lines) return
+    const activeLineIds = new Set(summary.lines.map((line) => line.id))
+    setLineWarnings((current) => {
+      let changed = false
+      const next: Record<string, LineWarning[]> = {}
+      for (const [lineId, warnings] of Object.entries(current)) {
+        if (!activeLineIds.has(lineId)) {
+          changed = true
+          continue
+        }
+        next[lineId] = warnings
+      }
+      return changed ? next : current
+    })
+  }, [summary?.lines])
 
   const { data: partsUsed, isFetching: partsFetching } = useQuery<PartsUsage[]>({
     queryKey: ['price-build-parts', orderId],
@@ -1576,7 +1623,7 @@ export default function PriceBuilderPanel({
       if (estimatedHours != null && (!Number.isFinite(hours) || hours <= 0)) {
         throw new Error('Book time hours must be greater than 0')
       }
-      await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
+      const response = await api.post(`/repair-orders/${orderId}/price-build/repair-ops/apply`, {
         operation_id: candidate.operation_id,
         name: candidate.name,
         description: candidate.description,
@@ -1584,15 +1631,34 @@ export default function PriceBuilderPanel({
         provider: candidate.provider,
         auto_recalc_enabled: true,
       })
+      return response.data as PriceBuildSummary
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
+      const targetedWarnings = (data.warnings || []).filter((warning) => warning.line_id)
+      if (targetedWarnings.length) {
+        setLineWarnings((current) => {
+          const next = { ...current }
+          for (const warning of targetedWarnings) {
+            const lineId = warning.line_id as string
+            next[lineId] = [...(next[lineId] || []).filter((item) => item.code !== warning.code || item.message !== warning.message), warning]
+          }
+          return next
+        })
+        setOpenLineIds((current) => {
+          const next = new Set(current)
+          targetedWarnings.forEach((warning) => {
+            if (warning.line_id) next.add(warning.line_id)
+          })
+          return next
+        })
+      }
       setSearchTerm('')
       setBookTimeHours('1')
       setCandidates([])
       setSearchWarnings([])
       setPaletteOpen(false)
       await invalidate()
-      toast.success('Repair operation applied')
+      if (!targetedWarnings.length) toast.success('Repair operation applied')
     },
     onError: (err: unknown) => toast.error(err instanceof Error ? err.message : 'Unable to apply operation'),
   })
@@ -2201,9 +2267,9 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      {!!summary?.warnings?.length && (
+      {!!summary?.warnings?.filter((w) => !w.line_id).length && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-          {summary.warnings.map((w) => (
+          {summary.warnings.filter((w) => !w.line_id).map((w) => (
             <p key={`${w.code}-${w.message}`} className="text-xs text-amber-800">
               {w.message}
             </p>
@@ -3416,6 +3482,7 @@ export default function PriceBuilderPanel({
                 const groupedParts = groupedPartsForLine(line)
                 const isOpen = openLineIds.has(line.id)
                 const isAddingPartHere = isAddingPartToLine(line.id)
+                const warningsForLine = lineWarnings[line.id] || []
                 const partTotal = groupedParts.reduce((sum, part) => sum + (parseFloat(part.total_price || '0') || 0), 0)
                 const partSavings = groupedParts.reduce((sum, part) => sum + (parseFloat(part.savings || '0') || 0), 0)
                 const lineTotal = (parseFloat(line.total_cost || '0') || 0) + partTotal
@@ -3451,6 +3518,16 @@ export default function PriceBuilderPanel({
                     </button>
                     {isOpen && (
                       <div className="ml-[60px] space-y-3 pb-4 pr-2">
+                        {warningsForLine.length > 0 && (
+                          <div role="alert" className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                            {warningsForLine.map((warning) => (
+                              <p key={`${warning.code}-${warning.message}`} className="flex items-start gap-1.5">
+                                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                                <span>{warning.message}</span>
+                              </p>
+                            ))}
+                          </div>
+                        )}
                         <div className="rounded-xl bg-gray-50 px-3 py-2">
                           <div className="mb-2 flex items-center justify-between gap-2">
                             <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-gray-400">Labor</span>

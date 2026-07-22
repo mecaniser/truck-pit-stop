@@ -362,6 +362,7 @@ export interface RepairOrderDetail extends RepairOrder {
 export interface PriceBuildWarning {
   code: string
   message: string
+  line_id?: string | null
 }
 
 export interface RepairOperationCandidate {

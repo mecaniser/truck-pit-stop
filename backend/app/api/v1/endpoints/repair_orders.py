@@ -2875,7 +2875,7 @@ async def add_price_build_flat_service(
         )
         return _to_price_build_summary(
             result.order,
-            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
         raise _map_price_build_error(exc)
@@ -2903,7 +2903,7 @@ async def search_price_build_repair_operations(
                 )
                 for c in candidates
             ],
-            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in warnings],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in warnings],
         )
     except Exception as exc:
         raise _map_price_build_error(exc)
@@ -2931,7 +2931,7 @@ async def apply_price_build_repair_operation(
         )
         return _to_price_build_summary(
             result.order,
-            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
         raise _map_price_build_error(exc)
@@ -2959,7 +2959,7 @@ async def update_price_build_line(
         )
         return _to_price_build_summary(
             result.order,
-            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
         raise _map_price_build_error(exc)
@@ -2978,7 +2978,7 @@ async def delete_price_build_line(
         result = await price_build_service.remove_line(db, order, line_id=line_id)
         return _to_price_build_summary(
             result.order,
-            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
         raise _map_price_build_error(exc)
@@ -2996,7 +2996,7 @@ async def recalculate_price_build(
         result = await price_build_service.recalculate_order(db, order)
         return _to_price_build_summary(
             result.order,
-            warnings=[PriceBuildWarning(code=w.code, message=w.message) for w in result.warnings],
+            warnings=[PriceBuildWarning(code=w.code, message=w.message, line_id=w.line_id) for w in result.warnings],
         )
     except Exception as exc:
         raise _map_price_build_error(exc)
