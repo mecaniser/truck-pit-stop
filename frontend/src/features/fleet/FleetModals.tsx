@@ -291,9 +291,49 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
           />
         </Field>
       </div>
-      <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>House-account fallback & pricing</div>
+      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Live customer billing data</div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', display: 'grid', gap: 4 }}>
+          <span style={{ color: 'var(--muted-2)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            Default invoice recipient{detail.bill_to_relationship_type ? ` · ${detail.bill_to_relationship_type.replace('_', ' ')}` : ''}
+          </span>
+          {detail.bill_to_company_name ? (
+            <>
+              <strong style={{ color: 'var(--text)', fontSize: 14 }}>{detail.bill_to_company_name}</strong>
+              {detail.bill_to_contact_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.bill_to_contact_name}</span>}
+              <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
+                {detail.bill_to_email && <a href={`mailto:${detail.bill_to_email}`} style={{ color: 'var(--text)' }}>{detail.bill_to_email}</a>}
+                {detail.bill_to_phone && <a href={`tel:${detail.bill_to_phone}`} style={{ color: 'var(--text)' }}>{formatUSPhone(detail.bill_to_phone)}</a>}
+              </span>
+              {detail.bill_to_billing_address && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.bill_to_billing_address}</span>}
+              {detail.bill_to_customer_id === detail.fleet_account_customer_id && (
+                <span style={{ color: 'var(--muted-3)', fontSize: 11 }}>Also the current fleet authority account.</span>
+              )}
+            </>
+          ) : (
+            <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>No active bill-to company is connected to this truck.</span>
+          )}
+        </div>
+        {detail.fleet_account_company_name && detail.fleet_account_customer_id !== detail.bill_to_customer_id && (
+          <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', display: 'grid', gap: 4 }}>
+            <span style={{ color: 'var(--muted-2)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>Fleet authority account</span>
+            <strong style={{ color: 'var(--text)', fontSize: 14 }}>{detail.fleet_account_company_name}</strong>
+            {detail.fleet_account_contact_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.fleet_account_contact_name}</span>}
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
+              {detail.fleet_account_email && <a href={`mailto:${detail.fleet_account_email}`} style={{ color: 'var(--text)' }}>{detail.fleet_account_email}</a>}
+              {detail.fleet_account_phone && <a href={`tel:${detail.fleet_account_phone}`} style={{ color: 'var(--text)' }}>{formatUSPhone(detail.fleet_account_phone)}</a>}
+            </span>
+            {detail.fleet_account_billing_address && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.fleet_account_billing_address}</span>}
+          </div>
+        )}
+      </div>
+      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--muted-2)' }}>
+        This information stays live from the connected customer record. A different company can still be selected for an individual work order.
+      </p>
+
+      <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>Internal house-account fallback & pricing</div>
       <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--muted-2)' }}>
-        Customer fleet work uses the company selected on the work order—its company name, email, phone, and billing address. These truck-level contact fields are only a fallback for internal house-account work.
+        These truck-level fields are used only when an internal House Account has no customer billing contact. They intentionally do not duplicate the live customer data shown above.
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Fallback contact name"><input value={f.billing_contact_name} onChange={set('billing_contact_name')} placeholder="Accounts payable" /></Field>

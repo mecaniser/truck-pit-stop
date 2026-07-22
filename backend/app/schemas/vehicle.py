@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Literal, Optional
+from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
 from datetime import datetime
 from uuid import UUID
 
@@ -64,6 +64,15 @@ class VehicleRelationshipCreate(BaseModel):
     replace_primary: bool = False
 
 
+class VehicleRelationshipSync(BaseModel):
+    """Replace one customer's active roles for a truck in one operation."""
+
+    customer_id: UUID
+    relationship_types: List[VehicleRelationshipType] = Field(default_factory=list)
+    # Canonical unit only; company prefixes are derived for fleet displays.
+    unit_number: Optional[str] = None
+
+
 class VehicleRelationshipResponse(BaseModel):
     id: UUID
     vehicle_id: UUID
@@ -76,4 +85,3 @@ class VehicleRelationshipResponse(BaseModel):
 
     class Config:
         from_attributes = True
-

@@ -18,11 +18,13 @@ from app.schemas.vehicle import (
     VehicleCustomerUpdate,
     VehicleRelationshipCreate,
     VehicleRelationshipResponse,
+    VehicleRelationshipSync,
     VehicleResponse,
 )
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vehicle_identity import (
+    end_fleet_membership,
     ensure_fleet_membership,
     ensure_vehicle_relationship,
     find_vehicle_by_vin,
@@ -243,6 +245,194 @@ async def create_vehicle_relationship(
         is_primary=relationship.is_primary,
         customer_company_name=(customer.company_name or f"{customer.first_name} {customer.last_name}".strip()),
     )
+
+
+@router.put("/{vehicle_id}/relationships", response_model=VehicleResponse)
+async def sync_vehicle_relationships(
+    vehicle_id: UUID,
+    body: VehicleRelationshipSync,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.FLEET_MANAGER,
+    )),
+):
+    """Relink a truck to one company while retaining dated relationship history."""
+    vehicle = (await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.tenant_id == current_user.tenant_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    customer = (await db.execute(select(Customer).where(
+        Customer.id == body.customer_id,
+        Customer.tenant_id == current_user.tenant_id,
+        Customer.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not vehicle or not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or company not found")
+
+    desired = set(body.relationship_types)
+    if current_user.role == UserRole.FLEET_MANAGER and "owner" in desired:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only shop administrators can record an ownership transfer",
+        )
+
+    now = datetime.now(timezone.utc)
+    active = list((await db.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.tenant_id == current_user.tenant_id,
+        VehicleCustomerRelationship.vehicle_id == vehicle.id,
+        VehicleCustomerRelationship.effective_to.is_(None),
+        VehicleCustomerRelationship.deleted_at.is_(None),
+    ))).scalars().all())
+    selected_active = [row for row in active if row.customer_id == customer.id]
+
+    # Removing the only current owner would leave the compatibility pointer and
+    # customer screens ambiguous. Assign the replacement owner first; that same
+    # save automatically closes the previous ownership period.
+    removing_selected_owner = any(
+        row.relationship_type == "owner" for row in selected_active
+    ) and "owner" not in desired
+    if removing_selected_owner:
+        replacement_owners = [
+            row for row in active
+            if row.relationship_type == "owner" and row.customer_id != customer.id
+        ]
+        if not replacement_owners:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Assign a replacement owner before unlinking the truck's only owner",
+            )
+        replacement = sorted(
+            replacement_owners,
+            key=lambda row: (not row.is_primary, row.effective_from),
+        )[0]
+        replacement.is_primary = True
+        vehicle.customer_id = replacement.customer_id
+
+    for relationship in selected_active:
+        if relationship.relationship_type in desired:
+            continue
+        relationship.effective_to = now
+        relationship.is_primary = False
+        if relationship.relationship_type == "operator":
+            await end_fleet_membership(
+                db,
+                tenant_id=current_user.tenant_id,
+                vehicle_id=vehicle.id,
+                fleet_customer_id=customer.id,
+            )
+
+    if "owner" in desired:
+        for relationship in active:
+            if relationship.relationship_type == "owner" and relationship.customer_id != customer.id:
+                relationship.effective_to = now
+                relationship.is_primary = False
+        await ensure_vehicle_relationship(
+            db,
+            tenant_id=current_user.tenant_id,
+            vehicle_id=vehicle.id,
+            customer_id=customer.id,
+            relationship_type="owner",
+            is_primary=True,
+        )
+        vehicle.customer_id = customer.id
+
+    if "default_payer" in desired:
+        for relationship in active:
+            if relationship.relationship_type == "default_payer" and relationship.customer_id != customer.id:
+                relationship.effective_to = now
+                relationship.is_primary = False
+        await ensure_vehicle_relationship(
+            db,
+            tenant_id=current_user.tenant_id,
+            vehicle_id=vehicle.id,
+            customer_id=customer.id,
+            relationship_type="default_payer",
+            is_primary=True,
+        )
+
+    if "operator" in desired:
+        customer.fleet_enabled = True
+        await ensure_fleet_membership(
+            db,
+            tenant_id=current_user.tenant_id,
+            vehicle_id=vehicle.id,
+            fleet_customer_id=customer.id,
+        )
+
+    if "unit_number" in body.model_fields_set:
+        vehicle.unit_number = (body.unit_number or "").strip() or None
+
+    await db.commit()
+    await db.refresh(vehicle)
+    return VehicleResponse.model_validate(vehicle)
+
+
+@router.delete("/{vehicle_id}/relationships/{relationship_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def unlink_vehicle_relationship(
+    vehicle_id: UUID,
+    relationship_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.FLEET_MANAGER,
+    )),
+):
+    """End one active truck/company link without deleting its history."""
+    relationship = (await db.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.id == relationship_id,
+        VehicleCustomerRelationship.vehicle_id == vehicle_id,
+        VehicleCustomerRelationship.tenant_id == current_user.tenant_id,
+        VehicleCustomerRelationship.effective_to.is_(None),
+        VehicleCustomerRelationship.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not relationship:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active truck relationship not found")
+    if current_user.role == UserRole.FLEET_MANAGER and relationship.relationship_type == "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only shop administrators can change truck ownership",
+        )
+
+    vehicle = (await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.tenant_id == current_user.tenant_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one()
+    if relationship.relationship_type == "owner":
+        replacements = list((await db.execute(select(VehicleCustomerRelationship).where(
+            VehicleCustomerRelationship.vehicle_id == vehicle_id,
+            VehicleCustomerRelationship.relationship_type == "owner",
+            VehicleCustomerRelationship.id != relationship.id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        ).order_by(
+            VehicleCustomerRelationship.is_primary.desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        ))).scalars().all())
+        if not replacements:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Assign a replacement owner before unlinking the truck's only owner",
+            )
+        replacements[0].is_primary = True
+        vehicle.customer_id = replacements[0].customer_id
+    elif relationship.relationship_type == "operator":
+        await end_fleet_membership(
+            db,
+            tenant_id=current_user.tenant_id,
+            vehicle_id=vehicle_id,
+            fleet_customer_id=relationship.customer_id,
+        )
+
+    relationship.effective_to = datetime.now(timezone.utc)
+    relationship.is_primary = False
+    await db.commit()
 
 
 @router.get("", response_model=List[VehicleResponse])

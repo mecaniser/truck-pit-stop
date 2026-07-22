@@ -1605,6 +1605,71 @@ async def truck_detail(
     board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros), pm_ro=_open_pm_ro(open_ros))
     await _attach_account_context(db, [board], current_user.tenant_id)
 
+    account_rows = list((await db.execute(
+        select(VehicleCustomerRelationship, Customer)
+        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+        .where(
+            VehicleCustomerRelationship.vehicle_id == vehicle_id,
+            VehicleCustomerRelationship.tenant_id == current_user.tenant_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+            Customer.deleted_at.is_(None),
+        )
+    )).all())
+    account_customers = {customer.id: customer for _, customer in account_rows}
+    fleet_account = account_customers.get(board.fleet_customer_id)
+    if board.fleet_customer_id and not fleet_account:
+        fleet_account = (await db.execute(select(Customer).where(
+            Customer.id == board.fleet_customer_id,
+            Customer.tenant_id == current_user.tenant_id,
+            Customer.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+
+    def billing_priority(row) -> tuple[int, datetime]:
+        relationship, _ = row
+        if relationship.relationship_type == "default_payer" and relationship.is_primary:
+            return (0, relationship.effective_from)
+        if relationship.relationship_type == "default_payer":
+            return (1, relationship.effective_from)
+        if relationship.relationship_type == "operator" and relationship.customer_id == board.fleet_customer_id:
+            return (2, relationship.effective_from)
+        if relationship.relationship_type == "operator":
+            return (3, relationship.effective_from)
+        if relationship.relationship_type == "owner" and relationship.is_primary:
+            return (4, relationship.effective_from)
+        return (5, relationship.effective_from)
+
+    bill_to_row = sorted(account_rows, key=billing_priority)[0] if account_rows else None
+    bill_to_relationship = bill_to_row[0] if bill_to_row else None
+    bill_to_account = bill_to_row[1] if bill_to_row else None
+
+    def customer_name(customer: Optional[Customer]) -> Optional[str]:
+        if not customer:
+            return None
+        return customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
+
+    def contact_name(customer: Optional[Customer]) -> Optional[str]:
+        if not customer:
+            return None
+        return f"{customer.first_name} {customer.last_name}".strip() or None
+
+    def billing_address(customer: Optional[Customer]) -> Optional[str]:
+        if not customer:
+            return None
+        city_state = ", ".join(filter(None, [customer.billing_city, customer.billing_state]))
+        if customer.billing_zip:
+            city_state = f"{city_state} {customer.billing_zip}".strip()
+        address_parts = [
+            customer.billing_address_line1,
+            customer.billing_address_line2,
+            city_state or None,
+        ]
+        if not any(address_parts):
+            return None
+        if customer.billing_country:
+            address_parts.append(customer.billing_country)
+        return ", ".join(part for part in address_parts if part)
+
     # History: completed internal ROs (PM/Repair) + completed inspections.
     history: list[HistoryEntry] = []
     crew: set[str] = set()
@@ -1711,6 +1776,21 @@ async def truck_detail(
         truck=board,
         open_work_orders=[_board_work_order(r) for r in open_ros],
         driver_phone=vehicle.driver_phone,
+        fleet_account_customer_id=fleet_account.id if fleet_account else None,
+        fleet_account_company_name=customer_name(fleet_account),
+        fleet_account_contact_name=contact_name(fleet_account),
+        fleet_account_email=fleet_account.email if fleet_account else None,
+        fleet_account_phone=fleet_account.phone if fleet_account else None,
+        fleet_account_billing_address=billing_address(fleet_account),
+        bill_to_customer_id=bill_to_account.id if bill_to_account else None,
+        bill_to_company_name=customer_name(bill_to_account),
+        bill_to_contact_name=contact_name(bill_to_account),
+        bill_to_email=bill_to_account.email if bill_to_account else None,
+        bill_to_phone=bill_to_account.phone if bill_to_account else None,
+        bill_to_billing_address=billing_address(bill_to_account),
+        bill_to_relationship_type=(
+            bill_to_relationship.relationship_type if bill_to_relationship else None
+        ),
         billing_contact_name=vehicle.billing_contact_name,
         billing_contact_email=vehicle.billing_contact_email,
         billing_contact_phone=vehicle.billing_contact_phone,

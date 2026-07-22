@@ -283,6 +283,19 @@ class TruckDetailResponse(BaseModel):
     truck: BoardTruck
     open_work_orders: List[BoardWorkOrder] = []
     driver_phone: Optional[str] = None
+    fleet_account_customer_id: Optional[UUID] = None
+    fleet_account_company_name: Optional[str] = None
+    fleet_account_contact_name: Optional[str] = None
+    fleet_account_email: Optional[str] = None
+    fleet_account_phone: Optional[str] = None
+    fleet_account_billing_address: Optional[str] = None
+    bill_to_customer_id: Optional[UUID] = None
+    bill_to_company_name: Optional[str] = None
+    bill_to_contact_name: Optional[str] = None
+    bill_to_email: Optional[str] = None
+    bill_to_phone: Optional[str] = None
+    bill_to_billing_address: Optional[str] = None
+    bill_to_relationship_type: Optional[str] = None
     billing_contact_name: Optional[str] = None
     billing_contact_email: Optional[str] = None
     billing_contact_phone: Optional[str] = None

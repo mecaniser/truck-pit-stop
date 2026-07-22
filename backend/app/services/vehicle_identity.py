@@ -141,6 +141,46 @@ async def ensure_fleet_membership(
     for relationship in previous_operators:
         relationship.effective_to = now
 
+    async def ensure_external_default_payer() -> None:
+        """Replace only the legacy internal payer when an external fleet takes over.
+
+        A real external payer (for example the leasing owner) is contractual and
+        must not be overwritten merely because the truck changes operators.
+        """
+        fleet_is_internal = (await db.execute(select(Customer.is_internal_fleet).where(
+            Customer.id == fleet_customer_id,
+            Customer.tenant_id == tenant_id,
+            Customer.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if fleet_is_internal:
+            return
+
+        payer_rows = list((await db.execute(
+            select(VehicleCustomerRelationship, Customer)
+            .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+            .where(
+                VehicleCustomerRelationship.tenant_id == tenant_id,
+                VehicleCustomerRelationship.vehicle_id == vehicle_id,
+                VehicleCustomerRelationship.relationship_type == "default_payer",
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+                Customer.deleted_at.is_(None),
+            )
+        )).all())
+        if any(not customer.is_internal_fleet for _, customer in payer_rows):
+            return
+        for relationship, _ in payer_rows:
+            relationship.effective_to = now
+            relationship.is_primary = False
+        await ensure_vehicle_relationship(
+            db,
+            tenant_id=tenant_id,
+            vehicle_id=vehicle_id,
+            customer_id=fleet_customer_id,
+            relationship_type="default_payer",
+            is_primary=True,
+        )
+
     if existing:
         await ensure_vehicle_relationship(
             db,
@@ -149,6 +189,7 @@ async def ensure_fleet_membership(
             customer_id=fleet_customer_id,
             relationship_type="operator",
         )
+        await ensure_external_default_payer()
         return existing
     membership = FleetMembership(
         tenant_id=tenant_id,
@@ -163,6 +204,7 @@ async def ensure_fleet_membership(
         customer_id=fleet_customer_id,
         relationship_type="operator",
     )
+    await ensure_external_default_payer()
     return membership
 
 
