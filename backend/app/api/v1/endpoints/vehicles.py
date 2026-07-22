@@ -273,7 +273,23 @@ async def sync_vehicle_relationships(
     if not vehicle or not customer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or company not found")
 
+    operating_authority = None
+    if body.operating_authority_customer_id:
+        operating_authority = (await db.execute(select(Customer).where(
+            Customer.id == body.operating_authority_customer_id,
+            Customer.tenant_id == current_user.tenant_id,
+            Customer.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if not operating_authority:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Operating authority not found")
+
     desired = set(body.relationship_types)
+    # A separately selected authority owns the operator role for this save.
+    # Do not briefly assign the current profile as operator on the way there.
+    if operating_authority and operating_authority.id != customer.id:
+        desired.discard("operator")
+    elif operating_authority and operating_authority.id == customer.id:
+        desired.add("operator")
     if current_user.role == UserRole.FLEET_MANAGER and "owner" in desired:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -361,6 +377,15 @@ async def sync_vehicle_relationships(
             tenant_id=current_user.tenant_id,
             vehicle_id=vehicle.id,
             fleet_customer_id=customer.id,
+        )
+
+    if operating_authority:
+        operating_authority.fleet_enabled = True
+        await ensure_fleet_membership(
+            db,
+            tenant_id=current_user.tenant_id,
+            vehicle_id=vehicle.id,
+            fleet_customer_id=operating_authority.id,
         )
 
     if "unit_number" in body.model_fields_set:

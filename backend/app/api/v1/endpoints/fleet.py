@@ -1312,23 +1312,27 @@ async def _attach_account_context(
     vehicle_ids = [truck.id for truck in trucks]
     if not vehicle_ids:
         return
-    membership_rows = (await db.execute(
+    operator_rows = (await db.execute(
         select(
-            FleetMembership.vehicle_id,
+            VehicleCustomerRelationship.vehicle_id,
             Customer.id,
             Customer.company_name,
             Customer.first_name,
             Customer.last_name,
         )
-        .join(Customer, Customer.id == FleetMembership.fleet_customer_id)
+        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
         .where(
-            FleetMembership.tenant_id == tenant_id,
-            FleetMembership.vehicle_id.in_(vehicle_ids),
-            FleetMembership.effective_to.is_(None),
-            FleetMembership.deleted_at.is_(None),
+            VehicleCustomerRelationship.tenant_id == tenant_id,
+            VehicleCustomerRelationship.vehicle_id.in_(vehicle_ids),
+            VehicleCustomerRelationship.relationship_type == "operator",
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
             Customer.deleted_at.is_(None),
         )
-        .order_by(FleetMembership.effective_from.desc())
+        .order_by(
+            VehicleCustomerRelationship.is_primary.desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        )
     )).all()
     owner_rows = (await db.execute(
         select(
@@ -1377,17 +1381,20 @@ async def _attach_account_context(
             return unit
         return f"{company} {unit}"
 
-    memberships = {}
-    for row in membership_rows:
-        memberships.setdefault(row.vehicle_id, row)
     owners = {}
     for row in owner_rows:
         owners.setdefault(row.vehicle_id, row)
+    operators = {}
+    for row in operator_rows:
+        operators.setdefault(row.vehicle_id, row)
     for truck in trucks:
-        membership = memberships.get(truck.id)
-        if membership:
-            truck.fleet_customer_id = membership.id
-            truck.fleet_company_name = label(membership)
+        # An authority is an explicit operator relationship. A legacy House
+        # Account FleetMembership is operational bookkeeping, never a company
+        # that should be displayed as the truck's operating authority.
+        operator = operators.get(truck.id)
+        if operator:
+            truck.fleet_customer_id = operator.id
+            truck.fleet_company_name = label(operator)
         owner = owners.get(truck.id)
         if owner:
             truck.owner_customer_id = owner.id

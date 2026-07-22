@@ -373,6 +373,29 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
     assert len([period for period in refreshed_periods if period.effective_to is None]) == 0
     assert len([period for period in refreshed_periods if period.effective_to is not None]) == 2
 
+    # The owner/lessor can select the authority from its own customer profile.
+    # This must restore 77 Cargo to Fleet Board without turning 77 Cargo into
+    # the owner or default invoice recipient.
+    await vehicles.sync_vehicle_relationships(
+        vehicle_id=truck.id,
+        body=VehicleRelationshipSync(
+            customer_id=owner.id,
+            relationship_types=["owner", "default_payer"],
+            operating_authority_customer_id=operator.id,
+            unit_number="603",
+        ),
+        db=db_session,
+        current_user=manager,
+    )
+    authority_board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert authority_board.trucks[0].owner_company_name == "ELS Logistics Updated LLC"
+    assert authority_board.trucks[0].fleet_company_name == "77 Cargo"
+    authority_detail = await fleet.truck_detail(
+        vehicle_id=truck.id, db=db_session, current_user=manager,
+    )
+    assert authority_detail.fleet_account_company_name == "77 Cargo"
+    assert authority_detail.bill_to_company_name == "ELS Logistics Updated LLC"
+
 
 @pytest.mark.asyncio
 async def test_enabling_customer_fleet_enrolls_owned_and_operated_trucks(db_session):

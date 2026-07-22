@@ -112,6 +112,13 @@ interface VehicleAccountRelationship {
   customer_company_name?: string | null
 }
 
+interface FleetCompanyOption {
+  id: string
+  company_name: string
+  fleet_enabled: boolean
+  is_internal_fleet: boolean
+}
+
 const duplicateVinFieldError = (error: any): DuplicateVinConflict | null => {
   const detail = error.response?.data?.detail
   if (error.response?.status !== 409) {
@@ -376,6 +383,7 @@ export default function CustomersPage() {
   const [selectedLinkVehicle, setSelectedLinkVehicle] = useState<VehicleLinkCandidate | null>(null)
   const [vehicleRelationshipTypes, setVehicleRelationshipTypes] = useState<VehicleRelationshipType[]>([])
   const [vehicleLinkUnitNumber, setVehicleLinkUnitNumber] = useState('')
+  const [operatingAuthorityCustomerId, setOperatingAuthorityCustomerId] = useState('')
   const [pendingFleetRemovalId, setPendingFleetRemovalId] = useState<string | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
@@ -493,6 +501,12 @@ export default function CustomersPage() {
     enabled: isVehicleModalOpen && vehicleModalMode === 'existing' && !!selectedLinkVehicle,
   })
 
+  const { data: fleetCompanies = [] } = useQuery<FleetCompanyOption[]>({
+    queryKey: ['fleet-companies'],
+    queryFn: async () => (await api.get('/fleet/companies')).data,
+    enabled: isVehicleModalOpen && vehicleModalMode === 'existing',
+  })
+
   useEffect(() => {
     if (!selectedLinkVehicle || !selectedCustomer) {
       setVehicleRelationshipTypes([])
@@ -504,6 +518,16 @@ export default function CustomersPage() {
         .map((relationship) => relationship.relationship_type),
     )
   }, [selectedCustomer, selectedLinkVehicle, vehicleRelationships])
+
+  useEffect(() => {
+    if (!selectedLinkVehicle) {
+      setOperatingAuthorityCustomerId('')
+      return
+    }
+    const activeOperators = vehicleRelationships.filter((relationship) => !relationship.effective_to && relationship.relationship_type === 'operator')
+    const operator = activeOperators.find((relationship) => relationship.is_primary) || activeOperators[0]
+    setOperatingAuthorityCustomerId(operator?.customer_id || '')
+  }, [selectedLinkVehicle, vehicleRelationships])
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -934,7 +958,8 @@ export default function CustomersPage() {
       if (!selectedCustomer) throw new Error('Select a customer before linking a truck')
       const response = await api.put(`/vehicles/${vehicleId}/relationships`, {
         customer_id: selectedCustomer.id,
-        relationship_types: relationshipTypes,
+        relationship_types: relationshipTypes.filter((relationshipType) => relationshipType !== 'operator'),
+        operating_authority_customer_id: operatingAuthorityCustomerId || null,
         unit_number: unitNumber.trim() || null,
       })
       return response.data
@@ -1127,6 +1152,7 @@ export default function CustomersPage() {
     setSelectedLinkVehicle(null)
     setVehicleRelationshipTypes([])
     setVehicleLinkUnitNumber('')
+    setOperatingAuthorityCustomerId('')
     setPendingFleetRemovalId(null)
     lastDecodedVehicleVin.current = ''
     setIsVehicleModalOpen(true)
@@ -1160,6 +1186,7 @@ export default function CustomersPage() {
     setVehicleLinkSearch('')
     setSelectedLinkVehicle(null)
     setVehicleRelationshipTypes([])
+    setOperatingAuthorityCustomerId('')
     setVehicleLinkUnitNumber('')
     lastDecodedVehicleVin.current = ''
   }
@@ -1181,6 +1208,7 @@ export default function CustomersPage() {
     })
     setVehicleLinkUnitNumber(vehicleFormData.unit_number.trim() || vehicle.unit_number || '')
     setVehicleRelationshipTypes([])
+    setOperatingAuthorityCustomerId('')
   }
 
   const openManageVehicleLinks = (vehicle: Vehicle) => {
@@ -1200,6 +1228,7 @@ export default function CustomersPage() {
     })
     setVehicleLinkUnitNumber(vehicle.unit_number || '')
     setVehicleRelationshipTypes([])
+    setOperatingAuthorityCustomerId('')
     setIsVehicleModalOpen(true)
   }
 
@@ -2246,7 +2275,6 @@ export default function CustomersPage() {
             <div className="space-y-2">
               {([
                 ['owner', 'Truck owner / lessor', 'Use this company’s name as the Fleet Board unit prefix. This is the company that owns the truck and may lease it to the operating authority.'],
-                ['operator', 'Operating authority / Fleet Board', 'Include this truck on this company’s Fleet Board. This does not make the authority the owner or payer.'],
                 ['default_payer', 'Default invoice recipient', 'Invoice this company for new work orders. External customers use customer pricing; the internal house account uses garage-cost rules.'],
               ] as const).map(([relationshipType, label, help]) => {
                 const isCurrentlyAssigned = vehicleRelationships.some((relationship) => !relationship.effective_to
@@ -2267,12 +2295,28 @@ export default function CustomersPage() {
                     <span>
                       <strong className="block text-gray-900">{label}</strong>
                       <span className="text-xs text-gray-500">{help}</span>
-                      {roleLocked && relationshipType === 'operator' && <span className="mt-1 block text-xs font-medium text-amber-700">Use “Remove from Fleet Board” above to end this authority assignment.</span>}
-                      {roleLocked && relationshipType !== 'operator' && <span className="mt-1 block text-xs font-medium text-amber-700">To change this role, assign it from the replacement company.</span>}
+                      {roleLocked && <span className="mt-1 block text-xs font-medium text-amber-700">To change this role, assign it from the replacement company.</span>}
                     </span>
                   </label>
                 )
               })}
+            </div>
+            <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+              <label className="block text-sm font-semibold text-gray-900" htmlFor="operating-authority">Operating authority / Fleet Board</label>
+              <select
+                id="operating-authority"
+                value={operatingAuthorityCustomerId}
+                onChange={(event) => setOperatingAuthorityCustomerId(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+              >
+                <option value="">Select operating authority…</option>
+                {fleetCompanies.filter((company) => company.fleet_enabled).map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-gray-500">Choose 77 Cargo here when this truck runs under 77 Cargo’s authority. This changes only Fleet Board membership; it does not change the owner/lessor or invoice recipient.</p>
             </div>
             <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
           </div>
