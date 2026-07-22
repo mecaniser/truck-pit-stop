@@ -219,6 +219,7 @@ def _to_price_build_summary(
         ),
         can_finalize=order.status == RepairOrderStatus.PENDING_REVIEW,
         lines=labor_resp,
+        parts=[_build_parts_usage_response(part) for part in order.parts_usage],
         warnings=warnings or [],
     )
 

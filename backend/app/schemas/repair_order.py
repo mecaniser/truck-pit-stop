@@ -326,6 +326,7 @@ class PriceBuildSummaryResponse(BaseModel):
     can_start_work: bool = False
     can_finalize: bool = False
     lines: List[LaborResponse] = []
+    parts: List[PartsUsageResponse] = []
     warnings: List[PriceBuildWarning] = []
 
 
