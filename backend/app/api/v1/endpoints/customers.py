@@ -51,6 +51,41 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
+async def _duplicate_vin_detail(
+    db: AsyncSession,
+    vehicle: Vehicle,
+    *,
+    include_vehicle: bool = True,
+) -> dict:
+    """Return a human-usable truck summary instead of only an internal UUID."""
+    detail = {
+        "code": "duplicate_vin",
+        "message": "This VIN is already assigned to an existing truck.",
+    }
+    if not include_vehicle:
+        return detail
+
+    customer = (await db.execute(
+        select(Customer).where(Customer.id == vehicle.customer_id)
+    )).scalar_one_or_none()
+    customer_name = None
+    if customer:
+        customer_name = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
+
+    detail["vehicle"] = {
+        "id": str(vehicle.id),
+        "vin": vehicle.vin,
+        "unit_number": vehicle.unit_number,
+        "year": vehicle.year,
+        "make": vehicle.make,
+        "model": vehicle.model,
+        "license_plate": vehicle.license_plate,
+        "customer_id": str(vehicle.customer_id),
+        "customer_name": customer_name,
+    }
+    return detail
+
+
 def require_role(*allowed_roles: UserRole):
     async def role_checker(current_user: User = Depends(get_current_active_user)):
         if current_user.role not in allowed_roles:
@@ -1051,7 +1086,14 @@ async def create_customer_vehicle(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+            detail=await _duplicate_vin_detail(
+                db,
+                duplicate,
+                include_vehicle=(
+                    current_user.role != UserRole.CUSTOMER
+                    or duplicate.customer_id == current_user.customer_id
+                ),
+            ),
         )
     vehicle = Vehicle(
         tenant_id=customer.tenant_id,
@@ -1164,7 +1206,14 @@ async def update_customer_vehicle(
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This VIN already belongs to truck {duplicate.id}.",
+                detail=await _duplicate_vin_detail(
+                    db,
+                    duplicate,
+                    include_vehicle=(
+                        current_user.role != UserRole.CUSTOMER
+                        or duplicate.customer_id == current_user.customer_id
+                    ),
+                ),
             )
     for field, value in update_data.items():
         setattr(vehicle, field, value)

@@ -2,6 +2,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.api.v1.endpoints import customers, fleet, vehicles
@@ -10,7 +11,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
-from app.schemas.vehicle import VehicleBase, VehicleRelationshipCreate
+from app.schemas.vehicle import VehicleBase, VehicleRelationshipCreate, VehicleUpdate
 from app.services.vehicle_identity import (
     ensure_fleet_membership,
     seed_vehicle_account_relationships,
@@ -145,3 +146,58 @@ async def test_dashboard_vehicle_create_auto_enrolls_fleet_enabled_company(db_se
 
     board = await fleet.fleet_board(db=db_session, current_user=manager)
     assert [item.id for item in board.trucks] == [truck.id]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
+    tenant = Tenant(id=uuid4(), name="Conflict Garage", slug=f"conflict-{uuid4().hex[:8]}")
+    existing_company = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Dispatch", last_name="One",
+        company_name="77 Cargo LLC", email=f"existing-{uuid4().hex[:6]}@example.com",
+    )
+    editing_company = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Owner", last_name="Two",
+        company_name="Owner Trucking LLC", email=f"editing-{uuid4().hex[:6]}@example.com",
+    )
+    manager = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"manager-{uuid4().hex[:6]}@example.com",
+        hashed_password="x", first_name="Shop", last_name="Owner",
+        role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True,
+    )
+    existing_truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=existing_company.id,
+        vin="4V4NC9EH2MN271901", make="Volvo", model="VNL 760", year=2021,
+        unit_number="8", license_plate="NC-771",
+    )
+    editing_truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=editing_company.id,
+        make="Volvo", model="VNL 760", year=2021,
+    )
+    db_session.add_all([tenant, existing_company, editing_company, manager, existing_truck, editing_truck])
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await customers.update_customer_vehicle(
+            customer_id=editing_company.id,
+            vehicle_id=editing_truck.id,
+            vehicle_data=VehicleUpdate(vin=existing_truck.vin),
+            db=db_session,
+            current_user=manager,
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == {
+        "code": "duplicate_vin",
+        "message": "This VIN is already assigned to an existing truck.",
+        "vehicle": {
+            "id": str(existing_truck.id),
+            "vin": "4V4NC9EH2MN271901",
+            "unit_number": "8",
+            "year": 2021,
+            "make": "Volvo",
+            "model": "VNL 760",
+            "license_plate": "NC-771",
+            "customer_id": str(existing_company.id),
+            "customer_name": "77 Cargo LLC",
+        },
+    }

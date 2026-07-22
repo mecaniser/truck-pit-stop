@@ -69,13 +69,41 @@ const emptyVehicleForm: VehicleFormData = {
   notes: '',
 }
 
-const duplicateVinFieldMessage = (error: any): string | null => {
+interface DuplicateVinVehicleSummary {
+  id: string
+  vin?: string | null
+  unit_number?: string | null
+  year?: number | null
+  make?: string | null
+  model?: string | null
+  license_plate?: string | null
+  customer_id?: string | null
+  customer_name?: string | null
+}
+
+interface DuplicateVinConflict {
+  message: string
+  vehicle?: DuplicateVinVehicleSummary | null
+}
+
+const duplicateVinFieldError = (error: any): DuplicateVinConflict | null => {
   const detail = error.response?.data?.detail
-  if (error.response?.status !== 409 || typeof detail !== 'string' || !/\bVIN\b/i.test(detail)) {
+  if (error.response?.status !== 409) {
     return null
   }
 
-  return 'This VIN is already assigned to another truck. Keep the existing truck as the primary record, then use Fleet Board → Add truck → Link existing truck to connect it to this company.'
+  if (detail?.code === 'duplicate_vin') {
+    return {
+      message: typeof detail.message === 'string' ? detail.message : 'This VIN is already assigned to an existing truck.',
+      vehicle: detail.vehicle || null,
+    }
+  }
+
+  if (typeof detail === 'string' && /\bVIN\b/i.test(detail)) {
+    return { message: 'This VIN is already assigned to an existing truck.' }
+  }
+
+  return null
 }
 
 interface ContactFormData {
@@ -314,7 +342,7 @@ export default function CustomersPage() {
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [vehicleFormData, setVehicleFormData] = useState<VehicleFormData>(emptyVehicleForm)
-  const [vehicleVinError, setVehicleVinError] = useState<string | null>(null)
+  const [vehicleVinError, setVehicleVinError] = useState<DuplicateVinConflict | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
   // Contact form state
@@ -778,7 +806,7 @@ export default function CustomersPage() {
       toast.success('Vehicle added')
     },
     onError: (error: any) => {
-      const vinError = duplicateVinFieldMessage(error)
+      const vinError = duplicateVinFieldError(error)
       if (vinError) {
         setVehicleVinError(vinError)
         return
@@ -812,7 +840,7 @@ export default function CustomersPage() {
       toast.success('Vehicle updated')
     },
     onError: (error: any) => {
-      const vinError = duplicateVinFieldMessage(error)
+      const vinError = duplicateVinFieldError(error)
       if (vinError) {
         setVehicleVinError(vinError)
         return
@@ -1922,7 +1950,38 @@ export default function CustomersPage() {
         {vehicleVinError ? (
           <p id="vehicle-vin-error" role="alert" className="mt-2 flex items-start gap-1.5 text-sm text-red-600">
             <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-            <span>{vehicleVinError}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">{vehicleVinError.message}</span>
+              {vehicleVinError.vehicle && (
+                <span className="mt-2 block rounded-lg border border-red-200 bg-white px-3 py-2 text-gray-700">
+                  <span className="flex items-start gap-2">
+                    <Truck className="mt-0.5 h-4 w-4 flex-none text-red-500" />
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-gray-900">
+                        {[
+                          vehicleVinError.vehicle.unit_number ? `Unit ${vehicleVinError.vehicle.unit_number}` : null,
+                          vehicleVinError.vehicle.year,
+                          vehicleVinError.vehicle.make,
+                          vehicleVinError.vehicle.model,
+                        ].filter(Boolean).join(' · ') || 'Existing truck'}
+                      </span>
+                      {vehicleVinError.vehicle.customer_name && (
+                        <span className="block text-xs text-gray-600">Company: {vehicleVinError.vehicle.customer_name}</span>
+                      )}
+                      {vehicleVinError.vehicle.license_plate && (
+                        <span className="block text-xs text-gray-600">Plate: {vehicleVinError.vehicle.license_plate}</span>
+                      )}
+                      {vehicleVinError.vehicle.vin && (
+                        <span className="block break-all font-mono text-xs text-gray-600">VIN: {vehicleVinError.vehicle.vin}</span>
+                      )}
+                    </span>
+                  </span>
+                </span>
+              )}
+              <span className="mt-2 block text-xs">
+                Keep this truck as the primary record, then use Fleet Board → Add truck → Link existing truck to connect it to this company.
+              </span>
+            </span>
           </p>
         ) : (
           <p id="vehicle-vin-help" className="text-xs text-gray-500 mt-1">Enter or paste a full VIN to auto-fill make, model, and year.</p>
