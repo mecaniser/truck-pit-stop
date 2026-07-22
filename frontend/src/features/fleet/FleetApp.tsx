@@ -13,6 +13,7 @@ import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
 import { STATUS_META, fmt, pmState, initials } from './helpers'
+import { formatUSPhone } from '@/utils/phone'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
@@ -362,6 +363,7 @@ function DriversPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: st
           <div style={{ textAlign: 'left', minWidth: 0 }}>
             <div className="person-name">{t.driver_name || 'Unassigned'}</div>
             <div className="person-role">{t.unit_number} · {`${t.make} ${t.model}`}</div>
+            {t.driver_phone && <div className="person-role">{formatUSPhone(t.driver_phone)}</div>}
           </div>
           <i className="lrow-dot" style={{ background: STATUS_META[t.status].dot, marginLeft: 'auto' }} />
         </button>
@@ -460,7 +462,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <Field label="Mileage"><input className={inp} value={form.mileage} onChange={set('mileage')} inputMode="numeric" placeholder="120000" /></Field>
           <Field label="Plate"><input className={inp} value={form.license_plate} onChange={set('license_plate')} placeholder="ABC-1234" /></Field>
           <Field label="Driver"><input className={inp} value={form.driver_name} onChange={set('driver_name')} placeholder="Driver name (optional)" /></Field>
-          <Field label="Driver phone"><input className={inp} value={form.driver_phone} onChange={set('driver_phone')} placeholder="(704) 555-0123" /></Field>
+          <Field label="Driver phone"><input className={inp} value={form.driver_phone} onChange={(e) => setForm((f) => ({ ...f, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" /></Field>
         </div>
         <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
           disabled={!form.make.trim() || !form.model.trim() || create.isPending} onClick={() => create.mutate()}>

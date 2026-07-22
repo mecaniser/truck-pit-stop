@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.image_validation import read_validated_image
+from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.inventory import PartsUsage, Inventory
@@ -1013,6 +1014,7 @@ def _build_board_truck(
         plate=v.license_plate,
         status=status_str,
         driver_name=v.driver_name,
+        driver_phone=v.driver_phone,
         odometer=v.mileage,
         pm_interval_miles=v.pm_interval_miles or 25000,
         next_pm_miles=v.next_pm_miles,
@@ -1308,7 +1310,7 @@ async def update_truck(
     if body.driver_name is not None:
         vehicle.driver_name = body.driver_name or None
     if body.driver_phone is not None:
-        vehicle.driver_phone = body.driver_phone or None
+        vehicle.driver_phone = normalize_phone(body.driver_phone)
     if body.odometer is not None:
         vehicle.mileage = body.odometer
     if body.pm_interval_miles is not None:

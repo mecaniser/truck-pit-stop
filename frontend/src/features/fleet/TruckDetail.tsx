@@ -10,6 +10,7 @@ import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
+import { formatUSPhone } from '@/utils/phone'
 import FleetMap from './FleetMap'
 import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, invalidateFleetAndCockpit } from './FleetModals'
 
@@ -663,7 +664,7 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
         <div className="avatar">{initials(truck.driver_name)}</div>
         <div>
           <div className="person-name">{truck.driver_name || 'Unassigned'}</div>
-          <div className="person-role">Assigned driver</div>
+          <div className="person-role">{detail.driver_phone ? formatUSPhone(detail.driver_phone) : 'Assigned driver'}</div>
         </div>
         {detail.driver_phone && (
           <a className="person-call" href={`tel:${detail.driver_phone}`}><Phone size={15} /></a>

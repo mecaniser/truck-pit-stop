@@ -189,6 +189,7 @@ class BoardTruck(BaseModel):
     plate: Optional[str] = None
     status: FleetTruckStatus
     driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
     odometer: Optional[int] = None
     pm_interval_miles: int = 25000
     next_pm_miles: Optional[int] = None
