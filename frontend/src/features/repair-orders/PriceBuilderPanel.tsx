@@ -35,6 +35,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import QuantityStepper from '@/components/QuantityStepper'
 import DurationStepper from '@/components/DurationStepper'
 import { formatHoursMinutes } from '@/lib/durationFormat'
+import { formatFileSize, isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import SectionInfoTooltip from '@/components/SectionInfoTooltip'
 import {
   PartsUsage,
@@ -75,6 +76,16 @@ export type PriceBuilderHistoryEvent = {
 }
 
 type AddBarType = 'operation' | 'saved_labor' | 'part' | 'history'
+
+type RepairPhotoUploadItem = {
+  id: string
+  file: File
+  name: string
+  size: number
+  status: PhotoUploadStatus
+  progress: number
+  error?: string
+}
 
 type InventoryTypeaheadItem = Pick<
   InventoryItem,
@@ -949,7 +960,7 @@ export default function PriceBuilderPanel({
   const [photosOpen, setPhotosOpen] = useState(false)
   const [technicianAssignmentOpen, setTechnicianAssignmentOpen] = useState(true)
   const [photoCaption, setPhotoCaption] = useState('')
-  const [pendingPhotoName, setPendingPhotoName] = useState<string | null>(null)
+  const [photoUploadItems, setPhotoUploadItems] = useState<RepairPhotoUploadItem[]>([])
   const [armWoComplete, setArmWoComplete] = useState(false)
   const [woMileageOut, setWoMileageOut] = useState('')
   const [partQuantitiesByItemId, setPartQuantitiesByItemId] = useState<Record<string, number>>({})
@@ -1018,29 +1029,11 @@ export default function PriceBuilderPanel({
   })
   const repairPhotos = repairPhotosData ?? []
 
-  const uploadPhotoMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData()
-      formData.append('image', file)
-      if (photoCaption.trim()) formData.append('caption', photoCaption.trim())
-      const response = await api.post<RepairOrderPhoto>(`/repair-orders/${orderId}/photos`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      return response.data
-    },
-    onMutate: (file) => {
-      setPendingPhotoName(file.name)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
-    },
-    onError: (error: unknown) => {
-      toast.error(errorDetail(error, 'Failed to upload photo'))
-    },
-    onSettled: () => {
-      setPendingPhotoName(null)
-    },
-  })
+  const isUploadingRepairPhotos = photoUploadItems.some((item) => !['done', 'error'].includes(item.status))
+
+  const updateRepairPhotoUpload = (id: string, patch: Partial<RepairPhotoUploadItem>) => {
+    setPhotoUploadItems((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item))
+  }
 
   const deletePhotoMutation = useMutation({
     mutationFn: async (photoId: string) => {
@@ -1062,7 +1055,7 @@ export default function PriceBuilderPanel({
 
     const validFiles: File[] = []
     for (const file of files) {
-      if (!file.type.startsWith('image/')) {
+      if (!isSupportedPhotoFile(file)) {
         toast.error(`${file.name} is not an image file`)
         continue
       }
@@ -1074,19 +1067,43 @@ export default function PriceBuilderPanel({
     }
     if (validFiles.length === 0) return
 
+    const caption = photoCaption.trim()
+    const uploadItems = validFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      name: file.name,
+      size: file.size,
+      status: 'queued' as PhotoUploadStatus,
+      progress: 0,
+    }))
+    setPhotoUploadItems((items) => [...uploadItems, ...items.filter((item) => item.status === 'error')])
+    setPhotosOpen(true)
+
     let uploadedCount = 0
-    for (const file of validFiles) {
+    await runPhotoUploadQueue(uploadItems, async (item) => {
       try {
-        await uploadPhotoMutation.mutateAsync(file)
+        const photo = await uploadDirectPhoto<RepairOrderPhoto>({
+          file: item.file,
+          signEndpoint: `/repair-orders/${orderId}/photos/direct-upload-signature`,
+          recordEndpoint: `/repair-orders/${orderId}/photos/direct`,
+          caption,
+          onProgress: (progress) => updateRepairPhotoUpload(item.id, progress),
+        })
         uploadedCount += 1
-      } catch {
-        // The mutation's onError shows the specific upload failure; keep trying
-        // the rest of the selected batch.
+        queryClient.setQueryData<RepairOrderPhoto[]>(['repair-order-photos', orderId], (current = []) => [photo, ...current])
+      } catch (error) {
+        updateRepairPhotoUpload(item.id, {
+          status: 'error',
+          progress: 100,
+          error: errorDetail(error, 'Upload failed'),
+        })
       }
-    }
+    })
     if (uploadedCount > 0) {
       toast.success(`${uploadedCount} photo${uploadedCount === 1 ? '' : 's'} uploaded`)
       setPhotoCaption('')
+      setPhotoUploadItems((items) => items.filter((item) => item.status === 'error'))
+      queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
     }
   }
 
@@ -3690,7 +3707,7 @@ export default function PriceBuilderPanel({
                 </span>
               </span>
               <span className="flex min-w-0 flex-1 items-center justify-end gap-2">
-                {uploadPhotoMutation.isPending && (
+                {isUploadingRepairPhotos && (
                   <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-orange-300 bg-orange-50">
                     <Spinner size="xs" />
                   </span>
@@ -3736,7 +3753,7 @@ export default function PriceBuilderPanel({
                         accept="image/*"
                         multiple
                         className="hidden"
-                        disabled={uploadPhotoMutation.isPending}
+                        disabled={isUploadingRepairPhotos}
                         onChange={handleRepairPhotoSelect}
                       />
                     </label>
@@ -3746,19 +3763,28 @@ export default function PriceBuilderPanel({
                   <div className="mt-3 inline-flex items-center gap-2 text-sm text-gray-500">
                     <Spinner size="xs" /> Loading repair photos…
                   </div>
-                ) : (repairPhotos.length > 0 || uploadPhotoMutation.isPending) ? (
+                ) : (repairPhotos.length > 0 || photoUploadItems.length > 0) ? (
                   <div className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${isFinalized ? '' : 'mt-3'}`}>
-                    {uploadPhotoMutation.isPending && (
-                      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
-                        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-orange-100 via-white to-orange-50" />
+                    {photoUploadItems.map((item) => (
+                      <div key={item.id} className="relative aspect-[4/3] overflow-hidden rounded-xl border border-dashed border-orange-300 bg-orange-50">
+                        <div className={`absolute inset-0 bg-gradient-to-br from-orange-100 via-white to-orange-50 ${item.status === 'error' ? '' : 'animate-pulse'}`} />
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center">
-                          <Spinner size="sm" />
+                          {item.status === 'error' ? <AlertTriangle className="h-4 w-4 text-red-500" /> : <Spinner size="sm" />}
                           <p className="line-clamp-2 text-xs font-semibold text-orange-800">
-                            {pendingPhotoName || 'Uploading photo'}
+                            {item.name}
                           </p>
+                          <p className="text-[10px] font-semibold text-gray-500">
+                            {item.status === 'error' ? (item.error || 'Upload failed') : `${item.status} · ${formatFileSize(item.size)}`}
+                          </p>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white">
+                            <div
+                              className={`h-full rounded-full ${item.status === 'error' ? 'bg-red-500' : 'bg-orange-500'}`}
+                              style={{ width: `${Math.max(6, item.progress)}%` }}
+                            />
+                          </div>
                         </div>
                       </div>
-                    )}
+                    ))}
                     {repairPhotos.map((photo) => (
                       <div key={photo.id} className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
                         <img src={photo.image_url} alt={photo.caption || 'Repair photo'} className="h-full w-full object-cover" />

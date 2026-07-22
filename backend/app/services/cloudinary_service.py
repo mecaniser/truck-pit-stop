@@ -4,9 +4,11 @@ from __future__ import annotations
 Cloudinary service for uploading work photos.
 """
 import base64
+import time
 
 import cloudinary
 import cloudinary.uploader
+import cloudinary.utils
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -29,6 +31,27 @@ def is_cloudinary_configured() -> bool:
         and settings.CLOUDINARY_API_KEY
         and settings.CLOUDINARY_API_SECRET
     )
+
+
+def create_direct_image_upload_signature(folder: str) -> dict[str, str | int]:
+    """Return signed Cloudinary browser-upload parameters for one image."""
+    if not is_cloudinary_configured():
+        raise ValueError("Cloudinary is not configured. Please set CLOUDINARY_* environment variables.")
+
+    timestamp = int(time.time())
+    params = {
+        "folder": folder,
+        "timestamp": timestamp,
+    }
+    signature = cloudinary.utils.api_sign_request(params, settings.CLOUDINARY_API_SECRET)
+    return {
+        "cloud_name": settings.CLOUDINARY_CLOUD_NAME,
+        "api_key": settings.CLOUDINARY_API_KEY,
+        "timestamp": timestamp,
+        "signature": signature,
+        "folder": folder,
+        "upload_url": f"https://api.cloudinary.com/v1_1/{settings.CLOUDINARY_CLOUD_NAME}/image/upload",
+    }
 
 
 async def upload_work_photo(

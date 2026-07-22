@@ -42,6 +42,7 @@ import {
 import { ACCENT_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
 import { MISC_WORK_OPTIONS } from '@/lib/mechanicWorkLabels'
 import { formatSuggestedNextAction, getSuggestedActionButtonLabel } from '@/lib/mechanicSuggestions'
+import { formatFileSize, isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 
 interface MechanicJob {
   id: string
@@ -133,8 +134,14 @@ interface WorkPhoto {
 }
 
 interface SelectedWorkPhoto {
+  id: string
+  file: File
   name: string
-  dataUrl: string
+  previewUrl: string
+  size: number
+  status: PhotoUploadStatus
+  progress: number
+  error?: string
 }
 
 interface MechanicDaySummary {
@@ -409,8 +416,29 @@ export default function MechanicPortalPage() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [photoCaption, setPhotoCaption] = useState('')
   const [selectedPhotoPreviews, setSelectedPhotoPreviews] = useState<SelectedWorkPhoto[]>([])
+  const selectedPhotoPreviewsRef = useRef<SelectedWorkPhoto[]>([])
   const [showClockOutModal, setShowClockOutModal] = useState(false)
   const [isTimerPanelExpanded, handleTimerPanelToggle] = useTimerPanelPersistence(user?.id)
+
+  useEffect(() => {
+    selectedPhotoPreviewsRef.current = selectedPhotoPreviews
+  }, [selectedPhotoPreviews])
+
+  useEffect(() => {
+    return () => {
+      selectedPhotoPreviewsRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
+    }
+  }, [])
+
+  const clearSelectedPhotos = () => {
+    selectedPhotoPreviewsRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
+    setSelectedPhotoPreviews([])
+  }
+
+  const updateSelectedPhoto = (id: string, patch: Partial<SelectedWorkPhoto>) => {
+    setSelectedPhotoPreviews((photos) => photos.map((photo) => photo.id === id ? { ...photo, ...patch } : photo))
+  }
+
   const fileInputRef = useCallback((node: HTMLInputElement | null) => {
     // Store ref for triggering file input
     if (node) {
@@ -477,17 +505,6 @@ export default function MechanicPortalPage() {
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to resume job'),
   })
 
-  const uploadPhotoMutation = useMutation({
-    mutationFn: async ({ jobId, image, caption }: { jobId: string; image: string; caption?: string }) => {
-      const response = await api.post(`/mechanics/my-jobs/${jobId}/photos`, { image, caption })
-      return response.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['work-photos', expandedJobId] })
-    },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to upload photo'),
-  })
-  
   const deletePhotoMutation = useMutation({
     mutationFn: async ({ jobId, photoId }: { jobId: string; photoId: string }) => {
       await api.delete(`/mechanics/my-jobs/${jobId}/photos/${photoId}`)
@@ -506,47 +523,66 @@ export default function MechanicPortalPage() {
     if (files.length === 0) return
 
     const imageFiles = files.filter((file) => {
-      if (!file.type.startsWith('image/')) {
+      if (!isSupportedPhotoFile(file)) {
         toast.error(`${file.name} is not an image file`)
+        return false
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large. Max 10MB`)
         return false
       }
       return true
     })
     if (imageFiles.length === 0) return
 
-    const readFile = (file: File) => new Promise<SelectedWorkPhoto>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve({ name: file.name, dataUrl: reader.result as string })
-      reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
-      reader.readAsDataURL(file)
-    })
-
-    try {
-      setSelectedPhotoPreviews(await Promise.all(imageFiles.map(readFile)))
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to read selected photos')
-    }
+    clearSelectedPhotos()
+    setSelectedPhotoPreviews(imageFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      name: file.name,
+      previewUrl: URL.createObjectURL(file),
+      size: file.size,
+      status: 'queued',
+      progress: 0,
+    })))
   }
   
   const handlePhotoUpload = async () => {
     if (selectedPhotoPreviews.length === 0 || !expandedJobId) return
     setIsUploadingPhoto(true)
+    const caption = photoCaption.trim()
     try {
       let uploadedCount = 0
-      for (const photo of selectedPhotoPreviews) {
+      const successfulIds = new Set<string>()
+      await runPhotoUploadQueue(selectedPhotoPreviews, async (photo) => {
         try {
-          await uploadPhotoMutation.mutateAsync(
-            { jobId: expandedJobId, image: photo.dataUrl, caption: photoCaption || undefined }
-          )
+          const uploaded = await uploadDirectPhoto<WorkPhoto>({
+            file: photo.file,
+            signEndpoint: `/mechanics/my-jobs/${expandedJobId}/photos/direct-upload-signature`,
+            recordEndpoint: `/mechanics/my-jobs/${expandedJobId}/photos/direct`,
+            caption,
+            onProgress: (progress) => updateSelectedPhoto(photo.id, progress),
+          })
           uploadedCount += 1
-        } catch {
-          // The mutation's onError shows the failed upload; keep the batch moving.
+          successfulIds.add(photo.id)
+          queryClient.setQueryData<WorkPhoto[]>(['work-photos', expandedJobId], (current = []) => [uploaded, ...current])
+        } catch (error: any) {
+          updateSelectedPhoto(photo.id, {
+            status: 'error',
+            progress: 100,
+            error: error.response?.data?.detail || error.message || 'Upload failed',
+          })
         }
-      }
+      })
       if (uploadedCount > 0) {
         toast.success(`${uploadedCount} photo${uploadedCount === 1 ? '' : 's'} uploaded!`)
-        setSelectedPhotoPreviews([])
+        setSelectedPhotoPreviews((photos) => photos.filter((photo) => {
+          const shouldKeep = !successfulIds.has(photo.id)
+          if (!shouldKeep) URL.revokeObjectURL(photo.previewUrl)
+          return shouldKeep
+        }))
         setPhotoCaption('')
+        queryClient.invalidateQueries({ queryKey: ['work-photos', expandedJobId] })
       }
     } finally {
       setIsUploadingPhoto(false)
@@ -2526,15 +2562,30 @@ export default function MechanicPortalPage() {
                                 <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/50 p-3 mb-2">
                                   <div className="relative grid grid-cols-3 gap-1.5">
                                     {selectedPhotoPreviews.map((photo) => (
-                                      <img
-                                        key={`${photo.name}-${photo.dataUrl.slice(0, 24)}`}
-                                        src={photo.dataUrl}
-                                        alt={photo.name}
-                                        className="aspect-square w-full rounded-lg object-cover"
-                                      />
+                                      <div key={photo.id} className="relative aspect-square overflow-hidden rounded-lg bg-zinc-900">
+                                        <img
+                                          src={photo.previewUrl}
+                                          alt={photo.name}
+                                          className="h-full w-full object-cover"
+                                        />
+                                        {(isUploadingPhoto || photo.status === 'error') && (
+                                          <div className="absolute inset-x-0 bottom-0 bg-black/70 p-1.5">
+                                            <div className="mb-1 flex items-center justify-between gap-1 text-[10px] font-semibold text-white">
+                                              <span className="truncate">{photo.status === 'error' ? (photo.error || 'Failed') : photo.status}</span>
+                                              <span>{photo.progress}%</span>
+                                            </div>
+                                            <div className="h-1 overflow-hidden rounded-full bg-white/20">
+                                              <div
+                                                className={`h-full rounded-full ${photo.status === 'error' ? 'bg-red-400' : 'bg-emerald-400'}`}
+                                                style={{ width: `${Math.max(6, photo.progress)}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
                                     ))}
                                     <button
-                                      onClick={() => { setSelectedPhotoPreviews([]); setPhotoCaption('') }}
+                                      onClick={() => { clearSelectedPhotos(); setPhotoCaption('') }}
                                       className="absolute top-1.5 right-1.5 p-1.5 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
                                     >
                                       <X className="w-3 h-3 text-white" />
@@ -2553,7 +2604,7 @@ export default function MechanicPortalPage() {
                                     className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.4)]"
                                   >
                                     {isUploadingPhoto ? <Spinner size="xs" /> : <Camera className="w-3.5 h-3.5" />}
-                                    Upload {selectedPhotoPreviews.length} photo{selectedPhotoPreviews.length === 1 ? '' : 's'}
+                                    Upload {selectedPhotoPreviews.length} photo{selectedPhotoPreviews.length === 1 ? '' : 's'} · {formatFileSize(selectedPhotoPreviews.reduce((sum, photo) => sum + photo.size, 0))}
                                   </button>
                                 </div>
                               )}

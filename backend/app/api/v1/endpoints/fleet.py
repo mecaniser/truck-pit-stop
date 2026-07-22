@@ -9,6 +9,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
+from pydantic import BaseModel
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -72,7 +73,7 @@ from app.schemas.fleet import (
 )
 from app.core.logging import get_logger
 from app.services.internal_fleet import ensure_internal_fleet_customer, project_pm_due_date
-from app.services.cloudinary_service import is_cloudinary_configured, upload_work_photo
+from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -192,6 +193,21 @@ def _incident_photo_response(photo: FleetIncidentPhoto) -> FleetPhotoResponse:
         uploaded_at=photo.uploaded_at,
         uploader_name=_uploader_name(getattr(photo, "uploaded_by", None)),
     )
+
+
+class DirectPhotoUploadSignatureResponse(BaseModel):
+    cloud_name: str
+    api_key: str
+    timestamp: int
+    signature: str
+    folder: str
+    upload_url: str
+
+
+class DirectFleetIncidentPhotoCreate(BaseModel):
+    image_url: str
+    public_id: str
+    caption: Optional[str] = None
 
 
 _read_validated_fleet_image = read_validated_image
@@ -663,6 +679,47 @@ async def upload_incident_photo(
         uploaded_by_id=current_user.id,
         image_url=image_url,
         caption=caption.strip() if caption else None,
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo, attribute_names=["uploaded_by"])
+    return _incident_photo_response(photo)
+
+
+@router.post("/incidents/{incident_id}/photos/direct-upload-signature", response_model=DirectPhotoUploadSignatureResponse)
+async def create_incident_photo_upload_signature(
+    incident_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    if not is_cloudinary_configured():
+        raise HTTPException(status_code=424, detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.")
+
+    return create_direct_image_upload_signature(f"work_photos/fleet_incidents/{incident.id}")
+
+
+@router.post("/incidents/{incident_id}/photos/direct", response_model=FleetPhotoResponse, status_code=status.HTTP_201_CREATED)
+async def create_incident_photo_from_direct_upload(
+    incident_id: UUID,
+    body: DirectFleetIncidentPhotoCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    expected_folder = f"work_photos/fleet_incidents/{incident.id}/"
+    if not body.public_id.startswith(expected_folder):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded photo does not belong to this incident")
+
+    photo = FleetIncidentPhoto(
+        id=uuid4(),
+        tenant_id=current_user.tenant_id,
+        incident_id=incident.id,
+        uploaded_by_id=current_user.id,
+        image_url=body.image_url,
+        cloudinary_public_id=body.public_id,
+        caption=body.caption.strip() if body.caption else None,
         uploaded_at=datetime.now(timezone.utc),
     )
     db.add(photo)

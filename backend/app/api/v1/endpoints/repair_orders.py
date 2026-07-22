@@ -46,7 +46,7 @@ from app.core.websocket import broadcast_repair_order_update
 from app.core.websocket import broadcast_mechanic_timer_update
 from app.core.websocket import broadcast_mechanic_attendance_update
 from app.services.mechanic_time_service import fetch_tenant_and_mechanic, get_active_session, start_session, stop_active_session
-from app.services.cloudinary_service import is_cloudinary_configured, upload_work_photo
+from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.db.models.mechanic_time import MechanicSessionType, MechanicTimeSession
 from app.schemas.repair_order import (
     RepairOrderCreate,
@@ -309,6 +309,21 @@ def _work_photo_response(photo: WorkPhoto) -> "RepairOrderPhotoResponse":
         uploaded_at=photo.uploaded_at,
         uploader_name=_uploader_name(getattr(photo, "mechanic", None)),
     )
+
+
+class DirectPhotoUploadSignatureResponse(BaseModel):
+    cloud_name: str
+    api_key: str
+    timestamp: int
+    signature: str
+    folder: str
+    upload_url: str
+
+
+class DirectRepairOrderPhotoCreate(BaseModel):
+    image_url: str
+    public_id: str
+    caption: Optional[str] = None
 
 
 async def _read_validated_repair_image(image: UploadFile) -> tuple[str, str]:
@@ -1040,6 +1055,62 @@ async def upload_repair_order_photo(
         mechanic_id=current_user.id,
         image_url=image_url,
         caption=caption,
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+    await db.refresh(photo, attribute_names=["mechanic"])
+    return _work_photo_response(photo)
+
+
+@router.post("/{order_id}/photos/direct-upload-signature", response_model=DirectPhotoUploadSignatureResponse)
+async def create_repair_order_photo_upload_signature(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+
+    if not is_cloudinary_configured():
+        raise HTTPException(
+            status_code=424,
+            detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.",
+        )
+
+    return create_direct_image_upload_signature(f"work_photos/{order.id}")
+
+
+@router.post("/{order_id}/photos/direct", response_model=RepairOrderPhotoResponse, status_code=status.HTTP_201_CREATED)
+async def create_repair_order_photo_from_direct_upload(
+    order_id: UUID,
+    body: DirectRepairOrderPhotoCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(*RO_MANAGE_ROLES)),
+):
+    result = await db.execute(
+        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+
+    expected_folder = f"work_photos/{order.id}/"
+    if not body.public_id.startswith(expected_folder):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded photo does not belong to this repair order")
+
+    photo = WorkPhoto(
+        repair_order_id=order.id,
+        mechanic_id=current_user.id,
+        image_url=body.image_url,
+        cloudinary_public_id=body.public_id,
+        caption=body.caption.strip() if body.caption else None,
     )
     db.add(photo)
     await db.commit()

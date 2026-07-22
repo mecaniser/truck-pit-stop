@@ -19,6 +19,7 @@ import type {
 } from './types'
 import { fmtDate, money, fmt } from './helpers'
 import { formatHoursMinutes } from '@/lib/durationFormat'
+import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type { QueryClient } from '@tanstack/react-query'
 
 /**
@@ -1050,25 +1051,43 @@ const sevTint: Record<IncidentSeverity, string> = {
   low: 'var(--st-shop)', medium: 'var(--yellow)', high: '#fb923c', critical: 'var(--red)',
 }
 
+type IncidentPhotoUploadItem = {
+  id: string
+  file: File
+  previewUrl: string
+  name: string
+  status: PhotoUploadStatus
+  progress: number
+  error?: string
+}
+
 export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: string; truckId: string; onClose: () => void }) {
   const qc = useQueryClient()
   const [description, setDescription] = useState('')
   const [location, setLocation] = useState('')
   const [severity, setSeverity] = useState<IncidentSeverity>('medium')
   const [attempted, setAttempted] = useState(false)
-  const [photoFiles, setPhotoFiles] = useState<File[]>([])
-  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
-  const photoPreviewsRef = useRef<string[]>([])
+  const [photoUploads, setPhotoUploads] = useState<IncidentPhotoUploadItem[]>([])
+  const photoUploadsRef = useRef<IncidentPhotoUploadItem[]>([])
 
   useEffect(() => {
-    photoPreviewsRef.current = photoPreviews
-  }, [photoPreviews])
+    photoUploadsRef.current = photoUploads
+  }, [photoUploads])
 
   useEffect(() => {
     return () => {
-      photoPreviewsRef.current.forEach((preview) => URL.revokeObjectURL(preview))
+      photoUploadsRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
     }
   }, [])
+
+  const clearPhotoUploads = () => {
+    photoUploadsRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
+    setPhotoUploads([])
+  }
+
+  const updatePhotoUpload = (id: string, patch: Partial<IncidentPhotoUploadItem>) => {
+    setPhotoUploads((photos) => photos.map((photo) => photo.id === id ? { ...photo, ...patch } : photo))
+  }
 
   const descError = description.trim() === '' ? 'Describe what happened before logging the incident.' : null
 
@@ -1078,17 +1097,28 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
         vehicle_id: vehicleId, occurred_at: new Date().toISOString(),
         location: location || undefined, severity, description,
       })).data as IncidentEntry
-      for (const photoFile of photoFiles) {
-        const formData = new FormData()
-        formData.append('image', photoFile)
-        await api.post(`/fleet/incidents/${incident.id}/photos`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-      }
+      await runPhotoUploadQueue(photoUploads, async (photo) => {
+        try {
+          await uploadDirectPhoto({
+            file: photo.file,
+            signEndpoint: `/fleet/incidents/${incident.id}/photos/direct-upload-signature`,
+            recordEndpoint: `/fleet/incidents/${incident.id}/photos/direct`,
+            onProgress: (progress) => updatePhotoUpload(photo.id, progress),
+          })
+        } catch (error: any) {
+          updatePhotoUpload(photo.id, {
+            status: 'error',
+            progress: 100,
+            error: error.response?.data?.detail || error.message || 'Failed',
+          })
+          throw error
+        }
+      })
       return incident
     },
     onSuccess: () => {
       toast.success('Incident logged')
+      clearPhotoUploads()
       qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
       invalidateFleetAndCockpit(qc)
       onClose()
@@ -1141,21 +1171,31 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       </div>
       <div style={{ marginTop: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Photo</span>
-        {photoPreviews.length > 0 ? (
+        {photoUploads.length > 0 ? (
           <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 8, background: 'var(--ink)' }}>
             <div style={{ position: 'relative' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 8 }}>
-                {photoPreviews.map((preview) => (
-                  <img key={preview} src={preview} alt="Incident upload preview" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 9 }} />
+                {photoUploads.map((photo) => (
+                  <div key={photo.id} style={{ position: 'relative', overflow: 'hidden', borderRadius: 9, aspectRatio: '1 / 1', background: 'var(--surface-2)' }}>
+                    <img src={photo.previewUrl} alt={photo.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {(create.isPending || photo.status === 'error') && (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 4, padding: 6, background: 'rgba(0,0,0,.38)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {photo.status === 'error' ? (photo.error || 'Failed') : `${photo.status} ${photo.progress}%`}
+                        </span>
+                        <span style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,.25)' }}>
+                          <span style={{ display: 'block', height: '100%', width: `${Math.max(6, photo.progress)}%`, background: photo.status === 'error' ? 'var(--red)' : 'var(--st-active)' }} />
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
               <button
                 className={ghostBtn}
                 style={{ position: 'absolute', top: 8, right: 8, height: 30, padding: '0 10px' }}
                 onClick={() => {
-                  photoPreviews.forEach((preview) => URL.revokeObjectURL(preview))
-                  setPhotoPreviews([])
-                  setPhotoFiles([])
+                  clearPhotoUploads()
                 }}
                 disabled={create.isPending}
               >
@@ -1176,14 +1216,20 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
                 const files = Array.from(e.target.files || [])
                 e.target.value = ''
                 const validFiles = files.filter((file) => {
-                  if (!file.type.startsWith('image/')) { toast.error(`${file.name} is not an image file`); return false }
+                  if (!isSupportedPhotoFile(file)) { toast.error(`${file.name} is not an image file`); return false }
                   if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} is too large. Max 10MB`); return false }
                   return true
                 })
                 if (validFiles.length === 0) return
-                photoPreviews.forEach((preview) => URL.revokeObjectURL(preview))
-                setPhotoFiles(validFiles)
-                setPhotoPreviews(validFiles.map((file) => URL.createObjectURL(file)))
+                clearPhotoUploads()
+                setPhotoUploads(validFiles.map((file) => ({
+                  id: crypto.randomUUID(),
+                  file,
+                  previewUrl: URL.createObjectURL(file),
+                  name: file.name,
+                  status: 'queued',
+                  progress: 0,
+                })))
               }}
             />
           </label>

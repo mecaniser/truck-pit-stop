@@ -28,7 +28,7 @@ from app.db.models.mechanic_time import MechanicSessionType, MiscWorkCategory, M
 from app.schemas.auth import UserResponse
 from app.schemas.mechanic import MechanicCreate
 from app.schemas.mechanic_update import MechanicUpdate
-from app.services.cloudinary_service import upload_work_photo, is_cloudinary_configured
+from app.services.cloudinary_service import create_direct_image_upload_signature, upload_work_photo, is_cloudinary_configured
 from app.services.mechanic_time_service import (
     compute_7day_trend,
     compute_day_summary,
@@ -1725,6 +1725,50 @@ class WorkPhotoResponse(BaseModel):
     mechanic_name: str
 
 
+class DirectPhotoUploadSignatureResponse(BaseModel):
+    cloud_name: str
+    api_key: str
+    timestamp: int
+    signature: str
+    folder: str
+    upload_url: str
+
+
+class DirectJobPhotoCreate(BaseModel):
+    image_url: str
+    public_id: str
+    caption: Optional[str] = Field(None, max_length=500)
+
+
+async def _load_active_mechanic_job(db: AsyncSession, job_id: UUID, current_user: User) -> RepairOrder:
+    if current_user.role != UserRole.MECHANIC:
+        raise HTTPException(status_code=403, detail="Only mechanics can upload work photos")
+
+    result = await db.execute(
+        select(RepairOrder).where(
+            and_(
+                RepairOrder.id == job_id,
+                RepairOrder.assigned_mechanic_id == current_user.id,
+                RepairOrder.tenant_id == current_user.tenant_id,
+                RepairOrder.status.in_([
+                    RepairOrderStatus.ASSIGNED,
+                    RepairOrderStatus.ACKNOWLEDGED,
+                    RepairOrderStatus.IN_PROGRESS,
+                ]),
+                RepairOrder.deleted_at.is_(None),
+            )
+        )
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found or not in active status",
+        )
+    return order
+
+
 @router.post("/my-jobs/{job_id}/photos", response_model=WorkPhotoResponse)
 async def upload_job_photo(
     job_id: UUID,
@@ -1736,37 +1780,13 @@ async def upload_job_photo(
     Upload a work photo for a job.
     Only allowed for jobs assigned to the current mechanic in active statuses.
     """
-    if current_user.role != UserRole.MECHANIC:
-        raise HTTPException(status_code=403, detail="Only mechanics can upload work photos")
-    
     if not is_cloudinary_configured():
         raise HTTPException(
             status_code=424,
             detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.",
         )
-    
-    # Verify job belongs to this mechanic and is in active status
-    result = await db.execute(
-        select(RepairOrder).where(
-            and_(
-                RepairOrder.id == job_id,
-                RepairOrder.assigned_mechanic_id == current_user.id,
-                RepairOrder.status.in_([
-                    RepairOrderStatus.ASSIGNED,
-                    RepairOrderStatus.ACKNOWLEDGED,
-                    RepairOrderStatus.IN_PROGRESS,
-                ]),
-                RepairOrder.deleted_at.is_(None),
-            )
-        )
-    )
-    order = result.scalar_one_or_none()
-    
-    if not order:
-        raise HTTPException(
-            status_code=404, 
-            detail="Job not found or not in active status"
-        )
+
+    await _load_active_mechanic_job(db, job_id, current_user)
     
     try:
         # Upload to Cloudinary
@@ -1808,6 +1828,63 @@ async def upload_job_photo(
             status_code=424,
             detail="Photo upload service failed. Check the Cloudinary settings and try again.",
         ) from e
+
+
+@router.post("/my-jobs/{job_id}/photos/direct-upload-signature", response_model=DirectPhotoUploadSignatureResponse)
+async def create_job_photo_upload_signature(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    await _load_active_mechanic_job(db, job_id, current_user)
+
+    if not is_cloudinary_configured():
+        raise HTTPException(
+            status_code=424,
+            detail="Photo upload service is not configured. Add Cloudinary settings before uploading photos.",
+        )
+
+    return create_direct_image_upload_signature(f"work_photos/{job_id}")
+
+
+@router.post("/my-jobs/{job_id}/photos/direct", response_model=WorkPhotoResponse)
+async def create_job_photo_from_direct_upload(
+    job_id: UUID,
+    body: DirectJobPhotoCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    await _load_active_mechanic_job(db, job_id, current_user)
+
+    expected_folder = f"work_photos/{job_id}/"
+    if not body.public_id.startswith(expected_folder):
+        raise HTTPException(status_code=400, detail="Uploaded photo does not belong to this job")
+
+    photo = WorkPhoto(
+        repair_order_id=job_id,
+        mechanic_id=current_user.id,
+        image_url=body.image_url,
+        cloudinary_public_id=body.public_id,
+        caption=body.caption.strip() if body.caption else None,
+    )
+    db.add(photo)
+    await db.commit()
+    await db.refresh(photo)
+
+    logger.info(
+        "Work photo recorded from direct upload",
+        photo_id=str(photo.id),
+        repair_order_id=str(job_id),
+        mechanic_id=str(current_user.id),
+    )
+
+    return WorkPhotoResponse(
+        id=str(photo.id),
+        image_url=photo.image_url,
+        caption=photo.caption,
+        uploaded_at=photo.uploaded_at,
+        mechanic_name=f"{current_user.first_name} {current_user.last_name}",
+    )
 
 
 @router.get("/my-jobs/{job_id}/photos", response_model=List[WorkPhotoResponse])

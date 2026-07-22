@@ -7,6 +7,7 @@ import {
   Shield, Phone, ClipboardList, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
 } from 'lucide-react'
 import api from '../../lib/api'
+import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto } from './types'
 import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
 import FleetMap from './FleetMap'
@@ -55,10 +56,14 @@ interface PendingIncidentPhoto {
   id: string
   incidentId: string
   previewUrl: string
+  file: File
+  status: PhotoUploadStatus
+  progress: number
+  error?: string
 }
 
 function validFleetPhoto(file: File) {
-  if (!file.type.startsWith('image/')) {
+  if (!isSupportedPhotoFile(file)) {
     toast.error('Please select an image file')
     return false
   }
@@ -112,35 +117,6 @@ export default function TruckDetail({
     onSuccess: () => { toast.success('Incident deleted'); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete incident'),
   })
-  const uploadIncidentPhoto = useMutation({
-    mutationFn: async ({ incidentId, file }: { incidentId: string; file: File; pendingId: string; previewUrl: string }) => {
-      const formData = new FormData()
-      formData.append('image', file)
-      return (await api.post<FleetPhoto>(`/fleet/incidents/${incidentId}/photos`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })).data
-    },
-    onSuccess: (photo, variables) => {
-      toast.success('Photo uploaded')
-      qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => {
-        if (!current) return current
-        return {
-          ...current,
-          incidents: current.incidents.map((inc) => {
-            if (inc.id !== variables.incidentId) return inc
-            return { ...inc, photos: [photo, ...(inc.photos || [])] }
-          }),
-        }
-      })
-      refresh()
-    },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to upload photo'),
-    onSettled: (_data, _error, variables) => {
-      if (!variables) return
-      setPendingIncidentPhotos((photos) => photos.filter((photo) => photo.id !== variables.pendingId))
-      URL.revokeObjectURL(variables.previewUrl)
-    },
-  })
   const deleteIncidentPhoto = useMutation({
     mutationFn: async ({ incidentId, photoId }: { incidentId: string; photoId: string }) => {
       await api.delete(`/fleet/incidents/${incidentId}/photos/${photoId}`)
@@ -188,6 +164,49 @@ export default function TruckDetail({
   useEffect(() => () => {
     pendingIncidentPhotosRef.current.forEach((photo) => URL.revokeObjectURL(photo.previewUrl))
   }, [])
+
+  const pendingIncidentUploadCount = pendingIncidentPhotos.filter((photo) => !['done', 'error'].includes(photo.status)).length
+
+  const updatePendingIncidentPhoto = (id: string, patch: Partial<PendingIncidentPhoto>) => {
+    setPendingIncidentPhotos((photos) => photos.map((photo) => photo.id === id ? { ...photo, ...patch } : photo))
+  }
+
+  const uploadIncidentPhotos = async (items: PendingIncidentPhoto[]) => {
+    let uploadedCount = 0
+    await runPhotoUploadQueue(items, async (item) => {
+      try {
+        const photo = await uploadDirectPhoto<FleetPhoto>({
+          file: item.file,
+          signEndpoint: `/fleet/incidents/${item.incidentId}/photos/direct-upload-signature`,
+          recordEndpoint: `/fleet/incidents/${item.incidentId}/photos/direct`,
+          onProgress: (progress) => updatePendingIncidentPhoto(item.id, progress),
+        })
+        uploadedCount += 1
+        qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => {
+          if (!current) return current
+          return {
+            ...current,
+            incidents: current.incidents.map((inc) => {
+              if (inc.id !== item.incidentId) return inc
+              return { ...inc, photos: [photo, ...(inc.photos || [])] }
+            }),
+          }
+        })
+        setPendingIncidentPhotos((photos) => photos.filter((photo) => photo.id !== item.id))
+        URL.revokeObjectURL(item.previewUrl)
+      } catch (error: any) {
+        updatePendingIncidentPhoto(item.id, {
+          status: 'error',
+          progress: 100,
+          error: error.response?.data?.detail || error.message || 'Failed',
+        })
+      }
+    })
+    if (uploadedCount > 0) {
+      toast.success(`${uploadedCount} photo${uploadedCount === 1 ? '' : 's'} uploaded`)
+      refresh()
+    }
+  }
 
   if (isLoading || !data) return <div className="loader"><Spinner size="md" /></div>
 
@@ -332,8 +351,13 @@ export default function TruckDetail({
                           {pendingPhotos.map((photo) => (
                             <div key={photo.id} style={{ position: 'relative', width: 54, height: 54, borderRadius: 9, overflow: 'hidden', border: '1px solid var(--line)', background: 'var(--surface-2)' }}>
                               <img src={photo.previewUrl} alt="Incident upload pending" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.45, filter: 'saturate(.6)' }} />
-                              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,.28)' }}>
-                                <Spinner size="sm" />
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 3, padding: 4, background: 'rgba(0,0,0,.34)' }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {photo.status === 'error' ? (photo.error || 'Failed') : `${photo.progress}%`}
+                                </span>
+                                <span style={{ height: 4, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,.28)' }}>
+                                  <span style={{ display: 'block', height: '100%', width: `${Math.max(6, photo.progress)}%`, background: photo.status === 'error' ? 'var(--red)' : 'var(--st-active)' }} />
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -408,25 +432,28 @@ export default function TruckDetail({
                                 >
                                   <Pencil size={13} /> Edit
                                 </button>
-                                <label style={{ ...incidentMenuItemStyle, cursor: uploadIncidentPhoto.isPending ? 'not-allowed' : 'pointer' }}>
-                                  {uploadIncidentPhoto.isPending ? <Spinner size="xs" /> : <Camera size={13} />} Upload photo
+                                <label style={{ ...incidentMenuItemStyle, cursor: pendingIncidentUploadCount > 0 ? 'not-allowed' : 'pointer' }}>
+                                  {pendingIncidentUploadCount > 0 ? <Spinner size="xs" /> : <Camera size={13} />} Upload photo
                                   <input
                                     type="file"
                                     accept="image/*"
                                     multiple
-                                    disabled={uploadIncidentPhoto.isPending}
+                                    disabled={pendingIncidentUploadCount > 0}
                                     style={{ display: 'none' }}
                                     onChange={(e) => {
                                       const files = Array.from(e.target.files || [])
                                       e.target.value = ''
                                       const validFiles = files.filter(validFleetPhoto)
-                                      validFiles.forEach((file, index) => {
+                                      const pendingPhotos = validFiles.map((file, index) => {
                                         const previewUrl = URL.createObjectURL(file)
                                         const pendingId = `${inc.id}-${Date.now()}-${index}`
-                                        setPendingIncidentPhotos((photos) => [...photos, { id: pendingId, incidentId: inc.id, previewUrl }])
-                                        uploadIncidentPhoto.mutate({ incidentId: inc.id, file, pendingId, previewUrl })
+                                        return { id: pendingId, incidentId: inc.id, file, previewUrl, status: 'queued' as PhotoUploadStatus, progress: 0 }
                                       })
-                                      if (validFiles.length > 0) setIncidentMenuOpenId(null)
+                                      if (pendingPhotos.length > 0) {
+                                        setPendingIncidentPhotos((photos) => [...photos, ...pendingPhotos])
+                                        setIncidentMenuOpenId(null)
+                                        void uploadIncidentPhotos(pendingPhotos)
+                                      }
                                     }}
                                   />
                                 </label>
