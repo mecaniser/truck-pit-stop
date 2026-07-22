@@ -69,6 +69,43 @@ const emptyVehicleForm: VehicleFormData = {
   notes: '',
 }
 
+interface DuplicateVinVehicleSummary {
+  id: string
+  vin?: string | null
+  unit_number?: string | null
+  year?: number | null
+  make?: string | null
+  model?: string | null
+  license_plate?: string | null
+  customer_id?: string | null
+  customer_name?: string | null
+}
+
+interface DuplicateVinConflict {
+  message: string
+  vehicle?: DuplicateVinVehicleSummary | null
+}
+
+const duplicateVinFieldError = (error: any): DuplicateVinConflict | null => {
+  const detail = error.response?.data?.detail
+  if (error.response?.status !== 409) {
+    return null
+  }
+
+  if (detail?.code === 'duplicate_vin') {
+    return {
+      message: typeof detail.message === 'string' ? detail.message : 'This VIN is already assigned to an existing truck.',
+      vehicle: detail.vehicle || null,
+    }
+  }
+
+  if (typeof detail === 'string' && /\bVIN\b/i.test(detail)) {
+    return { message: 'This VIN is already assigned to an existing truck.' }
+  }
+
+  return null
+}
+
 interface ContactFormData {
   first_name: string
   last_name: string
@@ -305,6 +342,7 @@ export default function CustomersPage() {
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false)
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null)
   const [vehicleFormData, setVehicleFormData] = useState<VehicleFormData>(emptyVehicleForm)
+  const [vehicleVinError, setVehicleVinError] = useState<DuplicateVinConflict | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
   // Contact form state
@@ -768,6 +806,11 @@ export default function CustomersPage() {
       toast.success('Vehicle added')
     },
     onError: (error: any) => {
+      const vinError = duplicateVinFieldError(error)
+      if (vinError) {
+        setVehicleVinError(vinError)
+        return
+      }
       toast.error(error.response?.data?.detail || 'Failed to add vehicle')
     },
   })
@@ -797,6 +840,11 @@ export default function CustomersPage() {
       toast.success('Vehicle updated')
     },
     onError: (error: any) => {
+      const vinError = duplicateVinFieldError(error)
+      if (vinError) {
+        setVehicleVinError(vinError)
+        return
+      }
       toast.error(error.response?.data?.detail || 'Failed to update vehicle')
     },
   })
@@ -951,12 +999,14 @@ export default function CustomersPage() {
   const openAddVehicleModal = () => {
     setEditingVehicle(null)
     setVehicleFormData(emptyVehicleForm)
+    setVehicleVinError(null)
     lastDecodedVehicleVin.current = ''
     setIsVehicleModalOpen(true)
   }
 
   const openEditVehicleModal = (vehicle: Vehicle) => {
     setEditingVehicle(vehicle)
+    setVehicleVinError(null)
     lastDecodedVehicleVin.current = (vehicle.vin || '').trim().toUpperCase()
     setVehicleFormData({
       make: vehicle.make,
@@ -976,6 +1026,7 @@ export default function CustomersPage() {
     setIsVehicleModalOpen(false)
     setEditingVehicle(null)
     setVehicleFormData(emptyVehicleForm)
+    setVehicleVinError(null)
     lastDecodedVehicleVin.current = ''
   }
 
@@ -983,6 +1034,7 @@ export default function CustomersPage() {
     const { name, value } = e.target
     if (name === 'vin') {
       const vin = value.toUpperCase()
+      setVehicleVinError(null)
       setVehicleFormData((prev) => ({ ...prev, vin }))
       const trimmedVin = vin.trim()
       if (trimmedVin.length === 17 && trimmedVin !== lastDecodedVehicleVin.current) {
@@ -1871,7 +1923,13 @@ export default function CustomersPage() {
             name="vin"
             value={vehicleFormData.vin}
             onChange={handleVehicleInputChange}
-            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors font-mono uppercase"
+            aria-invalid={vehicleVinError ? 'true' : undefined}
+            aria-describedby={vehicleVinError ? 'vehicle-vin-error' : 'vehicle-vin-help'}
+            className={`flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 transition-colors font-mono uppercase ${
+              vehicleVinError
+                ? 'border-red-500 bg-red-50 focus:ring-red-200 focus:border-red-500'
+                : 'border-gray-300 focus:ring-amber-500 focus:border-amber-500'
+            }`}
             placeholder="Enter VIN to auto-fill"
             maxLength={17}
           />
@@ -1889,7 +1947,45 @@ export default function CustomersPage() {
             Decode
           </button>
         </div>
-        <p className="text-xs text-gray-500 mt-1">Enter or paste a full VIN to auto-fill make, model, and year.</p>
+        {vehicleVinError ? (
+          <p id="vehicle-vin-error" role="alert" className="mt-2 flex items-start gap-1.5 text-sm text-red-600">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">{vehicleVinError.message}</span>
+              {vehicleVinError.vehicle && (
+                <span className="mt-2 block rounded-lg border border-red-200 bg-white px-3 py-2 text-gray-700">
+                  <span className="flex items-start gap-2">
+                    <Truck className="mt-0.5 h-4 w-4 flex-none text-red-500" />
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-gray-900">
+                        {[
+                          vehicleVinError.vehicle.unit_number ? `Unit ${vehicleVinError.vehicle.unit_number}` : null,
+                          vehicleVinError.vehicle.year,
+                          vehicleVinError.vehicle.make,
+                          vehicleVinError.vehicle.model,
+                        ].filter(Boolean).join(' · ') || 'Existing truck'}
+                      </span>
+                      {vehicleVinError.vehicle.customer_name && (
+                        <span className="block text-xs text-gray-600">Company: {vehicleVinError.vehicle.customer_name}</span>
+                      )}
+                      {vehicleVinError.vehicle.license_plate && (
+                        <span className="block text-xs text-gray-600">Plate: {vehicleVinError.vehicle.license_plate}</span>
+                      )}
+                      {vehicleVinError.vehicle.vin && (
+                        <span className="block break-all font-mono text-xs text-gray-600">VIN: {vehicleVinError.vehicle.vin}</span>
+                      )}
+                    </span>
+                  </span>
+                </span>
+              )}
+              <span className="mt-2 block text-xs">
+                Keep this truck as the primary record, then use Fleet Board → Add truck → Link existing truck to connect it to this company.
+              </span>
+            </span>
+          </p>
+        ) : (
+          <p id="vehicle-vin-help" className="text-xs text-gray-500 mt-1">Enter or paste a full VIN to auto-fill make, model, and year.</p>
+        )}
       </div>
 
       {/* Unit Number */}
