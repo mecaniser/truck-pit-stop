@@ -343,6 +343,11 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
               {f.bill_to_email && <a href={`mailto:${f.bill_to_email}`} style={{ color: 'var(--text)' }}>{f.bill_to_email}</a>}
               {f.bill_to_phone && <a href={`tel:${f.bill_to_phone}`} style={{ color: 'var(--text)' }}>{f.bill_to_phone}</a>}
             </span>
+            <span style={{ color: detail.bill_to_is_internal ? 'var(--yellow)' : 'var(--muted-2)', fontSize: 11 }}>
+              {detail.bill_to_is_internal
+                ? `Internal fleet pricing · parts at garage cost · labor at ${f.bill_labor_at_customer_rate ? 'customer rate' : 'garage cost'}`
+                : 'External invoice recipient · standard customer pricing'}
+            </span>
             {!editingBilling && (
               <button type="button" className={ghostBtn} style={{ justifySelf: 'start', marginTop: 4, height: 32, padding: '0 10px', fontSize: 12 }} onClick={() => setEditingBilling(true)}>
                 <Pencil size={13} /> Edit billing details
