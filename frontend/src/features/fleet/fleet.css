@@ -129,6 +129,7 @@
 .fleet-root .tcard-row{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);min-width:0;}
 .fleet-root .tcard-row-ic{color:var(--muted-2);flex-shrink:0;display:grid;place-items:center;}
 .fleet-root .tcard-row-tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fleet-root .tcard-row-sub{color:var(--muted-2);font-family:var(--mono);font-size:11.5px;}
 .fleet-root .tcard-mph{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--st-active);flex-shrink:0;}
 .fleet-root .tcard-odo{display:flex;align-items:baseline;gap:7px;font-size:11.5px;color:var(--muted-2);text-transform:uppercase;letter-spacing:1px;border-top:1px solid var(--line);padding-top:11px;}
 .fleet-root .tcard-odo b{font-family:var(--mono);font-size:16px;color:var(--text);letter-spacing:0;font-weight:500;}

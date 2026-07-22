@@ -20,6 +20,7 @@ import type {
 import { fmtDate, money, fmt } from './helpers'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
+import { formatUSPhone } from '@/utils/phone'
 import type { QueryClient } from '@tanstack/react-query'
 
 /**
@@ -139,7 +140,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     license_plate: truck.plate || '',
     odometer: truck.odometer?.toString() || '',
     driver_name: truck.driver_name || '',
-    driver_phone: detail.driver_phone || '',
+    driver_phone: detail.driver_phone ? formatUSPhone(detail.driver_phone) : '',
     pm_interval_miles: truck.pm_interval_miles?.toString() || '25000',
     next_pm_miles: truck.next_pm_miles?.toString() || '',
     location_label: truck.location_label || '',
@@ -153,6 +154,21 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   const [decodingVin, setDecodingVin] = useState(false)
   const lastDecodedVin = useRef((truck.vin || '').trim().toUpperCase())
   const numOrUndef = (v: string) => (v.trim() === '' ? undefined : Number(v))
+
+  const handleLocationSelect = ({ formatted, feature }: Parameters<NonNullable<React.ComponentProps<typeof MapboxAddressInput>['onAddressSelect']>>[0]) => {
+    const props = feature?.properties as Record<string, unknown> | undefined
+    const coordinates = feature?.geometry?.type === 'Point' ? feature.geometry.coordinates : undefined
+    const city = [props?.place, props?.address_level2, props?.locality, props?.neighborhood]
+      .find((value) => typeof value === 'string' && value.trim()) as string | undefined
+
+    setF((p) => ({
+      ...p,
+      location_label: formatted || p.location_label,
+      location_city: city || p.location_city,
+      lng: typeof coordinates?.[0] === 'number' ? String(coordinates[0]) : p.lng,
+      lat: typeof coordinates?.[1] === 'number' ? String(coordinates[1]) : p.lat,
+    }))
+  }
 
   const decodeVin = async (raw: string, options: { quiet?: boolean } = {}) => {
     const vin = raw.trim().toUpperCase()
@@ -248,8 +264,17 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         <Field label="Next PM at (mi)"><input value={f.next_pm_miles} onChange={set('next_pm_miles')} inputMode="numeric" placeholder="odometer + interval" /></Field>
         <div />
         <Field label="Driver name"><input value={f.driver_name} onChange={set('driver_name')} /></Field>
-        <Field label="Driver phone"><input value={f.driver_phone} onChange={set('driver_phone')} placeholder="+1 704 555 1234" /></Field>
-        <Field label="Location label" full><input value={f.location_label} onChange={set('location_label')} placeholder="I-85 N · Charlotte, NC  or  TPS Yard · Bay 3" /></Field>
+        <Field label="Driver phone"><input value={f.driver_phone} onChange={(e) => setF((p) => ({ ...p, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-1234" /></Field>
+        <Field label="Location" full>
+          <MapboxAddressInput
+            value={f.location_label}
+            onChange={set('location_label')}
+            autoComplete="street-address"
+            placeholder="TPS Yard, Matthews NC or I-85 mile 42"
+            options={{ language: 'en', country: 'US' }}
+            onAddressSelect={handleLocationSelect}
+          />
+        </Field>
         <Field label="City"><input value={f.location_city} onChange={set('location_city')} /></Field>
         <Field label="Heading"><input value={f.heading} onChange={set('heading')} placeholder="NE" /></Field>
         <Field label="Latitude"><input value={f.lat} onChange={set('lat')} inputMode="decimal" placeholder="35.11" /></Field>
@@ -1002,7 +1027,7 @@ function Row({ k, v }: { k: string; v: string }) {
 export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: BoardTruck; driverPhone?: string | null; onClose: () => void }) {
   const qc = useQueryClient()
   const [name, setName] = useState(truck.driver_name || '')
-  const [phone, setPhone] = useState(driverPhone || '')
+  const [phone, setPhone] = useState(driverPhone ? formatUSPhone(driverPhone) : '')
   const hadDriver = Boolean(truck.driver_name)
 
   const save = useMutation({
@@ -1023,7 +1048,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
     <Modal title={hadDriver ? 'Change driver' : 'Assign driver'} icon={<UserRound size={17} />} onClose={onClose} width={420}>
       <div style={{ display: 'grid', gap: 12 }}>
         <Field label="Driver name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
-        <Field label="Driver phone"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(704) 555-0123" /></Field>
+        <Field label="Driver phone"><input value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(704) 555-0123" /></Field>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         {hadDriver && (

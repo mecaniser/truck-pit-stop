@@ -1,6 +1,7 @@
 import { Truck, Navigation, Wrench, Gauge, Box, ClipboardList, MapPin, User, Search, ChevronRight, Check, AlertTriangle } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, fmt, pmState, rank } from './helpers'
+import { formatUSPhone } from '@/utils/phone'
 
 type Filter = 'all' | TruckStatus
 type Sort = 'attention' | 'unit' | 'pm' | 'odo'
@@ -38,7 +39,10 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
       </div>
       <div className="tcard-row">
         <span className="tcard-row-ic"><User size={14} /></span>
-        <span className="tcard-row-tx">{t.driver_name || 'Unassigned'}</span>
+        <span className="tcard-row-tx">
+          {t.driver_name || 'Unassigned'}
+          {t.driver_phone && <span className="tcard-row-sub"> · {formatUSPhone(t.driver_phone)}</span>}
+        </span>
         {!!t.speed_mph && <span className="tcard-mph">{t.speed_mph} mph {t.heading || ''}</span>}
       </div>
       <div className="tcard-odo">

@@ -118,6 +118,7 @@ export interface BoardTruck {
   plate?: string | null
   status: TruckStatus
   driver_name?: string | null
+  driver_phone?: string | null
   odometer?: number | null
   pm_interval_miles: number
   next_pm_miles?: number | null

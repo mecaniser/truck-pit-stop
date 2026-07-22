@@ -6,6 +6,7 @@ from sqlalchemy import select, and_, func, or_
 from sqlalchemy.orm import selectinload
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
+from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
@@ -64,10 +65,14 @@ async def create_vehicle(
             detail="Fleet managers can only manage internal fleet vehicles",
         )
 
+    create_data = vehicle_data.model_dump(exclude={"customer_id"})
+    if "driver_phone" in create_data:
+        create_data["driver_phone"] = normalize_phone(create_data["driver_phone"])
+
     vehicle = Vehicle(
         tenant_id=customer.tenant_id,
         customer_id=vehicle_data.customer_id,
-        **vehicle_data.model_dump(exclude={"customer_id"}),
+        **create_data,
     )
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
@@ -261,6 +266,8 @@ async def update_vehicle(
     
     # Update fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
+    if "driver_phone" in update_data:
+        update_data["driver_phone"] = normalize_phone(update_data["driver_phone"])
     for field, value in update_data.items():
         setattr(vehicle, field, value)
 
