@@ -22,6 +22,32 @@ from app.middleware.timeout import TimeoutMiddleware
 from app.middleware.throttling import ThrottlingMiddleware
 
 
+def test_production_metrics_require_collector_bearer_token(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main.settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(main.settings, "METRICS_AUTH_TOKEN", "collector-token")
+
+    denied_status, _ = asyncio.run(
+        _response_status_and_headers(main.app, method="GET", path="/metrics")
+    )
+    allowed_messages = asyncio.run(
+        _run_asgi_request(
+            main.app,
+            method="GET",
+            path="/metrics",
+            headers=[(b"authorization", b"Bearer collector-token")],
+            incoming_messages=[{"type": "http.request", "body": b"", "more_body": False}],
+        )
+    )
+    allowed_start = next(
+        message for message in allowed_messages if message["type"] == "http.response.start"
+    )
+
+    assert denied_status == 404
+    assert allowed_start["status"] == 200
+
+
 async def _run_asgi_request(
     app: ASGIApp,
     *,

@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
     LOG_FORMAT: str = "console"  # "json" for production, "console" for dev
     METRICS_ENABLED: bool = True  # Enable /metrics endpoint
+    # Required by the private Prometheus collector in production. Keeping this
+    # empty locally leaves the developer metrics endpoint convenient to use.
+    METRICS_AUTH_TOKEN: str = ""
     
     # Database
     DATABASE_URL: str

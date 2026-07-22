@@ -8,8 +8,12 @@ import gc
 import platform
 import resource
 import time
+from collections import defaultdict
 from typing import Any
 from prometheus_client import REGISTRY
+
+from app.core.request_activity import request_activity_window
+from app.core.performance_alerts import evaluate_activity_alerts
 
 
 def get_metric_value(metric_name: str, labels: dict = None) -> float:
@@ -65,8 +69,11 @@ def get_performance_stats() -> dict[str, Any]:
     # System metrics
     system_stats = _parse_system_metrics(all_metrics)
     
+    activity_window = request_activity_window.snapshot()
     return {
         "http": http_stats,
+        "activity_window": activity_window,
+        "alerts": evaluate_activity_alerts(activity_window),
         "business": business_stats,
         "system": system_stats,
     }
@@ -97,6 +104,7 @@ def _parse_http_metrics(all_metrics: dict) -> dict:
         "requests_total": 0,
         "requests_by_status": {"2xx": 0, "4xx": 0, "5xx": 0},
         "requests_by_endpoint": [],
+        "slowest_endpoints": [],
         "avg_latency_ms": 0.0,
         "p50_latency_ms": 0.0,
         "p95_latency_ms": 0.0,
@@ -138,7 +146,10 @@ def _parse_http_metrics(all_metrics: dict) -> dict:
         for path, count in sorted(endpoint_counts.items(), key=lambda x: -x[1])[:10]
     ]
 
-    # Parse one authoritative HTTP latency histogram.
+    # Parse one authoritative HTTP latency histogram. Each histogram series is
+    # cumulative by bucket, so combine matching routes before estimating a
+    # percentile. The old flat bucket map let the last route overwrite every
+    # earlier route's buckets, producing misleading global percentiles.
     histogram_candidates = [
         name
         for name, data in all_metrics.items()
@@ -146,6 +157,7 @@ def _parse_http_metrics(all_metrics: dict) -> dict:
     ]
     selected_histogram = None
     for preferred_suffix in (
+        "http_endpoint_duration_seconds",
         "http_request_duration_seconds",
         "request_duration_seconds",
         "http_request_latency_seconds",
@@ -160,29 +172,65 @@ def _parse_http_metrics(all_metrics: dict) -> dict:
         selected_histogram = sorted(histogram_candidates)[0]
 
     if selected_histogram:
-        buckets: dict[float, float] = {}
-        total_sum = 0.0
-        total_count = 0.0
+        latency_by_endpoint: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {"buckets": defaultdict(float), "sum": 0.0, "count": 0.0}
+        )
         for sample in all_metrics[selected_histogram].get("samples", []):
             sample_name = sample["name"]
             if _is_created_sample(sample_name):
                 continue
+            labels = sample["labels"]
+            endpoint = (
+                labels.get("endpoint")
+                or labels.get("handler")
+                or labels.get("path")
+                or labels.get("route")
+                or "all"
+            )
+            endpoint_metrics = latency_by_endpoint[endpoint]
             if sample_name.endswith("_bucket"):
-                le = sample["labels"].get("le", "")
+                le = labels.get("le", "")
                 if le and le != "+Inf":
-                    buckets[float(le)] = float(sample["value"])
+                    endpoint_metrics["buckets"][float(le)] += float(sample["value"])
             elif sample_name.endswith("_sum"):
-                total_sum += float(sample["value"])
+                endpoint_metrics["sum"] += float(sample["value"])
             elif sample_name.endswith("_count"):
-                total_count += float(sample["value"])
+                endpoint_metrics["count"] += float(sample["value"])
 
+        total_sum = sum(item["sum"] for item in latency_by_endpoint.values())
+        total_count = sum(item["count"] for item in latency_by_endpoint.values())
         if total_count > 0:
             result["avg_latency_ms"] = round((total_sum / total_count) * 1000, 2)
-            if buckets:
-                sorted_buckets = sorted(buckets.items())
+            total_buckets: dict[float, float] = defaultdict(float)
+            for endpoint_metrics in latency_by_endpoint.values():
+                for bound, count in endpoint_metrics["buckets"].items():
+                    total_buckets[bound] += count
+            if total_buckets:
+                sorted_buckets = sorted(total_buckets.items())
                 result["p50_latency_ms"] = round(_estimate_percentile(sorted_buckets, total_count, 0.50) * 1000, 2)
                 result["p95_latency_ms"] = round(_estimate_percentile(sorted_buckets, total_count, 0.95) * 1000, 2)
                 result["p99_latency_ms"] = round(_estimate_percentile(sorted_buckets, total_count, 0.99) * 1000, 2)
+
+        result["slowest_endpoints"] = [
+            {
+                "path": endpoint,
+                "requests": int(metrics["count"]),
+                "avg_latency_ms": round((metrics["sum"] / metrics["count"]) * 1000, 2),
+                "p95_latency_ms": round(
+                    _estimate_percentile(
+                        sorted(metrics["buckets"].items()), metrics["count"], 0.95
+                    ) * 1000,
+                    2,
+                ),
+            }
+            for endpoint, metrics in latency_by_endpoint.items()
+            if endpoint != "all" and metrics["count"] > 0 and metrics["buckets"]
+        ]
+        result["slowest_endpoints"].sort(
+            key=lambda endpoint: (endpoint["p95_latency_ms"], endpoint["requests"]),
+            reverse=True,
+        )
+        result["slowest_endpoints"] = result["slowest_endpoints"][:10]
 
     return result
 

@@ -55,6 +55,13 @@ DB_QUERY_DURATION = Histogram(
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
 
+HTTP_ENDPOINT_DURATION = Histogram(
+    "dieselbridge_http_endpoint_duration_seconds",
+    "End-to-end HTTP request duration by route",
+    ["endpoint", "method", "status_code"],
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.5, 5.0, 10.0, 30.0),
+)
+
 EXTERNAL_API_DURATION = Histogram(
     "dieselbridge_external_api_duration_seconds",
     "External API call duration",
@@ -99,6 +106,20 @@ def normalize_endpoint_label(endpoint: Optional[str]) -> str:
     """
     path = (endpoint or "unknown").split("?", 1)[0]
     return _UUID_PATH_SEGMENT.sub(":id", path)
+
+
+def record_endpoint_duration(
+    endpoint: str,
+    method: str,
+    status_code: int,
+    duration_ms: float,
+) -> None:
+    """Record request latency with stable, route-level Prometheus labels."""
+    HTTP_ENDPOINT_DURATION.labels(
+        endpoint=normalize_endpoint_label(endpoint),
+        method=method,
+        status_code=str(status_code),
+    ).observe(duration_ms / 1000)
 
 
 def setup_metrics(app: FastAPI) -> Instrumentator:

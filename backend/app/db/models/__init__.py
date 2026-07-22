@@ -1,6 +1,7 @@
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
 from app.db.models.customer import Customer
+from app.db.models.customer_read_model import CustomerReadModel
 from app.db.models.contact import Contact
 from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.vehicle import Vehicle
@@ -62,6 +63,7 @@ __all__ = [
     "Tenant",
     "User",
     "Customer",
+    "CustomerReadModel",
     "Contact",
     "UserCustomerLink",
     "Vehicle",

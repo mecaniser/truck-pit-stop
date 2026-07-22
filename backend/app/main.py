@@ -1,6 +1,7 @@
 import time
 import traceback
 import asyncio
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -100,6 +101,13 @@ app.add_middleware(
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     """Add security headers to all responses"""
+    if request.url.path == "/metrics" and settings.ENVIRONMENT == "production":
+        expected_token = settings.METRICS_AUTH_TOKEN
+        provided_token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        if not expected_token or not secrets.compare_digest(provided_token, expected_token):
+            # Avoid advertising a sensitive operational endpoint to callers.
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"

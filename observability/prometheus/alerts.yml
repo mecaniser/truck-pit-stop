@@ -1,0 +1,52 @@
+groups:
+  - name: dieselbridge-api
+    rules:
+      - alert: ApiTargetDown
+        expr: up{job="dieselbridge-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: Diesel Bridge API is unreachable to the collector
+          description: Prometheus has been unable to scrape the API for two minutes.
+
+      - alert: ApiP95LatencyCritical
+        expr: histogram_quantile(0.95, sum by (le) (rate(dieselbridge_http_endpoint_duration_seconds_bucket{endpoint!~"/health.*|/metrics|/api/v1/admin/performance/stats"}[5m]))) >= 1.5
+        for: 2m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: API p95 latency is above 1.5 seconds
+          description: Sustained p95 latency is {{ $value | humanizeDuration }} over the last five minutes.
+
+      - alert: ApiP95LatencyWarning
+        expr: histogram_quantile(0.95, sum by (le) (rate(dieselbridge_http_endpoint_duration_seconds_bucket{endpoint!~"/health.*|/metrics|/api/v1/admin/performance/stats"}[5m]))) >= 0.75
+        for: 5m
+        labels:
+          severity: warning
+          service: api
+        annotations:
+          summary: API p95 latency is above 750 milliseconds
+          description: Sustained p95 latency is {{ $value | humanizeDuration }} over the last five minutes.
+
+      - alert: ApiServerErrorRateHigh
+        expr: sum(rate(dieselbridge_http_endpoint_duration_seconds_count{status_code=~"5.."}[5m])) / clamp_min(sum(rate(dieselbridge_http_endpoint_duration_seconds_count[5m])), 1) >= 0.01
+        for: 5m
+        labels:
+          severity: critical
+          service: api
+        annotations:
+          summary: API server-error rate is above 1 percent
+          description: API requests are returning 5xx responses at {{ $value | humanizePercentage }} over five minutes.
+
+      - alert: DatabaseQueryP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(dieselbridge_db_query_duration_seconds_bucket[5m]))) >= 0.25
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: Database p95 query duration is above 250 milliseconds
+          description: Sustained database query p95 is {{ $value | humanizeDuration }} over five minutes.

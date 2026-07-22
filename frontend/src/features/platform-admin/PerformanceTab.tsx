@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Spinner } from '@/components/ui'
 import { 
-  Activity, Server, Database, Zap, 
-  Clock, AlertTriangle, RefreshCw, Users,
+  Activity, Server, Database,
+  Clock, AlertTriangle, RefreshCw,
   CheckCircle, XCircle, Gauge
 } from 'lucide-react'
 import api from '../../lib/api'
@@ -27,11 +27,26 @@ interface PerformanceStats {
     requests_total: number
     requests_by_status: { '2xx': number; '4xx': number; '5xx': number }
     requests_by_endpoint: Array<{ path: string; count: number }>
+    slowest_endpoints: Array<{
+      path: string
+      requests: number
+      avg_latency_ms: number
+      p95_latency_ms: number
+    }>
     avg_latency_ms: number
     p50_latency_ms: number
     p95_latency_ms: number
     p99_latency_ms: number
     requests_in_progress: number
+  }
+  activity_window: {
+    window_seconds: number
+    observed_seconds: number
+    request_count: number
+    requests_per_minute: number
+    p95_latency_ms: number
+    error_rate_percent: number
+    error_count: number
   }
   business: {
     logins: { success: number; failure: number }
@@ -47,12 +62,36 @@ interface PerformanceStats {
     process_memory_bytes: number
     active_users: number
   }
+  alerts: Array<{
+    severity: 'warning' | 'critical'
+    title: string
+    detail: string
+  }>
 }
 
 function getHealthReadyUrl() {
   const apiUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/+$/, '')
   const backendBase = apiUrl.replace(/\/api\/v1$/, '')
   return backendBase ? `${backendBase}/health/ready` : '/health/ready'
+}
+
+function getInfrastructureAlerts(health: HealthData | null): PerformanceStats['alerts'] {
+  if (!health) return []
+
+  const checks = [
+    { label: 'Database health check', latency: health.checks.database?.latency_ms, target: 200 },
+    { label: 'Redis health check', latency: health.checks.redis?.latency_ms, target: 100 },
+  ]
+
+  return checks.flatMap(({ label, latency, target }) => {
+    if (latency == null || latency < target) return []
+    const severity: 'warning' | 'critical' = latency >= target * 2.5 ? 'critical' : 'warning'
+    return [{
+      severity,
+      title: `${label} is slow`,
+      detail: `${latency.toFixed(1)}ms; target is below ${target}ms.`,
+    }]
+  })
 }
 
 async function fetchHealthReady(): Promise<HealthData> {
@@ -70,6 +109,7 @@ async function fetchHealthReady(): Promise<HealthData> {
 }
 
 export default function PerformanceTab() {
+  const refreshIntervalMs = 15_000
   const [health, setHealth] = useState<HealthData | null>(null)
   const [stats, setStats] = useState<PerformanceStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -99,10 +139,11 @@ export default function PerformanceTab() {
     fetchData()
   }, [fetchData])
 
-  // Auto-refresh every 30 seconds
+  // Refresh frequently enough to observe the rolling server window without
+  // turning this dashboard into its own workload.
   useEffect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(fetchData, 30000)
+    const interval = setInterval(fetchData, refreshIntervalMs)
     return () => clearInterval(interval)
   }, [autoRefresh, fetchData])
 
@@ -162,9 +203,11 @@ export default function PerformanceTab() {
   }
 
   const totalRequests = stats?.http.requests_total || 0
-  const errorRate = totalRequests > 0 
-    ? ((stats?.http.requests_by_status['4xx'] || 0) + (stats?.http.requests_by_status['5xx'] || 0)) / totalRequests * 100
-    : 0
+  const activityWindow = stats?.activity_window
+  const performanceAlerts = [
+    ...(stats?.alerts || []),
+    ...getInfrastructureAlerts(health),
+  ]
 
   const loginSuccessRate = (stats?.business.logins.success || 0) + (stats?.business.logins.failure || 0) > 0
     ? (stats?.business.logins.success || 0) / ((stats?.business.logins.success || 0) + (stats?.business.logins.failure || 0)) * 100
@@ -174,8 +217,11 @@ export default function PerformanceTab() {
     <div className="space-y-6">
       {/* Refresh Controls */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-400">
-          Last updated: {lastRefresh.toLocaleTimeString()}
+        <div className="text-sm text-gray-400 space-y-0.5">
+          <div>Last updated: {lastRefresh.toLocaleTimeString()}</div>
+          <div className="text-xs text-gray-500">
+            Current process window: {formatUptime(health?.uptime_seconds || 0)}
+          </div>
         </div>
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
@@ -185,7 +231,7 @@ export default function PerformanceTab() {
               onChange={(e) => setAutoRefresh(e.target.checked)}
               className="rounded border-gold-500/30 bg-black/40 text-gold-500 focus:ring-gold-500"
             />
-            Auto-refresh (30s)
+            Auto-refresh (15s)
           </label>
           <button
             onClick={fetchData}
@@ -276,45 +322,74 @@ export default function PerformanceTab() {
         </div>
       </GlassNoirCard>
 
-      {/* Real-time Metrics Panel */}
+      {/* Performance alerts */}
+      <GlassNoirCard className={performanceAlerts.length > 0 ? 'border-amber-500/30' : ''}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Performance Alerts</h2>
+            <p className="text-xs text-gray-500 mt-1">Five-minute request window; request rules activate after 10 samples.</p>
+          </div>
+          <AlertTriangle className={`w-5 h-5 ${performanceAlerts.some((alert) => alert.severity === 'critical') ? 'text-red-400' : performanceAlerts.length ? 'text-amber-400' : 'text-green-400'}`} />
+        </div>
+
+        {performanceAlerts.length === 0 ? (
+          <div className="text-sm text-green-400">No active performance rule breaches.</div>
+        ) : (
+          <div className="space-y-3">
+            {performanceAlerts.map((alert, index) => (
+              <div key={`${alert.title}-${index}`} className={`border-l-2 pl-3 ${alert.severity === 'critical' ? 'border-red-500' : 'border-amber-500'}`}>
+                <div className={`text-sm font-medium ${alert.severity === 'critical' ? 'text-red-400' : 'text-amber-400'}`}>{alert.title}</div>
+                <div className="text-sm text-gray-400 mt-0.5">{alert.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </GlassNoirCard>
+
+      {/* Process Metrics */}
       <GlassNoirCard>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Real-time Metrics</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-white">Process Metrics</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Rolling activity window, up to {Math.round((activityWindow?.window_seconds || 300) / 60)} minutes.
+            </p>
+          </div>
           <Activity className="w-5 h-5 text-gold-400" />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <MetricCard
-            icon={Zap}
-            iconColor="text-yellow-400"
-            iconBg="bg-yellow-500/10"
-            label="In Progress"
-            value={stats?.http.requests_in_progress || 0}
-            sublabel="Active requests"
-          />
-          <MetricCard
             icon={Activity}
             iconColor="text-green-400"
             iconBg="bg-green-500/10"
-            label="Total Requests"
-            value={totalRequests.toLocaleString()}
-            sublabel="Since startup"
+            label="Requests"
+            value={activityWindow?.request_count || 0}
+            sublabel={`Last ${Math.max(1, Math.ceil((activityWindow?.observed_seconds || 0) / 60))} minute(s)`}
+          />
+          <MetricCard
+            icon={RefreshCw}
+            iconColor="text-blue-400"
+            iconBg="bg-blue-500/10"
+            label="Request Rate"
+            value={`${(activityWindow?.requests_per_minute || 0).toFixed(1)}/min`}
+            sublabel="Rolling window"
+          />
+          <MetricCard
+            icon={Gauge}
+            iconColor={activityWindow?.p95_latency_ms && activityWindow.p95_latency_ms >= 750 ? 'text-red-400' : 'text-amber-400'}
+            iconBg={activityWindow?.p95_latency_ms && activityWindow.p95_latency_ms >= 750 ? 'bg-red-500/10' : 'bg-amber-500/10'}
+            label="Recent P95"
+            value={formatLatency(activityWindow?.p95_latency_ms || 0)}
+            sublabel="Rolling window"
           />
           <MetricCard
             icon={AlertTriangle}
-            iconColor={errorRate > 5 ? 'text-red-400' : 'text-amber-400'}
-            iconBg={errorRate > 5 ? 'bg-red-500/10' : 'bg-amber-500/10'}
-            label="Error Rate"
-            value={`${errorRate.toFixed(2)}%`}
-            sublabel={`${(stats?.http.requests_by_status['4xx'] || 0) + (stats?.http.requests_by_status['5xx'] || 0)} errors`}
-          />
-          <MetricCard
-            icon={Users}
-            iconColor="text-gold-400"
-            iconBg="bg-gold-500/10"
-            label="Active Users"
-            value={stats?.system.active_users || 0}
-            sublabel="Approximation"
+            iconColor={(activityWindow?.error_rate_percent || 0) > 5 ? 'text-red-400' : 'text-gold-400'}
+            iconBg={(activityWindow?.error_rate_percent || 0) > 5 ? 'bg-red-500/10' : 'bg-gold-500/10'}
+            label="Request Failures"
+            value={`${(activityWindow?.error_rate_percent || 0).toFixed(2)}%`}
+            sublabel={`${activityWindow?.error_count || 0} in window`}
           />
         </div>
       </GlassNoirCard>
@@ -416,11 +491,52 @@ export default function PerformanceTab() {
         />
       </CollapsibleStats>
 
-      {/* Top Endpoints */}
+      {/* Endpoint demand and latency */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      {stats?.http.slowest_endpoints && stats.http.slowest_endpoints.length > 0 && (
+        <GlassNoirCard>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Slowest Endpoints</h2>
+              <p className="text-xs text-gray-500 mt-1">Prioritize high-volume rows with elevated p95 latency.</p>
+            </div>
+            <Gauge className="w-5 h-5 text-gold-400" />
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-400 border-b border-gold-500/20">
+                  <th className="pb-2">Endpoint</th>
+                  <th className="pb-2 text-right">P95</th>
+                  <th className="pb-2 text-right">Average</th>
+                  <th className="pb-2 text-right">Requests</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.http.slowest_endpoints.map((endpoint) => (
+                  <tr key={endpoint.path} className="border-b border-gold-500/10">
+                    <td className="py-2 font-mono text-gray-300 max-w-[250px] truncate" title={endpoint.path}>{endpoint.path}</td>
+                    <td className={`py-2 text-right font-medium ${endpoint.p95_latency_ms < 250 ? 'text-green-400' : endpoint.p95_latency_ms < 750 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {formatLatency(endpoint.p95_latency_ms)}
+                    </td>
+                    <td className="py-2 text-right text-gray-300">{formatLatency(endpoint.avg_latency_ms)}</td>
+                    <td className="py-2 text-right text-white">{endpoint.requests.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </GlassNoirCard>
+      )}
+
       {stats?.http.requests_by_endpoint && stats.http.requests_by_endpoint.length > 0 && (
         <GlassNoirCard>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Top Endpoints</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Highest Request Volume</h2>
+              <p className="text-xs text-gray-500 mt-1">Request count since this process started.</p>
+            </div>
             <Server className="w-5 h-5 text-gold-400" />
           </div>
 
@@ -449,6 +565,7 @@ export default function PerformanceTab() {
           </div>
         </GlassNoirCard>
       )}
+      </div>
 
       {/* System Info - Collapsible */}
       <CollapsibleStats

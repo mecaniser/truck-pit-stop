@@ -13,6 +13,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from app.core.logging import get_logger, bind_contextvars, clear_contextvars
+from app.core.metrics import normalize_endpoint_label, record_endpoint_duration
+from app.core.request_performance import (
+    begin_request_database_stats,
+    end_request_database_stats,
+)
+from app.core.request_activity import request_activity_window
 
 logger = get_logger(__name__)
 
@@ -51,8 +57,10 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             client_ip=client_ip,
         )
         
-        # Start timing
+        # Start timing and request-scoped database accounting.
         start_time = time.perf_counter()
+        database_stats_token = begin_request_database_stats()
+        database_stats = None
         
         # Log request start (debug level to avoid noise)
         logger.debug(
@@ -70,10 +78,23 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             
             # Log request completion
             log_method = logger.warning if response.status_code >= 400 else logger.info
+            database_stats = end_request_database_stats(database_stats_token)
+            endpoint = (
+                normalize_endpoint_label(request.scope.get("route").path)
+                if request.scope.get("route")
+                else normalize_endpoint_label(request.url.path)
+            )
+            record_endpoint_duration(
+                endpoint, request.method, response.status_code, duration_ms
+            )
+            request_activity_window.record(endpoint, duration_ms, response.status_code)
             log_method(
                 "request_completed",
                 status_code=response.status_code,
                 duration_ms=round(duration_ms, 2),
+                endpoint=endpoint,
+                response_size_bytes=int(response.headers.get("content-length", 0)),
+                **self._database_log_fields(database_stats),
             )
             
             # Add correlation ID to response headers
@@ -86,17 +107,33 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             duration_ms = (time.perf_counter() - start_time) * 1000
             
             # Log the exception (will be re-raised)
+            if database_stats is None:
+                database_stats = end_request_database_stats(database_stats_token)
             logger.error(
                 "request_failed",
                 duration_ms=round(duration_ms, 2),
                 error_type=type(exc).__name__,
                 error_message=str(exc),
+                **self._database_log_fields(database_stats),
             )
             raise
             
         finally:
+            # Cancellation does not enter the Exception branch, but must not
+            # leave request-local accounting bound to its task context.
+            if database_stats is None:
+                end_request_database_stats(database_stats_token)
             # Clear context at end of request
             clear_contextvars()
+
+    @staticmethod
+    def _database_log_fields(stats) -> dict:
+        return {
+            "db_query_count": stats.query_count,
+            "db_duration_ms": round(stats.total_duration_ms, 2),
+            "db_slowest_query_ms": round(stats.slowest_duration_ms, 2),
+            "db_slowest_operation": stats.slowest_operation,
+        }
     
     def _get_client_ip(self, request: Request) -> str:
         """Extract client IP, handling common proxy headers."""

@@ -13,6 +13,7 @@ from app.core.search import build_search
 from app.core.logging import get_logger
 from app.db.models.user import User, UserRole
 from app.db.models.customer import Customer
+from app.db.models.customer_read_model import CustomerReadModel
 from app.db.models.contact import Contact
 from app.db.models.vehicle import Vehicle
 from app.db.models.repair_order import RepairOrder
@@ -124,6 +125,33 @@ def _customer_response_with_balance(
         info = vehicle_info.get(customer.id, {})
         response.vehicle_count = info.get("count", 0)
         response.single_vehicle_license_plate = info.get("plate")
+    if search:
+        response.matched_fields = _customer_matched_fields(customer, search)
+    return response
+
+
+def _customer_response_with_read_model(
+    customer: Customer,
+    read_model: Optional[CustomerReadModel],
+    fallback_balances: dict,
+    fallback_vehicle_info: dict,
+    search: Optional[str] = None,
+) -> CustomerResponse:
+    """Use the operational projection, falling back only during migration.
+
+    The fallback keeps old or manually restored databases functional until the
+    migration has populated their projection rows. Normal production list reads
+    never execute the historical aggregate queries below.
+    """
+    if read_model is None:
+        return _customer_response_with_balance(
+            customer, fallback_balances, fallback_vehicle_info, search
+        )
+
+    response = CustomerResponse.model_validate(customer)
+    response.balance = read_model.invoice_total - read_model.payment_total
+    response.vehicle_count = read_model.vehicle_count
+    response.single_vehicle_license_plate = read_model.single_vehicle_license_plate
     if search:
         response.matched_fields = _customer_matched_fields(customer, search)
     return response
@@ -309,13 +337,20 @@ def _balance_subquery():
     return invoiced - paid
 
 
-def _customer_order_by(sort: Optional[str], order: str):
+def _customer_order_by(sort: Optional[str], order: str, use_read_model: bool = False):
     """Return the ORDER BY expression list for the customer list."""
     direction = desc if order == "desc" else asc
     field = sort if sort in CUSTOMER_SORT_FIELDS else "name"
     if field == "balance":
+        if use_read_model:
+            return [
+                direction(CustomerReadModel.invoice_total - CustomerReadModel.payment_total),
+                asc(Customer.id),
+            ]
         return [direction(_balance_subquery()), asc(Customer.id)]
     if field == "vehicle_count":
+        if use_read_model:
+            return [direction(CustomerReadModel.vehicle_count), asc(Customer.id)]
         return [direction(_vehicle_count_subquery()), asc(Customer.id)]
     # name: case-insensitive on first then last, with id as a stable tiebreaker.
     return [
@@ -367,7 +402,7 @@ async def list_customers(
 
     # Rank by relevance while searching, unless the user explicitly sorted by
     # balance/vehicle count or flipped the name order — their sort wins then.
-    order_by = _customer_order_by(sort, order)
+    order_by = _customer_order_by(sort, order, use_read_model=True)
     if relevance is not None and (sort is None or sort == "name") and order == "asc":
         order_by = [desc(relevance)] + order_by
 
@@ -377,17 +412,31 @@ async def list_customers(
     )
     total = total_result.scalar() or 0
     result = await db.execute(
-        select(Customer)
+        select(Customer, CustomerReadModel)
+        .outerjoin(CustomerReadModel, CustomerReadModel.customer_id == Customer.id)
         .where(where_clause)
         .order_by(*order_by)
         .offset(skip)
         .limit(limit)
     )
-    customers = result.scalars().all()
-    cust_ids = [c.id for c in customers]
-    balances = await get_customer_balances(db, cust_ids)
-    vehicle_info = await get_customer_vehicle_info(db, cust_ids)
-    items = [_customer_response_with_balance(c, balances, vehicle_info, search) for c in customers]
+    customer_rows = result.all()
+    missing_projection_ids = [
+        customer.id for customer, read_model in customer_rows if read_model is None
+    ]
+    # This should only run for a database awaiting projection backfill, never
+    # for normally migrated tenant data.
+    fallback_balances = await get_customer_balances(db, missing_projection_ids)
+    fallback_vehicle_info = await get_customer_vehicle_info(db, missing_projection_ids)
+    items = [
+        _customer_response_with_read_model(
+            customer,
+            read_model,
+            fallback_balances,
+            fallback_vehicle_info,
+            search,
+        )
+        for customer, read_model in customer_rows
+    ]
     return paginated_or_list(items, total, skip, limit, paginated)
 
 

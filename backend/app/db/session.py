@@ -1,5 +1,11 @@
+import time
+
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+
 from app.core.config import settings
+from app.core.metrics import DB_QUERY_DURATION
+from app.core.request_performance import record_database_query, sql_operation
 
 # Convert postgresql:// to postgresql+asyncpg:// for async operations
 database_url = settings.DATABASE_URL
@@ -45,6 +51,24 @@ def build_engine_options(url: str) -> dict:
 
 
 engine = create_async_engine(database_url, **build_engine_options(database_url))
+
+
+@event.listens_for(engine.sync_engine, "before_cursor_execute")
+def _track_query_start(_conn, _cursor, _statement, _parameters, context, _executemany):
+    """Keep timing on SQLAlchemy's execution context, never on the connection."""
+    context._truck_pit_stop_query_started_at = time.perf_counter()
+
+
+@event.listens_for(engine.sync_engine, "after_cursor_execute")
+def _track_query_completion(_conn, _cursor, statement, _parameters, context, _executemany):
+    started_at = getattr(context, "_truck_pit_stop_query_started_at", None)
+    if started_at is None:
+        return
+
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    operation = sql_operation(statement)
+    record_database_query(duration_ms, operation)
+    DB_QUERY_DURATION.labels(operation=operation).observe(duration_ms / 1000)
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
