@@ -7,6 +7,7 @@ Use this guide to verify the canonical repair-order workflow. Estimates are opti
 1. Run the database migrations, including revision `092`.
 2. Start the backend and frontend.
 3. Have a staff user, a mechanic, a customer with a vehicle, and inventory with available stock.
+4. For retryable email verification, run the Celery worker and set `PROVIDER_OUTBOX_ENABLED=true`. With it disabled, invoice email uses the synchronous compatibility path.
 
 ## Canonical flow
 
@@ -74,6 +75,9 @@ Expected results:
 - All invoice render paths use the `line_items_snapshot` stored at finalization.
 - PDFs, resends, and payment confirmations show identical lines and totals.
 - Existing invoices without a snapshot continue to render using legacy live rows as a compatibility fallback.
+- Order status, pricing lock, invoice snapshot, and invoice-email outbox record commit together.
+- If invoice creation fails, the order remains in quality review, stays unlocked, and has no partial invoice.
+- Repeating the manager action cannot create a second invoice.
 
 ## Regression checklist
 
@@ -85,6 +89,6 @@ Expected results:
 | Work editing | Allowed from checked in through quality review |
 | Customer portal | No unpublished financials on active work |
 | Estimate | Optional and independent of operational status |
-| Finalization | Locks pricing and snapshots invoice lines |
-| Invoice delivery | Email, resend, authenticated PDF, and token PDF use the snapshot |
+| Finalization | Atomically locks pricing, snapshots invoice lines, and moves to invoiced |
+| Invoice delivery | Retryable outbox when enabled; all render paths use the snapshot |
 | Payment | Paid state and confirmation retain the finalized invoice content |

@@ -369,12 +369,13 @@ async def test_admin_complete_override_rejects_assigned_ro(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_approval_of_override_completed_ro_records_admin_history(monkeypatch):
+async def test_admin_approval_of_internal_override_ro_records_admin_history(monkeypatch):
     order, _mechanic, manager = _build_context(mechanic_phone=None)
     order.status = RepairOrderStatus.PENDING_REVIEW
     order.work_started_at = datetime.now(timezone.utc)
     order.work_completed_at = datetime.now(timezone.utc)
     order.assigned_mechanic_id = None
+    order.is_internal = True
     fake_db = _FakeOverrideSession(order=order)
 
     async def _noop_broadcast(**_kwargs):

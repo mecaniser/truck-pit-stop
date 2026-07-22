@@ -338,9 +338,11 @@ The useful pattern to adopt is separation: one durable service/repair record, wo
 - Active customer repair projections suppress internal notes, line-item pricing, discounts, and totals.
 - Manager completion is presented as `Finalize & Send Invoice` and locks pricing with `invoice_finalized`.
 - Invoice labor and part lines are captured in a JSON snapshot and reused for email, resend, staff/public PDF, and payment confirmation rendering.
+- Manager review, pricing lock, invoice snapshot, invoiced status, and the optional provider-outbox email record now commit in one transaction; invoice failure rolls the order back to quality review.
+- Finalization locks the order row against duplicate manager finalization, and invoice email delivery is idempotent/retryable when the existing provider-outbox worker is enabled.
 - Legacy enum values and legacy invoices without snapshots remain readable for migration compatibility.
 
-The phases below describe follow-on product hardening. In particular, scoped authorization policies, complete change auditing, public/internal media controls, transactional outbox delivery, invoice void/revision semantics, and independent operational/financial state columns remain deliberate next steps rather than blockers to adopting work-first now.
+The phases below describe follow-on product hardening. In particular, scoped authorization policies, complete change auditing, public/internal media controls, optimistic edit-version checks, invoice void/revision semantics, and independent operational/financial state columns remain deliberate next steps rather than blockers to adopting work-first now.
 
 ### Phase 0: canonical terminology and observability
 

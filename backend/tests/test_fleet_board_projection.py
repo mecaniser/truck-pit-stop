@@ -9,7 +9,7 @@ from app.db.models.fleet_board_read_model import FleetBoardReadModel
 @pytest.mark.asyncio
 async def test_board_reads_backfilled_projection_without_live_repair_order_scan(db_session):
     """A projection row is sufficient to render a fleet card after backfill."""
-    from .test_fleet_board import _seed
+    from test_fleet_board import _seed
 
     tenant, _fleet_customer, user = await _seed(db_session)
     vehicle_id = uuid4()
