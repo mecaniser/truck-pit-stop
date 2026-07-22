@@ -39,6 +39,11 @@ class Customer(BaseModel):
     # Exactly one internal-fleet customer exists per tenant.
     is_internal_fleet = Column(Boolean, nullable=False, default=False, index=True)
 
+    # Whether this company participates in the Fleet Board. This is deliberately
+    # independent from ``is_internal_fleet``: customer fleets are normally
+    # invoiced, while the shop's own fleet can still use internal-cost pricing.
+    fleet_enabled = Column(Boolean, nullable=False, default=False, index=True)
+
     sms_opt_out = Column(Boolean, nullable=False, default=False, index=True)
     sms_opted_out_at = Column(DateTime(timezone=True), nullable=True)
     sms_opt_out_source = Column(String(50), nullable=True)
@@ -58,3 +63,9 @@ class Customer(BaseModel):
     vehicles = relationship("Vehicle", back_populates="customer", cascade="all, delete-orphan")
     repair_orders = relationship("RepairOrder", back_populates="customer")
     contacts = relationship("Contact", back_populates="customer", cascade="all, delete-orphan")
+    vehicle_relationships = relationship(
+        "VehicleCustomerRelationship", back_populates="customer", cascade="all, delete-orphan"
+    )
+    fleet_memberships = relationship(
+        "FleetMembership", back_populates="fleet_customer", cascade="all, delete-orphan"
+    )

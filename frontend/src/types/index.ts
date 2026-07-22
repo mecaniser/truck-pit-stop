@@ -85,6 +85,7 @@ export interface Customer {
   auto_approval_threshold: string | null
   usdot_number?: string | null
   mc_number?: string | null
+  fleet_enabled?: boolean
   quickbooks_customer_id?: string | null
   // Computed at query time (not stored columns), populated by the list/detail endpoints.
   balance?: string
@@ -333,6 +334,7 @@ export interface RepairOrder {
   parent_repair_order_id?: string | null
   is_warranty_repair?: boolean
   is_internal?: boolean
+  is_fleet_work?: boolean
 }
 
 export interface RepairOrderPMService {

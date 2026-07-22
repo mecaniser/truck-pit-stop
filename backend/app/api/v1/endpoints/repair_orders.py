@@ -8,7 +8,7 @@ from uuid import UUID
 from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, literal_column, case
+from sqlalchemy import select, and_, exists, or_, func, literal_column, case
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
@@ -20,6 +20,7 @@ from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.repair_order_read_model import RepairOrderReadModel
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.db.models.vehicle_relationship import FleetMembership
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import Inventory, PartsUsage
@@ -40,6 +41,7 @@ from app.services.price_build_service import (
     PriceBuildValidationError,
 )
 from app.services.internal_fleet import fleet_labor_uses_customer_rate
+from app.services.vehicle_identity import ensure_vehicle_relationship
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
@@ -451,20 +453,14 @@ async def create_repair_order(
             detail="Customer not found",
         )
 
-    # Fleet managers may only open repair orders against the internal fleet.
-    if current_user.role == UserRole.FLEET_MANAGER and not customer.is_internal_fleet:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Fleet managers can only create internal fleet repair orders",
-        )
-
-    # Verify vehicle exists and belongs to customer
+    # The physical truck anchors service history. The selected customer is the
+    # bill-to account for this visit and need not be the current owner.
     result = await db.execute(
         select(Vehicle).where(
             and_(
                 Vehicle.id == order_data.vehicle_id,
-                Vehicle.customer_id == order_data.customer_id,
                 Vehicle.tenant_id == current_user.tenant_id,
+                Vehicle.deleted_at.is_(None),
             )
         )
     )
@@ -472,8 +468,29 @@ async def create_repair_order(
     if not vehicle:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vehicle not found or does not belong to customer",
+            detail="Vehicle not found",
         )
+
+    is_fleet_vehicle = bool((await db.execute(select(exists(select(FleetMembership.id).where(
+        FleetMembership.vehicle_id == vehicle.id,
+        FleetMembership.tenant_id == current_user.tenant_id,
+        FleetMembership.effective_to.is_(None),
+        FleetMembership.deleted_at.is_(None),
+    ))))).scalar()) or customer.is_internal_fleet
+    if current_user.role == UserRole.FLEET_MANAGER:
+        if not is_fleet_vehicle:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Fleet managers can only create work orders for active fleet vehicles",
+            )
+
+    await ensure_vehicle_relationship(
+        db,
+        tenant_id=current_user.tenant_id,
+        vehicle_id=vehicle.id,
+        customer_id=customer.id,
+        relationship_type="default_payer",
+    )
     
     # Use retry wrapper to handle rare race conditions on order number
     from app.core.unique_id import create_with_retry
@@ -485,6 +502,7 @@ async def create_repair_order(
             status=RepairOrderStatus.DRAFT,
             # Repairs on the garage's own fleet are internal-cost (no markup/invoice).
             is_internal=customer.is_internal_fleet,
+            is_fleet_work=is_fleet_vehicle,
             bill_labor_at_customer_rate=(
                 bool(vehicle.bill_labor_at_customer_rate)
                 if customer.is_internal_fleet else False
@@ -922,10 +940,10 @@ async def _list_repair_orders_legacy(
             return paginated_or_list([], 0, skip, limit, paginated)
         query = query.where(RepairOrder.tenant_id == current_user.tenant_id)
         count_query = count_query.where(RepairOrder.tenant_id == current_user.tenant_id)
-        # Fleet managers only see the garage's own internal-fleet repairs.
+        # Fleet operations may be customer-billed; pricing scope is separate.
         if current_user.role == UserRole.FLEET_MANAGER:
-            query = query.where(RepairOrder.is_internal.is_(True))
-            count_query = count_query.where(RepairOrder.is_internal.is_(True))
+            query = query.where(RepairOrder.is_fleet_work.is_(True))
+            count_query = count_query.where(RepairOrder.is_fleet_work.is_(True))
         if customer_id:
             query = query.where(RepairOrder.customer_id == customer_id)
             count_query = count_query.where(RepairOrder.customer_id == customer_id)
@@ -2860,8 +2878,7 @@ def _check_ro_access(current_user: User, order: RepairOrder) -> None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     elif current_user.tenant_id != order.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    # Fleet managers are scoped to the garage's own internal-fleet repairs only.
-    if current_user.role == UserRole.FLEET_MANAGER and not order.is_internal:
+    if current_user.role == UserRole.FLEET_MANAGER and not (order.is_fleet_work or order.is_internal):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 

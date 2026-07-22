@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 from uuid import UUID
 
@@ -51,4 +51,29 @@ class VehicleResponse(VehicleBase):
     class Config:
         from_attributes = True
 
+
+VehicleRelationshipType = Literal["owner", "operator", "default_payer"]
+
+
+class VehicleRelationshipCreate(BaseModel):
+    customer_id: UUID
+    relationship_type: VehicleRelationshipType
+    is_primary: bool = False
+    # Ownership/default-payer changes close the previous primary period instead
+    # of rewriting it, preserving the truck's business history.
+    replace_primary: bool = False
+
+
+class VehicleRelationshipResponse(BaseModel):
+    id: UUID
+    vehicle_id: UUID
+    customer_id: UUID
+    relationship_type: VehicleRelationshipType
+    effective_from: datetime
+    effective_to: Optional[datetime] = None
+    is_primary: bool = False
+    customer_company_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 

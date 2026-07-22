@@ -318,16 +318,52 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
 
 /* ---------- New work order (corrective) ---------- */
 
+interface VehicleAccountRelationship {
+  id: string
+  customer_id: string
+  relationship_type: 'owner' | 'operator' | 'default_payer'
+  effective_to?: string | null
+  is_primary: boolean
+  customer_company_name?: string | null
+}
+
+function useTruckBillToOptions(truckId: string) {
+  const { data = [] } = useQuery<VehicleAccountRelationship[]>({
+    queryKey: ['vehicle-account-relationships', truckId],
+    queryFn: async () => (await api.get(`/vehicles/${truckId}/relationships`)).data,
+  })
+  const active = data.filter((item) => !item.effective_to)
+  const byCustomer = new Map<string, VehicleAccountRelationship>()
+  for (const relationship of active) {
+    const current = byCustomer.get(relationship.customer_id)
+    if (!current || relationship.relationship_type === 'default_payer' || relationship.is_primary) {
+      byCustomer.set(relationship.customer_id, relationship)
+    }
+  }
+  return [...byCustomer.values()]
+}
+
 export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
   truckId: string; unitNumber?: string | null; onClose: () => void; onCreated: () => void
 }) {
   const [description, setDescription] = useState('')
+  const billToOptions = useTruckBillToOptions(truckId)
+  const [billToCustomerId, setBillToCustomerId] = useState('')
+  useEffect(() => {
+    if (!billToCustomerId && billToOptions.length) {
+      const preferred = billToOptions.find((item) => item.relationship_type === 'default_payer' && item.is_primary)
+        || billToOptions.find((item) => item.relationship_type === 'operator')
+        || billToOptions[0]
+      setBillToCustomerId(preferred.customer_id)
+    }
+  }, [billToCustomerId, billToOptions])
 
   const qc = useQueryClient()
   const create = useMutation({
     // Returns the BoardTruck; its work_order.id IS the order number.
     mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {
       description: description.trim(),
+      bill_to_customer_id: billToCustomerId || undefined,
     })).data as BoardTruck,
     onSuccess: (truck) => {
       const num = truck?.work_order?.id
@@ -354,8 +390,18 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
           }}
         />
       </Field>
+      <Field label="Invoice this visit to">
+        <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)}>
+          <option value="">Use truck default</option>
+          {billToOptions.map((relationship) => (
+            <option key={relationship.customer_id} value={relationship.customer_id}>
+              {relationship.customer_company_name || 'Company'}
+            </option>
+          ))}
+        </select>
+      </Field>
       <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 8 }}>
-        Creates an internal (in-house cost) work order in Draft. A description is required.
+        The truck keeps one service history. Pricing and invoicing follow the company selected for this visit.
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
         disabled={create.isPending || !description.trim()} onClick={() => create.mutate()}>
@@ -388,6 +434,16 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   // When opened from the card's "Create work order" action, default to creating
   // the work order now so the manager picks services first, in one step.
   const [createWO, setCreateWO] = useState(createMode)
+  const billToOptions = useTruckBillToOptions(truck.id)
+  const [billToCustomerId, setBillToCustomerId] = useState('')
+  useEffect(() => {
+    if (!billToCustomerId && billToOptions.length) {
+      const preferred = billToOptions.find((item) => item.relationship_type === 'default_payer' && item.is_primary)
+        || billToOptions.find((item) => item.relationship_type === 'operator')
+        || billToOptions[0]
+      setBillToCustomerId(preferred.customer_id)
+    }
+  }, [billToCustomerId, billToOptions])
   const rescheduling = !!truck.pm_due_date
 
   // Services for this PM, seeded from the truck's saved default package. The
@@ -419,6 +475,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       create_work_order: createWO,
       service_ids: selected,
       save_as_default: saveAsDefault,
+      bill_to_customer_id: (createWO && billToCustomerId) ? billToCustomerId : undefined,
     })).data as BoardTruck,
     onSuccess: (updated) => {
       // Response is the BoardTruck; the PM work order's id IS the order number.
@@ -471,6 +528,18 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
               </p>
             </Field>
           </>
+        )}
+        {createWO && (
+          <Field label="Invoice this visit to">
+            <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)}>
+              <option value="">Use truck default</option>
+              {billToOptions.map((relationship) => (
+                <option key={relationship.customer_id} value={relationship.customer_id}>
+                  {relationship.customer_company_name || 'Company'}
+                </option>
+              ))}
+            </select>
+          </Field>
         )}
 
         <Field label={`PM services${selected.length ? ` · ${selected.length} selected` : ''}`}>

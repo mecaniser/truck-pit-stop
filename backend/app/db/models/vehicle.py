@@ -87,3 +87,9 @@ class Vehicle(BaseModel):
     nhtsa_decoded_at = Column(DateTime(timezone=True), nullable=True)
     
     repair_orders = relationship("RepairOrder", back_populates="vehicle")
+    account_relationships = relationship(
+        "VehicleCustomerRelationship", back_populates="vehicle", cascade="all, delete-orphan"
+    )
+    fleet_memberships = relationship(
+        "FleetMembership", back_populates="vehicle", cascade="all, delete-orphan"
+    )

@@ -1,8 +1,4 @@
-"""Fleet management endpoints: weekly inspections and roadside incidents.
-
-Scoped to the garage's own internal fleet (the house-account customer). Accessible
-to the fleet manager and the garage owner/admin who own the fleet.
-"""
+"""Fleet operations for trucks assigned to customer or internal fleets."""
 import json
 import math
 from datetime import datetime, timezone, timedelta, date
@@ -11,7 +7,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
 from pydantic import BaseModel
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -20,6 +16,7 @@ from app.core.image_validation import read_validated_image
 from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
+from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
 from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
@@ -74,14 +71,27 @@ from app.schemas.fleet import (
     FleetMechanicOption,
     FleetSettingsResponse,
     FleetPhotoResponse,
+    FleetCompanyOption,
+    FleetMembershipCreate,
+    FleetTruckCreate,
 )
+from app.schemas.vehicle import VehicleResponse
+from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.core.logging import get_logger
 from app.services.internal_fleet import (
-    ensure_internal_fleet_customer,
     fleet_labor_uses_customer_rate,
     project_pm_due_date,
 )
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
+from app.services.vehicle_identity import (
+    end_fleet_membership,
+    ensure_fleet_membership,
+    ensure_vehicle_relationship,
+    find_vehicle_by_vin,
+    normalize_vin,
+    seed_vehicle_account_relationships,
+)
+from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -130,26 +140,26 @@ def require_garage_owner_only(current_user: User = Depends(get_current_active_us
     return current_user
 
 
-async def _fleet_customer_id(db: AsyncSession, tenant_id: UUID) -> UUID:
-    customer = await ensure_internal_fleet_customer(db, tenant_id)
-    await db.commit()
-    return customer.id
-
-
 async def _get_fleet_vehicle(db: AsyncSession, tenant_id: UUID, vehicle_id: UUID) -> Vehicle:
-    # The board reads every active vehicle attached to an internal-fleet customer.
-    # Detail and mutation endpoints must use the same predicate; otherwise a
-    # legacy tenant with more than one house account can render a board card
-    # that rejects its own vehicle ID.
+    # Fleet membership is operational and temporal; it is not ownership or a
+    # billing decision. Detail and mutation endpoints use the same predicate as
+    # the board so leased/customer-owned trucks remain manageable.
     result = await db.execute(
         select(Vehicle)
         .join(Customer, Customer.id == Vehicle.customer_id)
+        .outerjoin(FleetMembership, and_(
+            FleetMembership.vehicle_id == Vehicle.id,
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))
+        .options(selectinload(Vehicle.customer))
         .where(
             and_(
                 Vehicle.id == vehicle_id,
                 Vehicle.tenant_id == tenant_id,
                 Vehicle.deleted_at.is_(None),
-                Customer.is_internal_fleet.is_(True),
+                or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
                 Customer.deleted_at.is_(None),
             )
         )
@@ -232,16 +242,186 @@ _read_validated_fleet_image = read_validated_image
 # Roster & summary
 # ---------------------------------------------------------------------------
 
+@router.get("/companies", response_model=List[FleetCompanyOption])
+async def list_fleet_companies(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Companies available as fleet operators or truck accounts."""
+    customers = list((await db.execute(
+        select(Customer).where(
+            Customer.tenant_id == current_user.tenant_id,
+            Customer.deleted_at.is_(None),
+        ).order_by(func.lower(Customer.company_name), Customer.id)
+    )).scalars().all())
+    return [
+        FleetCompanyOption(
+            id=customer.id,
+            company_name=(customer.company_name or f"{customer.first_name} {customer.last_name}".strip()),
+            fleet_enabled=customer.fleet_enabled,
+            is_internal_fleet=customer.is_internal_fleet,
+        )
+        for customer in customers
+    ]
+
+
+@router.get("/vehicle-candidates", response_model=List[VehicleTypeaheadResponse])
+async def list_fleet_vehicle_candidates(
+    q: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Tenant trucks that can be linked instead of duplicated on Fleet Board."""
+    filters = [
+        Vehicle.tenant_id == current_user.tenant_id,
+        Vehicle.deleted_at.is_(None),
+        Customer.deleted_at.is_(None),
+    ]
+    term = (q or "").strip()
+    if term:
+        pattern = f"%{term}%"
+        filters.append(or_(
+            Vehicle.unit_number.ilike(pattern),
+            Vehicle.vin.ilike(pattern),
+            Vehicle.license_plate.ilike(pattern),
+            Vehicle.make.ilike(pattern),
+            Vehicle.model.ilike(pattern),
+        ))
+    rows = list((await db.execute(
+        select(Vehicle)
+        .join(Customer, Customer.id == Vehicle.customer_id)
+        .where(*filters)
+        .order_by(func.lower(Vehicle.unit_number), func.lower(Vehicle.make), Vehicle.id)
+        .limit(limit)
+    )).scalars().all())
+    return [
+        VehicleTypeaheadResponse(
+            id=vehicle.id,
+            customer_id=vehicle.customer_id,
+            make=vehicle.make,
+            model=vehicle.model,
+            year=vehicle.year,
+            unit_number=vehicle.unit_number,
+            license_plate=vehicle.license_plate,
+            vin=vehicle.vin,
+        )
+        for vehicle in rows
+    ]
+
+
+@router.post("/memberships", status_code=status.HTTP_201_CREATED)
+async def add_fleet_membership(
+    body: FleetMembershipCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    vehicle = (await db.execute(select(Vehicle).where(
+        Vehicle.id == body.vehicle_id,
+        Vehicle.tenant_id == current_user.tenant_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    customer = (await db.execute(select(Customer).where(
+        Customer.id == body.fleet_customer_id,
+        Customer.tenant_id == current_user.tenant_id,
+        Customer.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not vehicle or not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or fleet company not found")
+    customer.fleet_enabled = True
+    membership = await ensure_fleet_membership(
+        db,
+        tenant_id=current_user.tenant_id,
+        vehicle_id=vehicle.id,
+        fleet_customer_id=customer.id,
+    )
+    await db.commit()
+    return {"id": str(membership.id), "vehicle_id": str(vehicle.id), "fleet_customer_id": str(customer.id)}
+
+
+@router.delete("/memberships/{vehicle_id}/{fleet_customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_fleet_membership(
+    vehicle_id: UUID,
+    fleet_customer_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    ended = await end_fleet_membership(
+        db,
+        tenant_id=current_user.tenant_id,
+        vehicle_id=vehicle_id,
+        fleet_customer_id=fleet_customer_id,
+    )
+    if not ended:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active fleet membership not found")
+    await db.commit()
+
+
+@router.post("/trucks", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)
+async def create_fleet_truck(
+    body: FleetTruckCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    customer = (await db.execute(select(Customer).where(
+        Customer.id == body.customer_id,
+        Customer.tenant_id == current_user.tenant_id,
+        Customer.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer/company not found")
+    normalized_vin = normalize_vin(body.vin)
+    duplicate = await find_vehicle_by_vin(db, current_user.tenant_id, normalized_vin)
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+        )
+    payload = body.model_dump(exclude={"customer_id"})
+    payload["vin"] = normalized_vin
+    payload["driver_phone"] = normalize_phone(payload.get("driver_phone"))
+    vehicle = Vehicle(
+        tenant_id=current_user.tenant_id,
+        customer_id=customer.id,
+        **payload,
+    )
+    db.add(vehicle)
+    await db.flush()
+    await sync_vehicle_nhtsa_snapshot(vehicle)
+    await seed_vehicle_account_relationships(db, vehicle, customer)
+    customer.fleet_enabled = True
+    await ensure_fleet_membership(
+        db,
+        tenant_id=current_user.tenant_id,
+        vehicle_id=vehicle.id,
+        fleet_customer_id=customer.id,
+    )
+    await db.commit()
+    await db.refresh(vehicle)
+    return VehicleResponse.model_validate(vehicle)
+
 @router.get("/vehicles", response_model=List[FleetVehicleResponse])
 async def list_fleet_vehicles(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    fleet_customer_id = await _fleet_customer_id(db, current_user.tenant_id)
     result = await db.execute(
-        select(Vehicle).where(
-            and_(Vehicle.tenant_id == current_user.tenant_id, Vehicle.customer_id == fleet_customer_id)
-        ).order_by(Vehicle.unit_number, Vehicle.make)
+        select(Vehicle)
+        .join(Customer, Customer.id == Vehicle.customer_id)
+        .outerjoin(FleetMembership, and_(
+            FleetMembership.vehicle_id == Vehicle.id,
+            FleetMembership.tenant_id == current_user.tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))
+        .where(
+            Vehicle.tenant_id == current_user.tenant_id,
+            Vehicle.deleted_at.is_(None),
+            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            Customer.deleted_at.is_(None),
+        )
+        .distinct()
+        .order_by(Vehicle.unit_number, Vehicle.make)
     )
     vehicles = list(result.scalars().all())
     vehicle_ids = [v.id for v in vehicles]
@@ -838,37 +1018,20 @@ async def create_repair_for_incident(
     if incident.repair_order_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A repair order already exists for this incident")
 
-    from app.api.v1.endpoints.repair_orders import generate_order_number
-    from app.core.unique_id import create_with_retry
-    from app.core.metrics import record_repair_order_created
-
-    fleet_customer_id = await _fleet_customer_id(db, current_user.tenant_id)
-
-    async def _create(order_number: str) -> RepairOrder:
-        ro = RepairOrder(
-            id=uuid4(),
-            tenant_id=current_user.tenant_id,
-            customer_id=fleet_customer_id,
-            vehicle_id=incident.vehicle_id,
-            order_number=order_number,
-            status=RepairOrderStatus.DRAFT,
-            is_internal=True,
-            description=f"Incident repair: {incident.description[:240]}",
-        )
-        db.add(ro)
-        return ro
-
-    ro = await create_with_retry(
-        db=db,
-        create_fn=_create,
-        generate_number_fn=lambda: generate_order_number(db, current_user.tenant_id),
-        entity_name="repair_order",
+    vehicle = await _load_fleet_vehicle_or_404(
+        db, current_user.tenant_id, incident.vehicle_id
+    )
+    ro = await _spawn_internal_ro(
+        db,
+        current_user.tenant_id,
+        vehicle,
+        is_pm=False,
+        description=f"Incident repair: {incident.description[:240]}",
     )
     incident.repair_order_id = ro.id
     if incident.status == IncidentStatus.OPEN:
         incident.status = IncidentStatus.IN_PROGRESS
     await db.commit()
-    record_repair_order_created(str(current_user.tenant_id))
     await db.refresh(incident, attribute_names=["vehicle"])
     return _incident_response(incident)
 
@@ -1055,39 +1218,52 @@ def _build_board_truck(
 
 
 async def _fleet_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
-    fleet_customer_id = await _fleet_customer_id(db, tenant_id)
     result = await db.execute(
-        select(Vehicle).where(
-            and_(
-                Vehicle.tenant_id == tenant_id,
-                Vehicle.customer_id == fleet_customer_id,
-                Vehicle.deleted_at.is_(None),
-            )
-        ).order_by(Vehicle.unit_number, Vehicle.make)
+        select(Vehicle)
+        .join(Customer, Customer.id == Vehicle.customer_id)
+        .outerjoin(FleetMembership, and_(
+            FleetMembership.vehicle_id == Vehicle.id,
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))
+        .where(
+            Vehicle.tenant_id == tenant_id,
+            Vehicle.deleted_at.is_(None),
+            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            Customer.deleted_at.is_(None),
+        )
+        .distinct()
+        .order_by(Vehicle.unit_number, Vehicle.make)
     )
     return list(result.scalars().all())
 
 
 async def _fleet_board_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
-    """Read the existing internal fleet without creating or committing on GET."""
+    """Read active fleet membership without treating ownership as membership."""
     result = await db.execute(
         select(Vehicle)
         .join(Customer, Customer.id == Vehicle.customer_id)
+        .outerjoin(FleetMembership, and_(
+            FleetMembership.vehicle_id == Vehicle.id,
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))
         .where(
-            and_(
-                Vehicle.tenant_id == tenant_id,
-                Vehicle.deleted_at.is_(None),
-                Customer.is_internal_fleet.is_(True),
-                Customer.deleted_at.is_(None),
-            )
+            Vehicle.tenant_id == tenant_id,
+            Vehicle.deleted_at.is_(None),
+            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
+            Customer.deleted_at.is_(None),
         )
+        .distinct()
         .order_by(Vehicle.unit_number, Vehicle.make)
     )
     return list(result.scalars().all())
 
 
 async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dict[UUID, list[RepairOrder]]:
-    """All active (non-terminal) internal ROs per vehicle, newest first.
+    """All active (non-terminal) ROs per fleet vehicle, newest first.
 
     A truck can have several open work orders at once (e.g. multiple in a week);
     callers pick the most-urgent for the board card and list the rest on the
@@ -1100,7 +1276,6 @@ async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dic
         .where(
             and_(
                 RepairOrder.vehicle_id.in_(vehicle_ids),
-                RepairOrder.is_internal.is_(True),
                 RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
                 RepairOrder.deleted_at.is_(None),
             )
@@ -1130,6 +1305,74 @@ async def _open_incident_counts(db: AsyncSession, vehicle_ids: list[UUID]) -> di
     return {row[0]: row[1] for row in rows.all()}
 
 
+async def _attach_account_context(
+    db: AsyncSession, trucks: list[BoardTruck], tenant_id: UUID
+) -> None:
+    """Attach current fleet operator and owner labels without copying identity."""
+    vehicle_ids = [truck.id for truck in trucks]
+    if not vehicle_ids:
+        return
+    membership_rows = (await db.execute(
+        select(
+            FleetMembership.vehicle_id,
+            Customer.id,
+            Customer.company_name,
+            Customer.first_name,
+            Customer.last_name,
+        )
+        .join(Customer, Customer.id == FleetMembership.fleet_customer_id)
+        .where(
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.vehicle_id.in_(vehicle_ids),
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+            Customer.deleted_at.is_(None),
+        )
+        .order_by(FleetMembership.effective_from.desc())
+    )).all()
+    owner_rows = (await db.execute(
+        select(
+            VehicleCustomerRelationship.vehicle_id,
+            Customer.id,
+            Customer.company_name,
+            Customer.first_name,
+            Customer.last_name,
+        )
+        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+        .where(
+            VehicleCustomerRelationship.tenant_id == tenant_id,
+            VehicleCustomerRelationship.vehicle_id.in_(vehicle_ids),
+            VehicleCustomerRelationship.relationship_type == "owner",
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+            Customer.deleted_at.is_(None),
+        )
+        .order_by(
+            VehicleCustomerRelationship.is_primary.desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        )
+    )).all()
+
+    def label(row) -> str:
+        return row.company_name or f"{row.first_name} {row.last_name}".strip()
+
+    memberships = {}
+    for row in membership_rows:
+        memberships.setdefault(row.vehicle_id, row)
+    owners = {}
+    for row in owner_rows:
+        owners.setdefault(row.vehicle_id, row)
+    for truck in trucks:
+        membership = memberships.get(truck.id)
+        if membership:
+            truck.fleet_customer_id = membership.id
+            truck.fleet_company_name = label(membership)
+        owner = owners.get(truck.id)
+        if owner:
+            truck.owner_customer_id = owner.id
+            truck.owner_company_name = label(owner)
+
+
 async def _fleet_board_from_projection(
     db: AsyncSession, tenant_id: UUID
 ) -> tuple[list[BoardTruck], set[UUID]]:
@@ -1142,9 +1385,42 @@ async def _fleet_board_from_projection(
     """
     rows = list((await db.execute(
         select(FleetBoardReadModel)
-        .where(FleetBoardReadModel.tenant_id == tenant_id)
+        .outerjoin(Vehicle, Vehicle.id == FleetBoardReadModel.vehicle_id)
+        .outerjoin(Customer, Customer.id == Vehicle.customer_id)
+        .outerjoin(FleetMembership, and_(
+            FleetMembership.vehicle_id == FleetBoardReadModel.vehicle_id,
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))
+        .where(
+            FleetBoardReadModel.tenant_id == tenant_id,
+            or_(
+                FleetMembership.id.is_not(None),
+                Customer.is_internal_fleet.is_(True),
+                Vehicle.id.is_(None),  # migration-restore projection compatibility
+            ),
+        )
+        .distinct()
         .order_by(FleetBoardReadModel.vehicle_id)
     )).scalars().all())
+    if not rows:
+        return [], set()
+
+    # The pre-relationship projection only included is_internal work orders.
+    # Until every deployment has rebuilt that SQL function, route trucks with
+    # an open customer-billed visit through the authoritative builder below so
+    # the board never hides active work merely because the payer is external.
+    projected_vehicle_ids = [row.vehicle_id for row in rows]
+    customer_billed_open_ids = set((await db.execute(
+        select(RepairOrder.vehicle_id).where(
+            RepairOrder.vehicle_id.in_(projected_vehicle_ids),
+            RepairOrder.is_internal.is_(False),
+            RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
+            RepairOrder.deleted_at.is_(None),
+        ).distinct()
+    )).scalars().all())
+    rows = [row for row in rows if row.vehicle_id not in customer_billed_open_ids]
     if not rows:
         return [], set()
 
@@ -1250,6 +1526,7 @@ async def fleet_board(
             )
             for v in missing_vehicles
         )
+    await _attach_account_context(db, trucks, current_user.tenant_id)
     trucks.sort(key=lambda truck: ((truck.unit_number or ""), str(truck.id)))
     stats = FleetStats(
         total=len(trucks),
@@ -1284,12 +1561,11 @@ async def truck_detail(
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
 
-    # All internal ROs for this truck (for history, work order, spend, parts).
+    # All ROs follow the physical truck even when owner/operator/payer changes.
     ro_result = await db.execute(
         select(RepairOrder)
         .where(and_(
             RepairOrder.vehicle_id == vehicle_id,
-            RepairOrder.is_internal.is_(True),
             RepairOrder.deleted_at.is_(None),
         ))
         .options(selectinload(RepairOrder.assigned_mechanic))
@@ -1300,6 +1576,7 @@ async def truck_detail(
     completed = [r for r in ros if r.status in (RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)]
 
     board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros), pm_ro=_open_pm_ro(open_ros))
+    await _attach_account_context(db, [board], current_user.tenant_id)
 
     # History: completed internal ROs (PM/Repair) + completed inspections.
     history: list[HistoryEntry] = []
@@ -1435,6 +1712,14 @@ async def update_truck(
         vehicle.unit_number = body.unit_number or None
     if body.vin is not None:
         new_vin = body.vin.strip().upper() or None
+        duplicate = await find_vehicle_by_vin(
+            db, current_user.tenant_id, new_vin, exclude_vehicle_id=vehicle.id
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This VIN already belongs to truck {duplicate.id}.",
+            )
         vin_changed = new_vin != vehicle.vin
         vehicle.vin = new_vin
     if body.make is not None and body.make.strip():
@@ -1515,11 +1800,19 @@ async def _load_fleet_ro_or_404(
 ) -> RepairOrder:
     stmt = (
         select(RepairOrder)
+        .join(Vehicle, Vehicle.id == RepairOrder.vehicle_id)
+        .join(Customer, Customer.id == Vehicle.customer_id)
+        .outerjoin(FleetMembership, and_(
+            FleetMembership.vehicle_id == RepairOrder.vehicle_id,
+            FleetMembership.tenant_id == tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))
         .where(and_(
             RepairOrder.id == ro_id,
             RepairOrder.tenant_id == tenant_id,
-            RepairOrder.is_internal.is_(True),
             RepairOrder.deleted_at.is_(None),
+            or_(FleetMembership.id.is_not(None), Customer.is_internal_fleet.is_(True)),
         ))
         .options(
             selectinload(RepairOrder.assigned_mechanic),
@@ -1679,19 +1972,46 @@ async def complete_work_order(
     return _board_work_order(ro)
 
 
-async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle, *, is_pm: bool, description: str) -> RepairOrder:
+async def _spawn_internal_ro(
+    db: AsyncSession,
+    tenant_id: UUID,
+    vehicle: Vehicle,
+    *,
+    is_pm: bool,
+    description: str,
+    bill_to_customer_id: Optional[UUID] = None,
+) -> RepairOrder:
     from app.api.v1.endpoints.repair_orders import generate_order_number
     from app.core.unique_id import create_with_retry
     from app.core.metrics import record_repair_order_created
 
-    fleet_customer_id = await _fleet_customer_id(db, tenant_id)
+    payer_id = bill_to_customer_id or vehicle.customer_id
+    payer = (await db.execute(select(Customer).where(
+        Customer.id == payer_id,
+        Customer.tenant_id == tenant_id,
+        Customer.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not payer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill-to company not found")
+    await ensure_vehicle_relationship(
+        db,
+        tenant_id=tenant_id,
+        vehicle_id=vehicle.id,
+        customer_id=payer.id,
+        relationship_type="default_payer",
+    )
 
     async def _create(order_number: str) -> RepairOrder:
         ro = RepairOrder(
-            id=uuid4(), tenant_id=tenant_id, customer_id=fleet_customer_id,
+            id=uuid4(), tenant_id=tenant_id, customer_id=payer.id,
             vehicle_id=vehicle.id, order_number=order_number,
-            status=RepairOrderStatus.DRAFT, is_internal=True, is_pm=is_pm,
-            bill_labor_at_customer_rate=vehicle.bill_labor_at_customer_rate,
+            status=RepairOrderStatus.DRAFT,
+            is_internal=payer.is_internal_fleet,
+            is_fleet_work=True,
+            is_pm=is_pm,
+            bill_labor_at_customer_rate=(
+                vehicle.bill_labor_at_customer_rate if payer.is_internal_fleet else False
+            ),
             description=description,
             # Auto-capture mileage-in from the truck's current odometer (kept
             # current by inspections). Fleet managers don't re-enter it.
@@ -2119,10 +2439,14 @@ async def list_fleet_invoices(
         select(Invoice, RepairOrder, Vehicle)
         .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id, isouter=True)
+        .join(FleetMembership, FleetMembership.vehicle_id == RepairOrder.vehicle_id)
         .where(and_(
             Invoice.tenant_id == current_user.tenant_id,
-            RepairOrder.is_internal.is_(True),
+            FleetMembership.tenant_id == current_user.tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
         ))
+        .distinct()
         .order_by(Invoice.created_at.desc())
     )
     entries = []
@@ -2178,10 +2502,19 @@ async def new_work_order(
 
     # A truck can carry several open work orders at once, so no single-open guard.
     description = (body.description.strip() if body and body.description else "") or "Fleet work order"
-    await _spawn_internal_ro(db, current_user.tenant_id, vehicle, is_pm=False, description=description)
+    await _spawn_internal_ro(
+        db,
+        current_user.tenant_id,
+        vehicle,
+        is_pm=False,
+        description=description,
+        bill_to_customer_id=(body.bill_to_customer_id if body else None),
+    )
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    truck = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    await _attach_account_context(db, [truck], current_user.tenant_id)
+    return truck
 
 
 @router.post("/trucks/{vehicle_id}/schedule-pm", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
@@ -2225,6 +2558,7 @@ async def schedule_pm(
         ro = await _spawn_internal_ro(
             db, current_user.tenant_id, vehicle, is_pm=True,
             description=f"Preventive maintenance — Service interval {vehicle.pm_interval_miles or 25000:,} mi",
+            bill_to_customer_id=body.bill_to_customer_id,
         )
         if services:
             from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
@@ -2236,4 +2570,6 @@ async def schedule_pm(
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
-    return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    truck = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
+    await _attach_account_context(db, [truck], current_user.tenant_id)
+    return truck
