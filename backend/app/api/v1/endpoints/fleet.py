@@ -19,11 +19,13 @@ from app.core.image_validation import read_validated_image
 from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
+from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
+from app.db.models.customer import Customer
 from app.db.models.fleet import (
     FleetInspection,
     FleetInspectionItem,
@@ -1054,6 +1056,24 @@ async def _fleet_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
     return list(result.scalars().all())
 
 
+async def _fleet_board_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
+    """Read the existing internal fleet without creating or committing on GET."""
+    result = await db.execute(
+        select(Vehicle)
+        .join(Customer, Customer.id == Vehicle.customer_id)
+        .where(
+            and_(
+                Vehicle.tenant_id == tenant_id,
+                Vehicle.deleted_at.is_(None),
+                Customer.is_internal_fleet.is_(True),
+                Customer.deleted_at.is_(None),
+            )
+        )
+        .order_by(Vehicle.unit_number, Vehicle.make)
+    )
+    return list(result.scalars().all())
+
+
 async def _open_ros_by_vehicle(db: AsyncSession, vehicle_ids: list[UUID]) -> dict[UUID, list[RepairOrder]]:
     """All active (non-terminal) internal ROs per vehicle, newest first.
 
@@ -1098,25 +1118,120 @@ async def _open_incident_counts(db: AsyncSession, vehicle_ids: list[UUID]) -> di
     return {row[0]: row[1] for row in rows.all()}
 
 
+async def _fleet_board_from_projection(
+    db: AsyncSession, tenant_id: UUID
+) -> tuple[list[BoardTruck], set[UUID]]:
+    """Load board cards through the compact projection and bounded lookups.
+
+    Missing rows are intentionally returned to the legacy builder during a
+    migration restore/backfill. Once backfilled this path is three small reads:
+    card rows, mechanics referenced by open work orders, and PM services.
+    """
+    rows = list((await db.execute(
+        select(FleetBoardReadModel)
+        .where(FleetBoardReadModel.tenant_id == tenant_id)
+        .order_by(FleetBoardReadModel.vehicle_id)
+    )).scalars().all())
+    if not rows:
+        return [], set()
+
+    mechanic_ids = {
+        UUID(payload["assigned_mechanic_id"])
+        for row in rows
+        for payload in (row.urgent_work_order, row.pm_work_order)
+        if payload and payload.get("assigned_mechanic_id")
+    }
+    mechanics: dict[UUID, str] = {}
+    if mechanic_ids:
+        mechanic_rows = await db.execute(select(User).where(User.id.in_(mechanic_ids)))
+        mechanics = {
+            user.id: _mechanic_name(user) or ""
+            for user in mechanic_rows.scalars().all()
+        }
+
+    pm_services = await _pm_services_by_vehicle(db, tenant_id, [row.vehicle_id for row in rows])
+    trucks: list[BoardTruck] = []
+    for row in rows:
+        data = dict(row.vehicle_data)
+
+        def work_order(payload: Optional[dict]) -> Optional[BoardWorkOrder]:
+            if not payload:
+                return None
+            mechanic_id = payload.get("assigned_mechanic_id")
+            return BoardWorkOrder(
+                id=payload["order_number"],
+                repair_order_id=payload["id"],
+                status=("Awaiting parts" if payload.get("awaiting_parts") else WO_STATUS_LABELS.get(payload["status"], "In shop")),
+                raw_status=payload["status"],
+                summary=payload.get("description"),
+                mechanic=mechanics.get(UUID(mechanic_id)) if mechanic_id else None,
+                is_pm=bool(payload.get("is_pm")),
+            )
+
+        urgent = work_order(row.urgent_work_order)
+        data.update({
+            "id": row.vehicle_id,
+            "status": _derive_projected_status(data, row.urgent_work_order),
+            "moving": bool(data.get("speed_mph") and data["speed_mph"] > 0),
+            "assigned_mechanic": urgent.mechanic if urgent else None,
+            "work_order": urgent,
+            "pm_work_order": work_order(row.pm_work_order),
+            "pm_services": pm_services.get(row.vehicle_id, []),
+            "open_work_order_count": row.open_work_order_count,
+            "open_incident_count": row.open_incident_count,
+            "warning_lights": [value for value in (data.pop("active_warning_lights", "") or "").split(",") if value],
+        })
+        trucks.append(BoardTruck(**data))
+    return trucks, {row.vehicle_id for row in rows}
+
+
+def _derive_projected_status(vehicle: dict, urgent_work_order: Optional[dict]) -> str:
+    """Status equivalent of ``_derive_status`` for projection JSON data."""
+    if urgent_work_order:
+        if urgent_work_order.get("awaiting_parts"):
+            return "parts"
+        if (
+            urgent_work_order.get("status") == RepairOrderStatus.DRAFT.value
+            and urgent_work_order.get("assigned_mechanic_id") is None
+            and urgent_work_order.get("work_started_at") is None
+        ):
+            return "draft"
+        return "shop"
+    if vehicle.get("status_override") in VALID_STATUS_OVERRIDES:
+        return vehicle["status_override"]
+    mileage = vehicle.get("mileage")
+    next_pm = vehicle.get("next_pm_miles")
+    pm_due_date = vehicle.get("pm_due_date")
+    pm_due_soon = next_pm is not None and mileage is not None and next_pm - mileage < PM_DUE_SOON_MILES
+    if pm_due_date:
+        due = date.fromisoformat(pm_due_date) if isinstance(pm_due_date, str) else pm_due_date
+        pm_due_soon = pm_due_soon or (due - date.today()).days <= PM_DUE_SOON_DAYS
+    return "pm" if pm_due_soon else "active"
+
+
 @router.get("/board", response_model=FleetBoardResponse)
 async def fleet_board(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    vehicles = await _fleet_vehicles(db, current_user.tenant_id)
-    ids = [v.id for v in vehicles]
-    open_ros = await _open_ros_by_vehicle(db, ids)
-    incidents = await _open_incident_counts(db, ids)
-    pm_svcs = await _pm_services_by_vehicle(db, current_user.tenant_id, ids)
-
-    trucks = [
-        _build_board_truck(
-            v, _most_urgent_ro(open_ros.get(v.id, [])), incidents.get(v.id, 0), len(open_ros.get(v.id, [])),
-            pm_ro=_open_pm_ro(open_ros.get(v.id, [])),
-            pm_services=pm_svcs.get(v.id, []),
+    trucks, projected_ids = await _fleet_board_from_projection(db, current_user.tenant_id)
+    # Projection rows are backfilled by the migration. Retain the old builder
+    # only for missing rows so restores and rolling deployments stay correct.
+    vehicles = await _fleet_board_vehicles(db, current_user.tenant_id)
+    missing_vehicles = [vehicle for vehicle in vehicles if vehicle.id not in projected_ids]
+    if missing_vehicles:
+        ids = [v.id for v in missing_vehicles]
+        open_ros = await _open_ros_by_vehicle(db, ids)
+        incidents = await _open_incident_counts(db, ids)
+        pm_svcs = await _pm_services_by_vehicle(db, current_user.tenant_id, ids)
+        trucks.extend(
+            _build_board_truck(
+                v, _most_urgent_ro(open_ros.get(v.id, [])), incidents.get(v.id, 0), len(open_ros.get(v.id, [])),
+                pm_ro=_open_pm_ro(open_ros.get(v.id, [])), pm_services=pm_svcs.get(v.id, []),
+            )
+            for v in missing_vehicles
         )
-        for v in vehicles
-    ]
+    trucks.sort(key=lambda truck: ((truck.unit_number or ""), str(truck.id)))
     stats = FleetStats(
         total=len(trucks),
         active=sum(1 for t in trucks if t.status == "active"),
