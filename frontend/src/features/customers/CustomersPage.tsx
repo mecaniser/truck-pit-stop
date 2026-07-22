@@ -373,6 +373,7 @@ export default function CustomersPage() {
   const [selectedLinkVehicle, setSelectedLinkVehicle] = useState<VehicleLinkCandidate | null>(null)
   const [vehicleRelationshipTypes, setVehicleRelationshipTypes] = useState<VehicleRelationshipType[]>([])
   const [vehicleLinkUnitNumber, setVehicleLinkUnitNumber] = useState('')
+  const [pendingFleetRemovalId, setPendingFleetRemovalId] = useState<string | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
   // Contact form state
@@ -943,25 +944,26 @@ export default function CustomersPage() {
       queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
       if (selectedVehicleInPanel?.id === updatedVehicle.id) setSelectedVehicleInPanel(updatedVehicle)
       closeVehicleModal()
-      toast.success('Truck connections updated')
+      toast.success('Truck roles updated')
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || error.message || 'Failed to update truck connections')
+      toast.error(error.response?.data?.detail || error.message || 'Failed to update truck roles')
     },
   })
 
-  const unlinkVehicleRelationshipMutation = useMutation({
-    mutationFn: async ({ vehicleId, relationshipId }: { vehicleId: string; relationshipId: string }) => {
+  const removeFleetAssignmentMutation = useMutation({
+    mutationFn: async ({ vehicleId, relationshipId }: { vehicleId: string; relationshipId: string; companyName: string }) => {
       await api.delete(`/vehicles/${vehicleId}/relationships/${relationshipId}`)
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['customerVehicles'] })
       queryClient.invalidateQueries({ queryKey: ['vehicle-account-relationships', selectedLinkVehicle?.id] })
       queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
-      toast.success('Truck connection unlinked; history retained')
+      setPendingFleetRemovalId(null)
+      toast.success(`Removed from ${variables.companyName} Fleet Board. Owner, payer, and service history were not changed.`)
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'Failed to unlink truck connection')
+      toast.error(error.response?.data?.detail || 'Failed to remove truck from Fleet Board')
     },
   })
 
@@ -1122,6 +1124,7 @@ export default function CustomersPage() {
     setSelectedLinkVehicle(null)
     setVehicleRelationshipTypes([])
     setVehicleLinkUnitNumber('')
+    setPendingFleetRemovalId(null)
     lastDecodedVehicleVin.current = ''
     setIsVehicleModalOpen(true)
   }
@@ -2082,7 +2085,7 @@ export default function CustomersPage() {
           vehicleModalMode === 'existing' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
-        Link / relink truck
+        Link / manage truck
       </button>
     </div>
   )
@@ -2182,57 +2185,93 @@ export default function CustomersPage() {
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-700">Current active connections</label>
+              <label className="text-sm font-medium text-gray-700">Current truck roles</label>
               {isFetchingVehicleRelationships && <Spinner size="xs" />}
             </div>
+            <p className="mb-2 text-xs text-gray-500">Owner, operating authority, and invoice recipient are independent. Changing one does not rewrite the others or the truck’s service history.</p>
             <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-2">
-              {vehicleRelationships.filter((relationship) => !relationship.effective_to).map((relationship) => (
-                <div key={relationship.id} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm">
-                  <div className="min-w-0">
-                    <span className="block truncate font-medium text-gray-900">{relationship.customer_company_name || 'Company'}</span>
-                    <span className="text-xs capitalize text-gray-500">{relationship.relationship_type.replace('_', ' ')}</span>
+              {([
+                ['owner', 'Owner / listing company', 'Controls the company prefix shown with the unit number.'],
+                ['operator', 'Operating authority / Fleet Board', 'Controls which authority’s Fleet Board contains this truck.'],
+                ['default_payer', 'Default invoice recipient', 'Receives new service invoices and determines internal versus customer pricing.'],
+              ] as const).map(([relationshipType, label, help]) => {
+                const activeOfType = vehicleRelationships.filter((relationship) => !relationship.effective_to && relationship.relationship_type === relationshipType)
+                const relationship = activeOfType.find((item) => item.is_primary) || activeOfType[0]
+                const companyName = relationship?.customer_company_name || 'Not assigned'
+                return (
+                  <div key={relationshipType} className="rounded-lg bg-white px-3 py-2.5 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="block text-xs font-medium uppercase tracking-wide text-gray-500">{label}</span>
+                        <span className="mt-0.5 block truncate font-semibold text-gray-900">{companyName}</span>
+                        <span className="mt-0.5 block text-xs text-gray-500">{help}</span>
+                      </div>
+                      {relationshipType === 'operator' && relationship && pendingFleetRemovalId !== relationship.id && (
+                        <button
+                          type="button"
+                          onClick={() => setPendingFleetRemovalId(relationship.id)}
+                          className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                        >
+                          Remove from Fleet Board
+                        </button>
+                      )}
+                    </div>
+                    {relationshipType === 'operator' && relationship && pendingFleetRemovalId === relationship.id && (
+                      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-800">
+                        <p className="m-0">This only ends the {companyName} authority assignment. The owner, invoice recipient, and service history stay unchanged.</p>
+                        <div className="mt-2 flex justify-end gap-2">
+                          <button type="button" className="rounded-md px-2.5 py-1.5 font-medium text-gray-700 hover:bg-white" onClick={() => setPendingFleetRemovalId(null)}>Cancel</button>
+                          <button
+                            type="button"
+                            disabled={removeFleetAssignmentMutation.isPending}
+                            className="rounded-md bg-red-600 px-2.5 py-1.5 font-medium text-white disabled:opacity-50"
+                            onClick={() => removeFleetAssignmentMutation.mutate({ vehicleId: selectedLinkVehicle.id, relationshipId: relationship.id, companyName })}
+                          >
+                            {removeFleetAssignmentMutation.isPending ? 'Removing…' : 'Confirm removal'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    disabled={unlinkVehicleRelationshipMutation.isPending}
-                    onClick={() => unlinkVehicleRelationshipMutation.mutate({
-                      vehicleId: selectedLinkVehicle.id,
-                      relationshipId: relationship.id,
-                    })}
-                    className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    Unlink
-                  </button>
-                </div>
-              ))}
-              {!isFetchingVehicleRelationships && vehicleRelationships.every((relationship) => !!relationship.effective_to) && (
-                <p className="px-2 py-3 text-center text-xs text-gray-500">No active company connections.</p>
-              )}
+                )
+              })}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Connect this truck to {selectedCustomer?.company_name || selectedCustomer?.first_name}</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Roles for {selectedCustomer?.company_name || selectedCustomer?.first_name}</label>
             <div className="space-y-2">
               {([
-                ['owner', 'Owner / listing company', 'Owns or leases the truck; controls its fleet prefix.'],
-                ['operator', 'Operator / authority', 'Runs the truck; moves it onto this company’s Fleet Board.'],
-                ['default_payer', 'Default payer', 'Is normally selected to receive service invoices.'],
-              ] as const).map(([relationshipType, label, help]) => (
-                <label key={relationshipType} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={vehicleRelationshipTypes.includes(relationshipType)}
-                    onChange={(event) => setVehicleRelationshipTypes((current) => event.target.checked
-                      ? [...new Set([...current, relationshipType])]
-                      : current.filter((item) => item !== relationshipType))}
-                    className="mt-0.5"
-                  />
-                  <span><strong className="block text-gray-900">{label}</strong><span className="text-xs text-gray-500">{help}</span></span>
-                </label>
-              ))}
+                ['owner', 'Owner / listing company', 'Use this company’s name as the Fleet Board unit prefix. Ownership is changed by assigning a replacement, not by leaving the truck ownerless.'],
+                ['operator', 'Operating authority / Fleet Board', 'Include this truck on this company’s Fleet Board. This does not make the authority the owner or payer.'],
+                ['default_payer', 'Default invoice recipient', 'Invoice this company for new work orders. External customers use customer pricing; the internal house account uses garage-cost rules.'],
+              ] as const).map(([relationshipType, label, help]) => {
+                const isCurrentlyAssigned = vehicleRelationships.some((relationship) => !relationship.effective_to
+                  && relationship.customer_id === selectedCustomer?.id
+                  && relationship.relationship_type === relationshipType)
+                const roleLocked = isCurrentlyAssigned
+                return (
+                  <label key={relationshipType} className={`flex items-start gap-3 rounded-lg border p-3 text-sm text-gray-700 ${vehicleRelationshipTypes.includes(relationshipType) ? 'border-amber-300 bg-amber-50/60' : 'border-gray-200 bg-white'}`}>
+                    <input
+                      type="checkbox"
+                      checked={vehicleRelationshipTypes.includes(relationshipType)}
+                      disabled={roleLocked}
+                      onChange={(event) => setVehicleRelationshipTypes((current) => event.target.checked
+                        ? [...new Set([...current, relationshipType])]
+                        : current.filter((item) => item !== relationshipType))}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <strong className="block text-gray-900">{label}</strong>
+                      <span className="text-xs text-gray-500">{help}</span>
+                      {roleLocked && relationshipType === 'operator' && <span className="mt-1 block text-xs font-medium text-amber-700">Use “Remove from Fleet Board” above to end this authority assignment.</span>}
+                      {roleLocked && relationshipType !== 'operator' && <span className="mt-1 block text-xs font-medium text-amber-700">To change this role, assign it from the replacement company.</span>}
+                    </span>
+                  </label>
+                )
+              })}
             </div>
-            <p className="mt-2 text-xs text-gray-500">Selecting a new owner or operator safely ends the previous active period; all prior history remains attached to the truck.</p>
+            <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
           </div>
         </>
       )}
@@ -2252,7 +2291,7 @@ export default function CustomersPage() {
           style={{ backgroundColor: accentColors[500] }}
         >
           {linkVehicleMutation.isPending && <Spinner size="xs" className="border-white/40 border-t-white" />}
-          Save Connections
+          Save truck roles
         </button>
       </div>
     </form>
@@ -3979,7 +4018,7 @@ export default function CustomersPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-gray-900">
-                      {editingVehicle ? 'Edit Vehicle' : vehicleModalMode === 'existing' ? 'Link / Relink Truck' : 'Add Vehicle'}
+                      {editingVehicle ? 'Edit Vehicle' : vehicleModalMode === 'existing' ? 'Truck Roles & Fleet Assignment' : 'Add Vehicle'}
                     </h2>
                     <p className="text-sm text-gray-500">
                       for {selectedCustomer.company_name || `${selectedCustomer.first_name} ${selectedCustomer.last_name}`}

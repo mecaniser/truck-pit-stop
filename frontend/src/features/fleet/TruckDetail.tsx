@@ -653,6 +653,13 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
         <Stat label="Model" value={truck.model} />
         <Stat label="Listing company" value={truck.owner_company_name || truck.fleet_company_name || '—'} />
         <Stat label="Operating authority" value={truck.fleet_company_name || '—'} />
+        <Stat label="Default invoice recipient" value={detail.bill_to_company_name || detail.bill_to_contact_name || '—'} />
+        <Stat
+          label="Pricing for new work"
+          value={detail.bill_to_is_internal
+            ? `Internal · parts at garage cost · labor at ${detail.bill_labor_at_customer_rate ? 'customer rate' : 'garage cost'}`
+            : 'Standard customer pricing'}
+        />
       </div>
 
       <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Service record</div>
