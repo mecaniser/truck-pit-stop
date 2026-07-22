@@ -138,6 +138,7 @@ function InlineConfirm({ renderTrigger, message, confirmLabel, onConfirm, pendin
 
 export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; detail: TruckDetail; onClose: () => void }) {
   const qc = useQueryClient()
+  const [editingBilling, setEditingBilling] = useState(false)
   const [f, setF] = useState({
     unit_number: truck.unit_number || '',
     vin: truck.vin || '',
@@ -170,6 +171,23 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     heading: truck.heading || '',
   })
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }))
+  const cancelBillingEdit = () => {
+    setF((p) => ({
+      ...p,
+      bill_to_company_name: detail.bill_to_company_name || '',
+      bill_to_first_name: detail.bill_to_first_name || '',
+      bill_to_last_name: detail.bill_to_last_name || '',
+      bill_to_email: detail.bill_to_email || '',
+      bill_to_phone: detail.bill_to_phone ? formatUSPhone(detail.bill_to_phone) : '',
+      bill_to_billing_address_line1: detail.bill_to_billing_address_line1 || '',
+      bill_to_billing_address_line2: detail.bill_to_billing_address_line2 || '',
+      bill_to_billing_city: detail.bill_to_billing_city || '',
+      bill_to_billing_state: detail.bill_to_billing_state || '',
+      bill_to_billing_zip: detail.bill_to_billing_zip || '',
+      bill_to_billing_country: detail.bill_to_billing_country || 'USA',
+    }))
+    setEditingBilling(false)
+  }
   const [decodingVin, setDecodingVin] = useState(false)
   const lastDecodedVin = useRef((truck.vin || '').trim().toUpperCase())
   const numOrUndef = (v: string) => (v.trim() === '' ? undefined : Number(v))
@@ -316,23 +334,43 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>
         Default invoice recipient{detail.bill_to_relationship_type ? ` · ${detail.bill_to_relationship_type.replace('_', ' ')}` : ''}
       </div>
-      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--muted-2)' }}>
-        Edits here update this same customer on the Main Dashboard. Change which company is the default payer through Manage Connections.
-      </p>
       {detail.bill_to_customer_id ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Company name" full><input value={f.bill_to_company_name} onChange={set('bill_to_company_name')} /></Field>
-          <Field label="First name *"><input required value={f.bill_to_first_name} onChange={set('bill_to_first_name')} /></Field>
-          <Field label="Last name *"><input required value={f.bill_to_last_name} onChange={set('bill_to_last_name')} /></Field>
-          <Field label="Email *"><input required type="email" value={f.bill_to_email} onChange={set('bill_to_email')} /></Field>
-          <Field label="Phone"><input value={f.bill_to_phone} onChange={(e) => setF((prev) => ({ ...prev, bill_to_phone: formatUSPhone(e.target.value) }))} /></Field>
-          <Field label="Billing address line 1" full><input value={f.bill_to_billing_address_line1} onChange={set('bill_to_billing_address_line1')} /></Field>
-          <Field label="Billing address line 2" full><input value={f.bill_to_billing_address_line2} onChange={set('bill_to_billing_address_line2')} /></Field>
-          <Field label="City"><input value={f.bill_to_billing_city} onChange={set('bill_to_billing_city')} /></Field>
-          <Field label="State"><input value={f.bill_to_billing_state} onChange={set('bill_to_billing_state')} /></Field>
-          <Field label="ZIP"><input value={f.bill_to_billing_zip} onChange={set('bill_to_billing_zip')} /></Field>
-          <Field label="Country"><input value={f.bill_to_billing_country} onChange={set('bill_to_billing_country')} /></Field>
-        </div>
+        <>
+          <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', display: 'grid', gap: 5 }}>
+            <strong style={{ color: 'var(--text)', fontSize: 14 }}>{f.bill_to_company_name || 'Unnamed company'}</strong>
+            <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{[f.bill_to_first_name, f.bill_to_last_name].filter(Boolean).join(' ') || 'No contact name'}</span>
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
+              {f.bill_to_email && <a href={`mailto:${f.bill_to_email}`} style={{ color: 'var(--text)' }}>{f.bill_to_email}</a>}
+              {f.bill_to_phone && <a href={`tel:${f.bill_to_phone}`} style={{ color: 'var(--text)' }}>{f.bill_to_phone}</a>}
+            </span>
+            {!editingBilling && (
+              <button type="button" className={ghostBtn} style={{ justifySelf: 'start', marginTop: 4, height: 32, padding: '0 10px', fontSize: 12 }} onClick={() => setEditingBilling(true)}>
+                <Pencil size={13} /> Edit billing details
+              </button>
+            )}
+          </div>
+          {editingBilling && (
+            <div style={{ marginTop: 10, padding: 12, background: 'var(--panel-2)', border: '1px solid var(--line)', borderRadius: 9 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--muted-2)' }}>These edits update the same customer on the Main Dashboard.</p>
+                <button type="button" className={ghostBtn} style={{ height: 30, padding: '0 9px', fontSize: 12, flexShrink: 0 }} onClick={cancelBillingEdit}>Cancel</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Field label="Company name" full><input value={f.bill_to_company_name} onChange={set('bill_to_company_name')} /></Field>
+                <Field label="First name *"><input required value={f.bill_to_first_name} onChange={set('bill_to_first_name')} /></Field>
+                <Field label="Last name *"><input required value={f.bill_to_last_name} onChange={set('bill_to_last_name')} /></Field>
+                <Field label="Email *"><input required type="email" value={f.bill_to_email} onChange={set('bill_to_email')} /></Field>
+                <Field label="Phone"><input value={f.bill_to_phone} onChange={(e) => setF((prev) => ({ ...prev, bill_to_phone: formatUSPhone(e.target.value) }))} /></Field>
+                <Field label="Billing address line 1" full><input value={f.bill_to_billing_address_line1} onChange={set('bill_to_billing_address_line1')} /></Field>
+                <Field label="Billing address line 2" full><input value={f.bill_to_billing_address_line2} onChange={set('bill_to_billing_address_line2')} /></Field>
+                <Field label="City"><input value={f.bill_to_billing_city} onChange={set('bill_to_billing_city')} /></Field>
+                <Field label="State"><input value={f.bill_to_billing_state} onChange={set('bill_to_billing_state')} /></Field>
+                <Field label="ZIP"><input value={f.bill_to_billing_zip} onChange={set('bill_to_billing_zip')} /></Field>
+                <Field label="Country"><input value={f.bill_to_billing_country} onChange={set('bill_to_billing_country')} /></Field>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', color: 'var(--muted-2)', fontSize: 12 }}>
           No active bill-to company is connected to this truck.
