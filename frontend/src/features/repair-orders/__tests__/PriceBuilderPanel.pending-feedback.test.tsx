@@ -389,6 +389,9 @@ describe('PriceBuilderPanel pending feedback', () => {
     )).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Mark Completed' })).not.toBeInTheDocument()
     expect(screen.queryByText('Complete work order')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Operation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Part' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Labor' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Finalize & Send Invoice' }))
     expect(onApproveCompletion).toHaveBeenCalledTimes(1)

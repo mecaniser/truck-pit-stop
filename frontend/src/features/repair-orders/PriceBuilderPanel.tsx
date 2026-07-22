@@ -1283,7 +1283,10 @@ export default function PriceBuilderPanel({
   const canMutate = canEdit && !isLocked && isEditableStatus
   // The add bar must follow the same editable-status rule as canMutate, or an
   // internal in-progress order shows "start by adding…" with no add controls.
-  const addBarReadOnly = !canEdit || isLocked || !isEditableStatus || completionMode || hasInvoice || orderStatus === 'completed'
+  // Quality review is still pre-finalization: managers may discover another
+  // operation, part, or labor adjustment while reviewing the completed work.
+  // The invoice/pricing lock remains the boundary that makes this read-only.
+  const addBarReadOnly = !canEdit || isLocked || !isEditableStatus || hasInvoice || orderStatus === 'completed'
   // An empty work order has nothing to estimate.
   const isEmptyOrder = effectiveLaborLines.length === 0 && (partsUsed?.length ?? 0) === 0
   const hasAssignedTechnician = !!assignedTechnicianName
