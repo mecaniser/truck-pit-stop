@@ -3,6 +3,7 @@
 Scoped to the garage's own internal fleet (the house-account customer). Accessible
 to the fleet manager and the garage owner/admin who own the fleet.
 """
+import json
 import math
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional
@@ -1505,8 +1506,14 @@ async def update_truck(
     return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
 
 
-async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> RepairOrder:
-    result = await db.execute(
+async def _load_fleet_ro_or_404(
+    db: AsyncSession,
+    tenant_id: UUID,
+    ro_id: UUID,
+    *,
+    for_update: bool = False,
+) -> RepairOrder:
+    stmt = (
         select(RepairOrder)
         .where(and_(
             RepairOrder.id == ro_id,
@@ -1520,6 +1527,9 @@ async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) 
             selectinload(RepairOrder.vehicle),
         )
     )
+    if for_update:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     ro = result.scalar_one_or_none()
     if not ro:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
@@ -1557,8 +1567,8 @@ async def complete_work_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    """Complete a fleet work order and create its billable customer invoice."""
-    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
+    """Approve fleet work and atomically create its billable customer invoice."""
+    ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id, for_update=True)
     if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
 
@@ -1578,8 +1588,24 @@ async def complete_work_order(
     elif veh is not None and veh.mileage is not None:
         ro.mileage_out = veh.mileage
 
+    now = datetime.now(timezone.utc)
     ro.status = RepairOrderStatus.COMPLETED
-    ro.work_completed_at = datetime.now(timezone.utc)
+    if ro.work_completed_at is None:
+        ro.work_completed_at = now
+
+    if body and body.review_notes and body.review_notes.strip():
+        review_entry = {
+            "type": "manager_review",
+            "notes": body.review_notes.strip(),
+            "reviewed_by": f"{current_user.first_name} {current_user.last_name}",
+            "reviewed_at": now.isoformat(),
+        }
+        try:
+            existing_notes = json.loads(ro.internal_notes) if ro.internal_notes else {}
+        except json.JSONDecodeError:
+            existing_notes = {"raw_notes": ro.internal_notes}
+        existing_notes.setdefault("reviews", []).append(review_entry)
+        ro.internal_notes = json.dumps(existing_notes)
     # A completed PM rolls the truck's next PM forward (mileage + date), using
     # the mileage-out we just recorded.
     if ro.is_pm and veh is not None:
@@ -1590,12 +1616,65 @@ async def complete_work_order(
     # that are still on).
     if veh is not None:
         veh.active_warning_lights = None
-    await db.commit()
-    from app.api.v1.endpoints.invoices import auto_create_invoice_for_order
+
     tenant = (await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
-    await auto_create_invoice_for_order(
-        db=db, order=ro, tenant=tenant, created_by_user_id=current_user.id,
-    )
+    invoice = None
+    email_queued = False
+    try:
+        from app.api.v1.endpoints.invoices import (
+            auto_create_invoice_for_order,
+            enqueue_invoice_created_email,
+        )
+
+        invoice = await auto_create_invoice_for_order(
+            db=db,
+            order=ro,
+            tenant=tenant,
+            created_by_user_id=current_user.id,
+            commit=False,
+            notify=False,
+        )
+        if invoice is None:
+            raise RuntimeError("A fleet work order being finalized already has an invoice")
+        # auto_create refreshes the order's scalar state; restore the eagerly
+        # loaded recipient relationships before building the notification.
+        await db.refresh(ro, attribute_names=["customer", "vehicle"])
+        email_queued = await enqueue_invoice_created_email(
+            db,
+            invoice=invoice,
+            order=ro,
+            tenant=tenant,
+        )
+    except Exception as error:
+        await db.rollback()
+        logger.exception("complete_work_order: atomic invoice creation failed for order %s", ro_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to finalize the fleet work order. No changes were saved; please try again.",
+        ) from error
+
+    # Manager review, mileage/PM updates, pricing lock, immutable invoice, and
+    # final invoiced status become durable together.
+    await db.commit()
+    await db.refresh(ro)
+    await db.refresh(ro, attribute_names=["customer", "vehicle"])
+    await db.refresh(invoice)
+
+    # Provider and websocket work happens only after the financial record is
+    # durable; delivery failures must not partially undo finalization.
+    try:
+        from app.api.v1.endpoints.invoices import notify_invoice_created
+
+        await notify_invoice_created(
+            db,
+            invoice=invoice,
+            order=ro,
+            tenant=tenant,
+            email_queued=email_queued,
+        )
+    except Exception:
+        logger.exception("complete_work_order: invoice notification failed for order %s", ro_id)
+
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     return _board_work_order(ro)
 

@@ -48,6 +48,8 @@ class WorkOrderComplete(BaseModel):
     # the truck's current odometer. Provided as a manual fallback when the
     # vehicle odometer isn't current.
     mileage_out: Optional[int] = None
+    # Optional manager notes captured during the quality-review approval.
+    review_notes: Optional[str] = None
 
 
 class InspectionResponse(BaseModel):

@@ -5,6 +5,7 @@ inventory cost — with no customer quote/invoice — while customer ROs are una
 """
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from uuid import uuid4
 import os
@@ -19,12 +20,14 @@ os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
 os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import quotes as quotes_endpoint
+from app.api.v1.endpoints import fleet as fleet_endpoint
 from app.api.v1.endpoints import invoices as invoices_endpoint
 from app.api.v1.endpoints.quotes import create_quote, QuoteCreate
 from app.api.v1.endpoints.repair_orders import _check_ro_access, create_repair_order
 from app.schemas.repair_order import RepairOrderCreate
 from app.db.models.customer import Customer
 from app.db.models.inventory import Inventory
+from app.db.models.invoice import Invoice
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
@@ -35,6 +38,7 @@ from app.services.internal_fleet import (
     get_internal_fleet_customer,
 )
 from app.services.price_build_service import PriceBuildService
+from app.schemas.fleet import WorkOrderComplete
 
 
 async def _seed(db_session, *, is_internal: bool, with_part: bool = False):
@@ -181,6 +185,78 @@ async def test_billable_fleet_invoice_uses_truck_contact_snapshot(db_session, mo
     assert invoice.recipient_name == "Morgan Billing"
     assert invoice.recipient_email == "morgan@example.test"
     assert invoice.recipient_phone == "+17045550123"
+
+
+@pytest.mark.asyncio
+async def test_fleet_quality_review_finalizes_and_invoices_atomically(db_session, monkeypatch):
+    staff_user, order, _ = await _seed(db_session, is_internal=True)
+    vehicle = (await db_session.execute(select(Vehicle).where(Vehicle.id == order.vehicle_id))).scalar_one()
+    vehicle.billing_contact_name = "Morgan Billing"
+    vehicle.billing_contact_email = "morgan@example.test"
+    vehicle.mileage = 120100
+    order.status = RepairOrderStatus.PENDING_REVIEW
+    order.mileage_in = 120000
+    await db_session.commit()
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(invoices_endpoint, "notify_invoice_created", no_op)
+
+    result = await fleet_endpoint.complete_work_order(
+        ro_id=order.id,
+        body=WorkOrderComplete(mileage_out=120125, review_notes="Verified final repair."),
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    await db_session.refresh(order)
+    invoice = (await db_session.execute(
+        select(Invoice).where(Invoice.repair_order_id == order.id)
+    )).scalar_one()
+    saved_notes = json.loads(order.internal_notes)
+
+    assert result.raw_status == RepairOrderStatus.INVOICED.value
+    assert order.status == RepairOrderStatus.INVOICED
+    assert order.mileage_out == 120125
+    assert order.pricing_lock_reason == "invoice_finalized"
+    assert saved_notes["reviews"][0]["notes"] == "Verified final repair."
+    assert invoice.is_internal is False
+    assert invoice.recipient_email == "morgan@example.test"
+
+
+@pytest.mark.asyncio
+async def test_fleet_quality_review_rolls_back_when_invoice_creation_fails(db_session, monkeypatch):
+    staff_user, order, _ = await _seed(db_session, is_internal=True)
+    vehicle = (await db_session.execute(select(Vehicle).where(Vehicle.id == order.vehicle_id))).scalar_one()
+    vehicle.billing_contact_email = "morgan@example.test"
+    vehicle.active_warning_lights = "Check engine"
+    order.status = RepairOrderStatus.PENDING_REVIEW
+    await db_session.commit()
+
+    async def fail_invoice(*_args, **_kwargs):
+        raise RuntimeError("invoice snapshot failed")
+
+    monkeypatch.setattr(invoices_endpoint, "auto_create_invoice_for_order", fail_invoice)
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet_endpoint.complete_work_order(
+            ro_id=order.id,
+            body=WorkOrderComplete(mileage_out=120125, review_notes="Do not lose this."),
+            db=db_session,
+            current_user=staff_user,
+        )
+
+    assert exc.value.status_code == 500
+    await db_session.refresh(order)
+    await db_session.refresh(vehicle)
+    assert order.status == RepairOrderStatus.PENDING_REVIEW
+    assert order.mileage_out is None
+    assert order.internal_notes is None
+    assert vehicle.active_warning_lights == "Check engine"
+    assert (await db_session.execute(
+        select(Invoice).where(Invoice.repair_order_id == order.id)
+    )).scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
