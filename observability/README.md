@@ -3,7 +3,7 @@
 The Railway production environment runs three private monitoring services:
 
 - Prometheus scrapes the API every 15 seconds and retains time-series data on its volume.
-- Alertmanager groups sustained alerts and sends firing and resolved events to the configured operations webhook.
+- Alertmanager groups sustained alerts and sends firing and resolved events to the configured Slack Incoming Webhook.
 - Grafana reads Prometheus privately and presents the provisioned production-performance dashboard.
 
 ## Railway variables
@@ -12,7 +12,7 @@ The Railway production environment runs three private monitoring services:
 | --- | --- |
 | `diesel-bridge-network` | `METRICS_AUTH_TOKEN` |
 | `prometheus` | `METRICS_AUTH_TOKEN`, `API_PRIVATE_HOST`, `API_PORT` |
-| `alertmanager` | `ALERT_WEBHOOK_URL` |
+| `alertmanager` | `ALERT_WEBHOOK_URL` (Slack Incoming Webhook URL) |
 | `grafana` | `GF_SECURITY_ADMIN_USER`, `GF_SECURITY_ADMIN_PASSWORD` |
 
 Set `API_PRIVATE_HOST` to the API service's Railway private hostname and `API_PORT` to its listening port. Give Prometheus a Railway volume mounted at `/prometheus`, Alertmanager a volume at `/alertmanager`, and Grafana a volume at `/var/lib/grafana`.
@@ -26,3 +26,5 @@ Set `API_PRIVATE_HOST` to the API service's Railway private hostname and `API_PO
 - Database query p95 at or above 250 milliseconds for 5 minutes: warning.
 
 The collector excludes health checks, its own metrics endpoint, and the performance dashboard endpoint from latency alerts. Thresholds are starting production guardrails; after two weeks of representative tenant traffic, tune them against the observed baseline.
+
+The in-app Analytics warning banner is a separate, short-window diagnostic aid. Slack receives only sustained production alerts after the policy duration above; for example, the latency warning must remain above 750 ms for five minutes before Alertmanager posts it.

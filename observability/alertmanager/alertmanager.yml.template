@@ -2,14 +2,21 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: operations-webhook
+  receiver: operations-slack
   group_by: [alertname, service, severity]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
 
 receivers:
-  - name: operations-webhook
-    webhook_configs:
-      - url: ${ALERT_WEBHOOK_URL}
+  - name: operations-slack
+    slack_configs:
+      - api_url: ${ALERT_WEBHOOK_URL}
         send_resolved: true
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: '{{ if eq .Status "firing" }}[{{ .CommonLabels.severity | toUpper }}]{{ else }}[RESOLVED]{{ end }} {{ .CommonAnnotations.summary }}'
+        text: >-
+          {{ range .Alerts -}}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          {{ end }}
