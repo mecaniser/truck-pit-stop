@@ -34,7 +34,7 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
       </div>
       {(t.owner_company_name || t.fleet_company_name) && (
         <div>
-          <div className="tcard-type">Listing company: {t.owner_company_name || t.fleet_company_name}</div>
+          <div className="tcard-type">Truck owner / lessor: {t.owner_company_name || t.fleet_company_name}</div>
           <div className="tcard-type">Operating authority: {t.fleet_company_name || 'Not assigned'}</div>
         </div>
       )}

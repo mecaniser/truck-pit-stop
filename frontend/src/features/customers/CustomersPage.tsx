@@ -80,6 +80,9 @@ interface DuplicateVinVehicleSummary {
   license_plate?: string | null
   customer_id?: string | null
   customer_name?: string | null
+  owner_lessor_name?: string | null
+  operating_authority_name?: string | null
+  default_invoice_recipient_name?: string | null
 }
 
 interface DuplicateVinConflict {
@@ -2180,7 +2183,7 @@ export default function CustomersPage() {
               className="w-full rounded-lg border border-gray-300 px-4 py-2.5 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
               placeholder="603"
             />
-            <p className="mt-1 text-xs text-gray-500">Enter only the truck’s unit, such as 603. The listing-company prefix is added automatically.</p>
+            <p className="mt-1 text-xs text-gray-500">Enter only the truck’s unit, such as 603. The owner/lessor company prefix is added automatically.</p>
           </div>
 
           <div>
@@ -2191,7 +2194,7 @@ export default function CustomersPage() {
             <p className="mb-2 text-xs text-gray-500">Owner, operating authority, and invoice recipient are independent. Changing one does not rewrite the others or the truck’s service history.</p>
             <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-2">
               {([
-                ['owner', 'Owner / listing company', 'Controls the company prefix shown with the unit number.'],
+                ['owner', 'Truck owner / lessor', 'Controls the owner/lessor prefix shown with the unit number.'],
                 ['operator', 'Operating authority / Fleet Board', 'Controls which authority’s Fleet Board contains this truck.'],
                 ['default_payer', 'Default invoice recipient', 'Receives new service invoices and determines internal versus customer pricing.'],
               ] as const).map(([relationshipType, label, help]) => {
@@ -2242,7 +2245,7 @@ export default function CustomersPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">Roles for {selectedCustomer?.company_name || selectedCustomer?.first_name}</label>
             <div className="space-y-2">
               {([
-                ['owner', 'Owner / listing company', 'Use this company’s name as the Fleet Board unit prefix. Ownership is changed by assigning a replacement, not by leaving the truck ownerless.'],
+                ['owner', 'Truck owner / lessor', 'Use this company’s name as the Fleet Board unit prefix. This is the company that owns the truck and may lease it to the operating authority.'],
                 ['operator', 'Operating authority / Fleet Board', 'Include this truck on this company’s Fleet Board. This does not make the authority the owner or payer.'],
                 ['default_payer', 'Default invoice recipient', 'Invoice this company for new work orders. External customers use customer pricing; the internal house account uses garage-cost rules.'],
               ] as const).map(([relationshipType, label, help]) => {
@@ -2411,8 +2414,14 @@ export default function CustomersPage() {
                           vehicleVinError.vehicle.model,
                         ].filter(Boolean).join(' · ') || 'Existing truck'}
                       </span>
-                      {vehicleVinError.vehicle.customer_name && (
-                        <span className="block text-xs text-gray-600">Company: {vehicleVinError.vehicle.customer_name}</span>
+                      {(vehicleVinError.vehicle.owner_lessor_name || vehicleVinError.vehicle.customer_name) && (
+                        <span className="block text-xs text-gray-600">Truck owner / lessor: {vehicleVinError.vehicle.owner_lessor_name || vehicleVinError.vehicle.customer_name}</span>
+                      )}
+                      {vehicleVinError.vehicle.operating_authority_name && (
+                        <span className="block text-xs text-gray-600">Operating authority: {vehicleVinError.vehicle.operating_authority_name}</span>
+                      )}
+                      {vehicleVinError.vehicle.default_invoice_recipient_name && (
+                        <span className="block text-xs text-gray-600">Default invoice recipient: {vehicleVinError.vehicle.default_invoice_recipient_name}</span>
                       )}
                       {vehicleVinError.vehicle.license_plate && (
                         <span className="block text-xs text-gray-600">Plate: {vehicleVinError.vehicle.license_plate}</span>
@@ -2430,7 +2439,7 @@ export default function CustomersPage() {
                   onClick={() => selectExistingTruckFromConflict(vehicleVinError.vehicle!)}
                   className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
                 >
-                  Use and link this existing truck
+                  Manage this existing truck’s roles
                 </button>
               ) : (
                 <span className="mt-2 block text-xs">Switch to “Link existing truck” and search this VIN.</span>

@@ -477,7 +477,21 @@ async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
         id=uuid4(), tenant_id=tenant.id, customer_id=editing_company.id,
         make="Volvo", model="VNL 760", year=2021,
     )
-    db_session.add_all([tenant, existing_company, editing_company, manager, existing_truck, editing_truck])
+    db_session.add_all([
+        tenant, existing_company, editing_company, manager, existing_truck, editing_truck,
+        VehicleCustomerRelationship(
+            id=uuid4(), tenant_id=tenant.id, vehicle_id=existing_truck.id,
+            customer_id=editing_company.id, relationship_type="owner", is_primary=True,
+        ),
+        VehicleCustomerRelationship(
+            id=uuid4(), tenant_id=tenant.id, vehicle_id=existing_truck.id,
+            customer_id=existing_company.id, relationship_type="operator",
+        ),
+        VehicleCustomerRelationship(
+            id=uuid4(), tenant_id=tenant.id, vehicle_id=existing_truck.id,
+            customer_id=editing_company.id, relationship_type="default_payer", is_primary=True,
+        ),
+    ])
     await db_session.commit()
 
     with pytest.raises(HTTPException) as exc_info:
@@ -503,5 +517,8 @@ async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
             "license_plate": "NC-771",
             "customer_id": str(existing_company.id),
             "customer_name": "77 Cargo LLC",
+            "owner_lessor_name": "Owner Trucking LLC",
+            "operating_authority_name": "77 Cargo LLC",
+            "default_invoice_recipient_name": "Owner Trucking LLC",
         },
     }

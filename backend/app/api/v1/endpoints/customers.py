@@ -72,6 +72,29 @@ async def _duplicate_vin_detail(
     if customer:
         customer_name = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
 
+    relationship_rows = (await db.execute(
+        select(VehicleCustomerRelationship, Customer)
+        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+        .where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.tenant_id == vehicle.tenant_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+            Customer.deleted_at.is_(None),
+        )
+        .order_by(
+            VehicleCustomerRelationship.is_primary.desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        )
+    )).all()
+    role_names: dict[str, str] = {}
+    for relationship, relationship_customer in relationship_rows:
+        role_names.setdefault(
+            relationship.relationship_type,
+            relationship_customer.company_name
+            or f"{relationship_customer.first_name} {relationship_customer.last_name}".strip(),
+        )
+
     detail["vehicle"] = {
         "id": str(vehicle.id),
         "vin": vehicle.vin,
@@ -82,6 +105,11 @@ async def _duplicate_vin_detail(
         "license_plate": vehicle.license_plate,
         "customer_id": str(vehicle.customer_id),
         "customer_name": customer_name,
+        # Explicit live roles make it clear that the owner/lessor, operating
+        # authority, and invoice recipient can be three different companies.
+        "owner_lessor_name": role_names.get("owner") or customer_name,
+        "operating_authority_name": role_names.get("operator"),
+        "default_invoice_recipient_name": role_names.get("default_payer"),
     }
     return detail
 
