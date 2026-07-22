@@ -134,20 +134,32 @@ export default function BaseSelect({
     setIsOpen(true)
   }
 
-  // Measure before paint when opening; keep the menu glued to the trigger while
-  // the user scrolls or resizes.
+  // Keep the portaled menu attached to its trigger even if its surrounding form
+  // changes size while a typeahead request starts or completes.
   useLayoutEffect(() => {
     if (!isOpen) { setMenuPos(null); return }
+    let frameId: number | undefined
+    const schedulePosition = () => {
+      window.cancelAnimationFrame(frameId ?? 0)
+      frameId = window.requestAnimationFrame(computePosition)
+    }
     computePosition()
-    const onMove = () => computePosition()
+    schedulePosition()
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(schedulePosition)
+    if (containerRef.current) resizeObserver?.observe(containerRef.current)
+    const onMove = () => schedulePosition()
     window.addEventListener('scroll', onMove, true) // capture: also catch inner scrollers
     window.addEventListener('resize', onMove)
     return () => {
+      window.cancelAnimationFrame(frameId ?? 0)
+      resizeObserver?.disconnect()
       window.removeEventListener('scroll', onMove, true)
       window.removeEventListener('resize', onMove)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
+  }, [isOpen, loading, query, visible.length])
 
   // Focus input when dropdown opens
   useEffect(() => {
