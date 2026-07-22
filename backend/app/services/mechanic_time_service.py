@@ -381,7 +381,11 @@ async def clock_in(
     started_at: Optional[datetime] = None,
     start_source: str = "manual_clock_in",
 ) -> MechanicAttendanceSession:
-    _manager_action_requires_reason(actor_user.role.value, manager_reason)
+    # A manager may clock a technician in without an explanation. Other
+    # manager overrides (clock-out, breaks, and timer changes) remain audited
+    # with a required reason.
+    if start_source != "manager_clock_in":
+        _manager_action_requires_reason(actor_user.role.value, manager_reason)
     existing = await get_active_attendance_session(
         db,
         tenant_id=tenant.id,
@@ -520,8 +524,6 @@ async def end_active_break_session(
 ) -> Optional[MechanicBreakSession]:
     if end_source not in BREAK_END_SOURCES:
         raise ValueError("Invalid break end source")
-    _manager_action_requires_reason(actor_user.role.value, manager_reason)
-
     session = await get_active_break_session(
         db,
         tenant_id=tenant_id,
@@ -567,8 +569,6 @@ async def clock_out(
 ) -> ClockOutResult:
     if end_source not in ATTENDANCE_END_SOURCES:
         raise ValueError("Invalid attendance end source")
-    _manager_action_requires_reason(actor_user.role.value, manager_reason)
-
     attendance = await get_active_attendance_session(
         db,
         tenant_id=tenant.id,
@@ -642,8 +642,6 @@ async def start_break(
     started_at: Optional[datetime] = None,
     start_source: str = "manual_break_start",
 ) -> BreakStartResult:
-    _manager_action_requires_reason(actor_user.role.value, manager_reason)
-
     attendance = await get_active_attendance_session(
         db,
         tenant_id=tenant.id,
@@ -758,8 +756,6 @@ async def start_session(
             raise ValueError("Invalid misc category")
     else:
         misc_category = None
-    _manager_action_requires_reason(actor_user.role.value, manager_reason)
-
     now_utc = started_at or datetime.now(timezone.utc)
     attendance_session, auto_clocked_in = await ensure_attendance_started(
         db,
@@ -882,8 +878,6 @@ async def stop_active_session(
 ) -> Optional[MechanicTimeSession]:
     if stop_reason not in TIMER_STOP_REASONS:
         raise ValueError("Invalid stop reason")
-    _manager_action_requires_reason(actor_user.role.value, manager_reason)
-
     session = await get_active_session(
         db,
         tenant_id=tenant_id,
@@ -1158,6 +1152,20 @@ async def compute_day_summary(
         )
     )
     attendance_sessions = attendance_result.scalars().all()
+    todays_attendance = [a for a in attendance_sessions if a.local_date == window.local_date]
+    earliest_attendance = min(todays_attendance, key=lambda a: a.started_at) if todays_attendance else None
+
+    # Historical summaries must use the shift that was actually scheduled for
+    # that day, not the technician's current shift override. Attendance rows
+    # snapshot the effective shift at clock-in specifically for this purpose.
+    if earliest_attendance:
+        shift_start_raw = earliest_attendance.snapshot_shift_start_local or shift_start_raw
+        shift_end_raw = earliest_attendance.snapshot_shift_end_local or shift_end_raw
+        shift_start_local = datetime.combine(window.local_date, _parse_local_time(shift_start_raw), tzinfo=tz)
+        shift_end_local = datetime.combine(window.local_date, _parse_local_time(shift_end_raw), tzinfo=tz)
+        shift_start_utc = shift_start_local.astimezone(timezone.utc)
+        shift_end_utc = shift_end_local.astimezone(timezone.utc)
+
     attendance_intervals: list[tuple[datetime, datetime]] = []
     active_attendance = None
     first_attendance_start: Optional[datetime] = None
@@ -1220,9 +1228,7 @@ async def compute_day_summary(
         covered_seconds = _sum_overlap_seconds(interval, merged_cover)
         idle_seconds += max(interval_seconds - covered_seconds, 0)
 
-    # Use snapshot core target from the earliest attendance session FOR TODAY (reflects dynamic late clock-in adjustment)
-    todays_attendance = [a for a in attendance_sessions if a.local_date == window.local_date]
-    earliest_attendance = min(todays_attendance, key=lambda a: a.started_at) if todays_attendance else None
+    # Use the selected day's snapshot core target (including dynamic late clock-in adjustment).
     if earliest_attendance and earliest_attendance.snapshot_core_target_minutes:
         core_target_minutes = earliest_attendance.snapshot_core_target_minutes
     else:

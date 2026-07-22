@@ -784,20 +784,25 @@ class ManagerTimerStartRequest(BaseModel):
     repair_order_id: Optional[UUID] = None
     misc_category: Optional[str] = None
     note: Optional[str] = None
-    manager_reason: str
+    manager_reason: Optional[str] = None
 
 
 class ManagerTimerStopRequest(BaseModel):
-    manager_reason: str
+    manager_reason: Optional[str] = None
 
 
 class ManagerClockActionRequest(BaseModel):
-    manager_reason: str
+    manager_reason: Optional[str] = None
+    note: Optional[str] = None
+
+
+class ManagerClockInRequest(BaseModel):
+    manager_reason: Optional[str] = None
     note: Optional[str] = None
 
 
 class ManagerBreakActionRequest(BaseModel):
-    manager_reason: str
+    manager_reason: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -836,6 +841,8 @@ class MechanicBoardItem(BaseModel):
     mechanic_name: str
     date: str
     timezone: str
+    shift_start_local: str
+    shift_end_local: str
     core_target_minutes: int
     tracked_minutes: int
     ro_minutes: int
@@ -1014,6 +1021,7 @@ async def get_team_mechanics_board(
 async def get_mechanic_board_detail(
     mechanic_id: UUID,
     date_value: Optional[date] = Query(None, alias="date"),
+    trend_end_date: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -1046,7 +1054,7 @@ async def get_mechanic_board_detail(
         db,
         tenant=tenant,
         mechanic=mechanic,
-        end_date=date_value,
+        end_date=trend_end_date or date_value,
     )
     item = MechanicBoardItem(
         mechanic_id=str(mechanic.id),
@@ -1100,8 +1108,6 @@ async def manager_start_mechanic_timer(
     require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    if not body.manager_reason.strip():
-        raise HTTPException(status_code=400, detail="manager_reason is required")
     if body.session_type not in (MechanicSessionType.REPAIR_ORDER.value, MechanicSessionType.MISC.value):
         raise HTTPException(status_code=400, detail="Invalid session_type")
     if body.session_type == MechanicSessionType.REPAIR_ORDER.value and not body.repair_order_id:
@@ -1189,9 +1195,6 @@ async def manager_stop_mechanic_timer(
     require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    if not body.manager_reason.strip():
-        raise HTTPException(status_code=400, detail="manager_reason is required")
-
     _, mechanic = await fetch_tenant_and_mechanic(
         db,
         tenant_id=current_user.tenant_id,
@@ -1220,16 +1223,13 @@ async def manager_stop_mechanic_timer(
 @router.post("/mechanics/{mechanic_id}/attendance/clock-in", response_model=TimerActionResponse)
 async def manager_clock_in_mechanic(
     mechanic_id: UUID,
-    body: ManagerClockActionRequest,
+    body: ManagerClockInRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    if not body.manager_reason.strip():
-        raise HTTPException(status_code=400, detail="manager_reason is required")
-
     tenant, mechanic = await fetch_tenant_and_mechanic(
         db,
         tenant_id=current_user.tenant_id,
@@ -1272,9 +1272,6 @@ async def manager_clock_out_mechanic(
     require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    if not body.manager_reason.strip():
-        raise HTTPException(status_code=400, detail="manager_reason is required")
-
     tenant, mechanic = await fetch_tenant_and_mechanic(
         db,
         tenant_id=current_user.tenant_id,
@@ -1333,9 +1330,6 @@ async def manager_start_mechanic_break(
     require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    if not body.manager_reason.strip():
-        raise HTTPException(status_code=400, detail="manager_reason is required")
-
     tenant, mechanic = await fetch_tenant_and_mechanic(
         db,
         tenant_id=current_user.tenant_id,
@@ -1386,9 +1380,6 @@ async def manager_end_mechanic_break(
     require_manager(current_user)
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="User must be associated with a tenant")
-    if not body.manager_reason.strip():
-        raise HTTPException(status_code=400, detail="manager_reason is required")
-
     tenant, mechanic = await fetch_tenant_and_mechanic(
         db,
         tenant_id=current_user.tenant_id,

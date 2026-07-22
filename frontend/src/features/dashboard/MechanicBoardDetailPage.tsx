@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { ArrowLeft, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, User } from 'lucide-react'
+import { ArrowLeft, PlayCircle, Square, Pencil, Trash2, Settings, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CalendarDays, User } from 'lucide-react'
 import api from '@/lib/api'
 import { MISC_WORK_OPTIONS, formatMiscCategory, formatSessionType } from '@/lib/mechanicWorkLabels'
 import { formatSuggestedNextAction } from '@/lib/mechanicSuggestions'
@@ -32,6 +32,8 @@ interface MechanicSummary {
   mechanic_name: string
   date: string
   timezone: string
+  shift_start_local: string
+  shift_end_local: string
   core_target_minutes: number
   tracked_minutes: number
   ro_minutes: number
@@ -136,6 +138,12 @@ const computeSessionDurationMinutes = (s: SessionRow): number => {
   return Math.max(0, (end - start) / 60000)
 }
 
+const localDateKey = (value = new Date()) => [
+  value.getFullYear(),
+  String(value.getMonth() + 1).padStart(2, '0'),
+  String(value.getDate()).padStart(2, '0'),
+].join('-')
+
 type DetailTab = 'overview' | 'controls'
 
 export default function MechanicBoardDetailPage() {
@@ -148,10 +156,9 @@ export default function MechanicBoardDetailPage() {
   const [repairOrderId, setRepairOrderId] = useState('')
   const [miscCategory, setMiscCategory] = useState('shop_cleanup')
   const [note, setNote] = useState('')
-  const [startReason, setStartReason] = useState('')
-  const [stopReason, setStopReason] = useState('')
-  const [attendanceReason, setAttendanceReason] = useState('')
-  const [breakReason, setBreakReason] = useState('')
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  const [trendEndDate, setTrendEndDate] = useState<string | null>(null)
+  const currentWorkDateRef = useRef<string | null>(null)
 
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
   const [sessionsExpanded, setSessionsExpanded] = useState(false)
@@ -162,9 +169,14 @@ export default function MechanicBoardDetailPage() {
   const [editNote, setEditNote] = useState('')
 
   const { data, isLoading, isError } = useQuery<BoardDetailResponse>({
-    queryKey: ['mechanic-board-detail', mechanicId],
+    queryKey: ['mechanic-board-detail', mechanicId, selectedDate, trendEndDate],
     queryFn: async () => {
-      const response = await api.get(`/dashboard/mechanics/${mechanicId}/board`)
+      const response = await api.get(`/dashboard/mechanics/${mechanicId}/board`, {
+        params: selectedDate ? {
+          date: selectedDate,
+          ...(trendEndDate ? { trend_end_date: trendEndDate } : {}),
+        } : undefined,
+      })
       return response.data
     },
     enabled: !!mechanicId,
@@ -183,7 +195,6 @@ export default function MechanicBoardDetailPage() {
       if (!mechanicId) throw new Error('Missing mechanic id')
       const payload: any = {
         session_type: sessionType,
-        manager_reason: startReason,
         note: note || undefined,
       }
       if (sessionType === 'repair_order') {
@@ -195,7 +206,6 @@ export default function MechanicBoardDetailPage() {
     },
     onSuccess: () => {
       toast.success('Timer started')
-      setStartReason('')
       setNote('')
       setRepairOrderId('')
       refreshBoard()
@@ -206,11 +216,10 @@ export default function MechanicBoardDetailPage() {
   const stopTimerMutation = useMutation({
     mutationFn: async () => {
       if (!mechanicId) throw new Error('Missing mechanic id')
-      await api.post(`/dashboard/mechanics/${mechanicId}/timer/stop`, { manager_reason: stopReason })
+      await api.post(`/dashboard/mechanics/${mechanicId}/timer/stop`, {})
     },
     onSuccess: () => {
       toast.success('Timer stopped')
-      setStopReason('')
       refreshBoard()
     },
     onError: (error: any) => toast.error(error?.response?.data?.detail || 'Failed to stop timer'),
@@ -220,18 +229,13 @@ export default function MechanicBoardDetailPage() {
     mutationFn: async () => {
       if (!mechanicId) throw new Error('Missing mechanic id')
       if (data?.mechanic.attendance_active) {
-        await api.post(`/dashboard/mechanics/${mechanicId}/attendance/clock-out`, {
-          manager_reason: attendanceReason,
-        })
+        await api.post(`/dashboard/mechanics/${mechanicId}/attendance/clock-out`, {})
         return
       }
-      await api.post(`/dashboard/mechanics/${mechanicId}/attendance/clock-in`, {
-        manager_reason: attendanceReason,
-      })
+      await api.post(`/dashboard/mechanics/${mechanicId}/attendance/clock-in`, {})
     },
     onSuccess: () => {
       toast.success(data?.mechanic.attendance_active ? 'Clocked out' : 'Clocked in')
-      setAttendanceReason('')
       refreshBoard()
     },
     onError: (error: any) => toast.error(error?.response?.data?.detail || 'Failed to update attendance'),
@@ -241,18 +245,13 @@ export default function MechanicBoardDetailPage() {
     mutationFn: async () => {
       if (!mechanicId) throw new Error('Missing mechanic id')
       if (data?.mechanic.break_active) {
-        await api.post(`/dashboard/mechanics/${mechanicId}/break/end`, {
-          manager_reason: breakReason,
-        })
+        await api.post(`/dashboard/mechanics/${mechanicId}/break/end`, {})
         return
       }
-      await api.post(`/dashboard/mechanics/${mechanicId}/break/start`, {
-        manager_reason: breakReason,
-      })
+      await api.post(`/dashboard/mechanics/${mechanicId}/break/start`, {})
     },
     onSuccess: () => {
       toast.success(data?.mechanic.break_active ? 'Break ended' : 'Break started')
-      setBreakReason('')
       refreshBoard()
     },
     onError: (error: any) => toast.error(error?.response?.data?.detail || 'Failed to update break state'),
@@ -324,12 +323,20 @@ export default function MechanicBoardDetailPage() {
   }
 
   const m = data.mechanic
+  if (!selectedDate && !currentWorkDateRef.current) {
+    currentWorkDateRef.current = m.date
+  }
+  const todayDate = currentWorkDateRef.current || localDateKey()
+  const isToday = m.date === todayDate
   const trendRows = m.trend_7_days || []
   const attendanceStartedLabel = formatTimeInZone(m.attendance_started_at, m.timezone)
   const attendanceEndedLabel = formatTimeInZone(m.attendance_ended_at, m.timezone)
   const attendanceMetaLabel = m.attendance_active
     ? (attendanceStartedLabel ? `Clocked in at ${attendanceStartedLabel}` : null)
     : (attendanceEndedLabel ? `Clocked out at ${attendanceEndedLabel}` : null)
+  const attendanceWindowLabel = attendanceStartedLabel
+    ? `${attendanceStartedLabel}${attendanceEndedLabel ? ` – ${attendanceEndedLabel}` : ' – now'}`
+    : 'No clock activity'
 
   const formatTrendDate = (isoDate: string) => {
     const parsed = new Date(`${isoDate}T00:00:00`)
@@ -339,6 +346,19 @@ export default function MechanicBoardDetailPage() {
   const openRecommendedOrder = () => {
     if (!m.recommended_order_id) return
     navigate(`/dashboard/repair-orders?selected=${m.recommended_order_id}`)
+  }
+  const changeDate = (dateValue: string, nextTrendEndDate = trendEndDate || todayDate) => {
+    setSelectedDate(dateValue)
+    setTrendEndDate(nextTrendEndDate)
+    setSessionsExpanded(false)
+    setActiveTab('overview')
+  }
+  const moveTrendWeek = (days: number) => {
+    const parsed = new Date(`${trendEndDate || todayDate}T12:00:00`)
+    parsed.setDate(parsed.getDate() + days)
+    const nextTrendEndDate = localDateKey(parsed)
+    const cappedTrendEndDate = nextTrendEndDate > todayDate ? todayDate : nextTrendEndDate
+    changeDate(cappedTrendEndDate, cappedTrendEndDate)
   }
 
   return (
@@ -357,7 +377,7 @@ export default function MechanicBoardDetailPage() {
         />
       </div>
 
-      {m.attention_priority !== 'green' && m.attention_reasons.length > 0 ? (
+      {isToday && m.attention_priority !== 'green' && m.attention_reasons.length > 0 ? (
         <Card 
           variant="subtle" 
           padding="none" 
@@ -384,17 +404,19 @@ export default function MechanicBoardDetailPage() {
         >
           Overview
         </button>
-        <button
-          onClick={() => setActiveTab('controls')}
-          className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all duration-200 flex items-center gap-2 ${
-            activeTab === 'controls'
-              ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 border-b-transparent -mb-px'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
-          }`}
-        >
-          <Settings className="w-3.5 h-3.5" />
-          Admin Controls
-        </button>
+        {isToday ? (
+          <button
+            onClick={() => setActiveTab('controls')}
+            className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all duration-200 flex items-center gap-2 ${
+              activeTab === 'controls'
+                ? 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 border-b-transparent -mb-px'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Admin Controls
+          </button>
+        ) : null}
       </div>
 
       {/* ── OVERVIEW TAB ── */}
@@ -402,8 +424,13 @@ export default function MechanicBoardDetailPage() {
         <>
           <Card className="space-y-4">
             <div className="flex items-center gap-2">
-              <h2 className="text-zinc-100 font-semibold">Today Summary</h2>
-              <SectionInfoTooltip text="At-a-glance performance for this technician today: tracked hours, work mix, utilization, efficiency, and whether a timer is currently running." />
+              <h2 className="text-zinc-100 font-semibold">Daily Summary</h2>
+              <SectionInfoTooltip text="At-a-glance performance for this technician on the selected work day: scheduled shift, attendance, tracked hours, work mix, utilization, and efficiency." />
+            </div>
+            <div className="text-xs text-zinc-400">
+              Scheduled shift: <span className="font-semibold text-zinc-200">{m.shift_start_local}–{m.shift_end_local}</span>
+              {' · '}Attendance: <span className="font-semibold text-zinc-200">{formatDuration(m.attendance_minutes)}</span>
+              {' · '}Clock activity: <span className="font-semibold text-zinc-200">{attendanceWindowLabel}</span>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-8 gap-4 text-sm">
               <div className="text-zinc-400">Tracked<br /><span className="text-zinc-100 font-semibold">{(m.tracked_minutes / 60).toFixed(1)}h</span></div>
@@ -469,7 +496,7 @@ export default function MechanicBoardDetailPage() {
                 </span>
               )}
             </div>
-            <Card variant="subtle" padding="sm" className="space-y-2">
+            {isToday ? <Card variant="subtle" padding="sm" className="space-y-2">
               <div className="text-xs text-zinc-400">
                 Suggested next action:{' '}
                 <span className="text-zinc-200 font-medium">{formatSuggestedNextAction(m.suggested_next_action)}</span>
@@ -491,17 +518,8 @@ export default function MechanicBoardDetailPage() {
                     Open Recommended RO
                   </Button>
                 ) : null}
-                {m.suggested_next_action === 'stop_misc_pick_ro' && m.active_session?.session_type === 'misc' ? (
-                  <Button 
-                    size="sm" 
-                    variant="danger"
-                    onClick={() => setStopReason('Stopping misc to pick up assigned repair order')}
-                  >
-                    Prefill Stop Reason
-                  </Button>
-                ) : null}
               </div>
-            </Card>
+            </Card> : null}
             {m.held_orders_count > 0 ? (
               <Card variant="subtle" padding="sm" className="border-amber-500/30 bg-amber-950/30">
                 <div className="text-xs text-amber-200 font-semibold flex items-center gap-2">
@@ -520,9 +538,46 @@ export default function MechanicBoardDetailPage() {
           </Card>
 
           <Card className="space-y-4">
-            <div className="flex items-center gap-2">
-              <h2 className="text-zinc-100 font-semibold">7-Day Trend</h2>
-              <SectionInfoTooltip text="Daily utilization and efficiency trend for the last 7 days. Use this to spot consistency issues and coaching opportunities." />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-zinc-100 font-semibold">7-Day Trend</h2>
+                <SectionInfoTooltip text="Select a day to inspect its attendance and work sessions. Use the week controls or calendar to browse older work." />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button className="whitespace-nowrap" size="sm" variant="secondary" onClick={() => moveTrendWeek(-7)} aria-label="Previous week">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <ChevronLeft className="h-4 w-4 shrink-0" />
+                    Previous week
+                  </span>
+                </Button>
+                <label className="relative flex items-center">
+                  <CalendarDays className="pointer-events-none absolute left-3 h-4 w-4 text-zinc-500" />
+                  <input
+                    type="date"
+                    value={m.date}
+                    max={todayDate}
+                    onChange={(event) => event.target.value && changeDate(event.target.value, event.target.value)}
+                    aria-label="Select work day"
+                    className="min-w-[9.5rem] rounded-xl border border-zinc-700/50 bg-zinc-800/60 py-2 pl-9 pr-3 text-sm text-zinc-200"
+                  />
+                </label>
+                {!isToday ? (
+                  <Button className="whitespace-nowrap" size="sm" variant="secondary" onClick={() => changeDate(todayDate, todayDate)}>Today</Button>
+                ) : null}
+                <Button
+                  className="whitespace-nowrap"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => moveTrendWeek(7)}
+                  disabled={(trendEndDate || todayDate) >= todayDate}
+                  aria-label="Next week"
+                >
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    Next week
+                    <ChevronRight className="h-4 w-4 shrink-0" />
+                  </span>
+                </Button>
+              </div>
             </div>
             {!trendRows.length ? (
               <p className="text-sm text-zinc-400">No trend data yet.</p>
@@ -530,11 +585,17 @@ export default function MechanicBoardDetailPage() {
               <>
                 <div className="space-y-2 md:hidden">
                   {trendRows.map((row, i) => (
-                    <Card 
-                      key={row.date} 
-                      variant="subtle" 
+                    <button
+                      key={row.date}
+                      type="button"
+                      onClick={() => changeDate(row.date)}
+                      aria-pressed={row.date === m.date}
+                      className="w-full text-left"
+                    >
+                    <Card
+                      variant="subtle"
                       padding="sm"
-                      className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
+                      className={`animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 transition-colors ${row.date === m.date ? 'border-[var(--accent-400)] bg-[var(--accent-500)]/10' : 'hover:border-zinc-500'}`}
                       style={staggeredReveal(i)}
                     >
                       <div className="flex items-center justify-between text-xs text-zinc-400">
@@ -548,15 +609,22 @@ export default function MechanicBoardDetailPage() {
                         Tracked {(row.tracked_minutes / 60).toFixed(1)}h · Efficiency {row.efficiency_percent == null ? 'n/a' : `${row.efficiency_percent.toFixed(1)}%`}
                       </div>
                     </Card>
+                    </button>
                   ))}
                 </div>
                 <div className="hidden md:grid md:grid-cols-7 md:gap-3">
                   {trendRows.map((row, i) => (
-                    <Card 
-                      key={row.date} 
-                      variant="subtle" 
+                    <button
+                      key={row.date}
+                      type="button"
+                      onClick={() => changeDate(row.date)}
+                      aria-pressed={row.date === m.date}
+                      className="min-w-0 text-left"
+                    >
+                    <Card
+                      variant="subtle"
                       padding="sm"
-                      className="animate-[fadeIn_0.3s_ease-out_forwards] opacity-0"
+                      className={`h-full animate-[fadeIn_0.3s_ease-out_forwards] opacity-0 transition-colors ${row.date === m.date ? 'border-[var(--accent-400)] bg-[var(--accent-500)]/10' : 'hover:border-zinc-500'}`}
                       style={staggeredReveal(i)}
                     >
                       <div className="flex items-center justify-between text-[11px] text-zinc-400">
@@ -570,16 +638,17 @@ export default function MechanicBoardDetailPage() {
                         {(row.tracked_minutes / 60).toFixed(1)}h · {row.efficiency_percent == null ? 'n/a' : `${row.efficiency_percent.toFixed(0)}%`}
                       </div>
                     </Card>
+                    </button>
                   ))}
                 </div>
               </>
             )}
           </Card>
 
-          {/* Today Sessions — active session prominent, history collapsed */}
+          {/* Selected-day sessions — active session prominent, history collapsed */}
           <Card className="space-y-4">
             <div className="flex items-center gap-2">
-              <h2 className="text-zinc-100 font-semibold">Today Sessions</h2>
+              <h2 className="text-zinc-100 font-semibold">Work Sessions · {formatTrendDate(m.date)}</h2>
               <SectionInfoTooltip text="Chronological record of all timer sessions for the selected day, including active, stopped, edited, and deletable entries." />
             </div>
 
@@ -700,7 +769,7 @@ export default function MechanicBoardDetailPage() {
             <h2 className="text-zinc-100 font-semibold">Admin Override Controls</h2>
             <SectionInfoTooltip text="Owner/admin controls to start or stop this technician's active timer with mandatory manager reason for audit tracking." />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className={m.attendance_active ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'max-w-xl'}>
             <Card variant="subtle" padding="sm" className="space-y-3">
               <div className="text-xs text-zinc-400 flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
                 <div className="flex items-center gap-2">
@@ -714,14 +783,9 @@ export default function MechanicBoardDetailPage() {
                   <span className="text-[11px] text-zinc-500">{attendanceMetaLabel}</span>
                 ) : null}
               </div>
-              <Input
-                value={attendanceReason}
-                onChange={(e) => setAttendanceReason(e.target.value)}
-                placeholder="Manager reason (required)"
-              />
               <button
                 onClick={() => attendanceToggleMutation.mutate()}
-                disabled={!attendanceReason.trim() || attendanceToggleMutation.isPending}
+                disabled={attendanceToggleMutation.isPending}
                 className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                   m.attendance_active 
                     ? 'bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-800/50' 
@@ -732,7 +796,7 @@ export default function MechanicBoardDetailPage() {
                 {m.attendance_active ? 'Clock Out Technician' : 'Clock In Technician'}
               </button>
             </Card>
-            <Card variant="subtle" padding="sm" className="space-y-3">
+            {m.attendance_active ? <Card variant="subtle" padding="sm" className="space-y-3">
               <div className="text-xs text-zinc-400 flex items-center gap-2">
                 <StatusLED status={m.break_active ? 'warning' : 'inactive'} />
                 Break:{' '}
@@ -740,14 +804,9 @@ export default function MechanicBoardDetailPage() {
                   {m.break_active ? 'On Break' : 'Not on Break'}
                 </span>
               </div>
-              <Input
-                value={breakReason}
-                onChange={(e) => setBreakReason(e.target.value)}
-                placeholder="Manager reason (required)"
-              />
               <button
                 onClick={() => breakToggleMutation.mutate()}
-                disabled={!breakReason.trim() || breakToggleMutation.isPending || !m.attendance_active}
+                disabled={breakToggleMutation.isPending}
                 className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                   m.break_active 
                     ? 'bg-blue-950/80 hover:bg-blue-900 text-blue-400 border border-blue-800/50' 
@@ -757,9 +816,10 @@ export default function MechanicBoardDetailPage() {
                 {breakToggleMutation.isPending ? <Spinner size="xs" /> : null}
                 {m.break_active ? 'End Break' : 'Start Break'}
               </button>
-            </Card>
+            </Card> : null}
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {m.attendance_active ? <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {!active ? (
             <div className="space-y-3">
               <Label>Session Type</Label>
               <div className="grid grid-cols-2 gap-2">
@@ -815,20 +875,16 @@ export default function MechanicBoardDetailPage() {
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Note (optional)"
               />
-              <Input
-                value={startReason}
-                onChange={(e) => setStartReason(e.target.value)}
-                placeholder="Manager reason (required)"
-              />
               <button
                 onClick={() => startTimerMutation.mutate()}
-                disabled={!startReason.trim() || startTimerMutation.isPending || (sessionType === 'repair_order' && !repairOrderId.trim())}
+                disabled={startTimerMutation.isPending || (sessionType === 'repair_order' && !repairOrderId.trim())}
                 className="w-full flex items-center justify-center gap-2 bg-[var(--accent-600)] hover:bg-[var(--accent-500)] text-white font-semibold rounded-xl px-4 py-2.5 text-sm border border-[var(--accent-400)]/50 hover:shadow-[0_0_24px_var(--accent-500)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
               >
                 {startTimerMutation.isPending ? <Spinner size="xs" /> : <PlayCircle className="w-4 h-4" />}
                 Start Timer
               </button>
             </div>
+            ) : (
             <div className="space-y-3">
               <Label>Stop Timer</Label>
               <div className="text-sm text-zinc-400 flex items-center gap-2">
@@ -850,21 +906,18 @@ export default function MechanicBoardDetailPage() {
                   </span>
                 )}
               </div>
-              <Input
-                value={stopReason}
-                onChange={(e) => setStopReason(e.target.value)}
-                placeholder="Manager reason (required)"
-              />
               <button
                 onClick={() => stopTimerMutation.mutate()}
-                disabled={!stopReason.trim() || stopTimerMutation.isPending}
+                disabled={stopTimerMutation.isPending}
                 className="w-full flex items-center justify-center gap-2 bg-red-950/80 hover:bg-red-900 text-red-400 font-semibold rounded-xl px-4 py-2.5 text-sm border border-red-800/50 hover:border-red-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {stopTimerMutation.isPending ? <Spinner size="xs" /> : <Square className="w-4 h-4" />}
                 Stop Active Timer
               </button>
             </div>
+            )}
           </div>
+          : null}
         </Card>
       )}
 
