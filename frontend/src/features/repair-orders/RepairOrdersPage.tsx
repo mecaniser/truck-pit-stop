@@ -541,6 +541,7 @@ export default function RepairOrdersPage() {
       return response.data
     },
     enabled: isModalOpen,
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
 
