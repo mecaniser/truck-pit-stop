@@ -373,6 +373,29 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
     assert len([period for period in refreshed_periods if period.effective_to is None]) == 0
     assert len([period for period in refreshed_periods if period.effective_to is not None]) == 2
 
+    # The owner/lessor can select the authority from its own customer profile.
+    # This must restore 77 Cargo to Fleet Board without turning 77 Cargo into
+    # the owner or default invoice recipient.
+    await vehicles.sync_vehicle_relationships(
+        vehicle_id=truck.id,
+        body=VehicleRelationshipSync(
+            customer_id=owner.id,
+            relationship_types=["owner", "default_payer"],
+            operating_authority_customer_id=operator.id,
+            unit_number="603",
+        ),
+        db=db_session,
+        current_user=manager,
+    )
+    authority_board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert authority_board.trucks[0].owner_company_name == "ELS Logistics Updated LLC"
+    assert authority_board.trucks[0].fleet_company_name == "77 Cargo"
+    authority_detail = await fleet.truck_detail(
+        vehicle_id=truck.id, db=db_session, current_user=manager,
+    )
+    assert authority_detail.fleet_account_company_name == "77 Cargo"
+    assert authority_detail.bill_to_company_name == "ELS Logistics Updated LLC"
+
 
 @pytest.mark.asyncio
 async def test_enabling_customer_fleet_enrolls_owned_and_operated_trucks(db_session):
@@ -477,7 +500,21 @@ async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
         id=uuid4(), tenant_id=tenant.id, customer_id=editing_company.id,
         make="Volvo", model="VNL 760", year=2021,
     )
-    db_session.add_all([tenant, existing_company, editing_company, manager, existing_truck, editing_truck])
+    db_session.add_all([
+        tenant, existing_company, editing_company, manager, existing_truck, editing_truck,
+        VehicleCustomerRelationship(
+            id=uuid4(), tenant_id=tenant.id, vehicle_id=existing_truck.id,
+            customer_id=editing_company.id, relationship_type="owner", is_primary=True,
+        ),
+        VehicleCustomerRelationship(
+            id=uuid4(), tenant_id=tenant.id, vehicle_id=existing_truck.id,
+            customer_id=existing_company.id, relationship_type="operator",
+        ),
+        VehicleCustomerRelationship(
+            id=uuid4(), tenant_id=tenant.id, vehicle_id=existing_truck.id,
+            customer_id=editing_company.id, relationship_type="default_payer", is_primary=True,
+        ),
+    ])
     await db_session.commit()
 
     with pytest.raises(HTTPException) as exc_info:
@@ -503,5 +540,8 @@ async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
             "license_plate": "NC-771",
             "customer_id": str(existing_company.id),
             "customer_name": "77 Cargo LLC",
+            "owner_lessor_name": "Owner Trucking LLC",
+            "operating_authority_name": "77 Cargo LLC",
+            "default_invoice_recipient_name": "Owner Trucking LLC",
         },
     }

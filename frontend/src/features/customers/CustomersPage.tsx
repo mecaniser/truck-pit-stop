@@ -80,6 +80,9 @@ interface DuplicateVinVehicleSummary {
   license_plate?: string | null
   customer_id?: string | null
   customer_name?: string | null
+  owner_lessor_name?: string | null
+  operating_authority_name?: string | null
+  default_invoice_recipient_name?: string | null
 }
 
 interface DuplicateVinConflict {
@@ -107,6 +110,13 @@ interface VehicleAccountRelationship {
   effective_to?: string | null
   is_primary: boolean
   customer_company_name?: string | null
+}
+
+interface FleetCompanyOption {
+  id: string
+  company_name: string
+  fleet_enabled: boolean
+  is_internal_fleet: boolean
 }
 
 const duplicateVinFieldError = (error: any): DuplicateVinConflict | null => {
@@ -373,6 +383,7 @@ export default function CustomersPage() {
   const [selectedLinkVehicle, setSelectedLinkVehicle] = useState<VehicleLinkCandidate | null>(null)
   const [vehicleRelationshipTypes, setVehicleRelationshipTypes] = useState<VehicleRelationshipType[]>([])
   const [vehicleLinkUnitNumber, setVehicleLinkUnitNumber] = useState('')
+  const [operatingAuthorityCustomerId, setOperatingAuthorityCustomerId] = useState('')
   const [pendingFleetRemovalId, setPendingFleetRemovalId] = useState<string | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
@@ -490,6 +501,18 @@ export default function CustomersPage() {
     enabled: isVehicleModalOpen && vehicleModalMode === 'existing' && !!selectedLinkVehicle,
   })
 
+  const { data: fleetCompanies = [] } = useQuery<FleetCompanyOption[]>({
+    queryKey: ['fleet-companies'],
+    queryFn: async () => (await api.get('/fleet/companies')).data,
+    enabled: isVehicleModalOpen && vehicleModalMode === 'existing',
+  })
+
+  const { data: fleetSettings } = useQuery<{ default_fleet_authority_customer_id: string | null }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => (await api.get('/fleet/settings')).data,
+    enabled: isVehicleModalOpen && vehicleModalMode === 'existing',
+  })
+
   useEffect(() => {
     if (!selectedLinkVehicle || !selectedCustomer) {
       setVehicleRelationshipTypes([])
@@ -501,6 +524,16 @@ export default function CustomersPage() {
         .map((relationship) => relationship.relationship_type),
     )
   }, [selectedCustomer, selectedLinkVehicle, vehicleRelationships])
+
+  useEffect(() => {
+    if (!selectedLinkVehicle) {
+      setOperatingAuthorityCustomerId('')
+      return
+    }
+    const activeOperators = vehicleRelationships.filter((relationship) => !relationship.effective_to && relationship.relationship_type === 'operator')
+    const operator = activeOperators.find((relationship) => relationship.is_primary) || activeOperators[0]
+    setOperatingAuthorityCustomerId((current) => operator?.customer_id || current || fleetSettings?.default_fleet_authority_customer_id || '')
+  }, [selectedLinkVehicle, vehicleRelationships, fleetSettings?.default_fleet_authority_customer_id])
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -931,7 +964,8 @@ export default function CustomersPage() {
       if (!selectedCustomer) throw new Error('Select a customer before linking a truck')
       const response = await api.put(`/vehicles/${vehicleId}/relationships`, {
         customer_id: selectedCustomer.id,
-        relationship_types: relationshipTypes,
+        relationship_types: relationshipTypes.filter((relationshipType) => relationshipType !== 'operator'),
+        operating_authority_customer_id: operatingAuthorityCustomerId || null,
         unit_number: unitNumber.trim() || null,
       })
       return response.data
@@ -1124,6 +1158,7 @@ export default function CustomersPage() {
     setSelectedLinkVehicle(null)
     setVehicleRelationshipTypes([])
     setVehicleLinkUnitNumber('')
+    setOperatingAuthorityCustomerId('')
     setPendingFleetRemovalId(null)
     lastDecodedVehicleVin.current = ''
     setIsVehicleModalOpen(true)
@@ -1157,6 +1192,7 @@ export default function CustomersPage() {
     setVehicleLinkSearch('')
     setSelectedLinkVehicle(null)
     setVehicleRelationshipTypes([])
+    setOperatingAuthorityCustomerId('')
     setVehicleLinkUnitNumber('')
     lastDecodedVehicleVin.current = ''
   }
@@ -1178,6 +1214,7 @@ export default function CustomersPage() {
     })
     setVehicleLinkUnitNumber(vehicleFormData.unit_number.trim() || vehicle.unit_number || '')
     setVehicleRelationshipTypes([])
+    setOperatingAuthorityCustomerId('')
   }
 
   const openManageVehicleLinks = (vehicle: Vehicle) => {
@@ -1197,6 +1234,7 @@ export default function CustomersPage() {
     })
     setVehicleLinkUnitNumber(vehicle.unit_number || '')
     setVehicleRelationshipTypes([])
+    setOperatingAuthorityCustomerId('')
     setIsVehicleModalOpen(true)
   }
 
@@ -2180,7 +2218,7 @@ export default function CustomersPage() {
               className="w-full rounded-lg border border-gray-300 px-4 py-2.5 focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
               placeholder="603"
             />
-            <p className="mt-1 text-xs text-gray-500">Enter only the truck’s unit, such as 603. The listing-company prefix is added automatically.</p>
+            <p className="mt-1 text-xs text-gray-500">Enter only the truck’s unit, such as 603. The owner/lessor company prefix is added automatically.</p>
           </div>
 
           <div>
@@ -2191,7 +2229,7 @@ export default function CustomersPage() {
             <p className="mb-2 text-xs text-gray-500">Owner, operating authority, and invoice recipient are independent. Changing one does not rewrite the others or the truck’s service history.</p>
             <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-2">
               {([
-                ['owner', 'Owner / listing company', 'Controls the company prefix shown with the unit number.'],
+                ['owner', 'Truck owner / lessor', 'Controls the owner/lessor prefix shown with the unit number.'],
                 ['operator', 'Operating authority / Fleet Board', 'Controls which authority’s Fleet Board contains this truck.'],
                 ['default_payer', 'Default invoice recipient', 'Receives new service invoices and determines internal versus customer pricing.'],
               ] as const).map(([relationshipType, label, help]) => {
@@ -2242,8 +2280,7 @@ export default function CustomersPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">Roles for {selectedCustomer?.company_name || selectedCustomer?.first_name}</label>
             <div className="space-y-2">
               {([
-                ['owner', 'Owner / listing company', 'Use this company’s name as the Fleet Board unit prefix. Ownership is changed by assigning a replacement, not by leaving the truck ownerless.'],
-                ['operator', 'Operating authority / Fleet Board', 'Include this truck on this company’s Fleet Board. This does not make the authority the owner or payer.'],
+                ['owner', 'Truck owner / lessor', 'Use this company’s name as the Fleet Board unit prefix. This is the company that owns the truck and may lease it to the operating authority.'],
                 ['default_payer', 'Default invoice recipient', 'Invoice this company for new work orders. External customers use customer pricing; the internal house account uses garage-cost rules.'],
               ] as const).map(([relationshipType, label, help]) => {
                 const isCurrentlyAssigned = vehicleRelationships.some((relationship) => !relationship.effective_to
@@ -2264,12 +2301,28 @@ export default function CustomersPage() {
                     <span>
                       <strong className="block text-gray-900">{label}</strong>
                       <span className="text-xs text-gray-500">{help}</span>
-                      {roleLocked && relationshipType === 'operator' && <span className="mt-1 block text-xs font-medium text-amber-700">Use “Remove from Fleet Board” above to end this authority assignment.</span>}
-                      {roleLocked && relationshipType !== 'operator' && <span className="mt-1 block text-xs font-medium text-amber-700">To change this role, assign it from the replacement company.</span>}
+                      {roleLocked && <span className="mt-1 block text-xs font-medium text-amber-700">To change this role, assign it from the replacement company.</span>}
                     </span>
                   </label>
                 )
               })}
+            </div>
+            <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+              <label className="block text-sm font-semibold text-gray-900" htmlFor="operating-authority">Operating authority / Fleet Board</label>
+              <select
+                id="operating-authority"
+                value={operatingAuthorityCustomerId}
+                onChange={(event) => setOperatingAuthorityCustomerId(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+              >
+                <option value="">Select operating authority…</option>
+                {fleetCompanies.filter((company) => company.fleet_enabled).map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-gray-500">New links start with your Fleet Board default authority when one is configured. This changes only Fleet Board membership; it does not change the owner/lessor or invoice recipient.</p>
             </div>
             <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
           </div>
@@ -2411,8 +2464,14 @@ export default function CustomersPage() {
                           vehicleVinError.vehicle.model,
                         ].filter(Boolean).join(' · ') || 'Existing truck'}
                       </span>
-                      {vehicleVinError.vehicle.customer_name && (
-                        <span className="block text-xs text-gray-600">Company: {vehicleVinError.vehicle.customer_name}</span>
+                      {(vehicleVinError.vehicle.owner_lessor_name || vehicleVinError.vehicle.customer_name) && (
+                        <span className="block text-xs text-gray-600">Truck owner / lessor: {vehicleVinError.vehicle.owner_lessor_name || vehicleVinError.vehicle.customer_name}</span>
+                      )}
+                      {vehicleVinError.vehicle.operating_authority_name && (
+                        <span className="block text-xs text-gray-600">Operating authority: {vehicleVinError.vehicle.operating_authority_name}</span>
+                      )}
+                      {vehicleVinError.vehicle.default_invoice_recipient_name && (
+                        <span className="block text-xs text-gray-600">Default invoice recipient: {vehicleVinError.vehicle.default_invoice_recipient_name}</span>
                       )}
                       {vehicleVinError.vehicle.license_plate && (
                         <span className="block text-xs text-gray-600">Plate: {vehicleVinError.vehicle.license_plate}</span>
@@ -2430,7 +2489,7 @@ export default function CustomersPage() {
                   onClick={() => selectExistingTruckFromConflict(vehicleVinError.vehicle!)}
                   className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
                 >
-                  Use and link this existing truck
+                  Manage this existing truck’s roles
                 </button>
               ) : (
                 <span className="mt-2 block text-xs">Switch to “Link existing truck” and search this VIN.</span>

@@ -77,6 +77,19 @@ class Tenant(BaseModel):
     # Shown as the customer on internal fleet repair orders. Distinct from `name`
     # (the garage's own business name).
     fleet_company_name = Column(String(255), nullable=True)
+    # The Fleet Board authority suggested for trucks that do not have an
+    # explicit operating-authority relationship yet. This is a customer because
+    # an authority can be an external carrier such as 77 Cargo, not only the
+    # garage's internal house account.
+    default_fleet_authority_customer_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    default_fleet_authority_customer = relationship(
+        "Customer", foreign_keys=[default_fleet_authority_customer_id]
+    )
     # Prefix for generated repair order numbers (e.g. "TPS" -> "TPS-000123").
     # Nullable — when unset, the app auto-derives one from `name`.
     order_number_prefix = Column(String(10), nullable=True)

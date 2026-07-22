@@ -69,6 +69,10 @@ class VehicleRelationshipSync(BaseModel):
 
     customer_id: UUID
     relationship_types: List[VehicleRelationshipType] = Field(default_factory=list)
+    # The operating authority is independent from the customer whose profile
+    # is currently being edited. This lets an owner/lessor assign, for example,
+    # 77 Cargo as authority without making 77 Cargo the owner or payer.
+    operating_authority_customer_id: Optional[UUID] = None
     # Canonical unit only; company prefixes are derived for fleet displays.
     unit_number: Optional[str] = None
 

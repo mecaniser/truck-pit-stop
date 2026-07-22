@@ -8,6 +8,7 @@ from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.customer import Customer
+from app.db.models.repair_order import RepairOrder
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
 
@@ -40,7 +41,18 @@ async def find_vehicle_by_vin(
     ]
     if exclude_vehicle_id:
         filters.append(Vehicle.id != exclude_vehicle_id)
-    return (await db.execute(select(Vehicle).where(*filters))).scalars().first()
+    # Legacy imports can contain more than one row for the same VIN. Prefer the
+    # truck with real service history, then the most recently maintained row,
+    # so a stale zero-history Fleet/House Account shell never wins a relink.
+    service_count = select(func.count(RepairOrder.id)).where(
+        RepairOrder.vehicle_id == Vehicle.id,
+        RepairOrder.deleted_at.is_(None),
+    ).scalar_subquery()
+    return (await db.execute(
+        select(Vehicle)
+        .where(*filters)
+        .order_by(service_count.desc(), Vehicle.updated_at.desc(), Vehicle.created_at.desc())
+    )).scalars().first()
 
 
 async def ensure_vehicle_relationship(

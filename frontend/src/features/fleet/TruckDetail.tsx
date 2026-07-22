@@ -651,7 +651,7 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
         <Stat label="Body type" value={truck.body_type || '—'} />
         <Stat label="Make" value={truck.make} />
         <Stat label="Model" value={truck.model} />
-        <Stat label="Listing company" value={truck.owner_company_name || truck.fleet_company_name || '—'} />
+        <Stat label="Truck owner / lessor" value={truck.owner_company_name || truck.fleet_company_name || '—'} />
         <Stat label="Operating authority" value={truck.fleet_company_name || '—'} />
         <Stat label="Default invoice recipient" value={detail.bill_to_company_name || detail.bill_to_contact_name || '—'} />
         <Stat

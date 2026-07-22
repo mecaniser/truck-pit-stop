@@ -457,6 +457,10 @@ class FleetSettingsResponse(BaseModel):
     labor_rate: float = 0.0
     # Name of the company that operates the internal fleet (e.g. "77 Cargo").
     fleet_company_name: Optional[str] = None
+    # Suggested authority for newly connected trucks. An explicit truck-level
+    # authority always takes precedence over this tenant setting.
+    default_fleet_authority_customer_id: Optional[UUID] = None
+    default_fleet_authority_company_name: Optional[str] = None
     # Users who manage the fleet (FLEET_MANAGER role in this tenant).
     fleet_managers: List[FleetManagerOption] = []
     # Live count of trucks on the fleet board (vehicles on the house account).
