@@ -12,7 +12,7 @@ import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
-import { STATUS_META, fmt, pmState, initials } from './helpers'
+import { STATUS_META, fleetUnitLabel, fmt, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
@@ -265,7 +265,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
   return (
     <div className="scard">
       <button className="scard-hd" onClick={() => onOpen(t.id)}>
-        <div className="tcard-unit" style={{ fontSize: 20 }}>{t.unit_number}</div>
+        <div className="tcard-unit" style={{ fontSize: 20 }}>{fleetUnitLabel(t)}</div>
         <div className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</div>
         <div className={'scard-urgency ' + ucls}>{pm.label}</div>
         <div className="tcard-odo" style={{ borderTop: 'none', paddingTop: 0 }}>
@@ -342,7 +342,7 @@ function OrdersPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: str
       {list.map((t) => (
         <button key={t.id} className="lrow" onClick={() => onOpen(t.id)}>
           <i className="lrow-dot" style={{ background: STATUS_META[t.status].dot }} />
-          <span className="lrow-unit">{t.unit_number}</span>
+          <span className="lrow-unit">{fleetUnitLabel(t)}</span>
           <span className="lrow-mono">{t.work_order!.id}</span>
           <span className="lrow-tx">{t.work_order!.summary || '—'}</span>
           <span className="lrow-r">
@@ -363,7 +363,7 @@ function DriversPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: st
           <div className="avatar">{initials(t.driver_name)}</div>
           <div style={{ textAlign: 'left', minWidth: 0 }}>
             <div className="person-name">{t.driver_name || 'Unassigned'}</div>
-            <div className="person-role">{t.unit_number} · {`${t.make} ${t.model}`}</div>
+            <div className="person-role">{fleetUnitLabel(t)} · {`${t.make} ${t.model}`}</div>
             {t.driver_phone && <div className="person-role">{formatUSPhone(t.driver_phone)}</div>}
           </div>
           <i className="lrow-dot" style={{ background: STATUS_META[t.status].dot, marginLeft: 'auto' }} />

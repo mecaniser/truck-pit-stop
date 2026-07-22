@@ -85,6 +85,7 @@ async def test_truck_identity_survives_different_operator_payer_and_owner_transf
     assert card.id == truck.id
     assert card.fleet_company_name == "77 Cargo"
     assert card.owner_company_name == "Owner Trucking LLC"
+    assert card.display_unit_number == "Owner Trucking LLC 77-12"
     assert card.work_order is not None
 
     await vehicles.create_vehicle_relationship(
@@ -114,6 +115,10 @@ async def test_truck_identity_survives_different_operator_payer_and_owner_transf
     previous_owner = next(row for row in owner_periods if row.customer_id == owner.id)
     assert active_owner.customer_id == next_owner.id
     assert previous_owner.effective_to is not None
+
+    transferred_board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert transferred_board.trucks[0].display_unit_number == "Buyer Transport LLC 77-12"
+    assert transferred_board.trucks[0].fleet_company_name == "77 Cargo"
 
 
 @pytest.mark.asyncio
@@ -206,6 +211,7 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
     board = await fleet.fleet_board(db=db_session, current_user=manager)
     assert [item.id for item in board.trucks] == [truck.id]
     assert board.trucks[0].fleet_company_name == "77 Cargo"
+    assert board.trucks[0].display_unit_number == "Owner Trucking LLC 77-22"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { BoardTruck } from './types'
-import { STATUS_META } from './helpers'
+import { fleetUnitLabel, STATUS_META } from './helpers'
 
 // Schematic regional map. Projects real lat/lng into a 0–100 field centered on the
 // yard. When live telematics is connected this component can be swapped for Mapbox GL
@@ -89,6 +89,7 @@ export default function FleetMap({
 
         {trucks.map((t) => {
           const meta = STATUS_META[t.status]
+          const unitLabel = fleetUnitLabel(t)
           const p = pos.get(t.id)!
           const isFocus = !!focus && t.id === focus.id
           const dim = !!focus && !isFocus && !nearIds.has(t.id)
@@ -100,18 +101,18 @@ export default function FleetMap({
               onMouseEnter={() => setHover(t.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => onSelect && onSelect(t)}
-              title={`${t.unit_number || ''} · ${meta.label}`}
+              title={`${unitLabel} · ${meta.label}`}
             >
               <span className={'fmap-mk-dot' + (t.moving ? ' is-moving' : '')} />
               {(isFocus || hover === t.id || !compact) && (
-                <span className="fmap-mk-tag">{(t.unit_number || '').replace('TPS-', '')}</span>
+                <span className="fmap-mk-tag">{unitLabel}</span>
               )}
               {hover === t.id && (
                 <span className="fmap-tip">
-                  <b>{t.unit_number}</b> · {meta.label}<br />
+                  <b>{unitLabel}</b> · {meta.label}<br />
                   {t.location_label || '—'}
                   {focus && t.id !== focus.id && (
-                    <span className="fmap-tip-d">{haversine(focus, t)} mi from {focus.unit_number}</span>
+                    <span className="fmap-tip-d">{haversine(focus, t)} mi from {fleetUnitLabel(focus)}</span>
                   )}
                 </span>
               )}

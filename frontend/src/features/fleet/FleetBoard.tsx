@@ -1,6 +1,6 @@
 import { Truck, Navigation, Wrench, Gauge, Box, ClipboardList, MapPin, User, Search, ChevronRight, Check, AlertTriangle } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
-import { STATUS_META, fmt, pmState, rank } from './helpers'
+import { STATUS_META, fleetUnitLabel, fmt, pmState, rank } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 
 type Filter = 'all' | TruckStatus
@@ -27,16 +27,16 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
     <button className="tcard" style={{ ['--st' as any]: meta.dot }} onClick={() => onOpen(t)}>
       <div className="tcard-top">
         <div className="tcard-id">
-          <span className="tcard-unit">{t.unit_number || `${t.make}`}</span>
+          <span className="tcard-unit">{fleetUnitLabel(t)}</span>
           <span className="tcard-mm">{`${t.year || ''} ${t.make} ${t.model}`.trim()}</span>
         </div>
         <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
       </div>
       {t.fleet_company_name && (
         <div className="tcard-type">
-          {t.fleet_company_name}
+          Authority: {t.fleet_company_name}
           {t.owner_company_name && t.owner_company_name !== t.fleet_company_name
-            ? ` · Owner: ${t.owner_company_name}`
+            ? ` · Listing company: ${t.owner_company_name}`
             : ''}
         </div>
       )}
@@ -103,7 +103,7 @@ export default function FleetBoard({
     const words = query.toLowerCase().trim().split(/\s+/)
     list = list.filter((t) => {
       const haystack =
-        `${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''} ${t.fleet_company_name || ''} ${t.owner_company_name || ''}`.toLowerCase()
+        `${fleetUnitLabel(t)} ${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''} ${t.fleet_company_name || ''} ${t.owner_company_name || ''}`.toLowerCase()
       const squashedHaystack = squash(haystack)
       return words.every((word) => {
         if (haystack.includes(word)) return true
@@ -114,7 +114,7 @@ export default function FleetBoard({
   }
   const sorters: Record<Sort, (a: BoardTruck, b: BoardTruck) => number> = {
     attention: (a, b) => rank(b) - rank(a),
-    unit: (a, b) => (a.unit_number || '').localeCompare(b.unit_number || ''),
+    unit: (a, b) => fleetUnitLabel(a).localeCompare(fleetUnitLabel(b)),
     pm: (a, b) => (a.pm_remaining ?? 1e9) - (b.pm_remaining ?? 1e9),
     odo: (a, b) => (b.odometer ?? 0) - (a.odometer ?? 0),
   }

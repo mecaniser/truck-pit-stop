@@ -17,7 +17,7 @@ import type {
   BoardTruck, TruckDetail, Inspection, InspectionDetail, InspectionItem, InspectionItemResult, InspectionResult, IncidentSeverity, IncidentEntry,
   PMServiceEntry,
 } from './types'
-import { fmtDate, money, fmt } from './helpers'
+import { fleetUnitLabel, fmtDate, money, fmt } from './helpers'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import { formatUSPhone } from '@/utils/phone'
@@ -255,7 +255,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   })
 
   return (
-    <Modal title={`Edit ${truck.unit_number || 'truck'}`} icon={<Pencil size={17} />} onClose={onClose} width={520} scrollable={false}>
+    <Modal title={`Edit ${fleetUnitLabel(truck)}`} icon={<Pencil size={17} />} onClose={onClose} width={520} scrollable={false}>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         <Field label="Unit #"><input value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
@@ -496,8 +496,8 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   })
 
   const modalTitle = createMode
-    ? `Create PM work order${truck.unit_number ? ` · ${truck.unit_number}` : ''}`
-    : `${rescheduling ? 'Reschedule' : 'Schedule'} PM${truck.unit_number ? ` · ${truck.unit_number}` : ''}`
+    ? `Create PM work order · ${fleetUnitLabel(truck)}`
+    : `${rescheduling ? 'Reschedule' : 'Schedule'} PM · ${fleetUnitLabel(truck)}`
   return (
     <Modal title={modalTitle} icon={createMode ? <ClipboardCheck size={17} /> : <Calendar size={17} />} onClose={onClose} width={460}>
       <div style={{ display: 'grid', gap: 12 }}>
