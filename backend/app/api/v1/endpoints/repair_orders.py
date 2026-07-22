@@ -2376,6 +2376,7 @@ async def approve_completion(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
         .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+        .with_for_update()
     )
     order = result.scalar_one_or_none()
     
@@ -2421,12 +2422,11 @@ async def approve_completion(
     # Append review notes to internal_notes if provided
     if body and body.review_notes:
         import json
-        from datetime import datetime
         review_entry = {
             "type": "manager_review",
             "notes": body.review_notes,
             "reviewed_by": f"{current_user.first_name} {current_user.last_name}",
-            "reviewed_at": datetime.utcnow().isoformat(),
+            "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
             existing_notes = json.loads(order.internal_notes) if order.internal_notes else {}
@@ -2438,106 +2438,110 @@ async def approve_completion(
         existing_notes["reviews"].append(review_entry)
         order.internal_notes = json.dumps(existing_notes)
     
+    invoice = None
+    invoice_tenant = None
+    invoice_email_queued = False
+    if not order.is_internal:
+        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
+        invoice_tenant = tenant_result.scalar_one_or_none()
+        if not invoice_tenant:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to finalize repair order because the shop configuration is missing",
+            )
+        try:
+            from app.api.v1.endpoints.invoices import (
+                auto_create_invoice_for_order,
+                enqueue_invoice_created_email,
+            )
+
+            invoice = await auto_create_invoice_for_order(
+                db=db,
+                order=order,
+                tenant=invoice_tenant,
+                created_by_user_id=current_user.id,
+                commit=False,
+                notify=False,
+            )
+            if invoice is None:
+                raise RuntimeError("A repair order in quality review already has an invoice")
+            invoice_email_queued = await enqueue_invoice_created_email(
+                db,
+                invoice=invoice,
+                order=order,
+                tenant=invoice_tenant,
+            )
+        except Exception as error:
+            await db.rollback()
+            logger.exception("approve_completion: atomic invoice creation failed for order %s", order_id)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to finalize the repair order. No changes were saved; please try again.",
+            ) from error
+
+    # One commit owns the manager review, PM update, pricing lock, immutable
+    # invoice snapshot, and final status. Any error above rolls everything back.
     await db.commit()
     await db.refresh(order)
     await db.refresh(order, attribute_names=["customer", "vehicle"])
-    
-    # Broadcast WebSocket update (best-effort: never fail a committed approval)
-    try:
-        await broadcast_repair_order_update(
-            tenant_id=str(order.tenant_id),
-            customer_id=str(order.customer_id),
-            order_id=str(order.id),
-            order_number=order.order_number,
-            status=order.status.value,
-            updated_at=order.updated_at.isoformat() if order.updated_at else None,
-        )
-    except Exception:
-        logger.exception("approve_completion: broadcast failed for order %s", order_id)
+    if invoice is not None:
+        await db.refresh(invoice)
 
-    # Notify customer that work is complete
+    # Provider and websocket I/O happens only after the financial record is
+    # durable. Failures are logged and can be retried without recreating it.
+    if invoice is not None and invoice_tenant is not None:
+        try:
+            from app.api.v1.endpoints.invoices import notify_invoice_created
+
+            await notify_invoice_created(
+                db,
+                invoice=invoice,
+                order=order,
+                tenant=invoice_tenant,
+                email_queued=invoice_email_queued,
+            )
+        except Exception:
+            logger.exception("approve_completion: invoice notification failed for order %s", order_id)
+    else:
+        try:
+            await broadcast_repair_order_update(
+                tenant_id=str(order.tenant_id),
+                customer_id=str(order.customer_id),
+                order_id=str(order.id),
+                order_number=order.order_number,
+                status=order.status.value,
+                updated_at=order.updated_at.isoformat() if order.updated_at else None,
+            )
+        except Exception:
+            logger.exception("approve_completion: broadcast failed for order %s", order_id)
+
     customer = order.customer
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
     email_tenant = tenant_result.scalar_one_or_none()
     shop_name = email_tenant.name.strip() if email_tenant and email_tenant.name and email_tenant.name.strip() else "Your repair shop"
-    shop_contact_html = build_tenant_contact_html(email_tenant)
-    if customer and customer.email:
-        vehicle = order.vehicle
-        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
-        
-        html_body = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #d97706; margin: 0;">🔧 {shop_name}</h1>
-            </div>
-            
-            <h2 style="color: #16a34a;">Work Complete!</h2>
-            <p>Hi {customer.first_name},</p>
-            <p>Great news! The work on your vehicle has been completed and verified.</p>
-            
-            <div style="background: #f0fdf4; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #bbf7d0;">
-                <p style="margin: 0 0 10px 0;"><strong>Order #:</strong> {order.order_number}</p>
-                <p style="margin: 0 0 10px 0;"><strong>Vehicle:</strong> {vehicle_info}</p>
-                <p style="margin: 0; font-size: 18px; color: #16a34a;"><strong>Status: Completed ✓</strong></p>
-            </div>
-            
-            <p>You can pick up your vehicle or view the invoice in your customer portal.</p>
-            
-            <p style="margin: 30px 0; text-align: center;">
-                <a href="{settings.FRONTEND_URL}/portal" 
-                   style="background-color: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                    View in Portal
-                </a>
-            </p>
-            
-            <p style="color: #666; font-size: 14px;">
-                Thank you for choosing {shop_name}!
-            </p>
-            {shop_contact_html}
-        </body>
-        </html>
-        """
-        
-        try:
-            await send_email(
-                db=db,
-                tenant_id=str(order.tenant_id),
-                to=customer.email,
-                subject=f"Work Complete: {order.order_number} - {shop_name}",
-                body=html_body,
-                template_name="work_complete",
-                sender_name=shop_name,
-            )
-        except Exception:
-            logger.exception("approve_completion: work-complete email failed for order %s", order_id)
 
     # SMS: ready for pickup
     if customer and customer.phone:
         vehicle = order.vehicle
         vi = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "your vehicle"
+        completion_message = (
+            f"Your {vi} is ready for pickup! Order #{order.order_number}. Your final invoice is now available. - {shop_name}"
+            if invoice is not None
+            else f"Work on your {vi} is complete! Order #{order.order_number}. - {shop_name}"
+        )
         try:
             await send_sms(
                 db,
                 str(order.tenant_id),
                 customer.phone,
-                f"Your {vi} is ready for pickup! Order #{order.order_number}. Invoice will follow shortly. - {shop_name}",
+                completion_message,
                 template_name="ready_pickup_sms",
                 customer_id=customer.id,
                 source="automated",
             )
         except Exception:
             pass
-
-    # Auto-create invoice immediately so the customer sees the correct total with all fees
-    try:
-        from app.api.v1.endpoints.invoices import auto_create_invoice_for_order
-        tenant_result = await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))
-        auto_tenant = tenant_result.scalar_one_or_none()
-        if auto_tenant:
-            await auto_create_invoice_for_order(db=db, order=order, tenant=auto_tenant, created_by_user_id=current_user.id)
-    except Exception:
-        logger.exception("Auto-invoice creation failed for order %s", order_id)
 
     return RepairOrderResponse.model_validate(order)
 

@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from decimal import Decimal
 
 from app.core.dependencies import get_db, get_current_active_user
+from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.pagination import paginated_or_list
 from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
@@ -23,10 +25,12 @@ from app.services.pricing import get_order_checkout_breakdown
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
+from app.services.provider_outbox_service import enqueue_email_notification
 from sqlalchemy.orm import selectinload
 from app.core.websocket import broadcast_invoice_created, broadcast_repair_order_update
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -146,6 +150,7 @@ def _build_invoice_email_html(
     customer, vehicle_info: str, invoice, order,
     labor_items: list, parts_items: list, invoice_access_url: str,
     tenant=None,
+    pdf_attached: bool = True,
 ) -> str:
     shop_name = tenant.name if tenant else "Your Shop"
     shop_phone = tenant.phone if tenant else ""
@@ -228,6 +233,12 @@ def _build_invoice_email_html(
     if shop_email:
         shop_contact += f" &nbsp;·&nbsp; {shop_email}"
 
+    document_note = (
+        "A PDF copy of this invoice is attached for your records."
+        if pdf_attached
+        else "You can view, download, and pay the finalized invoice using the button above."
+    )
+
     return f"""
 <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;background:#ffffff;">
 
@@ -296,7 +307,7 @@ def _build_invoice_email_html(
     <a href="{invoice_access_url}" style="display:inline-block;background:#d97706;color:#ffffff;padding:13px 32px;text-decoration:none;border-radius:8px;font-weight:700;font-size:15px;">
       View &amp; Pay Invoice
     </a>
-    <p style="color:#9ca3af;font-size:11px;margin-top:10px;">A PDF copy of this invoice is attached for your records.</p>
+    <p style="color:#9ca3af;font-size:11px;margin-top:10px;">{document_note}</p>
   </div>
 
   <!-- Footer -->
@@ -396,11 +407,147 @@ async def generate_invoice_number(db: AsyncSession, tenant_id: UUID) -> str:
     )
 
 
+async def enqueue_invoice_created_email(
+    db: AsyncSession,
+    *,
+    invoice: Invoice,
+    order: RepairOrder,
+    tenant: Tenant,
+) -> bool:
+    """Persist a retryable invoice email in the caller's transaction."""
+    customer = order.customer
+    vehicle = order.vehicle
+    if not settings.PROVIDER_OUTBOX_ENABLED or not customer or not customer.email:
+        return False
+
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
+    # Keep the request transaction free of Redis/provider I/O. Authenticated
+    # portal access is always durable; synchronous delivery can still include
+    # the convenience enrollment token after commit.
+    invoice_access_url = f"{settings.FRONTEND_URL}/portal/invoices/{invoice.id}"
+    labor_items, parts_items = await _load_line_items(db, order.id, invoice)
+    email_html = _build_invoice_email_html(
+        customer=customer,
+        vehicle_info=vehicle_info,
+        invoice=invoice,
+        order=order,
+        labor_items=labor_items,
+        parts_items=parts_items,
+        invoice_access_url=invoice_access_url,
+        tenant=tenant,
+        pdf_attached=False,
+    )
+    await enqueue_email_notification(
+        db,
+        tenant_id=order.tenant_id,
+        aggregate_type="invoice",
+        aggregate_id=invoice.id,
+        idempotency_key=f"invoice-email:{invoice.id}:created",
+        recipient=customer.email,
+        subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
+        body=email_html,
+        template_name="invoice_created",
+        sender_name=tenant.name,
+    )
+    return True
+
+
+async def notify_invoice_created(
+    db: AsyncSession,
+    *,
+    invoice: Invoice,
+    order: RepairOrder,
+    tenant: Tenant,
+    email_queued: bool = False,
+) -> None:
+    """Publish and email an already-committed invoice.
+
+    Provider and websocket I/O deliberately lives outside the finalization
+    transaction. A delivery failure must never undo or partially create the
+    financial record.
+    """
+    try:
+        await broadcast_invoice_created(
+            tenant_id=str(order.tenant_id),
+            customer_id=str(order.customer_id),
+            invoice_id=str(invoice.id),
+            invoice_number=invoice.invoice_number,
+            order_id=str(order.id),
+            total_amount=str(invoice.total_amount),
+        )
+    except Exception:
+        logger.exception("invoice_created websocket failed for invoice %s", invoice.id)
+    try:
+        await broadcast_repair_order_update(
+            tenant_id=str(order.tenant_id),
+            customer_id=str(order.customer_id),
+            order_id=str(order.id),
+            order_number=order.order_number,
+            status=order.status.value,
+            updated_at=order.updated_at.isoformat() if order.updated_at else None,
+        )
+    except Exception:
+        logger.exception("invoice repair-order websocket failed for invoice %s", invoice.id)
+
+    customer = order.customer
+    vehicle = order.vehicle
+    if email_queued or not customer or not customer.email:
+        return
+
+    vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
+    invoice_access_url = await generate_invoice_access_link(
+        invoice=invoice,
+        order=order,
+        customer=customer,
+        shop_name=tenant.name,
+        shop_phone=tenant.phone,
+        shop_email=tenant.email,
+        shop_logo_url=tenant.logo_url,
+    )
+    labor_items, parts_items = await _load_line_items(db, order.id, invoice)
+    email_html = _build_invoice_email_html(
+        customer=customer,
+        vehicle_info=vehicle_info,
+        invoice=invoice,
+        order=order,
+        labor_items=labor_items,
+        parts_items=parts_items,
+        invoice_access_url=invoice_access_url,
+        tenant=tenant,
+    )
+    try:
+        pdf_bytes = _build_invoice_pdf_bytes(
+            invoice=invoice,
+            order=order,
+            customer=customer,
+            vehicle=vehicle,
+            tenant=tenant,
+            labor_items=labor_items,
+            parts_items=parts_items,
+            invoice_access_url=invoice_access_url,
+        )
+        attachments = [{"filename": f"Invoice-{invoice.invoice_number}.pdf", "content": pdf_bytes}]
+    except Exception:
+        attachments = None
+    await send_email(
+        db=db,
+        tenant_id=str(order.tenant_id),
+        to=customer.email,
+        subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
+        body=email_html,
+        template_name="invoice_created",
+        attachments=attachments,
+    )
+
+
 async def auto_create_invoice_for_order(
     db: AsyncSession,
     order: RepairOrder,
     tenant: Tenant,
     created_by_user_id: Optional[UUID] = None,
+    *,
+    commit: bool = True,
+    notify: bool = True,
 ) -> Optional[Invoice]:
     """Auto-create an invoice when a repair order is approved as completed.
 
@@ -415,10 +562,6 @@ async def auto_create_invoice_for_order(
     existing_result = await db.execute(select(Invoice).where(Invoice.repair_order_id == order.id))
     if existing_result.scalar_one_or_none():
         return None
-
-    # Capture relationships before any subsequent commits
-    customer = order.customer
-    vehicle = order.vehicle
 
     checkout = get_order_checkout_breakdown(order, tenant)
     subtotal = checkout["repair_total"]
@@ -463,68 +606,38 @@ async def auto_create_invoice_for_order(
         create_fn=_create,
         generate_number_fn=lambda: generate_invoice_number(db, tenant.id),
         entity_name="invoice",
+        commit=False,
     )
     await db.refresh(invoice)
     await db.refresh(order)
 
-    await broadcast_invoice_created(
-        tenant_id=str(order.tenant_id),
-        customer_id=str(order.customer_id),
-        invoice_id=str(invoice.id),
-        invoice_number=invoice.invoice_number,
-        order_id=str(order.id),
-        total_amount=str(invoice.total_amount),
-    )
-    await broadcast_repair_order_update(
-        tenant_id=str(order.tenant_id),
-        customer_id=str(order.customer_id),
-        order_id=str(order.id),
-        order_number=order.order_number,
-        status=order.status.value,
-        updated_at=order.updated_at.isoformat() if order.updated_at else None,
-    )
+    if not commit:
+        if notify:
+            raise ValueError("Invoice notifications require a committed invoice")
+        return invoice
 
-    if customer and customer.email:
-        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
-        invoice_access_url = await generate_invoice_access_link(
+    email_queued = False
+    if notify:
+        email_queued = await enqueue_invoice_created_email(
+            db,
             invoice=invoice,
             order=order,
-            customer=customer,
-            shop_name=tenant.name,
-            shop_phone=tenant.phone,
-            shop_email=tenant.email,
-            shop_logo_url=tenant.logo_url,
-        )
-        labor_items, parts_items = await _load_line_items(db, order.id, invoice)
-        email_html = _build_invoice_email_html(
-            customer=customer,
-            vehicle_info=vehicle_info,
-            invoice=invoice,
-            order=order,
-            labor_items=labor_items,
-            parts_items=parts_items,
-            invoice_access_url=invoice_access_url,
             tenant=tenant,
         )
+    await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(order)
+    if notify:
         try:
-            pdf_bytes = _build_invoice_pdf_bytes(
-                invoice=invoice, order=order, customer=customer,
-                vehicle=vehicle, tenant=tenant,
-                labor_items=labor_items, parts_items=parts_items,
-                invoice_access_url=invoice_access_url,
+            await notify_invoice_created(
+                db,
+                invoice=invoice,
+                order=order,
+                tenant=tenant,
+                email_queued=email_queued,
             )
-            attachments = [{"filename": f"Invoice-{invoice.invoice_number}.pdf", "content": pdf_bytes}]
         except Exception:
-            attachments = None
-        await send_email(
-            db=db,
-            tenant_id=str(order.tenant_id),
-            to=customer.email,
-            subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
-            body=email_html,
-            template_name="invoice_created",
-            attachments=attachments,
-        )
+            logger.exception("auto_create_invoice: notification failed for invoice %s", invoice.id)
 
     return invoice
 
@@ -580,6 +693,11 @@ async def create_invoice(
     # Get tenant for tax/fee settings
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to create invoice because the shop configuration is missing",
+        )
     
     checkout = get_order_checkout_breakdown(order, tenant)
     subtotal = checkout["repair_total"]
@@ -637,7 +755,8 @@ async def create_invoice(
             order.pricing_locked_at = datetime.now(timezone.utc)
         order.pricing_lock_reason = "invoice_finalized"
         order.status = RepairOrderStatus.INVOICED
-        # Don't commit here - create_with_retry uses savepoints and handles commit
+        # The endpoint owns the outer commit so the invoice, order state, and
+        # optional delivery outbox record become durable together.
         return invoice
     
     invoice = await create_with_retry(
@@ -645,76 +764,31 @@ async def create_invoice(
         create_fn=create_invoice_with_number,
         generate_number_fn=lambda: generate_invoice_number(db, current_user.tenant_id),
         entity_name="invoice",
+        commit=False,
     )
     await db.refresh(invoice)
     await db.refresh(order)
-    
-    # Broadcast WebSocket updates
-    await broadcast_invoice_created(
-        tenant_id=str(order.tenant_id),
-        customer_id=str(order.customer_id),
-        invoice_id=str(invoice.id),
-        invoice_number=invoice.invoice_number,
-        order_id=str(order.id),
-        total_amount=str(invoice.total_amount),
+
+    email_queued = await enqueue_invoice_created_email(
+        db,
+        invoice=invoice,
+        order=order,
+        tenant=tenant,
     )
-    await broadcast_repair_order_update(
-        tenant_id=str(order.tenant_id),
-        customer_id=str(order.customer_id),
-        order_id=str(order.id),
-        order_number=order.order_number,
-        status=order.status.value,
-        updated_at=order.updated_at.isoformat() if order.updated_at else None,
-    )
-    
-    # Send invoice email to customer
-    customer = order.customer
-    vehicle = order.vehicle
-    if customer and customer.email:
-        vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
-        invoice_access_url = await generate_invoice_access_link(
+    await db.commit()
+    await db.refresh(invoice)
+    await db.refresh(order)
+
+    try:
+        await notify_invoice_created(
+            db,
             invoice=invoice,
             order=order,
-            customer=customer,
-            shop_name=tenant.name if tenant else None,
-            shop_phone=tenant.phone if tenant else None,
-            shop_email=tenant.email if tenant else None,
-            shop_logo_url=tenant.logo_url if tenant else None,
-        )
-
-        labor_items, parts_items = await _load_line_items(db, order.id, invoice)
-
-        email_html = _build_invoice_email_html(
-            customer=customer,
-            vehicle_info=vehicle_info,
-            invoice=invoice,
-            order=order,
-            labor_items=labor_items,
-            parts_items=parts_items,
-            invoice_access_url=invoice_access_url,
             tenant=tenant,
+            email_queued=email_queued,
         )
-
-        try:
-            pdf_bytes = _build_invoice_pdf_bytes(
-                invoice=invoice, order=order, customer=customer,
-                vehicle=vehicle, tenant=tenant,
-                labor_items=labor_items, parts_items=parts_items,
-                invoice_access_url=invoice_access_url,
-            )
-            attachments = [{"filename": f"Invoice-{invoice.invoice_number}.pdf", "content": pdf_bytes}]
-        except Exception:
-            attachments = None
-
-        await send_email(
-            db=db,
-            tenant_id=str(order.tenant_id),
-            to=customer.email,
-            subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
-            body=email_html,
-            template_name="invoice_created",
-            attachments=attachments,
-        )
+    except Exception:
+        logger.exception("create_invoice: notification failed for invoice %s", invoice.id)
     
     return InvoiceResponse.model_validate(invoice)
 

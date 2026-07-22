@@ -27,6 +27,7 @@ class _FakeAsyncSession:
         self.tenant = tenant
         self.execute_calls = 0
         self.added: list[object] = []
+        self.commit_count = 0
 
     async def execute(self, statement):
         self.execute_calls += 1
@@ -47,6 +48,9 @@ class _FakeAsyncSession:
 
     def add(self, obj):
         self.added.append(obj)
+
+    async def commit(self):
+        self.commit_count += 1
 
     async def refresh(self, _obj):
         # Mimic DB-populated defaults expected by response model validation.
@@ -110,19 +114,28 @@ async def test_create_invoice_applies_discount_amount(monkeypatch):
     order, tenant, user = _build_context()
     fake_db = _FakeAsyncSession(order=order, tenant=tenant)
 
-    async def _fake_create_with_retry(*, db, create_fn, generate_number_fn, entity_name):
+    async def _fake_create_with_retry(*, db, create_fn, generate_number_fn, entity_name, commit=True):
         _ = db
         _ = generate_number_fn
         _ = entity_name
+        _ = commit
         return await create_fn("INV-9001")
 
     async def _noop_async(**_kwargs):
         return None
 
+    async def _no_email_queue(*_args, **_kwargs):
+        return False
+
+    async def _no_line_items(*_args, **_kwargs):
+        return [], []
+
     monkeypatch.setattr("app.core.unique_id.create_with_retry", _fake_create_with_retry)
     monkeypatch.setattr(invoices, "broadcast_invoice_created", _noop_async)
     monkeypatch.setattr(invoices, "broadcast_repair_order_update", _noop_async)
     monkeypatch.setattr(invoices, "send_email", _noop_async)
+    monkeypatch.setattr(invoices, "enqueue_invoice_created_email", _no_email_queue)
+    monkeypatch.setattr(invoices, "_load_line_items", _no_line_items)
 
     response = await invoices.create_invoice(
         invoices.InvoiceCreate(
@@ -137,6 +150,7 @@ async def test_create_invoice_applies_discount_amount(monkeypatch):
     assert response.discount_amount == Decimal("10.00")
     assert response.total_amount == Decimal("140.00")
     assert order.status == RepairOrderStatus.INVOICED
+    assert fake_db.commit_count == 1
 
 
 @pytest.mark.asyncio

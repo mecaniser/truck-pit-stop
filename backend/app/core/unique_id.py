@@ -85,6 +85,7 @@ async def create_with_retry(
     generate_number_fn: Callable[[], Awaitable[str]],
     entity_name: str = "entity",
     max_retries: int = 3,
+    commit: bool = True,
 ) -> T:
     """
     Create an entity with a unique number, retrying on collision.
@@ -102,6 +103,9 @@ async def create_with_retry(
         generate_number_fn: Async function that generates the next number
         entity_name: Name for logging (e.g., "quote", "invoice")
         max_retries: Maximum retry attempts (default 3)
+        commit: Commit the outer transaction after creation. Set to False when
+                a larger domain transaction must commit the entity atomically
+                with other state changes.
     
     Returns:
         The created entity
@@ -119,8 +123,10 @@ async def create_with_retry(
             async with db.begin_nested():
                 result = await create_fn(number)
             
-            # Commit the outer transaction after successful nested transaction
-            await db.commit()
+            if commit:
+                # Most call sites create a standalone entity. Larger workflows
+                # such as repair finalization own the outer commit themselves.
+                await db.commit()
             
             if attempt > 0:
                 logger.info(

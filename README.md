@@ -190,6 +190,8 @@ TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 TWILIO_PHONE_NUMBER=+1234567890
 RESEND_API_KEY=re_...
+# Enable only when the Celery worker from railway.worker.json is deployed.
+PROVIDER_OUTBOX_ENABLED=false
 FRONTEND_URL=http://localhost:5173
 PUBLIC_API_BASE_URL=http://localhost:8000
 CORS_ORIGINS_STR=http://localhost:5173
@@ -223,8 +225,10 @@ VITE_SITE_URL=https://www.dieselbridge.com
 1. Create PostgreSQL service in Railway
 2. Create Redis service in Railway
 3. Deploy backend service (point to Railway PostgreSQL/Redis)
-4. Deploy frontend service (set VITE_API_URL to backend URL)
-5. Set environment variables in Railway dashboard
+4. Deploy the Celery worker using `railway.worker.json`
+5. Set `PROVIDER_OUTBOX_ENABLED=true` on the backend after the worker is healthy
+6. Deploy frontend service (set VITE_API_URL to backend URL)
+7. Set environment variables in Railway dashboard
 
 ## Next Steps
 
