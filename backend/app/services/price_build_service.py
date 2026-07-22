@@ -30,6 +30,7 @@ from app.services.repair_operation_library import (
     get_library_estimate,
     search_operation_library,
 )
+from app.services.internal_fleet import fleet_labor_uses_customer_rate
 
 
 class PriceBuildError(Exception):
@@ -96,7 +97,7 @@ def _packages_consumed(quantity: Decimal) -> int:
 def _labor_rate_for(order: RepairOrder, tenant: Tenant) -> Decimal:
     """Internal fleet repairs cost labor at the tenant's internal rate (no markup);
     customer repairs use the billable labor rate."""
-    if getattr(order, "is_internal", False):
+    if getattr(order, "is_internal", False) and not fleet_labor_uses_customer_rate(order):
         return Decimal(str(tenant.internal_labor_rate))
     return Decimal(str(tenant.labor_rate))
 

@@ -11,12 +11,15 @@ import os
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
 os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
 os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import quotes as quotes_endpoint
+from app.api.v1.endpoints import invoices as invoices_endpoint
 from app.api.v1.endpoints.quotes import create_quote, QuoteCreate
 from app.api.v1.endpoints.repair_orders import _check_ro_access, create_repair_order
 from app.schemas.repair_order import RepairOrderCreate
@@ -124,6 +127,60 @@ async def test_internal_repair_labor_uses_internal_rate(db_session):
     labor = result.order.labor_items[0]
     assert labor.hourly_rate == Decimal("40.00")  # internal_labor_rate, not 100
     assert labor.total_cost == Decimal("40.00")
+
+
+@pytest.mark.asyncio
+async def test_fleet_customer_rate_changes_labor_but_not_parts(db_session):
+    """The fleet setting changes labor only; parts remain at garage cost."""
+    _, order, service = await _seed(db_session, is_internal=True, with_part=True)
+    order.bill_labor_at_customer_rate = True
+    await db_session.commit()
+
+    loaded = await PriceBuildService().load_order(db_session, order.id)
+    result = await PriceBuildService().add_flat_service_line(db_session, loaded, service.id)
+
+    assert result.order.labor_items[0].hourly_rate == Decimal("100.00")
+    assert result.order.parts_usage[0].unit_price == Decimal("10.00")
+
+
+@pytest.mark.asyncio
+async def test_billable_fleet_invoice_uses_truck_contact_snapshot(db_session, monkeypatch):
+    staff_user, order, _ = await _seed(db_session, is_internal=True)
+    vehicle = (await db_session.execute(select(Vehicle).where(Vehicle.id == order.vehicle_id))).scalar_one()
+    vehicle.billing_contact_name = "Morgan Billing"
+    vehicle.billing_contact_email = "morgan@example.test"
+    vehicle.billing_contact_phone = "+17045550123"
+    order.status = RepairOrderStatus.COMPLETED
+    order.total_labor_cost = Decimal("40.00")
+    order.total_cost = Decimal("40.00")
+    await db_session.commit()
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def invoice_link(*_args, **_kwargs):
+        return "https://example.test/invoice/token"
+
+    monkeypatch.setattr(invoices_endpoint, "send_email", no_op)
+    monkeypatch.setattr(invoices_endpoint, "broadcast_invoice_created", no_op)
+    monkeypatch.setattr(invoices_endpoint, "broadcast_repair_order_update", no_op)
+    monkeypatch.setattr(invoices_endpoint, "generate_invoice_access_link", invoice_link)
+
+    tenant = (await db_session.execute(select(Tenant).where(Tenant.id == order.tenant_id))).scalar_one()
+    loaded = (await db_session.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order.id)
+        .options(selectinload(RepairOrder.customer), selectinload(RepairOrder.vehicle))
+    )).scalar_one()
+    invoice = await invoices_endpoint.auto_create_invoice_for_order(
+        db_session, loaded, tenant, created_by_user_id=staff_user.id
+    )
+
+    assert invoice is not None
+    assert invoice.is_internal is False
+    assert invoice.recipient_name == "Morgan Billing"
+    assert invoice.recipient_email == "morgan@example.test"
+    assert invoice.recipient_phone == "+17045550123"
 
 
 @pytest.mark.asyncio

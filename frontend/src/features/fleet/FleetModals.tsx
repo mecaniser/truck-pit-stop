@@ -141,6 +141,10 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     odometer: truck.odometer?.toString() || '',
     driver_name: truck.driver_name || '',
     driver_phone: detail.driver_phone ? formatUSPhone(detail.driver_phone) : '',
+    billing_contact_name: detail.billing_contact_name || '',
+    billing_contact_email: detail.billing_contact_email || '',
+    billing_contact_phone: detail.billing_contact_phone ? formatUSPhone(detail.billing_contact_phone) : '',
+    bill_labor_at_customer_rate: detail.bill_labor_at_customer_rate,
     pm_interval_miles: truck.pm_interval_miles?.toString() || '25000',
     next_pm_miles: truck.next_pm_miles?.toString() || '',
     location_label: truck.location_label || '',
@@ -221,6 +225,10 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       odometer: numOrUndef(f.odometer),
       driver_name: f.driver_name,
       driver_phone: f.driver_phone,
+      billing_contact_name: f.billing_contact_name,
+      billing_contact_email: f.billing_contact_email,
+      billing_contact_phone: f.billing_contact_phone,
+      bill_labor_at_customer_rate: f.bill_labor_at_customer_rate,
       pm_interval_miles: numOrUndef(f.pm_interval_miles),
       next_pm_miles: numOrUndef(f.next_pm_miles),
       location_label: f.location_label,
@@ -281,6 +289,21 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         <Field label="Longitude"><input value={f.lng} onChange={set('lng')} inputMode="decimal" placeholder="-80.72" /></Field>
         <Field label="Speed (mph)"><input value={f.speed_mph} onChange={set('speed_mph')} inputMode="numeric" placeholder="0 = parked" /></Field>
       </div>
+      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Invoice contact & pricing</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Invoice contact name"><input value={f.billing_contact_name} onChange={set('billing_contact_name')} placeholder="Accounts payable" /></Field>
+        <Field label="Invoice contact email"><input value={f.billing_contact_email} onChange={set('billing_contact_email')} type="email" placeholder="billing@example.com" /></Field>
+        <Field label="Invoice contact phone"><input value={f.billing_contact_phone} onChange={set('billing_contact_phone')} placeholder="+1 704 555 1234" /></Field>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={f.bill_labor_at_customer_rate}
+          onChange={(e) => setF((prev) => ({ ...prev, bill_labor_at_customer_rate: e.target.checked }))}
+          style={{ width: 'auto', marginTop: 2 }}
+        />
+        <span>Bill labor at customer rate <span style={{ color: 'var(--muted-2)' }}>Parts always use garage cost. This applies to new work orders.</span></span>
+      </label>
       <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 10 }}>
         Manual entry until a telematics provider is connected — then odometer & location sync automatically.
       </p>
@@ -515,6 +538,7 @@ interface WODetail {
   assigned_mechanic_id?: string | null
   total_parts_cost: number | string; total_labor_cost: number | string; total_cost: number | string
   is_pm?: boolean
+  bill_labor_at_customer_rate?: boolean
   mileage_in?: number | null; mileage_out?: number | null
   labor_items: WOLabor[]; parts_usage: WOPart[]
 }
@@ -533,12 +557,12 @@ const iconBtn: React.CSSProperties = {
   cursor: 'pointer', display: 'grid', placeItems: 'center', width: 42, height: 42, flex: 'none',
 }
 
-function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internalRate: number; onChanged: () => void }) {
+function LaborAddRow({ roId, laborRate, onChanged }: { roId: string; laborRate: number; onChanged: () => void }) {
   const [desc, setDesc] = useState('')
   const [hours, setHours] = useState(0.5) // sensible starting duration; step from here
   const add = useMutation({
     mutationFn: async () => (await api.post(`/repair-orders/${roId}/labor`, {
-      description: desc.trim() || undefined, hours, hourly_rate: internalRate,
+      description: desc.trim() || undefined, hours, hourly_rate: laborRate,
     })).data,
     onSuccess: () => { toast.success('Labor added'); setDesc(''); setHours(0.5); onChanged() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add labor'),
@@ -549,9 +573,9 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <input style={{ ...costInput, flex: 1, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
         {/* Local-only until "Add" — no per-click server write, so no debounce.
-            Rate isn't shown on the row; it's the configured in-house rate,
+            Rate isn't shown on the row; it follows the work order's snapshot,
             surfaced as a tooltip instead of taking a column. */}
-        <span title={`Billed at the in-house labor rate (${money(internalRate)}/h)`} style={{ display: 'inline-flex' }}>
+        <span title={`Billed at ${money(laborRate)}/h`} style={{ display: 'inline-flex' }}>
           <DurationStepper
             hours={hours}
             onChange={setHours}
@@ -567,9 +591,9 @@ function LaborAddRow({ roId, internalRate, onChanged }: { roId: string; internal
           {add.isPending ? <Spinner size="xs" /> : 'Add'}
         </button>
       </div>
-      {internalRate <= 0 && (
+      {laborRate <= 0 && (
         <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 5, color: '#fb923c' }}>
-          In-house labor rate is $0 — set it in shop settings (owner/admin) so labor is costed.
+          This work order's labor rate is $0 — set the applicable shop rate before billing.
         </p>
       )}
     </div>
@@ -785,11 +809,14 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
     queryKey: ['fleet-inventory'],
     queryFn: async () => (await api.get('/inventory', { params: { limit: 100 } })).data,
   })
-  const { data: fleetSettings } = useQuery<{ internal_labor_rate: number }>({
+  const { data: fleetSettings } = useQuery<{ internal_labor_rate: number; labor_rate: number }>({
     queryKey: ['fleet-settings'],
     queryFn: async () => (await api.get('/fleet/settings')).data,
   })
   const internalRate = toNum(fleetSettings?.internal_labor_rate)
+  const laborRate = wo?.bill_labor_at_customer_rate
+    ? toNum(fleetSettings?.labor_rate)
+    : internalRate
 
   const [description, setDescription] = useState('')
   const [descDirty, setDescDirty] = useState(false)
@@ -863,7 +890,9 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
               Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
-              <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>· internal (in-house cost)</span>
+              <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>
+                · fleet · {wo.bill_labor_at_customer_rate ? 'customer labor rate' : 'garage labor cost'} · parts at cost
+              </span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {['draft', 'assigned', 'acknowledged'].includes(wo.status) && (
@@ -961,7 +990,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
             {!wo.is_pm && (
               <>
                 <ServiceAddRow roId={repairOrderId} onChanged={refresh} />
-                <LaborAddRow roId={repairOrderId} internalRate={internalRate} onChanged={refresh} />
+                <LaborAddRow roId={repairOrderId} laborRate={laborRate} onChanged={refresh} />
               </>
             )}
           </div>
@@ -980,7 +1009,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               <Row k="Labor" v={money(num(wo.total_labor_cost))} />
               <Row k="Parts" v={money(num(wo.total_parts_cost))} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17, marginTop: 4 }}>
-                <strong style={{ color: 'var(--text)' }}>Internal cost</strong>
+                <strong style={{ color: 'var(--text)' }}>Work order total</strong>
                 <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
               </div>
             </div>

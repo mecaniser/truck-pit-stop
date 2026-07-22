@@ -27,6 +27,11 @@ class Invoice(BaseModel):
     # Internal fleet invoice: a cost record for the garage's own work orders —
     # no customer billing, tax, or markup.
     is_internal = Column(Boolean, default=False, nullable=False, index=True)
+    # Immutable recipient snapshot for billable fleet work orders. Normal
+    # customer invoices keep these null and use their linked customer record.
+    recipient_name = Column(String(160), nullable=True)
+    recipient_email = Column(String(255), nullable=True)
+    recipient_phone = Column(String(20), nullable=True)
     status = Column(
         SQLEnum(InvoiceStatus, values_callable=lambda e: [m.value for m in e]),
         nullable=False,

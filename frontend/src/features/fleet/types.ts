@@ -211,6 +211,10 @@ export interface TruckDetail {
   truck: BoardTruck
   open_work_orders: BoardWorkOrder[]
   driver_phone?: string | null
+  billing_contact_name?: string | null
+  billing_contact_email?: string | null
+  billing_contact_phone?: string | null
+  bill_labor_at_customer_rate: boolean
   lifetime_spend: number
   incidents_count: number
   crew: string[]
