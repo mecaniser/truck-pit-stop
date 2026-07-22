@@ -41,15 +41,22 @@ export function invalidateFleetAndCockpit(qc: QueryClient) {
 }
 
 /* shared modal shell (fleet design system) */
-export function Modal({ title, icon, onClose, children, width = 480 }: {
-  title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number
+export function Modal({ title, icon, onClose, children, width = 480, scrollable = true }: {
+  title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number; scrollable?: boolean
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
-      {/* overflowX hidden: this is a fixed-width, vertically-scrolling panel — a
-          stray wide child (e.g. a long <select> option) must not add a
-          horizontal scrollbar. */}
-      <div className="dsec" style={{ width, maxWidth: '92vw', maxHeight: '88vh', overflowY: 'auto', overflowX: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="dsec"
+        style={{
+          width,
+          maxWidth: '92vw',
+          maxHeight: scrollable ? '88vh' : undefined,
+          overflowY: scrollable ? 'auto' : 'visible',
+          overflowX: 'hidden',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="dsec-head">
           <div className="dsec-title">{icon}<h3>{title}</h3></div>
           <button className="person-call" onClick={onClose}><X size={18} /></button>
@@ -248,7 +255,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   })
 
   return (
-    <Modal title={`Edit ${truck.unit_number || 'truck'}`} icon={<Pencil size={17} />} onClose={onClose} width={520}>
+    <Modal title={`Edit ${truck.unit_number || 'truck'}`} icon={<Pencil size={17} />} onClose={onClose} width={520} scrollable={false}>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         <Field label="Unit #"><input value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
@@ -283,11 +290,6 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
             onAddressSelect={handleLocationSelect}
           />
         </Field>
-        <Field label="City"><input value={f.location_city} onChange={set('location_city')} /></Field>
-        <Field label="Heading"><input value={f.heading} onChange={set('heading')} placeholder="NE" /></Field>
-        <Field label="Latitude"><input value={f.lat} onChange={set('lat')} inputMode="decimal" placeholder="35.11" /></Field>
-        <Field label="Longitude"><input value={f.lng} onChange={set('lng')} inputMode="decimal" placeholder="-80.72" /></Field>
-        <Field label="Speed (mph)"><input value={f.speed_mph} onChange={set('speed_mph')} inputMode="numeric" placeholder="0 = parked" /></Field>
       </div>
       <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Invoice contact & pricing</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -304,9 +306,6 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         />
         <span>Bill labor at customer rate <span style={{ color: 'var(--muted-2)' }}>Parts always use garage cost. This applies to new work orders.</span></span>
       </label>
-      <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 10 }}>
-        Manual entry until a telematics provider is connected — then odometer & location sync automatically.
-      </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
       </button>
