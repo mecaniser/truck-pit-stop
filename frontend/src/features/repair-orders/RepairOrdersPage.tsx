@@ -2809,9 +2809,9 @@ export default function RepairOrdersPage() {
                       </svg>
                     </div>
 
-                    <div className="flex max-h-[88px] flex-wrap gap-2 overflow-hidden">
+                    <div className="grid grid-flow-col grid-rows-2 auto-cols-max gap-2 overflow-hidden">
                       {visibleServiceOptions
-                        .slice(0, 12)
+                        .slice(0, 8)
                         .map((svc) => {
                           const active = selectedServiceIds.includes(svc.id)
                           return (
