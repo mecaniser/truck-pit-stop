@@ -375,6 +375,10 @@ async def test_ro_detail_includes_pm_services(db_session):
 
     detail = await get_repair_order_detail(order_id=ro_id, db=db_session, current_user=user)
     assert detail.is_pm is True
+    assert detail.customer_company_name == fc.company_name
+    assert detail.vehicle_make == "Volvo"
+    assert detail.vehicle_model == "VNL"
+    assert detail.vehicle_unit_number == "DET"
     assert [s.name for s in detail.pm_services] == ["PM Level A"]
     # Seeded parts & labor are on the payload for display.
     assert any(p.inventory_name == "Oil filter" and p.quantity == 2 for p in detail.parts_usage)

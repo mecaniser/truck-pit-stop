@@ -751,12 +751,16 @@ export default function RepairOrdersPage() {
   )
 
   // Seed the lookups from each order's denormalized customer/vehicle summary so
-  // list rows render without loading the full customer/vehicle tables. Picker
-  // results fill any currently visible records with their richer labels.
+  // list rows render without loading the full customer/vehicle tables. Include
+  // the selected/detail order as well: a dashboard card can open an older
+  // order that is outside the current paginated list page.
+  const lookupOrders = [...(orders ?? []), selectedOrder, orderDetail].filter(
+    (order): order is RepairOrder => Boolean(order),
+  )
   const customerLookup = useMemo(() => {
     const map = new Map<string, CustomerLookupItem>()
-    orders?.forEach((o) => {
-      if (o.customer_id && !map.has(o.customer_id)) {
+    lookupOrders.forEach((o) => {
+      if (o?.customer_id) {
         map.set(o.customer_id, {
           id: o.customer_id,
           first_name: o.customer_first_name ?? '',
@@ -769,12 +773,12 @@ export default function RepairOrdersPage() {
     })
     customerOptions.forEach((customer) => map.set(customer.id, customer))
     return map
-  }, [orders, customerOptions])
+  }, [lookupOrders, customerOptions])
 
   const vehicleLookup = useMemo(() => {
     const map = new Map<string, VehicleLookupItem>()
-    orders?.forEach((o) => {
-      if (o.vehicle_id && !map.has(o.vehicle_id)) {
+    lookupOrders.forEach((o) => {
+      if (o?.vehicle_id) {
         map.set(o.vehicle_id, {
           id: o.vehicle_id,
           customer_id: o.customer_id,
@@ -789,7 +793,7 @@ export default function RepairOrdersPage() {
     })
     vehicleOptions.forEach((vehicle) => map.set(vehicle.id, vehicle))
     return map
-  }, [orders, vehicleOptions])
+  }, [lookupOrders, vehicleOptions])
 
   const mechanicLookup = useMemo(() => {
     const map = new Map<string, string>()
