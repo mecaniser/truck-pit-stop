@@ -50,7 +50,7 @@ class _HangingSession:
 def test_postgres_engine_options_set_connection_budget_and_timeouts():
     options = db_session.build_engine_options("postgresql+asyncpg://user:pass@db/app")
 
-    assert options["pool_pre_ping"] is True
+    assert options["pool_pre_ping"] is False
     assert options["pool_size"] == settings.DATABASE_POOL_SIZE
     assert options["max_overflow"] == settings.DATABASE_MAX_OVERFLOW
     assert options["pool_timeout"] == settings.DATABASE_POOL_TIMEOUT_SECONDS
@@ -67,7 +67,7 @@ def test_postgres_engine_options_set_connection_budget_and_timeouts():
 def test_sqlite_engine_options_do_not_override_sqlite_pooling():
     options = db_session.build_engine_options("sqlite+aiosqlite:///:memory:")
 
-    assert options["pool_pre_ping"] is True
+    assert options["pool_pre_ping"] is False
     assert "pool_size" not in options
     assert "max_overflow" not in options
     assert "connect_args" not in options

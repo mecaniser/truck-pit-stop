@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import event
+
+from app.api.v1.endpoints import dashboard
+from app.db.models.tenant import Tenant
+from app.db.models.user import User, UserRole
+
+
+class _ScalarResult:
+    def __init__(self, values):
+        self._values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+    def scalar_one_or_none(self):
+        return self._values[0] if self._values else None
+
+
+class _FakeDB:
+    def __init__(self, results):
+        self._results = iter(results)
+        self.execute_count = 0
+
+    async def execute(self, _statement):
+        self.execute_count += 1
+        return next(self._results)
+
+
+def _summary() -> dict:
+    return {
+        "date": "2026-07-22",
+        "timezone": "America/New_York",
+        "shift_start_local": "08:00",
+        "shift_end_local": "18:00",
+        "core_target_minutes": 480,
+        "tracked_minutes": 0,
+        "ro_minutes": 0,
+        "misc_minutes": 0,
+        "overtime_minutes": 0,
+        "utilization_percent": 0.0,
+        "efficiency_percent": None,
+        "book_hours": 0.0,
+        "actual_ro_hours": 0.0,
+        "active_session": None,
+        "attendance_active": False,
+        "attendance_started_at": None,
+        "attendance_ended_at": None,
+        "break_active": False,
+        "break_started_at": None,
+        "attendance_minutes": 0,
+        "break_minutes": 0,
+        "idle_minutes": 0,
+        "late_arrival_minutes": 0,
+        "early_leave_minutes": 0,
+        "flex_budget_minutes": 120,
+        "flex_used_minutes": 0,
+        "flex_remaining_minutes": 120,
+        "flex_overrun_minutes": 0,
+        "core_gap_minutes": 480,
+        "core_countdown_elapsed_minutes": 0,
+        "core_countdown_remaining_minutes": 480,
+        "tracked_vs_attendance_gap_minutes": 0,
+        "work_coverage_percent": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_team_mechanics_board_does_not_compute_unused_history(monkeypatch):
+    tenant_id = uuid4()
+    tenant = Tenant(
+        id=tenant_id,
+        name="Test Shop",
+        slug=f"test-{tenant_id.hex[:8]}",
+        timezone="America/New_York",
+    )
+    mechanic = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.MECHANIC,
+        email="mechanic@example.com",
+        hashed_password="hashed-password",
+        first_name="Manny",
+        last_name="Mechanic",
+        is_active=True,
+    )
+    manager = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.GARAGE_OWNER,
+        email="owner@example.com",
+        hashed_password="hashed-password",
+        first_name="Olive",
+        last_name="Owner",
+        is_active=True,
+    )
+    db = _FakeDB([_ScalarResult([mechanic]), _ScalarResult([tenant]), _ScalarResult([])])
+
+    async def _compute_day_summary(*_args, **_kwargs):
+        return _summary()
+
+    async def _recommendation(*_args, **_kwargs):
+        return {
+            "assigned_ready_orders_count": 0,
+            "untimed_in_progress_orders_count": 0,
+            "held_orders_count": 0,
+            "held_orders": [],
+            "recommended_order_id": None,
+            "recommended_order_number": None,
+            "suggested_next_action": "clock_in",
+        }
+
+    async def _unexpected_trend(*_args, **_kwargs):
+        raise AssertionError("team board must not compute per-mechanic history")
+
+    monkeypatch.setattr(dashboard, "compute_day_summary", _compute_day_summary)
+    monkeypatch.setattr(dashboard, "compute_next_action_recommendation", _recommendation)
+    monkeypatch.setattr(dashboard, "compute_7day_trend", _unexpected_trend)
+
+    response = await dashboard.get_team_mechanics_board(db=db, current_user=manager)
+
+    assert db.execute_count == 3
+    assert len(response.mechanics) == 1
+    assert response.mechanics[0].trend_7_days == []
+
+
+@pytest.mark.asyncio
+async def test_dashboard_stats_stays_within_query_budget(db_session):
+    tenant_id = uuid4()
+    tenant = Tenant(
+        id=tenant_id,
+        name="Query Budget Shop",
+        slug=f"budget-{tenant_id.hex[:8]}",
+        timezone="America/New_York",
+    )
+    manager = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.GARAGE_OWNER,
+        email="budget-owner@example.com",
+        hashed_password="hashed-password",
+        first_name="Budget",
+        last_name="Owner",
+        is_active=True,
+    )
+    db_session.add_all([tenant, manager])
+    await db_session.commit()
+
+    query_count = 0
+
+    def _count_query(*_args):
+        nonlocal query_count
+        query_count += 1
+
+    sync_engine = db_session.bind.sync_engine
+    event.listen(sync_engine, "before_cursor_execute", _count_query)
+    try:
+        response = await dashboard.get_dashboard_stats(db=db_session, current_user=manager)
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", _count_query)
+
+    assert response.total_customers == 0
+    assert response.total_repair_orders == 0
+    assert query_count == 12

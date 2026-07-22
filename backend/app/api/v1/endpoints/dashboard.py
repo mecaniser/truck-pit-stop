@@ -181,30 +181,55 @@ async def get_dashboard_stats(
             orders_ready_to_close=[],
         )
 
-    # Fleet operator name, for displaying internal fleet ROs on the board.
-    fleet_company_name = (
-        await db.execute(select(Tenant.fleet_company_name).where(Tenant.id == tenant_id))
-    ).scalar_one_or_none()
-
-    # Total customers
-    result = await db.execute(
-        select(func.count(Customer.id)).where(Customer.tenant_id == tenant_id)
-    )
-    total_customers = result.scalar() or 0
-
-    # Total vehicles
-    result = await db.execute(
-        select(func.count(Vehicle.id)).where(Vehicle.tenant_id == tenant_id)
-    )
-    total_vehicles = result.scalar() or 0
-
-    # Total repair orders
-    result = await db.execute(
-        select(func.count(RepairOrder.id)).where(
-            RepairOrder.tenant_id == tenant_id, RepairOrder.deleted_at.is_(None)
+    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+    dashboard_totals = (
+        await db.execute(
+            select(
+                select(Tenant.fleet_company_name)
+                .where(Tenant.id == tenant_id)
+                .scalar_subquery()
+                .label("fleet_company_name"),
+                select(func.count(Customer.id))
+                .where(Customer.tenant_id == tenant_id)
+                .scalar_subquery()
+                .label("total_customers"),
+                select(func.count(Vehicle.id))
+                .where(Vehicle.tenant_id == tenant_id)
+                .scalar_subquery()
+                .label("total_vehicles"),
+                select(func.count(RepairOrder.id))
+                .where(
+                    RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.deleted_at.is_(None),
+                )
+                .scalar_subquery()
+                .label("total_repair_orders"),
+                select(func.count(RepairOrder.id))
+                .where(
+                    RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.deleted_at.is_(None),
+                    RepairOrder.status == RepairOrderStatus.QUOTED,
+                    RepairOrder.updated_at < three_days_ago,
+                )
+                .scalar_subquery()
+                .label("overdue_approvals"),
+                select(func.count(RepairOrder.id))
+                .where(
+                    RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.deleted_at.is_(None),
+                    RepairOrder.status == RepairOrderStatus.DECLINED,
+                )
+                .scalar_subquery()
+                .label("declined_quotes"),
+            )
         )
-    )
-    total_repair_orders = result.scalar() or 0
+    ).one()
+    fleet_company_name = dashboard_totals.fleet_company_name
+    total_customers = dashboard_totals.total_customers or 0
+    total_vehicles = dashboard_totals.total_vehicles or 0
+    total_repair_orders = dashboard_totals.total_repair_orders or 0
+    overdue_approvals = dashboard_totals.overdue_approvals or 0
+    declined_quotes = dashboard_totals.declined_quotes or 0
 
     # Orders by status
     result = await db.execute(
@@ -223,32 +248,6 @@ async def get_dashboard_stats(
     active_orders = status_map.get("in_progress", 0)
     awaiting_approval = status_map.get("quoted", 0)
     pending_invoices = status_map.get("completed", 0)
-
-    # Overdue approvals: quoted orders older than 3 days
-    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
-    result = await db.execute(
-        select(func.count(RepairOrder.id)).where(
-            and_(
-                RepairOrder.tenant_id == tenant_id,
-                RepairOrder.deleted_at.is_(None),
-                RepairOrder.status == RepairOrderStatus.QUOTED,
-                RepairOrder.updated_at < three_days_ago,
-            )
-        )
-    )
-    overdue_approvals = result.scalar() or 0
-
-    # Declined quotes count
-    result = await db.execute(
-        select(func.count(RepairOrder.id)).where(
-            and_(
-                RepairOrder.tenant_id == tenant_id,
-                RepairOrder.deleted_at.is_(None),
-                RepairOrder.status == RepairOrderStatus.DECLINED,
-            )
-        )
-    )
-    declined_quotes = result.scalar() or 0
 
     # Low stock items (stock_quantity <= reorder_level)
     result = await db.execute(
@@ -499,7 +498,15 @@ async def get_dashboard_stats(
     my_in_progress = 0
     if current_user.role == UserRole.MECHANIC:
         result = await db.execute(
-            select(func.count(RepairOrder.id)).where(
+            select(
+                func.count(RepairOrder.id).label("assigned_count"),
+                func.count(
+                    case(
+                        (RepairOrder.status == RepairOrderStatus.IN_PROGRESS, RepairOrder.id),
+                        else_=None,
+                    )
+                ).label("in_progress_count"),
+            ).where(
                 and_(
                     RepairOrder.tenant_id == tenant_id,
                     RepairOrder.deleted_at.is_(None),
@@ -507,60 +514,62 @@ async def get_dashboard_stats(
                 )
             )
         )
-        my_assigned_orders = result.scalar() or 0
-
-        result = await db.execute(
-            select(func.count(RepairOrder.id)).where(
-                and_(
-                    RepairOrder.tenant_id == tenant_id,
-                    RepairOrder.deleted_at.is_(None),
-                    RepairOrder.assigned_mechanic_id == current_user.id,
-                    RepairOrder.status == RepairOrderStatus.IN_PROGRESS,
-                )
-            )
-        )
-        my_in_progress = result.scalar() or 0
+        mechanic_counts = result.one()
+        my_assigned_orders = mechanic_counts.assigned_count or 0
+        my_in_progress = mechanic_counts.in_progress_count or 0
 
     # Phase 2: Revenue and profitability stats from completed payments
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
 
-    # Today's revenue
-    result = await db.execute(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            and_(
+    revenue_totals = (
+        await db.execute(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (cast(Payment.created_at, Date) == today, Payment.amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("today"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (cast(Payment.created_at, Date) >= week_start, Payment.amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("week"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (cast(Payment.created_at, Date) >= month_start, Payment.amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("month"),
+                select(func.count(RepairOrder.id))
+                .where(
+                    RepairOrder.tenant_id == tenant_id,
+                    RepairOrder.status == RepairOrderStatus.PAID,
+                )
+                .scalar_subquery()
+                .label("total_paid_orders"),
+            ).where(
                 Payment.tenant_id == tenant_id,
                 Payment.status == PaymentStatus.COMPLETED,
-                cast(Payment.created_at, Date) == today,
             )
         )
-    )
-    revenue_today = result.scalar() or Decimal("0.00")
-
-    # This week's revenue
-    result = await db.execute(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            and_(
-                Payment.tenant_id == tenant_id,
-                Payment.status == PaymentStatus.COMPLETED,
-                cast(Payment.created_at, Date) >= week_start,
-            )
-        )
-    )
-    revenue_week = result.scalar() or Decimal("0.00")
-
-    # This month's revenue
-    result = await db.execute(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            and_(
-                Payment.tenant_id == tenant_id,
-                Payment.status == PaymentStatus.COMPLETED,
-                cast(Payment.created_at, Date) >= month_start,
-            )
-        )
-    )
-    revenue_month = result.scalar() or Decimal("0.00")
+    ).one()
+    revenue_today = revenue_totals.today or Decimal("0.00")
+    revenue_week = revenue_totals.week or Decimal("0.00")
+    revenue_month = revenue_totals.month or Decimal("0.00")
+    total_paid_orders = revenue_totals.total_paid_orders or 0
 
     # Profitability metrics by period:
     # - Parts margin = billed parts total - parts cost basis
@@ -649,17 +658,6 @@ async def get_dashboard_stats(
             return Decimal("0.00")
         return (profitability[bucket]["gross_profit"] / Decimal(invoice_count)).quantize(Decimal("0.01"))
 
-    # Total paid orders count
-    result = await db.execute(
-        select(func.count(RepairOrder.id)).where(
-            and_(
-                RepairOrder.tenant_id == tenant_id,
-                RepairOrder.status == RepairOrderStatus.PAID,
-            )
-        )
-    )
-    total_paid_orders = result.scalar() or 0
-
     revenue = RevenueStats(
         today=str(revenue_today),
         this_week=str(revenue_week),
@@ -678,48 +676,47 @@ async def get_dashboard_stats(
 
     # Internal fleet cost stats: at-cost parts + internal labor rate for
     # company-owned trucks, from internal invoices (no customer payment).
-    result = await db.execute(
-        select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
-            and_(
-                Invoice.tenant_id == tenant_id,
-                Invoice.is_internal.is_(True),
-                cast(Invoice.created_at, Date) == today,
-            )
-        )
-    )
-    internal_cost_today = result.scalar() or Decimal("0.00")
-
-    result = await db.execute(
-        select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
-            and_(
-                Invoice.tenant_id == tenant_id,
-                Invoice.is_internal.is_(True),
-                cast(Invoice.created_at, Date) >= week_start,
-            )
-        )
-    )
-    internal_cost_week = result.scalar() or Decimal("0.00")
-
-    result = await db.execute(
-        select(func.coalesce(func.sum(Invoice.total_amount), 0)).where(
-            and_(
-                Invoice.tenant_id == tenant_id,
-                Invoice.is_internal.is_(True),
-                cast(Invoice.created_at, Date) >= month_start,
-            )
-        )
-    )
-    internal_cost_month = result.scalar() or Decimal("0.00")
-
-    result = await db.execute(
-        select(func.count(Invoice.id)).where(
-            and_(
+    internal_totals = (
+        await db.execute(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (cast(Invoice.created_at, Date) == today, Invoice.total_amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("today"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (cast(Invoice.created_at, Date) >= week_start, Invoice.total_amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("week"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (cast(Invoice.created_at, Date) >= month_start, Invoice.total_amount),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("month"),
+                func.count(Invoice.id).label("count"),
+            ).where(
                 Invoice.tenant_id == tenant_id,
                 Invoice.is_internal.is_(True),
             )
         )
-    )
-    total_internal_invoices = result.scalar() or 0
+    ).one()
+    internal_cost_today = internal_totals.today or Decimal("0.00")
+    internal_cost_week = internal_totals.week or Decimal("0.00")
+    internal_cost_month = internal_totals.month or Decimal("0.00")
+    total_internal_invoices = internal_totals.count or 0
 
     internal_costs = InternalCostStats(
         today=str(internal_cost_today),
@@ -940,11 +937,11 @@ async def get_team_mechanics_board(
             mechanics=[],
         )
 
-    tenant, _ = await fetch_tenant_and_mechanic(
-        db,
-        tenant_id=current_user.tenant_id,
-        mechanic_id=mechanics[0].id,
-    )
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    ).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
 
     mechanics_payload: List[MechanicBoardItem] = []
     team_core = 0
@@ -992,17 +989,14 @@ async def get_team_mechanics_board(
             prefetched_orders=orders_by_mechanic.get(str(mechanic.id), []),
         )
         attention = compute_attention_priority(summary=summary, recommendation=recommendation)
-        trend = await compute_7day_trend(
-            db,
-            tenant=tenant,
-            mechanic=mechanic,
-            end_date=date_value,
-        )
         mechanics_payload.append(
             MechanicBoardItem(
                 mechanic_id=str(mechanic.id),
                 mechanic_name=f"{mechanic.first_name} {mechanic.last_name}".strip(),
-                trend_7_days=trend,
+                # Historical trends are rendered only by the per-mechanic
+                # detail page. Computing them here multiplies the day-summary
+                # queries by seven for every mechanic on the team board.
+                trend_7_days=[],
                 **summary,
                 **recommendation,
                 **attention,
