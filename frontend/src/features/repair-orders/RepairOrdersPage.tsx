@@ -310,6 +310,7 @@ export default function RepairOrdersPage() {
   const [showAmountBreakdown, setShowAmountBreakdown] = useState(false)
   const [showAddRecService, setShowAddRecService] = useState(false)
   const [recommendedServicesOpen, setRecommendedServicesOpen] = useState(false)
+  const [workspaceHistoryRequested, setWorkspaceHistoryRequested] = useState(false)
   const [recServiceForm, setRecServiceForm] = useState({ description: '', priority: 'soon' as RecommendedServicePriority, estimated_cost: '', notes: '' })
   const debouncedCustomerQuery = useDebouncedValue(customerQuery.trim(), 250)
   const debouncedVehicleQuery = useDebouncedValue(vehicleQuery.trim(), 250)
@@ -411,6 +412,7 @@ export default function RepairOrdersPage() {
   }, [searchParams, setSearchParams])
 
   const applyDetailState = (order: RepairOrder) => {
+    setWorkspaceHistoryRequested(false)
     setSelectedOrder(order)
     setIsDetailOpen(true)
     setQuoteSent(false)
@@ -464,6 +466,7 @@ export default function RepairOrdersPage() {
     setAddPartQuantity(1)
     setInvoiceDueDate('')
     setShowInvoiceCreateOptions(false)
+    setWorkspaceHistoryRequested(false)
   }
 
   const closeDetail = () => {
@@ -595,7 +598,19 @@ export default function RepairOrdersPage() {
       const response = await api.get(`/repair-orders/${selectedOrder!.id}/detail`, { signal })
       return response.data
     },
-    enabled: !!(selectedOrder?.id && isDetailOpen),
+    // The list row and price-build summary are sufficient for the Workspace's
+    // first render. The full detail endpoint includes parts, labor, PM scope,
+    // and history, so only open it on explicit History intent for the active
+    // Workspace flow. Older non-workspace detail states retain their existing
+    // behavior until those screens receive their own focused contracts.
+    enabled: !!(
+      selectedOrder?.id
+      && isDetailOpen
+      && (
+        workspaceHistoryRequested
+        || !PRICE_BUILDER_STATUSES.includes(selectedOrder.status)
+      )
+    ),
   })
 
   // PriceBuilderPanel owns the part picker and fetches it only when the user
@@ -3607,6 +3622,7 @@ export default function RepairOrdersPage() {
                       setShowVoidInvoiceConfirm(true)
                     } : undefined}
                     historyEvents={priceBuilderHistoryEvents}
+                    onHistoryOpen={() => setWorkspaceHistoryRequested(true)}
                     onClose={closeDetail}
                     onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
                     onNext={showNavigation || hasNext ? goToNextOrder : undefined}

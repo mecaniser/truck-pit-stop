@@ -180,6 +180,7 @@ type Props = {
   onRecordPayment?: () => void
   onVoidInvoice?: () => void
   historyEvents?: PriceBuilderHistoryEvent[]
+  onHistoryOpen?: () => void
   onClose?: () => void
   onPrev?: () => void
   onNext?: () => void
@@ -912,6 +913,7 @@ export default function PriceBuilderPanel({
   onRecordPayment,
   onVoidInvoice,
   historyEvents = [],
+  onHistoryOpen,
   onClose,
   onPrev,
   onNext,
@@ -2545,6 +2547,7 @@ export default function PriceBuilderPanel({
                 onClick={() => {
                   setAddType(key)
                   setPaletteOpen(key !== 'history')
+                  if (key === 'history') onHistoryOpen?.()
                 }}
                 className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 ${
                   addType === key ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
@@ -2601,6 +2604,7 @@ export default function PriceBuilderPanel({
             <button
               type="button"
               onClick={() => {
+                onHistoryOpen?.()
                 setHistoryOpen((open) => !open)
                 setHistoryVisibleCount(5)
               }}
