@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
@@ -19,7 +19,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
-from app.services.pricing import get_order_checkout_breakdown, get_order_labor_total, get_order_parts_total
+from app.services.pricing import get_order_checkout_breakdown
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
@@ -31,8 +31,11 @@ router = APIRouter()
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-async def _load_line_items(db: AsyncSession, repair_order_id):
+async def _load_line_items(db: AsyncSession, repair_order_id, invoice: Optional[Invoice] = None):
     """Return (labor_items, parts_items) as plain dicts for PDF / email."""
+    snapshot = getattr(invoice, "line_items_snapshot", None) if invoice else None
+    if snapshot:
+        return list(snapshot.get("labor", [])), list(snapshot.get("parts", []))
     labor_result = await db.execute(
         select(Labor).where(Labor.repair_order_id == repair_order_id)
     )
@@ -69,6 +72,20 @@ async def _load_line_items(db: AsyncSession, repair_order_id):
     return labor_items, parts_items
 
 
+def _line_items_snapshot(labor_items: list[dict], parts_items: list[dict]) -> dict:
+    def json_safe(item: dict) -> dict:
+        return {
+            key: str(value) if isinstance(value, Decimal) else value
+            for key, value in item.items()
+        }
+
+    return {
+        "version": 1,
+        "labor": [json_safe(item) for item in labor_items],
+        "parts": [json_safe(item) for item in parts_items],
+    }
+
+
 def _build_invoice_pdf_bytes(
     invoice, order, customer, vehicle, tenant,
     labor_items, parts_items, invoice_access_url: Optional[str]
@@ -81,6 +98,9 @@ def _build_invoice_pdf_bytes(
         due_date_str = invoice.due_date.strftime("%m/%d/%Y") if hasattr(invoice.due_date, "strftime") else str(invoice.due_date)
 
     tax_rate = float(tenant.sales_tax_rate) if tenant and tenant.sales_tax_rate else None
+
+    snapshot_labor_total = sum(Decimal(str(item.get("total_cost", 0))) for item in labor_items)
+    snapshot_parts_total = sum(Decimal(str(item.get("total_price", 0))) for item in parts_items)
 
     return generate_invoice_pdf(
         invoice_number=invoice.invoice_number,
@@ -107,8 +127,8 @@ def _build_invoice_pdf_bytes(
         vehicle_odometer=getattr(vehicle, "odometer", None),
         labor_items=labor_items,
         parts_items=parts_items,
-        labor_total=Decimal(str(invoice.subtotal)) - get_order_parts_total(order),
-        parts_total=get_order_parts_total(order),
+        labor_total=snapshot_labor_total,
+        parts_total=snapshot_parts_total,
         shop_supplies_amount=Decimal(str(invoice.shop_supplies_amount or 0)),
         service_fee_amount=Decimal(str(invoice.service_fee_amount or 0)),
         subtotal=Decimal(str(invoice.subtotal)),
@@ -407,6 +427,9 @@ async def auto_create_invoice_for_order(
     tax_amount = checkout["tax_amount"]
     total_amount = checkout["estimated_card_total"]
 
+    labor_items, parts_items = await _load_line_items(db, order.id)
+    line_items_snapshot = _line_items_snapshot(labor_items, parts_items)
+
     from app.core.unique_id import create_with_retry
 
     async def _create(invoice_number: str) -> Invoice:
@@ -426,8 +449,12 @@ async def auto_create_invoice_for_order(
             paid_at=None,
             notes=None,
             created_by_user_id=created_by_user_id,
+            line_items_snapshot=line_items_snapshot,
         )
         db.add(inv)
+        if order.pricing_locked_at is None:
+            order.pricing_locked_at = datetime.now(timezone.utc)
+        order.pricing_lock_reason = "invoice_finalized"
         order.status = RepairOrderStatus.INVOICED
         return inv
 
@@ -468,7 +495,7 @@ async def auto_create_invoice_for_order(
             shop_email=tenant.email,
             shop_logo_url=tenant.logo_url,
         )
-        labor_items, parts_items = await _load_line_items(db, order.id)
+        labor_items, parts_items = await _load_line_items(db, order.id, invoice)
         email_html = _build_invoice_email_html(
             customer=customer,
             vehicle_info=vehicle_info,
@@ -579,6 +606,9 @@ async def create_invoice(
     
     # Default due date to today if not specified
     due_date = body.due_date if body.due_date else date.today()
+
+    labor_items, parts_items = await _load_line_items(db, order.id)
+    line_items_snapshot = _line_items_snapshot(labor_items, parts_items)
     
     # Use retry wrapper to handle rare race conditions on invoice number
     from app.core.unique_id import create_with_retry
@@ -600,8 +630,12 @@ async def create_invoice(
             paid_at=None,
             notes=None,
             created_by_user_id=current_user.id,
+            line_items_snapshot=line_items_snapshot,
         )
         db.add(invoice)
+        if order.pricing_locked_at is None:
+            order.pricing_locked_at = datetime.now(timezone.utc)
+        order.pricing_lock_reason = "invoice_finalized"
         order.status = RepairOrderStatus.INVOICED
         # Don't commit here - create_with_retry uses savepoints and handles commit
         return invoice
@@ -648,7 +682,7 @@ async def create_invoice(
             shop_logo_url=tenant.logo_url if tenant else None,
         )
 
-        labor_items, parts_items = await _load_line_items(db, order.id)
+        labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
         email_html = _build_invoice_email_html(
             customer=customer,
@@ -861,6 +895,10 @@ async def delete_invoice(
     # Revert repair order status to completed
     order = invoice.repair_order
     order.status = RepairOrderStatus.COMPLETED
+    # Resetting an unpaid invoice opens a new manager revision. Preserve the
+    # invoice deletion audit behavior for now, but do not leave pricing frozen.
+    order.pricing_locked_at = None
+    order.pricing_lock_reason = None
     
     await db.delete(invoice)
     await db.commit()
@@ -931,7 +969,7 @@ async def resend_invoice(
         shop_logo_url=tenant.logo_url if tenant else None,
     )
 
-    labor_items, parts_items = await _load_line_items(db, order.id)
+    labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
     email_html = _build_invoice_email_html(
         customer=customer,
@@ -997,7 +1035,7 @@ async def download_invoice_pdf(
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == inv.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
 
-    labor_items, parts_items = await _load_line_items(db, order.id)
+    labor_items, parts_items = await _load_line_items(db, order.id, inv)
 
     pdf_bytes = _build_invoice_pdf_bytes(
         invoice=inv, order=order, customer=customer,

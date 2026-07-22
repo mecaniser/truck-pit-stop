@@ -18,7 +18,6 @@ import {
   Gauge,
   History,
   Mail,
-  Plane,
   Play,
   Plus,
   RotateCcw,
@@ -865,9 +864,8 @@ export default function PriceBuilderPanel({
   poNumber,
   orderTypeLabel,
   quoteNumber,
-  quoteIsSent = false,
   quoteIsApproved = false,
-  quoteActionLabel = 'Send quote',
+  quoteActionLabel = 'Create estimate',
   quoteActionPending = false,
   quoteActionDisabled = false,
   quoteDisabledReason,
@@ -942,7 +940,7 @@ export default function PriceBuilderPanel({
   const [candidates, setCandidates] = useState<RepairOperationCandidate[]>([])
   const [searchWarnings, setSearchWarnings] = useState<{ code: string; message: string }[]>([])
   const [addType, setAddType] = useState<AddBarType>(() => (
-    ['draft', 'quoted'].includes(orderStatus) ? 'operation' : 'history'
+    !['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus) ? 'operation' : 'history'
   ))
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [invoiceDetailsOpen, setInvoiceDetailsOpen] = useState(false)
@@ -1221,30 +1219,25 @@ export default function PriceBuilderPanel({
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
   const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
   const showRecommendedServicesPanel = !['completed', 'invoiced', 'paid'].includes(orderStatus)
-  // Internal fleet orders carry their work through active statuses (e.g. an
-  // in-progress PM) and the owner bills labor at the customer's rate while parts
-  // stay at cost — so labor (duration + rate) must stay editable until the order
-  // freezes, not just in draft/quoted.
+  // Work-first: the repair order is editable throughout active shop work. The
+  // server capability is authoritative; the fallback supports older responses.
   const INTERNAL_FROZEN_STATUSES: RepairOrderStatus[] = ['completed', 'invoiced', 'paid', 'cancelled']
-  const isEditableStatus = ['draft', 'quoted'].includes(orderStatus) ||
-    (isInternalOrder && !INTERNAL_FROZEN_STATUSES.includes(orderStatus))
+  const isEditableStatus = summary?.can_edit_work ?? !INTERNAL_FROZEN_STATUSES.includes(orderStatus)
   const canMutate = canEdit && !isLocked && isEditableStatus
   // The add bar must follow the same editable-status rule as canMutate, or an
   // internal in-progress order shows "start by adding…" with no add controls.
   const addBarReadOnly = !canEdit || isLocked || !isEditableStatus || completionMode || hasInvoice || orderStatus === 'completed'
-  // An order with no work lines and no parts has nothing to quote — don't let it
-  // read as "ready to send" or allow the quote to actually go out empty.
+  // An empty work order has nothing to estimate.
   const isEmptyOrder = effectiveLaborLines.length === 0 && (partsUsed?.length ?? 0) === 0
-  const hasQuoteDraft = !!quoteNumber && !isEmptyOrder
   const hasAssignedTechnician = !!assignedTechnicianName
-  const technicianAssignmentBypassed = quoteIsApproved && !hasAssignedTechnician && ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus)
+  const technicianAssignmentBypassed = !hasAssignedTechnician && ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(orderStatus)
   const canAdminCompleteBypassedWork = !isInternalOrder && technicianAssignmentBypassed && orderStatus === 'in_progress' && !!onAdminCompleteWork
   // A finalized order is closed: the work is done and billed/settled. No more
   // photo uploads, and the quote pipeline is just clutter (the single status
   // chip already says it all).
   const isFinalized = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
-  const canManageTechnician = !isInternalOrder && quoteIsApproved && !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
-  const canOverrideTechnicianAssignment = !isInternalOrder && quoteIsApproved && !hasAssignedTechnician && orderStatus === 'approved' && !!onOverrideTechnicianAssignment
+  const canManageTechnician = !isInternalOrder && (summary?.can_assign_technician ?? !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus))
+  const canOverrideTechnicianAssignment = !isInternalOrder && !hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved'].includes(orderStatus) && !!onOverrideTechnicianAssignment
   const availableTechnicians = technicianOptions
     .filter((tech) => tech.mechanic_id !== assignedTechnicianId)
     .map((tech) => {
@@ -1259,17 +1252,15 @@ export default function PriceBuilderPanel({
   const quoteActionBlocked = quoteActionDisabled || isEmptyOrder
   const quoteButtonDisabledReason = quoteDisabledReason || (
     isEmptyOrder
-      ? 'Add at least one operation, labor line, or part before sending this quote.'
+      ? 'Add at least one operation, labor line, or part before creating an estimate.'
       : quoteIsApproved
-        ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
+        ? 'This estimate is authorized. The live repair order remains editable until finalization.'
         : !canMutate
-          ? 'Quote changes are only available before the customer approves the work.'
+          ? 'Estimates are unavailable after the repair order is finalized.'
           : undefined
   )
   const lockContextMessage = quoteButtonDisabledReason || (
-    quoteIsApproved
-      ? 'The customer has already approved this quote. Continue through technician, completion, and invoice steps.'
-      : 'Pricing and quote edits are locked for this repair order.'
+    'Pricing is locked because this repair order has been finalized.'
   )
   const formatHistoryDate = (value: string) => {
     const date = new Date(value)
@@ -2066,7 +2057,7 @@ export default function PriceBuilderPanel({
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold">
-          <span className="rounded-full bg-white px-3 py-1.5 text-blue-700">{orderStatus.replace('_', ' ')}</span>
+          <span className="rounded-full bg-white px-3 py-1.5 text-blue-700">{orderStatus === 'draft' ? 'checked in' : orderStatus.replace('_', ' ')}</span>
           <span className="inline-flex items-center gap-1 rounded-full bg-white/14 px-3 py-1.5 text-white ring-1 ring-white/20">
             <Building2 className="h-3.5 w-3.5" />
             {customerName || 'Customer'}
@@ -2080,48 +2071,53 @@ export default function PriceBuilderPanel({
         </div>
       </div>
 
-      {/* Quote pipeline (Draft → Send → Approved → Technician) is only useful
-          while the order is progressing. On a finalized order it just repeats
-          the status chip above — hide it. */}
+      {/* Operational workflow is primary. Estimates are optional authorization
+          records and appear as a secondary action, never as a work gate. */}
       {!isInternalOrder && !isFinalized && (
         <>
         <div className="flex items-center border-b border-orange-100 bg-orange-50/60 px-5 py-2.5 text-xs">
           <div className="flex w-full min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap">
             <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              hasQuoteDraft ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-500 text-white'
+              orderStatus !== 'draft' ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-500 text-white'
             }`}>
-              {hasQuoteDraft ? '✓ Draft ready' : 'Create draft'}
-            </span>
-            <span className="text-gray-300">→</span>
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              quoteIsSent || quoteIsApproved
-                ? 'bg-emerald-100 text-emerald-700'
-                : hasQuoteDraft
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-200 text-gray-400'
-            }`}>
-              {quoteIsSent || quoteIsApproved ? '✓ Sent' : 'Send'}
-            </span>
-            <span className="text-gray-300">→</span>
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${
-              quoteIsApproved
-                ? 'bg-emerald-100 text-emerald-700'
-                : quoteIsSent
-                  ? 'bg-white text-amber-700 ring-1 ring-amber-200'
-                  : 'bg-transparent text-gray-400'
-            }`}>
-              {quoteIsApproved ? '✓ Approved' : quoteIsSent ? 'Awaiting approval' : 'Approved'}
+              {orderStatus === 'draft' ? 'Checked in' : '✓ Checked in'}
             </span>
             <span className="text-gray-300">→</span>
             <span className={`rounded-full px-2.5 py-1 font-semibold ${
               hasAssignedTechnician || technicianAssignmentBypassed
                 ? 'bg-emerald-100 text-emerald-700'
-                : quoteIsApproved
-                  ? 'bg-white text-amber-700 ring-1 ring-amber-200'
-                  : 'bg-transparent text-gray-400'
+                : 'bg-white text-amber-700 ring-1 ring-amber-200'
             }`}>
-              {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ In progress' : quoteIsApproved ? 'Assign technician' : 'Technician'}
+              {hasAssignedTechnician ? `✓ ${assignedTechnicianName}` : technicianAssignmentBypassed ? '✓ Shop-managed' : 'Assign technician'}
             </span>
+            <span className="text-gray-300">→</span>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${
+              ['in_progress', 'pending_review'].includes(orderStatus)
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-transparent text-gray-400'
+            }`}>
+              {orderStatus === 'in_progress' ? 'In the bay' : ['pending_review'].includes(orderStatus) ? '✓ Work complete' : 'In the bay'}
+            </span>
+            <span className="text-gray-300">→</span>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${
+              orderStatus === 'pending_review'
+                ? 'bg-orange-500 text-white'
+                : 'bg-transparent text-gray-400'
+            }`}>
+              Quality review
+            </span>
+            {onQuoteAction && canMutate && (
+              <button
+                type="button"
+                onClick={onQuoteAction}
+                disabled={quoteActionBlocked || quoteActionPending}
+                title={quoteButtonDisabledReason}
+                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+              >
+                {quoteActionPending ? <Spinner size="xs" /> : <FileText className="h-3.5 w-3.5" />}
+                {quoteActionPending ? 'Working…' : quoteActionLabel}
+              </button>
+            )}
           </div>
         </div>
         {canManageTechnician && ((onAssignTechnician && availableTechnicians.length > 0) || canOverrideTechnicianAssignment) && (
@@ -4106,22 +4102,12 @@ export default function PriceBuilderPanel({
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
                 >
                   {completionPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
-                  {completionPending ? 'Approving...' : 'Approve Completion'}
+                  {completionPending ? 'Finalizing...' : 'Finalize & Send Invoice'}
                 </button>
               ) : (
-                <span
-                  className="inline-flex"
-                  title={quoteActionBlocked || !canMutate ? quoteButtonDisabledReason : undefined}
-                >
-                  <button
-                    type="button"
-                    onClick={onQuoteAction}
-                    disabled={!canMutate || quoteActionBlocked || quoteActionPending || !onQuoteAction}
-                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(239,138,18,.32)] disabled:bg-gray-300"
-                  >
-                    {quoteActionPending ? <Spinner size="xs" /> : <Plane className="h-4 w-4" />}
-                    {quoteActionPending ? 'Working...' : quoteActionLabel}
-                  </button>
+                <span className="inline-flex h-11 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-bold text-blue-800">
+                  <CheckCircle className="h-4 w-4" />
+                  {orderStatus === 'draft' ? 'Checked in · work order open' : 'Work order open'}
                 </span>
               )
             )}

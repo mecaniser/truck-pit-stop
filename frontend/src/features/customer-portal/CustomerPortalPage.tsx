@@ -42,6 +42,9 @@ const STATUS_BADGE_COLORS: Record<string, string> = {
 }
 
 const CUSTOMER_ACTIVE_REPAIR_STATUSES = [
+  'draft',
+  'quoted',
+  'declined',
   'approved',
   'assigned',
   'acknowledged',
@@ -198,7 +201,7 @@ function CustomerDashboard() {
 
   const activeRepairs = repairOrders?.filter(o =>
     CUSTOMER_ACTIVE_REPAIR_STATUSES.includes(o.status) ||
-    (o.status === 'quoted' && o.quote_sent === true)
+    (o.quote_sent === true && !o.quote_approved)
   ).length || 0
 
   const completedRepairs = repairOrders?.filter(o => 
@@ -284,7 +287,7 @@ function CustomerDashboard() {
       {/* Action Required - quoted+sent (needs approval) or invoiced (needs payment) */}
       {(() => {
         const actionRequired = repairOrders?.filter(o =>
-          o.status === 'invoiced' || (o.status === 'quoted' && o.quote_sent === true)
+          o.status === 'invoiced' || (o.quote_sent === true && !o.quote_approved)
         ) || []
         
         if (actionRequired.length === 0) return null
@@ -312,7 +315,7 @@ function CustomerDashboard() {
                       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-300">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="h-3.5 w-3.5 text-amber-300" />
-                          {order.status === 'invoiced' ? 'Invoice sent' : 'Quote sent'} {format(
+                          {order.status === 'invoiced' ? 'Invoice sent' : 'Estimate sent'} {format(
                             new Date(order.status === 'invoiced' ? (order.invoice_created_at || order.updated_at) : (order.quote_sent_at || order.updated_at)),
                             'MMM d, yyyy h:mm a',
                           )}
@@ -331,11 +334,15 @@ function CustomerDashboard() {
                           ? 'bg-green-500 text-white' 
                           : 'bg-amber-500 text-white'
                       }`}>
-                        {order.status === 'invoiced' ? 'Pay Now' : 'Review Quote'}
+                        {order.status === 'invoiced' ? 'Pay Now' : 'Review Estimate'}
                       </span>
-                      <div className="text-sm font-bold text-white">
-                        ${getOrderTotal(order).toFixed(2)}
-                      </div>
+                      {order.status === 'invoiced' ? (
+                        <div className="text-sm font-bold text-white">
+                          ${getOrderTotal(order).toFixed(2)}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">Open to review amount</span>
+                      )}
                     </div>
                   </div>
                 </Link>
@@ -417,11 +424,9 @@ function CustomerDashboard() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                          {order.status.replace('_', ' ')}
+                          {order.status === 'draft' ? 'checked in' : order.status.replace('_', ' ')}
                         </span>
-                        <div className="text-xs sm:text-sm font-medium text-white">
-                          ${getOrderTotal(order).toFixed(2)}
-                        </div>
+                        <span className="text-[10px] font-medium text-gray-400">No price published</span>
                       </div>
                     </div>
                   </Link>
@@ -472,11 +477,13 @@ function CustomerDashboard() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {order.status.replace('_', ' ')}
+                          {order.status === 'draft' ? 'checked in' : order.status.replace('_', ' ')}
                       </span>
-                      <div className="text-xs sm:text-sm font-medium text-white">
-                        ${getOrderTotal(order).toFixed(2)}
-                      </div>
+                      {['invoiced', 'paid'].includes(order.status) && (
+                        <div className="text-xs sm:text-sm font-medium text-white">
+                          ${getOrderTotal(order).toFixed(2)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Link>
@@ -789,7 +796,7 @@ function CustomerRepairs() {
       const response = await api.get(`/quotes?repair_order_id=${selectedOrder?.id}`)
       return response.data as Quote | null
     },
-    enabled: !!selectedOrder && selectedOrder.status === 'quoted',
+    enabled: !!selectedOrder && selectedOrder.quote_sent === true,
   })
 
   const approveQuoteMutation = useMutation({
@@ -800,7 +807,7 @@ function CustomerRepairs() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['quote'] })
-      toast.success('Quote approved! Work will begin soon.')
+      toast.success('Estimate authorized. The shop has been notified.')
       setSelectedOrder(null)
     },
   })
@@ -813,7 +820,7 @@ function CustomerRepairs() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['quote'] })
-      toast.success('Quote declined. The shop will contact you about revisions.')
+      toast.success('Changes requested. The shop will contact you about this estimate.')
       setSelectedOrder(null)
     },
   })
@@ -928,6 +935,7 @@ function CustomerRepairs() {
     const finalTotal = getOrderTotal(displayOrder)
     const customerSavings = getOrderSavings(displayOrder)
     const preSavingsTotal = finalTotal + customerSavings
+    const financialsPublished = ['invoiced', 'paid'].includes(displayOrder.status)
 
     return (
       <div className="space-y-6">
@@ -1019,6 +1027,7 @@ function CustomerRepairs() {
 
           <CustomerRepairPhotos photos={repairPhotos} />
 
+          {financialsPublished ? (
           <div className="border-t border-white/10 pt-4 mt-4">
             <div className="space-y-2 mb-3">
               <div className="flex justify-between items-center text-sm">
@@ -1054,22 +1063,27 @@ function CustomerRepairs() {
               <p className="text-xs text-gray-500 mt-1">Taxes & fees included in invoice below</p>
             )}
           </div>
+          ) : (
+            <div className="mt-4 rounded-lg border border-blue-400/20 bg-blue-400/10 p-3 text-sm text-blue-100">
+              Work is in progress. Final itemized charges will appear here when the repair is finalized.
+            </div>
+          )}
         </div>
 
         {/* Quote Approval Section */}
-        {selectedOrder.status === 'quoted' && selectedQuote && !selectedQuote.is_approved && (
+        {selectedOrder.quote_sent === true && selectedQuote && !selectedQuote.is_approved && (
           <div className="bg-amber-500/10 rounded-xl border border-amber-500/30 p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-4">
               <FileText className="w-6 h-6 text-amber-400" />
               <div>
-                <h3 className="font-semibold text-white">Quote #{selectedQuote.quote_number}</h3>
-                <p className="text-sm text-gray-400">Awaiting your approval</p>
+                <h3 className="font-semibold text-white">Estimate #{selectedQuote.quote_number}</h3>
+                <p className="text-sm text-gray-400">Authorization requested for this estimate</p>
               </div>
             </div>
 
             <div className="bg-white/5 rounded-lg p-4 mb-4">
               <div className="flex justify-between items-center">
-                <span className="text-gray-400">Quote Total</span>
+                <span className="text-gray-400">Estimated Total</span>
                 <span className="font-bold text-xl text-white">${parseFloat(selectedQuote.total_amount).toFixed(2)}</span>
               </div>
               {selectedQuote.expires_at && (
@@ -1088,7 +1102,7 @@ function CustomerRepairs() {
                   className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
                   <CheckCircle className="w-5 h-5" />
-                  {approveQuoteMutation.isPending ? 'Approving...' : 'Approve Quote'}
+                  {approveQuoteMutation.isPending ? 'Authorizing...' : 'Authorize Estimate'}
                 </button>
                 <button
                   type="button"
@@ -1330,13 +1344,13 @@ function CustomerRepairs() {
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {order.status.replace('_', ' ')}
+                        {order.status === 'draft' ? 'checked in' : order.status.replace('_', ' ')}
                       </span>
-                      <div className="text-right">
+                      {['invoiced', 'paid'].includes(order.status) && <div className="text-right">
                         <div className="text-sm sm:text-lg font-bold text-white">
                           ${getOrderTotal(order).toFixed(2)}
                         </div>
-                      </div>
+                      </div>}
                     </div>
                   </div>
                 </button>

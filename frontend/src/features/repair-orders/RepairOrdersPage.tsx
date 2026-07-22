@@ -135,6 +135,7 @@ const truncateWithEllipsis = (value: string, maxLength = 36): string => {
 const PRICE_BUILDER_STATUSES: RepairOrderStatus[] = [
   'draft',
   'quoted',
+  'declined',
   'approved',
   'assigned',
   'acknowledged',
@@ -835,8 +836,7 @@ export default function RepairOrdersPage() {
   const showPriceBuilder = detailStatus ? PRICE_BUILDER_STATUSES.includes(detailStatus) : false
   const priceBuilderOwnsShell = showPriceBuilder
   const showLaborBreakdown = detailStatus ? LABOR_BREAKDOWN_STATUSES.includes(detailStatus) : false
-  const assignmentBypassedInDrawer = !!quoteForOrder?.is_approved &&
-    !(orderDetail ?? selectedOrder)?.assigned_mechanic_id &&
+  const assignmentBypassedInDrawer = !(orderDetail ?? selectedOrder)?.assigned_mechanic_id &&
     detailStatus != null &&
     ['in_progress', 'pending_review', 'completed', 'invoiced', 'paid'].includes(detailStatus)
   // Internal fleet work orders (e.g. PMs) carry their parts & labor throughout
@@ -1169,10 +1169,14 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
-      toast.success('Work approved - Customer notified')
+      if (updated.status === 'invoiced') {
+        toast.success('Repair finalized — invoice created and customer notified')
+      } else {
+        toast('Repair finalized, but the invoice still needs to be created.', { icon: '⚠️' })
+      }
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to approve completion'))
+      toast.error(getErrorDetail(error, 'Failed to finalize repair order'))
     },
   })
 
@@ -1391,11 +1395,10 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchQuote()
       refetchOrderDetail()
-      setSelectedOrder((prev) => (prev && prev.id === orderId ? { ...prev, status: 'quoted' } : prev))
-      toast.success(`Quote ${quote.quote_number} draft ready`)
+      toast.success(`Estimate ${quote.quote_number} draft ready`)
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to create quote'))
+      toast.error(getErrorDetail(error, 'Failed to create estimate'))
     },
   })
 
@@ -1413,10 +1416,10 @@ export default function RepairOrdersPage() {
         refetchQuote()
         refetchOrderDetail()
       }
-      toast.success(`Quote ${quote.quote_number} updated — $${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
+      toast.success(`Estimate ${quote.quote_number} updated — $${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`)
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to update quote'))
+      toast.error(getErrorDetail(error, 'Failed to update estimate'))
     },
   })
 
@@ -1433,10 +1436,10 @@ export default function RepairOrdersPage() {
         refetchQuote()
       }
       setQuoteSent(true)
-      toast.success('Quote sent — Awaiting customer approval')
+      toast.success('Estimate sent — awaiting customer authorization')
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to send quote'))
+      toast.error(getErrorDetail(error, 'Failed to send estimate'))
     },
   })
 
@@ -1615,25 +1618,25 @@ export default function RepairOrdersPage() {
   const quoteOrderStatus = quoteOrder?.status
   const quoteIsApproved = !!quoteForOrder?.is_approved
   const quoteIsSent = !!(quoteForOrder?.sent_to_customer || quoteSent)
-  const quoteCanChange = !!quoteOrderStatus && ['draft', 'quoted'].includes(quoteOrderStatus)
+  const quoteCanChange = !!quoteOrderStatus && !['completed', 'invoiced', 'paid', 'cancelled'].includes(quoteOrderStatus)
   const quoteTotalMismatch = !!quoteForOrder && !!quoteOrder && !quoteIsApproved && (
     Math.abs((parseFloat(quoteForOrder.total_amount || '0') || 0) - (parseFloat(quoteOrder.total_cost || '0') || 0)) > 0.005
   )
   const effectiveQuoteNeedsUpdate = !!quoteForOrder && !quoteIsApproved && quoteTotalMismatch
   const quoteActionLabel = quoteIsApproved
-    ? 'Quote approved'
+    ? 'Estimate authorized'
     : quoteForOrder
       ? quoteIsSent
-        ? (effectiveQuoteNeedsUpdate ? 'Resend quote' : 'Awaiting approval')
-        : 'Send quote'
-        : 'Create quote'
+        ? (effectiveQuoteNeedsUpdate ? 'Resend estimate' : 'Awaiting authorization')
+        : 'Send estimate'
+        : 'Create estimate'
   const quoteActionDisabled = quoteIsApproved || !quoteCanChange || (quoteIsSent && !effectiveQuoteNeedsUpdate)
   const quoteDisabledReason = quoteIsApproved
-    ? 'The customer has already approved this quote. Pricing and quote sending are locked so the team can complete the approved work.'
+    ? 'This estimate is authorized. The live repair order remains editable until finalization.'
     : !quoteCanChange
-      ? 'Quote changes are only available before the customer approves the work.'
+      ? 'Estimates are unavailable after the repair order is finalized.'
       : quoteIsSent && !effectiveQuoteNeedsUpdate
-        ? 'The quote has been sent to the customer. The button will re-enable if pricing changes require a resend.'
+        ? 'The estimate has been sent. It can be resent if its amount changes.'
         : undefined
   const priceBuilderHistoryEvents = (() => {
     const order = orderDetail ?? selectedOrder
@@ -1659,20 +1662,20 @@ export default function RepairOrdersPage() {
     events.push(...buildPartHistoryEvents(orderDetail?.parts_usage ?? [], orderDetail?.history_events ?? []))
     push({
       id: 'quote-created',
-      label: 'Quote draft created',
+      label: 'Estimate draft created',
       at: quoteForOrder?.created_at,
       detail: quoteForOrder?.quote_number,
     })
     push({
       id: 'quote-sent',
-      label: 'Quote sent to customer',
+      label: 'Estimate sent to customer',
       at: quoteForOrder?.sent_at,
       detail: quoteForOrder?.quote_number,
       actor: customerActor,
     })
     push({
       id: 'quote-approved',
-      label: 'Quote approved',
+      label: 'Estimate authorized',
       at: quoteForOrder?.is_approved ? quoteForOrder.updated_at : null,
       detail: quoteForOrder?.quote_number,
       actor: customerActor,
@@ -1784,13 +1787,13 @@ export default function RepairOrdersPage() {
     return styles[status] || styles.draft
   }
 
-  const resolveOrderDisplayStatus = (order: Pick<RepairOrder, 'status' | 'quote_sent' | 'pending_zelle_confirmation' | 'hold_reason'>) => {
-    const isAwaitingApproval = order.status === 'quoted' && !!order.quote_sent
+  const resolveOrderDisplayStatus = (order: Pick<RepairOrder, 'status' | 'quote_sent' | 'quote_approved' | 'pending_zelle_confirmation' | 'hold_reason'>) => {
+    const isAwaitingApproval = !!order.quote_sent && !order.quote_approved && order.status !== 'invoiced' && order.status !== 'paid'
     const isPendingZelle = !!order.pending_zelle_confirmation && order.status !== 'paid'
     const isOnHold = order.status === 'in_progress' && !!order.hold_reason
     if (isAwaitingApproval) {
       return {
-        label: 'Awaiting Approval',
+        label: 'Estimate Pending',
         style: { bg: 'bg-amber-100', text: 'text-amber-700', dot: 'bg-amber-500' },
       }
     }
@@ -1807,7 +1810,7 @@ export default function RepairOrdersPage() {
       }
     }
     return {
-      label: order.status.replace(/_/g, ' '),
+      label: order.status === 'draft' ? 'Checked in' : order.status.replace(/_/g, ' '),
       style: getStatusStyle(order.status),
     }
   }
@@ -1819,15 +1822,15 @@ export default function RepairOrdersPage() {
   }
 
   const statusDescriptions: Record<string, string> = {
-    draft:          'New orders that have not been quoted yet.',
-    quoted:         'Quote sent to the customer — awaiting their approval.',
-    declined:       'Customer declined the quote — needs revision before resending.',
-    approved:       'Customer approved the quote — ready to assign a technician.',
+    draft:          'Truck checked in — ready to build, assign, or start.',
+    quoted:         'Legacy estimate state — the work order remains active.',
+    declined:       'Estimate changes requested — unaffected work may continue.',
+    approved:       'Estimate authorized — work may continue.',
     assigned:       'Technician has been assigned — awaiting their acknowledgment.',
     acknowledged:   'Technician acknowledged the job — starting work soon.',
     in_progress:    'Work is actively underway on the vehicle.',
     pending_review: 'Technician finished — waiting on admin to verify and approve the work.',
-    completed:      'Work approved — invoice needs to be sent to the customer.',
+    completed:      'Work finalized — invoice needs to be sent to the customer.',
     invoiced:       'Invoice sent — waiting on payment from the customer.',
     paid:           'Payment received — order fully closed.',
     cancelled:      'Orders that were cancelled and are no longer active.',
@@ -1836,16 +1839,14 @@ export default function RepairOrdersPage() {
 
   const canViewDeletedOrders = ['garage_owner', 'garage_admin'].includes(currentUser?.role || '')
 
-  // Only the statuses this shop's workflow actually moves orders through. The
-  // technician-assignment states (assigned/acknowledged/pending_review) and
-  // cancelled are unused here, so they're dropped to keep the filter clean.
-  // approved/declined are kept as valid quote outcomes.
+  // Show the canonical operational milestones. Legacy estimate outcome states
+  // remain readable in order history but are not primary workflow filters.
   const statusOptions = [
     { value: 'all', label: 'All' },
-    { value: 'quoted', label: 'Quoted' },
-    { value: 'declined', label: 'Declined' },
-    { value: 'approved', label: 'Approved' },
+    { value: 'draft', label: 'Checked In' },
+    { value: 'assigned', label: 'Assigned' },
     { value: 'in_progress', label: 'In Progress' },
+    { value: 'pending_review', label: 'Quality Review' },
     { value: 'completed', label: 'Completed' },
     { value: 'invoiced', label: 'Invoiced' },
     { value: 'paid', label: 'Paid' },
@@ -2015,25 +2016,11 @@ export default function RepairOrdersPage() {
         }
       }
 
-      let createdQuoteNumber: string | null = null
-      try {
-        const quoteResponse = await api.post('/quotes', { repair_order_id: createdOrder.id })
-        createdQuoteNumber = quoteResponse.data?.quote_number || null
-      } catch (err: unknown) {
-        // Keep order creation successful even if quote draft creation fails.
-        console.error('Failed to auto-create quote draft', err)
-      }
-
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['quote', createdOrder.id] })
       queryClient.invalidateQueries({ queryKey: ['customer-typeahead'] })
       queryClient.invalidateQueries({ queryKey: ['vehicle-typeahead'] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
-      if (createdQuoteNumber) {
-        toast.success(`Repair order ${createdOrder.order_number} created — Quote ${createdQuoteNumber} ready to send`)
-      } else {
-        toast.success(`Repair order ${createdOrder.order_number} created`)
-      }
+      toast.success(`Repair order ${createdOrder.order_number} checked in`)
       closeModal()
       // Drop the operator straight into the new order's drawer so they can start
       // building it, instead of hunting for it back in the list.
@@ -2941,9 +2928,8 @@ export default function RepairOrdersPage() {
               status: detailOrder.status,
               hold_reason: detailOrder.hold_reason,
               pending_zelle_confirmation: detailOrder.pending_zelle_confirmation,
-              quote_sent: detailOrder.status === 'quoted'
-                ? (quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent)
-                : detailOrder.quote_sent,
+              quote_sent: quoteForOrder?.sent_to_customer || quoteSent || detailOrder.quote_sent,
+              quote_approved: quoteForOrder?.is_approved || detailOrder.quote_approved,
             })
             return (
               <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${display.style.bg} ${display.style.text}`}>

@@ -16,10 +16,16 @@ from app.db.models.vehicle import Vehicle
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
-from app.services.pricing import get_order_parts_total
 
 
-async def _load_line_items(db: AsyncSession, repair_order_id) -> tuple[list, list]:
+async def _load_line_items(
+    db: AsyncSession,
+    repair_order_id,
+    invoice: Optional[Invoice] = None,
+) -> tuple[list, list]:
+    snapshot = getattr(invoice, "line_items_snapshot", None) if invoice else None
+    if snapshot:
+        return list(snapshot.get("labor", [])), list(snapshot.get("parts", []))
     labor_result = await db.execute(
         select(Labor).where(Labor.repair_order_id == repair_order_id)
     )
@@ -81,7 +87,7 @@ async def send_invoice_payment_confirmation_email(
         shop_logo_url=tenant.logo_url if tenant else None,
     )
 
-    labor_items, parts_items = await _load_line_items(db, order.id)
+    labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
     # ── Email HTML ──────────────────────────────────────────────────────────────
     def item_rows_html(items, is_labor: bool) -> str:
@@ -224,6 +230,8 @@ async def send_invoice_payment_confirmation_email(
         service_date = order.work_completed_at.strftime("%m/%d/%Y") if order.work_completed_at else None
         due_date_str = invoice.due_date.strftime("%m/%d/%Y") if invoice.due_date and hasattr(invoice.due_date, "strftime") else (str(invoice.due_date) if invoice.due_date else None)
         tax_rate = float(tenant.sales_tax_rate) if tenant and tenant.sales_tax_rate else None
+        snapshot_labor_total = sum(Decimal(str(item.get("total_cost", 0))) for item in labor_items)
+        snapshot_parts_total = sum(Decimal(str(item.get("total_price", 0))) for item in parts_items)
 
         pdf_bytes = generate_invoice_pdf(
             invoice_number=invoice.invoice_number,
@@ -250,8 +258,8 @@ async def send_invoice_payment_confirmation_email(
             vehicle_odometer=getattr(vehicle, "odometer", None),
             labor_items=labor_items,
             parts_items=parts_items,
-            labor_total=Decimal(str(invoice.subtotal)) - get_order_parts_total(order),
-            parts_total=get_order_parts_total(order),
+            labor_total=snapshot_labor_total,
+            parts_total=snapshot_parts_total,
             shop_supplies_amount=shop_supplies,
             service_fee_amount=service_fee,
             subtotal=subtotal,

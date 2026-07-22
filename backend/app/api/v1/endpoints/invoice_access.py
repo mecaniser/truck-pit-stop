@@ -745,9 +745,6 @@ async def download_invoice_pdf_by_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Public PDF download via invoice access token (no login required)."""
-    from app.db.models.inventory import PartsUsage
-    from app.db.models.labor import Labor
-    from app.services.pdf_service import generate_invoice_pdf
     from app.api.v1.endpoints.invoices import _load_line_items, _build_invoice_pdf_bytes
 
     payload = await get_invoice_access_payload(token)
@@ -762,7 +759,7 @@ async def download_invoice_pdf_by_token(
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
 
-    labor_items, parts_items = await _load_line_items(db, order.id)
+    labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
     pdf_bytes = _build_invoice_pdf_bytes(
         invoice=invoice, order=order, customer=customer,

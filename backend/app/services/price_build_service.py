@@ -48,7 +48,16 @@ class PriceBuildValidationError(PriceBuildError):
     pass
 
 
-EDITABLE_RO_STATUSES = {RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED}
+EDITABLE_RO_STATUSES = {
+    RepairOrderStatus.DRAFT,
+    RepairOrderStatus.QUOTED,
+    RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED,
+    RepairOrderStatus.ASSIGNED,
+    RepairOrderStatus.ACKNOWLEDGED,
+    RepairOrderStatus.IN_PROGRESS,
+    RepairOrderStatus.PENDING_REVIEW,
+}
 # Internal fleet work orders log labor/parts throughout their active flow (e.g.
 # an in-progress PM) and only freeze once completed/invoiced/paid/cancelled —
 # mirrors INTERNAL_FROZEN_RO_STATUSES in the repair_orders endpoints module.
@@ -106,7 +115,7 @@ def _has_reusable_hours(value: Decimal) -> bool:
 def _is_locked(order: RepairOrder) -> bool:
     if order.pricing_locked_at is None:
         return False
-    if order.pricing_lock_reason == "quote_sent" and order.status == RepairOrderStatus.QUOTED:
+    if order.pricing_lock_reason == "quote_sent":
         return False
     return True
 
@@ -688,9 +697,8 @@ class PriceBuildService:
     def _assert_editable(self, order: RepairOrder) -> None:
         if _is_locked(order):
             raise PriceBuildLockedError("Pricing is locked for this repair order")
-        # Internal fleet orders stay editable through their active flow so the
-        # owner can adjust labor (duration/rate) and parts while work is under
-        # way; customer orders are only editable in draft/quoted.
+        # Both internal and customer repair orders are live work records. They
+        # stay editable until the work is finalized/invoiced.
         if getattr(order, "is_internal", False):
             if order.status in INTERNAL_FROZEN_STATUSES:
                 raise PriceBuildValidationError(
@@ -699,7 +707,7 @@ class PriceBuildService:
             return
         if order.status not in EDITABLE_RO_STATUSES:
             raise PriceBuildValidationError(
-                "Price build lines can only be modified when repair order is draft or quoted"
+                "Price build lines can't be modified after the repair order is finalized"
             )
 
     def _compute_totals(self, order: RepairOrder) -> dict[str, Decimal]:

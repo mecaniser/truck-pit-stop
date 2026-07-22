@@ -231,7 +231,32 @@ async def test_assign_mechanic_skips_sms_when_no_mechanic_phone(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_override_starts_approved_ro_without_mechanic(monkeypatch):
+async def test_assign_mechanic_from_checked_in_order_without_quote(monkeypatch):
+    order, mechanic, manager = _build_context(mechanic_phone=None)
+    order.status = RepairOrderStatus.DRAFT
+    fake_db = _FakeAsyncSession(order=order, mechanic=mechanic)
+
+    async def _noop(**_kwargs):
+        return None
+
+    monkeypatch.setattr(repair_orders, "send_email", _noop)
+    monkeypatch.setattr(repair_orders, "send_sms", _noop)
+    monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop)
+
+    response = await repair_orders.assign_mechanic(
+        order_id=order.id,
+        body=repair_orders.AssignMechanicRequest(mechanic_id=mechanic.id),
+        db=fake_db,
+        current_user=manager,
+    )
+
+    assert response.status == RepairOrderStatus.ASSIGNED
+    assert response.assigned_mechanic_id == mechanic.id
+    assert fake_db.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_override_starts_active_ro_without_mechanic(monkeypatch):
     order, _mechanic, manager = _build_context(mechanic_phone=None)
     fake_db = _FakeOverrideSession(order=order)
 
@@ -264,7 +289,7 @@ async def test_admin_override_starts_approved_ro_without_mechanic(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_admin_override_rejects_unapproved_ro(monkeypatch):
+async def test_admin_override_starts_quoted_ro_without_mechanic(monkeypatch):
     order, _mechanic, manager = _build_context(mechanic_phone=None)
     order.status = RepairOrderStatus.QUOTED
     fake_db = _FakeOverrideSession(order=order)
@@ -274,16 +299,14 @@ async def test_admin_override_rejects_unapproved_ro(monkeypatch):
 
     monkeypatch.setattr(repair_orders, "broadcast_repair_order_update", _noop_broadcast)
 
-    with pytest.raises(repair_orders.HTTPException) as exc_info:
-        await repair_orders.override_start_work_without_mechanic(
-            order_id=order.id,
-            db=fake_db,
-            current_user=manager,
-        )
+    response = await repair_orders.override_start_work_without_mechanic(
+        order_id=order.id,
+        db=fake_db,
+        current_user=manager,
+    )
 
-    assert exc_info.value.status_code == 400
-    assert order.status == RepairOrderStatus.QUOTED
-    assert fake_db.commit_count == 0
+    assert response.status == RepairOrderStatus.IN_PROGRESS
+    assert fake_db.commit_count == 1
 
 
 @pytest.mark.asyncio
