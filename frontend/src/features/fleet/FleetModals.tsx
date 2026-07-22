@@ -148,9 +148,17 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     odometer: truck.odometer?.toString() || '',
     driver_name: truck.driver_name || '',
     driver_phone: detail.driver_phone ? formatUSPhone(detail.driver_phone) : '',
-    billing_contact_name: detail.billing_contact_name || '',
-    billing_contact_email: detail.billing_contact_email || '',
-    billing_contact_phone: detail.billing_contact_phone ? formatUSPhone(detail.billing_contact_phone) : '',
+    bill_to_company_name: detail.bill_to_company_name || '',
+    bill_to_first_name: detail.bill_to_first_name || '',
+    bill_to_last_name: detail.bill_to_last_name || '',
+    bill_to_email: detail.bill_to_email || '',
+    bill_to_phone: detail.bill_to_phone ? formatUSPhone(detail.bill_to_phone) : '',
+    bill_to_billing_address_line1: detail.bill_to_billing_address_line1 || '',
+    bill_to_billing_address_line2: detail.bill_to_billing_address_line2 || '',
+    bill_to_billing_city: detail.bill_to_billing_city || '',
+    bill_to_billing_state: detail.bill_to_billing_state || '',
+    bill_to_billing_zip: detail.bill_to_billing_zip || '',
+    bill_to_billing_country: detail.bill_to_billing_country || 'USA',
     bill_labor_at_customer_rate: detail.bill_labor_at_customer_rate,
     pm_interval_miles: truck.pm_interval_miles?.toString() || '25000',
     next_pm_miles: truck.next_pm_miles?.toString() || '',
@@ -232,10 +240,21 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       odometer: numOrUndef(f.odometer),
       driver_name: f.driver_name,
       driver_phone: f.driver_phone,
-      billing_contact_name: f.billing_contact_name,
-      billing_contact_email: f.billing_contact_email,
-      billing_contact_phone: f.billing_contact_phone,
       bill_labor_at_customer_rate: f.bill_labor_at_customer_rate,
+      bill_to_customer: detail.bill_to_customer_id ? {
+        customer_id: detail.bill_to_customer_id,
+        company_name: f.bill_to_company_name,
+        first_name: f.bill_to_first_name,
+        last_name: f.bill_to_last_name,
+        email: f.bill_to_email,
+        phone: f.bill_to_phone,
+        billing_address_line1: f.bill_to_billing_address_line1,
+        billing_address_line2: f.bill_to_billing_address_line2,
+        billing_city: f.bill_to_billing_city,
+        billing_state: f.bill_to_billing_state,
+        billing_zip: f.bill_to_billing_zip,
+        billing_country: f.bill_to_billing_country,
+      } : undefined,
       pm_interval_miles: numOrUndef(f.pm_interval_miles),
       next_pm_miles: numOrUndef(f.next_pm_miles),
       location_label: f.location_label,
@@ -248,6 +267,9 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     onSuccess: () => {
       toast.success('Truck updated')
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
+      qc.invalidateQueries({ queryKey: ['customers'] })
+      qc.invalidateQueries({ queryKey: ['fleet-companies'] })
+      qc.invalidateQueries({ queryKey: ['vehicle-account-relationships', truck.id] })
       invalidateFleetAndCockpit(qc)
       onClose()
     },
@@ -255,7 +277,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   })
 
   return (
-    <Modal title={`Edit ${fleetUnitLabel(truck)}`} icon={<Pencil size={17} />} onClose={onClose} width={520} scrollable={false}>
+    <Modal title={`Edit ${fleetUnitLabel(truck)}`} icon={<Pencil size={17} />} onClose={onClose} width={520}>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         <Field label="Unit #"><input value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
@@ -291,67 +313,63 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
           />
         </Field>
       </div>
-      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Live customer billing data</div>
-      <div style={{ display: 'grid', gap: 8 }}>
-        <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', display: 'grid', gap: 4 }}>
-          <span style={{ color: 'var(--muted-2)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>
-            Default invoice recipient{detail.bill_to_relationship_type ? ` · ${detail.bill_to_relationship_type.replace('_', ' ')}` : ''}
-          </span>
-          {detail.bill_to_company_name ? (
-            <>
-              <strong style={{ color: 'var(--text)', fontSize: 14 }}>{detail.bill_to_company_name}</strong>
-              {detail.bill_to_contact_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.bill_to_contact_name}</span>}
-              <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
-                {detail.bill_to_email && <a href={`mailto:${detail.bill_to_email}`} style={{ color: 'var(--text)' }}>{detail.bill_to_email}</a>}
-                {detail.bill_to_phone && <a href={`tel:${detail.bill_to_phone}`} style={{ color: 'var(--text)' }}>{formatUSPhone(detail.bill_to_phone)}</a>}
-              </span>
-              {detail.bill_to_billing_address && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.bill_to_billing_address}</span>}
-              {detail.bill_to_customer_id === detail.fleet_account_customer_id && (
-                <span style={{ color: 'var(--muted-3)', fontSize: 11 }}>Also the current fleet authority account.</span>
-              )}
-            </>
-          ) : (
-            <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>No active bill-to company is connected to this truck.</span>
-          )}
-        </div>
-        {detail.fleet_account_company_name && detail.fleet_account_customer_id !== detail.bill_to_customer_id && (
-          <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', display: 'grid', gap: 4 }}>
-            <span style={{ color: 'var(--muted-2)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>Fleet authority account</span>
-            <strong style={{ color: 'var(--text)', fontSize: 14 }}>{detail.fleet_account_company_name}</strong>
-            {detail.fleet_account_contact_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.fleet_account_contact_name}</span>}
-            <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
-              {detail.fleet_account_email && <a href={`mailto:${detail.fleet_account_email}`} style={{ color: 'var(--text)' }}>{detail.fleet_account_email}</a>}
-              {detail.fleet_account_phone && <a href={`tel:${detail.fleet_account_phone}`} style={{ color: 'var(--text)' }}>{formatUSPhone(detail.fleet_account_phone)}</a>}
-            </span>
-            {detail.fleet_account_billing_address && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{detail.fleet_account_billing_address}</span>}
-          </div>
-        )}
+      <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>
+        Default invoice recipient{detail.bill_to_relationship_type ? ` · ${detail.bill_to_relationship_type.replace('_', ' ')}` : ''}
       </div>
-      <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--muted-2)' }}>
-        This information stays live from the connected customer record. A different company can still be selected for an individual work order.
-      </p>
-
-      <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>Internal house-account fallback & pricing</div>
       <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--muted-2)' }}>
-        These truck-level fields are used only when an internal House Account has no customer billing contact. They intentionally do not duplicate the live customer data shown above.
+        Edits here update this same customer on the Main Dashboard. Change which company is the default payer through Manage Connections.
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Fallback contact name"><input value={f.billing_contact_name} onChange={set('billing_contact_name')} placeholder="Accounts payable" /></Field>
-        <Field label="Fallback contact email"><input value={f.billing_contact_email} onChange={set('billing_contact_email')} type="email" placeholder="billing@example.com" /></Field>
-        <Field label="Fallback contact phone"><input value={f.billing_contact_phone} onChange={set('billing_contact_phone')} placeholder="+1 704 555 1234" /></Field>
-      </div>
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
-        <input
-          type="checkbox"
-          checked={f.bill_labor_at_customer_rate}
-          onChange={(e) => setF((prev) => ({ ...prev, bill_labor_at_customer_rate: e.target.checked }))}
-          style={{ width: 'auto', marginTop: 2 }}
-        />
-        <span style={{ display: 'grid', gap: 3 }}>
-          <span>Bill labor at customer rate</span>
-          <span style={{ color: 'var(--muted-2)' }}>Parts always use garage cost. This applies to new work orders.</span>
-        </span>
-      </label>
+      {detail.bill_to_customer_id ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Company name" full><input value={f.bill_to_company_name} onChange={set('bill_to_company_name')} /></Field>
+          <Field label="First name *"><input required value={f.bill_to_first_name} onChange={set('bill_to_first_name')} /></Field>
+          <Field label="Last name *"><input required value={f.bill_to_last_name} onChange={set('bill_to_last_name')} /></Field>
+          <Field label="Email *"><input required type="email" value={f.bill_to_email} onChange={set('bill_to_email')} /></Field>
+          <Field label="Phone"><input value={f.bill_to_phone} onChange={(e) => setF((prev) => ({ ...prev, bill_to_phone: formatUSPhone(e.target.value) }))} /></Field>
+          <Field label="Billing address line 1" full><input value={f.bill_to_billing_address_line1} onChange={set('bill_to_billing_address_line1')} /></Field>
+          <Field label="Billing address line 2" full><input value={f.bill_to_billing_address_line2} onChange={set('bill_to_billing_address_line2')} /></Field>
+          <Field label="City"><input value={f.bill_to_billing_city} onChange={set('bill_to_billing_city')} /></Field>
+          <Field label="State"><input value={f.bill_to_billing_state} onChange={set('bill_to_billing_state')} /></Field>
+          <Field label="ZIP"><input value={f.bill_to_billing_zip} onChange={set('bill_to_billing_zip')} /></Field>
+          <Field label="Country"><input value={f.bill_to_billing_country} onChange={set('bill_to_billing_country')} /></Field>
+        </div>
+      ) : (
+        <div style={{ background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', color: 'var(--muted-2)', fontSize: 12 }}>
+          No active bill-to company is connected to this truck.
+        </div>
+      )}
+      {detail.bill_to_customer_id === detail.fleet_account_customer_id && (
+        <p style={{ margin: '7px 0 0', color: 'var(--muted-3)', fontSize: 11 }}>This customer is also the current fleet authority account.</p>
+      )}
+
+      {detail.fleet_account_company_name && detail.fleet_account_customer_id !== detail.bill_to_customer_id && (
+        <div style={{ marginTop: 12, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, padding: '11px 12px', display: 'grid', gap: 4 }}>
+          <span style={{ color: 'var(--muted-2)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em' }}>Fleet authority account</span>
+          <strong style={{ color: 'var(--text)', fontSize: 14 }}>{detail.fleet_account_company_name}</strong>
+          <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
+            {detail.fleet_account_email && <a href={`mailto:${detail.fleet_account_email}`} style={{ color: 'var(--text)' }}>{detail.fleet_account_email}</a>}
+            {detail.fleet_account_phone && <a href={`tel:${detail.fleet_account_phone}`} style={{ color: 'var(--text)' }}>{formatUSPhone(detail.fleet_account_phone)}</a>}
+          </span>
+        </div>
+      )}
+
+      {detail.bill_to_is_internal && (
+        <>
+          <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>Internal pricing</div>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={f.bill_labor_at_customer_rate}
+              onChange={(e) => setF((prev) => ({ ...prev, bill_labor_at_customer_rate: e.target.checked }))}
+              style={{ width: 'auto', marginTop: 2 }}
+            />
+            <span style={{ display: 'grid', gap: 3 }}>
+              <span>Bill labor at customer rate</span>
+              <span style={{ color: 'var(--muted-2)' }}>Parts use garage cost. This applies to new internal work orders.</span>
+            </span>
+          </label>
+        </>
+      )}
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
       </button>

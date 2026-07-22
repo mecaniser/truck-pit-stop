@@ -291,10 +291,19 @@ class TruckDetailResponse(BaseModel):
     fleet_account_billing_address: Optional[str] = None
     bill_to_customer_id: Optional[UUID] = None
     bill_to_company_name: Optional[str] = None
+    bill_to_first_name: Optional[str] = None
+    bill_to_last_name: Optional[str] = None
     bill_to_contact_name: Optional[str] = None
     bill_to_email: Optional[str] = None
     bill_to_phone: Optional[str] = None
     bill_to_billing_address: Optional[str] = None
+    bill_to_billing_address_line1: Optional[str] = None
+    bill_to_billing_address_line2: Optional[str] = None
+    bill_to_billing_city: Optional[str] = None
+    bill_to_billing_state: Optional[str] = None
+    bill_to_billing_zip: Optional[str] = None
+    bill_to_billing_country: Optional[str] = None
+    bill_to_is_internal: bool = False
     bill_to_relationship_type: Optional[str] = None
     billing_contact_name: Optional[str] = None
     billing_contact_email: Optional[str] = None
@@ -307,6 +316,21 @@ class TruckDetailResponse(BaseModel):
     parts: List[PartEntry] = []
     incidents: List[IncidentEntry] = []
     nearest: List[NearestUnit] = []
+
+
+class FleetBillToCustomerUpdate(BaseModel):
+    customer_id: UUID
+    company_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    billing_address_line1: Optional[str] = None
+    billing_address_line2: Optional[str] = None
+    billing_city: Optional[str] = None
+    billing_state: Optional[str] = None
+    billing_zip: Optional[str] = None
+    billing_country: Optional[str] = None
 
 
 class TruckUpdate(BaseModel):
@@ -324,6 +348,8 @@ class TruckUpdate(BaseModel):
     billing_contact_email: Optional[str] = None
     billing_contact_phone: Optional[str] = None
     bill_labor_at_customer_rate: Optional[bool] = None
+    # Updates the linked customer itself, so Fleet and Main Dashboard stay in sync.
+    bill_to_customer: Optional[FleetBillToCustomerUpdate] = None
     odometer: Optional[int] = None
     pm_interval_miles: Optional[int] = None
     next_pm_miles: Optional[int] = None

@@ -224,10 +224,19 @@ export interface TruckDetail {
   fleet_account_billing_address?: string | null
   bill_to_customer_id?: string | null
   bill_to_company_name?: string | null
+  bill_to_first_name?: string | null
+  bill_to_last_name?: string | null
   bill_to_contact_name?: string | null
   bill_to_email?: string | null
   bill_to_phone?: string | null
   bill_to_billing_address?: string | null
+  bill_to_billing_address_line1?: string | null
+  bill_to_billing_address_line2?: string | null
+  bill_to_billing_city?: string | null
+  bill_to_billing_state?: string | null
+  bill_to_billing_zip?: string | null
+  bill_to_billing_country?: string | null
+  bill_to_is_internal?: boolean
   bill_to_relationship_type?: string | null
   billing_contact_name?: string | null
   billing_contact_email?: string | null
