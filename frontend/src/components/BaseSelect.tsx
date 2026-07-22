@@ -278,7 +278,9 @@ export default function BaseSelect({
             style={{ borderColor: accentColors[500], ['--tw-ring-color' as string]: accentColors[500] }}
           />
           {loading && (
-            <Spinner size="sm" />
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center" aria-label="Searching">
+              <Spinner size="sm" />
+            </span>
           )}
         </div>
       )}

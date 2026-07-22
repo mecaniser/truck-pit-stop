@@ -493,6 +493,10 @@ export default function RepairOrdersPage() {
       return response.data
     },
     enabled: isModalOpen,
+    // Keep the menu stable while a new debounced term is fetched. The spinner
+    // in CustomerSelect signals that these are outgoing results until the
+    // replacement arrives, avoiding an empty-panel flicker on every keystroke.
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
 
