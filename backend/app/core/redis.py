@@ -61,6 +61,22 @@ async def get_token_version(user_id: str) -> int:
     return int(version) if version else 0
 
 
+async def get_auth_token_state(jti: Optional[str], user_id: str) -> tuple[bool, int]:
+    """Fetch revocation and version state in one Redis round trip."""
+    r = await get_redis()
+    keys = []
+    if jti:
+        keys.append(f"{BLACKLIST_PREFIX}{jti}")
+    keys.append(f"{TOKEN_VERSION_PREFIX}{user_id}")
+    values = await r.mget(keys)
+
+    version_raw = values[-1]
+    return (
+        bool(jti and values[0] is not None),
+        int(version_raw) if version_raw else 0,
+    )
+
+
 # Password reset functions
 PASSWORD_RESET_PREFIX = "password_reset:"
 INVOICE_ACCESS_PREFIX = "invoice_access:"

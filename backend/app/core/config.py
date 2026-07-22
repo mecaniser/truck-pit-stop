@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     DATABASE_MAX_OVERFLOW: int = Field(default=5, ge=0)
     DATABASE_POOL_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     DATABASE_POOL_RECYCLE_SECONDS: int = Field(default=1800, ge=1)
+    DATABASE_POOL_PRE_PING: bool = False
     DATABASE_CONNECT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
     DATABASE_STATEMENT_TIMEOUT_MS: int = Field(default=15000, ge=1)
     DATABASE_LOCK_TIMEOUT_MS: int = Field(default=5000, ge=1)

@@ -22,7 +22,7 @@ def build_engine_options(url: str) -> dict:
     options: dict = {
         "echo": False,
         "future": True,
-        "pool_pre_ping": True,
+        "pool_pre_ping": settings.DATABASE_POOL_PRE_PING,
     }
 
     # Pool and server-side limits are intentionally PostgreSQL-only. Passing

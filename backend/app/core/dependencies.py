@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 from app.db.session import get_db
 from app.core.security import decode_token
-from app.core.redis import is_token_blacklisted, get_token_version
+from app.core.redis import get_auth_token_state
 from app.db.models.user import User, UserRole
 from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.tenant import Tenant
@@ -63,23 +63,26 @@ async def get_current_user(
             detail="Invalid authentication credentials",
         )
 
-    # Check if token is blacklisted
-    if jti and await is_token_blacklisted(jti):
+    is_blacklisted, current_version = await get_auth_token_state(jti, user_id)
+    if is_blacklisted:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",
         )
 
-    # Check token version (invalidated on password change)
-    current_version = await get_token_version(user_id)
     if token_version < current_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been invalidated",
         )
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    result = await db.execute(
+        select(User, Tenant.is_active.label("tenant_is_active"))
+        .outerjoin(Tenant, Tenant.id == User.tenant_id)
+        .where(User.id == user_id)
+    )
+    user_row = result.one_or_none()
+    user = user_row[0] if user_row else None
 
     if user is None:
         raise HTTPException(
@@ -119,10 +122,16 @@ async def get_current_user(
     # platform-level switch for every tenant-scoped request while allowing
     # super admins to continue managing the platform.
     if user.role != UserRole.SUPER_ADMIN and user.tenant_id:
-        tenant_result = await db.execute(
-            select(Tenant.is_active).where(Tenant.id == user.tenant_id)
-        )
-        if tenant_result.scalar_one_or_none() is not True:
+        tenant_is_active = user_row.tenant_is_active
+
+        # Customer tokens can select a tenant that differs from the user's
+        # legacy tenant_id, so only that less common path needs another lookup.
+        if user.role == UserRole.CUSTOMER and tenant_id_claim:
+            tenant_is_active = (
+                await db.execute(select(Tenant.is_active).where(Tenant.id == user.tenant_id))
+            ).scalar_one_or_none()
+
+        if tenant_is_active is not True:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This shop is inactive. Please contact DieselBridge support.",

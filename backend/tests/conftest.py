@@ -75,6 +75,9 @@ class FakeRedis:
     async def get(self, key: str):
         return self.kv.get(key)
 
+    async def mget(self, keys: list[str]):
+        return [self.kv.get(key) for key in keys]
+
     async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
         if nx and key in self.kv:
             return False
