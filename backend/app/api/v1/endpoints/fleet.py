@@ -1128,8 +1128,9 @@ async def _fleet_board_from_projection(
     """Load board cards through the compact projection and bounded lookups.
 
     Missing rows are intentionally returned to the legacy builder during a
-    migration restore/backfill. Once backfilled this path is three small reads:
-    card rows, mechanics referenced by open work orders, and PM services.
+    migration restore/backfill. Once backfilled this path is bounded reads:
+    card rows, live driver phones, mechanics referenced by open work orders,
+    and PM services.
     """
     rows = list((await db.execute(
         select(FleetBoardReadModel)
@@ -1153,6 +1154,11 @@ async def _fleet_board_from_projection(
             for user in mechanic_rows.scalars().all()
         }
 
+    phone_rows = await db.execute(
+        select(Vehicle.id, Vehicle.driver_phone).where(Vehicle.id.in_([row.vehicle_id for row in rows]))
+    )
+    driver_phones = {vehicle_id: driver_phone for vehicle_id, driver_phone in phone_rows.all()}
+
     pm_services = await _pm_services_by_vehicle(db, tenant_id, [row.vehicle_id for row in rows])
     trucks: list[BoardTruck] = []
     for row in rows:
@@ -1175,6 +1181,7 @@ async def _fleet_board_from_projection(
         urgent = work_order(row.urgent_work_order)
         data.update({
             "id": row.vehicle_id,
+            "driver_phone": driver_phones.get(row.vehicle_id) or data.get("driver_phone"),
             "status": _derive_projected_status(data, row.urgent_work_order),
             "moving": bool(data.get("speed_mph") and data["speed_mph"] > 0),
             "assigned_mechanic": urgent.mechanic if urgent else None,
