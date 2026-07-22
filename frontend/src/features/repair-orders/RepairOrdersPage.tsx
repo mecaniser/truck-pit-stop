@@ -1180,16 +1180,36 @@ export default function RepairOrdersPage() {
   })
 
   const completeWorkOrderMutation = useMutation({
-    mutationFn: async ({ orderId, mileageOut: woOut }: { orderId: string; mileageOut?: number | null }) => {
-      const response = await api.post(`/fleet/work-orders/${orderId}/complete`, { mileage_out: woOut ?? null })
-      return response.data as RepairOrder
+    mutationFn: async ({
+      orderId,
+      mileageOut: woOut,
+      reviewNotes: managerNotes,
+    }: {
+      orderId: string
+      mileageOut?: number | null
+      reviewNotes?: string
+    }) => {
+      const response = await api.post(`/fleet/work-orders/${orderId}/complete`, {
+        mileage_out: woOut ?? null,
+        review_notes: managerNotes || null,
+      })
+      return response.data as { repair_order_id: string; raw_status: RepairOrderStatus }
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
+      queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.repair_order_id] })
       queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
-      setSelectedOrder(updated)
-      toast.success('Work order completed')
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-for-order', updated.repair_order_id] })
+      queryClient.invalidateQueries({ queryKey: ['price-build', updated.repair_order_id] })
+      queryClient.setQueryData<RepairOrderDetail>(
+        ['repair-order-detail', updated.repair_order_id],
+        prev => prev ? { ...prev, status: updated.raw_status } : prev,
+      )
+      setSelectedOrder(prev => prev ? { ...prev, status: updated.raw_status } : null)
+      setReviewNotes('')
+      setMileageOut('')
+      toast.success('Repair finalized — invoice created and fleet billing contact notified')
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to complete work order'))
@@ -1227,6 +1247,8 @@ export default function RepairOrdersPage() {
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', updated.id] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       setSelectedOrder(updated)
+      setReviewNotes('')
+      setMileageOut('')
       if (updated.status === 'invoiced') {
         toast.success('Repair finalized — invoice created and customer notified')
       } else {
@@ -3562,7 +3584,11 @@ export default function RepairOrdersPage() {
                       overrideTechnicianAssignmentMutation.mutate(selectedOrder.id)
                     }
                     completionMode={(orderDetail ?? selectedOrder).status === 'pending_review'}
-                    completionPending={approveCompletionMutation.isPending}
+                    completionPending={
+                      (orderDetail ?? selectedOrder).is_internal
+                        ? completeWorkOrderMutation.isPending
+                        : approveCompletionMutation.isPending
+                    }
                     mileageOutValue={mileageOut}
                     onMileageOutChange={(value) => {
                       if (value === '' || /^\d+$/.test(value)) setMileageOut(value)
@@ -3573,13 +3599,16 @@ export default function RepairOrdersPage() {
                     onToggleReviewNotes={() => setShowReviewNotes((prev) => !prev)}
                     onApproveCompletion={() => {
                       if (selectedOrder.id) {
-                        approveCompletionMutation.mutate({
+                        const completionPayload = {
                           orderId: selectedOrder.id,
                           reviewNotes: reviewNotes || undefined,
                           mileageOut: mileageOut.trim() === '' ? null : Number(mileageOut),
-                        })
-                        setReviewNotes('')
-                        setMileageOut('')
+                        }
+                        if ((orderDetail ?? selectedOrder).is_internal) {
+                          completeWorkOrderMutation.mutate(completionPayload)
+                        } else {
+                          approveCompletionMutation.mutate(completionPayload)
+                        }
                       }
                     }}
                     onStartWorkOrder={() => selectedOrder.id && startWorkOrderMutation.mutate(selectedOrder.id)}

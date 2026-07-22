@@ -367,4 +367,30 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.getByText('Zelle total')).toBeInTheDocument()
     expect(screen.queryByText('Card processing fee')).not.toBeInTheDocument()
   })
+
+  it('uses one canonical finalize-and-invoice action for fleet orders in quality review', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    const onApproveCompletion = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({
+      orderStatus: 'pending_review',
+      isInternalOrder: true,
+      completionMode: true,
+      onApproveCompletion,
+    })
+
+    expect(await screen.findByText(
+      'Review the final work and approve to send the invoice to the fleet billing contact.',
+    )).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark Completed' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Complete work order')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Finalize & Send Invoice' }))
+    expect(onApproveCompletion).toHaveBeenCalledTimes(1)
+  })
 })

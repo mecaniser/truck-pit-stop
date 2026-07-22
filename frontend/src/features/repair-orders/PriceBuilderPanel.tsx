@@ -2435,15 +2435,15 @@ export default function PriceBuilderPanel({
         </div>
       )}
 
-      {isInternalOrder && armWoComplete && (
+      {isInternalOrder && armWoComplete && !completionMode && (
         <div className="rounded-2xl border border-yellow-200 bg-yellow-50/70 p-4">
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-700">
               <CheckCircle className="h-4 w-4" />
             </div>
             <div>
-              <p className="font-semibold text-yellow-950">Complete work order</p>
-              <p className="text-sm text-yellow-700">Enter the truck's odometer, then complete. Generates the internal cost record.</p>
+              <p className="font-semibold text-yellow-950">Finalize work order</p>
+              <p className="text-sm text-yellow-700">Enter the truck's odometer, then finalize and send the invoice to the fleet billing contact.</p>
             </div>
           </div>
 
@@ -2474,7 +2474,7 @@ export default function PriceBuilderPanel({
               className="inline-flex h-9 items-center gap-2 rounded-lg bg-yellow-500 px-3 text-sm font-bold text-white hover:bg-yellow-600 disabled:bg-gray-300"
             >
               {completeWorkOrderPending ? <Spinner size="xs" /> : <CheckCircle className="h-4 w-4" />}
-              {completeWorkOrderPending ? 'Completing…' : 'Complete work order'}
+              {completeWorkOrderPending ? 'Finalizing…' : 'Finalize & Send Invoice'}
             </button>
           </div>
         </div>
@@ -2488,7 +2488,11 @@ export default function PriceBuilderPanel({
             </div>
             <div>
               <p className="font-semibold text-orange-950">Technician completed work</p>
-              <p className="text-sm text-orange-700">Review and approve to notify customer.</p>
+              <p className="text-sm text-orange-700">
+                {isInternalOrder
+                  ? 'Review the final work and approve to send the invoice to the fleet billing contact.'
+                  : 'Review the final work and approve to send the invoice to the customer.'}
+              </p>
             </div>
           </div>
 
@@ -4093,7 +4097,7 @@ export default function PriceBuilderPanel({
                 {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
             </div>
-            {(!isInternalOrder || hasInvoice) && (
+            {(!isInternalOrder || hasInvoice || completionMode) && (
               canCreateInvoice ? (
                 <div className="relative">
                   <button
@@ -4232,14 +4236,14 @@ export default function PriceBuilderPanel({
                   {startWorkOrderPending ? <Spinner size="xs" /> : <Play className="h-4 w-4" />}
                   {startWorkOrderPending ? 'Starting...' : 'Start Work'}
                 </button>
-              ) : ['in_progress', 'pending_review'].includes(orderStatus) && !armWoComplete ? (
+              ) : orderStatus === 'in_progress' && !armWoComplete ? (
                 <button
                   type="button"
                   onClick={() => { setWoMileageOut(mileageIn != null ? String(mileageIn) : ''); setArmWoComplete(true) }}
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-yellow-500 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(234,179,8,.28)] hover:bg-yellow-600"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Mark Completed
+                  Finalize &amp; Invoice
                 </button>
               ) : orderStatus === 'completed' ? (
                 <span className="inline-flex items-center gap-3">
