@@ -1784,7 +1784,7 @@ export default function CustomersPage() {
                   Add this customer to Fleet Board
                 </span>
                 <span className="mt-1 block text-sm text-gray-600">
-                  Enroll every truck this company owns or operates. Fleet work orders use this customer’s company name, email, phone, and billing address for invoicing—no per-truck contact entry required.
+                  Enroll every truck this company owns or operates. If a truck still uses the internal House Account as payer, this customer becomes its default invoice recipient; an existing external payer is retained. Billing uses live customer contact data—no per-truck entry required.
                 </span>
                 {formData.fleet_enabled && (
                   <span className="mt-2 block text-xs font-medium text-amber-700">

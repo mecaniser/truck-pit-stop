@@ -65,6 +65,13 @@ async def test_truck_identity_survives_different_operator_payer_and_owner_transf
     )
     await db_session.commit()
 
+    active_payer = (await db_session.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.vehicle_id == truck.id,
+        VehicleCustomerRelationship.relationship_type == "default_payer",
+        VehicleCustomerRelationship.effective_to.is_(None),
+    ))).scalar_one()
+    assert active_payer.customer_id == owner.id
+
     order = await fleet._spawn_internal_ro(
         db_session,
         tenant.id,
@@ -229,6 +236,7 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
     operator = Customer(
         id=uuid4(), tenant_id=tenant.id, first_name="Fleet", last_name="Dispatch",
         company_name="77 Cargo", email=f"77-{uuid4().hex[:6]}@example.com",
+        phone="17048352433", billing_city="Charlotte", billing_state="NC", billing_zip="28202",
         fleet_enabled=True,
     )
     manager = User(
@@ -252,6 +260,15 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
     )
     await db_session.commit()
 
+    initial_detail = await fleet.truck_detail(
+        vehicle_id=truck.id, db=db_session, current_user=manager,
+    )
+    assert initial_detail.fleet_account_company_name == "77 Cargo"
+    assert initial_detail.fleet_account_email == operator.email
+    assert initial_detail.fleet_account_phone == "17048352433"
+    assert initial_detail.bill_to_company_name == "77 Cargo"
+    assert initial_detail.bill_to_relationship_type == "default_payer"
+
     await vehicles.sync_vehicle_relationships(
         vehicle_id=truck.id,
         body=VehicleRelationshipSync(
@@ -269,6 +286,12 @@ async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_his
     board = await fleet.fleet_board(db=db_session, current_user=manager)
     assert board.trucks[0].display_unit_number == "ELS Logistics LLC 603"
     assert board.trucks[0].fleet_company_name == "77 Cargo"
+    relinked_detail = await fleet.truck_detail(
+        vehicle_id=truck.id, db=db_session, current_user=manager,
+    )
+    assert relinked_detail.bill_to_company_name == "ELS Logistics LLC"
+    assert relinked_detail.bill_to_email == owner.email
+    assert relinked_detail.fleet_account_company_name == "77 Cargo"
 
     await vehicles.sync_vehicle_relationships(
         vehicle_id=truck.id,

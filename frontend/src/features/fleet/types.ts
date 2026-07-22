@@ -216,6 +216,19 @@ export interface TruckDetail {
   truck: BoardTruck
   open_work_orders: BoardWorkOrder[]
   driver_phone?: string | null
+  fleet_account_customer_id?: string | null
+  fleet_account_company_name?: string | null
+  fleet_account_contact_name?: string | null
+  fleet_account_email?: string | null
+  fleet_account_phone?: string | null
+  fleet_account_billing_address?: string | null
+  bill_to_customer_id?: string | null
+  bill_to_company_name?: string | null
+  bill_to_contact_name?: string | null
+  bill_to_email?: string | null
+  bill_to_phone?: string | null
+  bill_to_billing_address?: string | null
+  bill_to_relationship_type?: string | null
   billing_contact_name?: string | null
   billing_contact_email?: string | null
   billing_contact_phone?: string | null
