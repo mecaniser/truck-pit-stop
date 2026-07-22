@@ -13,6 +13,7 @@ os.environ.setdefault("TWILIO_PHONE_NUMBER", "+15555550100")
 
 from app.api.v1.endpoints import fleet
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.customer import Customer
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
@@ -115,6 +116,29 @@ async def test_truck_detail_history_and_spend(db_session):
     kinds = sorted(h.kind for h in detail.history)
     assert kinds == ["PM", "Repair"]
     assert detail.truck.work_order is not None  # the open one
+
+
+@pytest.mark.asyncio
+async def test_board_truck_from_legacy_internal_account_can_open_detail(db_session):
+    """Board and detail must agree when a tenant has more than one fleet account."""
+    tenant, _fleet_customer, user = await _seed(db_session)
+    legacy_fleet_customer = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="Legacy",
+        last_name="Fleet",
+        email=f"legacy-fleet-{uuid4().hex[:8]}@example.com",
+        is_internal_fleet=True,
+    )
+    vehicle = _vehicle(tenant.id, legacy_fleet_customer.id, unit_number="LEGACY", next_pm_miles=120000)
+    db_session.add_all([legacy_fleet_customer, vehicle])
+    await db_session.commit()
+
+    board = await fleet.fleet_board(db=db_session, current_user=user)
+    assert vehicle.id in {truck.id for truck in board.trucks}
+
+    detail = await fleet.truck_detail(vehicle_id=vehicle.id, db=db_session, current_user=user)
+    assert detail.truck.id == vehicle.id
 
 
 @pytest.mark.asyncio

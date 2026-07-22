@@ -136,13 +136,20 @@ async def _fleet_customer_id(db: AsyncSession, tenant_id: UUID) -> UUID:
 
 
 async def _get_fleet_vehicle(db: AsyncSession, tenant_id: UUID, vehicle_id: UUID) -> Vehicle:
-    fleet_customer_id = await _fleet_customer_id(db, tenant_id)
+    # The board reads every active vehicle attached to an internal-fleet customer.
+    # Detail and mutation endpoints must use the same predicate; otherwise a
+    # legacy tenant with more than one house account can render a board card
+    # that rejects its own vehicle ID.
     result = await db.execute(
-        select(Vehicle).where(
+        select(Vehicle)
+        .join(Customer, Customer.id == Vehicle.customer_id)
+        .where(
             and_(
                 Vehicle.id == vehicle_id,
                 Vehicle.tenant_id == tenant_id,
-                Vehicle.customer_id == fleet_customer_id,
+                Vehicle.deleted_at.is_(None),
+                Customer.is_internal_fleet.is_(True),
+                Customer.deleted_at.is_(None),
             )
         )
     )
