@@ -96,6 +96,11 @@ class RepairOrder(BaseModel):
     # no customer quote/invoice/payment. Set when the customer is the internal fleet.
     is_internal = Column(Boolean, nullable=False, default=False, index=True)
 
+    # Snapshot the fleet truck's labor-pricing policy when the work order is
+    # created. A later truck preference change cannot rewrite an open invoice.
+    # Parts on internal fleet orders always remain at inventory cost.
+    bill_labor_at_customer_rate = Column(Boolean, nullable=False, default=False)
+
     # Preventive-maintenance service (internal fleet). Completing a PM advances the
     # vehicle's next_pm_miles. Drives the "PM" kind in the fleet service history.
     is_pm = Column(Boolean, nullable=False, default=False, index=True)
@@ -111,4 +116,3 @@ class RepairOrder(BaseModel):
     recommended_services = relationship("RecommendedService", back_populates="repair_order",
                                         foreign_keys="RecommendedService.repair_order_id",
                                         cascade="all, delete-orphan")
-

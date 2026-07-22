@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+mkdir -p /prometheus
+chmod 0777 /prometheus
+
 required_variables="METRICS_AUTH_TOKEN API_PRIVATE_HOST API_PORT"
 for variable in $required_variables; do
   eval "value=\${$variable:-}"

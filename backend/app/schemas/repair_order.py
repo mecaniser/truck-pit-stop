@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -223,6 +223,7 @@ class RepairOrderResponse(RepairOrderBase):
     parent_repair_order_id: Optional[UUID] = None
     is_warranty_repair: bool = False
     is_internal: bool = False
+    bill_labor_at_customer_rate: bool = False
     is_pm: bool = False
     # Vehicle summary fields (denormalized for display)
     vehicle_make: str = ""
@@ -237,6 +238,13 @@ class RepairOrderResponse(RepairOrderBase):
     customer_company_name: Optional[str] = None
     customer_email: Optional[str] = None
     customer_phone: Optional[str] = None
+
+    @field_validator("bill_labor_at_customer_rate", mode="before")
+    @classmethod
+    def default_bill_labor_at_customer_rate(cls, value):
+        # SQLAlchemy column defaults are applied on flush. Keep response
+        # validation stable for newly constructed/legacy ORM instances too.
+        return False if value is None else value
 
     class Config:
         from_attributes = True

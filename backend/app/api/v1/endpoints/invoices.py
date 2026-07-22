@@ -1,4 +1,5 @@
 from datetime import datetime, date, timezone
+from types import SimpleNamespace
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query
@@ -143,6 +144,31 @@ def _build_invoice_pdf_bytes(
         invoice_access_url=invoice_access_url,
         zelle_email=tenant.zelle_email if tenant else None,
         zelle_phone=tenant.zelle_phone if tenant else None,
+    )
+
+
+def _invoice_recipient(invoice: Invoice, customer, vehicle):
+    """Use the snapshot contact for billable fleet work orders."""
+    if invoice.recipient_email:
+        name = (invoice.recipient_name or "Fleet billing contact").strip()
+        first_name, _, last_name = name.partition(" ")
+        return SimpleNamespace(
+            first_name=first_name,
+            last_name=last_name,
+            company_name=None,
+            email=invoice.recipient_email,
+            phone=invoice.recipient_phone,
+        )
+    return customer
+
+
+def _fleet_invoice_contact(vehicle: Vehicle) -> tuple[str, str, Optional[str]]:
+    if vehicle is None or not vehicle.billing_contact_email:
+        raise ValueError("Fleet truck needs an invoice contact email")
+    return (
+        vehicle.billing_contact_name or vehicle.driver_name or "Fleet billing contact",
+        vehicle.billing_contact_email,
+        vehicle.billing_contact_phone or vehicle.driver_phone,
     )
 
 
@@ -417,7 +443,16 @@ async def enqueue_invoice_created_email(
     """Persist a retryable invoice email in the caller's transaction."""
     customer = order.customer
     vehicle = order.vehicle
-    if not settings.PROVIDER_OUTBOX_ENABLED or not customer or not customer.email:
+    recipient = _invoice_recipient(invoice, customer, vehicle)
+    # Fleet billing contacts need the tokenized public invoice link generated
+    # after commit. The normal customer path can safely use the durable portal
+    # URL in the provider outbox.
+    if (
+        not settings.PROVIDER_OUTBOX_ENABLED
+        or invoice.recipient_email
+        or not recipient
+        or not recipient.email
+    ):
         return False
 
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
@@ -427,7 +462,7 @@ async def enqueue_invoice_created_email(
     invoice_access_url = f"{settings.FRONTEND_URL}/portal/invoices/{invoice.id}"
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
     email_html = _build_invoice_email_html(
-        customer=customer,
+        customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
         order=order,
@@ -443,7 +478,7 @@ async def enqueue_invoice_created_email(
         aggregate_type="invoice",
         aggregate_id=invoice.id,
         idempotency_key=f"invoice-email:{invoice.id}:created",
-        recipient=customer.email,
+        recipient=recipient.email,
         subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
         body=email_html,
         template_name="invoice_created",
@@ -491,7 +526,8 @@ async def notify_invoice_created(
 
     customer = order.customer
     vehicle = order.vehicle
-    if email_queued or not customer or not customer.email:
+    recipient = _invoice_recipient(invoice, customer, vehicle)
+    if email_queued or not customer or not recipient or not recipient.email:
         return
 
     vehicle_info = vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number) if vehicle else "Vehicle"
@@ -506,7 +542,7 @@ async def notify_invoice_created(
     )
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
     email_html = _build_invoice_email_html(
-        customer=customer,
+        customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
         order=order,
@@ -519,7 +555,7 @@ async def notify_invoice_created(
         pdf_bytes = _build_invoice_pdf_bytes(
             invoice=invoice,
             order=order,
-            customer=customer,
+            customer=recipient,
             vehicle=vehicle,
             tenant=tenant,
             labor_items=labor_items,
@@ -532,7 +568,7 @@ async def notify_invoice_created(
     await send_email(
         db=db,
         tenant_id=str(order.tenant_id),
-        to=customer.email,
+        to=recipient.email,
         subject=f"Invoice {invoice.invoice_number} – {vehicle_info}",
         body=email_html,
         template_name="invoice_created",
@@ -555,14 +591,16 @@ async def auto_create_invoice_for_order(
     The order must have .customer and .vehicle relationships already loaded.
     created_by_user_id is the staff member approving completion, if known.
     """
-    # Internal fleet repairs are settled at cost internally — never invoiced to a customer.
-    if order.is_internal:
-        return None
-
     existing_result = await db.execute(select(Invoice).where(Invoice.repair_order_id == order.id))
     if existing_result.scalar_one_or_none():
         return None
 
+    # Capture relationships before any subsequent commits
+    customer = order.customer
+    vehicle = order.vehicle
+    recipient_name = recipient_email = recipient_phone = None
+    if order.is_internal:
+        recipient_name, recipient_email, recipient_phone = _fleet_invoice_contact(vehicle)
     checkout = get_order_checkout_breakdown(order, tenant)
     subtotal = checkout["repair_total"]
     shop_supplies_amount = checkout["shop_supplies_amount"]
@@ -581,7 +619,10 @@ async def auto_create_invoice_for_order(
             repair_order_id=order.id,
             invoice_number=invoice_number,
             status=InvoiceStatus.SENT,
-            is_internal=order.is_internal,
+            is_internal=False,
+            recipient_name=recipient_name,
+            recipient_email=recipient_email,
+            recipient_phone=recipient_phone,
             subtotal=subtotal,
             shop_supplies_amount=shop_supplies_amount,
             service_fee_amount=service_fee_amount,
@@ -670,11 +711,6 @@ async def create_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    if order.is_internal:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Internal fleet repair orders are settled at cost and are not invoiced",
-        )
     if order.status != RepairOrderStatus.COMPLETED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -698,6 +734,12 @@ async def create_invoice(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to create invoice because the shop configuration is missing",
         )
+    recipient_name = recipient_email = recipient_phone = None
+    if order.is_internal:
+        try:
+            recipient_name, recipient_email, recipient_phone = _fleet_invoice_contact(order.vehicle)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     
     checkout = get_order_checkout_breakdown(order, tenant)
     subtotal = checkout["repair_total"]
@@ -737,7 +779,10 @@ async def create_invoice(
             repair_order_id=order.id,
             invoice_number=invoice_number,
             status=InvoiceStatus.SENT,
-            is_internal=order.is_internal,
+            is_internal=False,
+            recipient_name=recipient_name,
+            recipient_email=recipient_email,
+            recipient_phone=recipient_phone,
             subtotal=subtotal,
             shop_supplies_amount=shop_supplies_amount,
             service_fee_amount=service_fee_amount,
@@ -1022,8 +1067,10 @@ async def resend_invoice(
             detail="Access denied",
         )
     
-    # Use custom email if provided, otherwise use customer's email
-    to_email = body.custom_email if body.custom_email else customer.email
+    recipient = _invoice_recipient(invoice, customer, vehicle)
+    # Use custom email if provided, otherwise use the invoice's recipient
+    # snapshot (the truck contact for fleet work orders).
+    to_email = body.custom_email if body.custom_email else recipient.email
     if not to_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1046,7 +1093,7 @@ async def resend_invoice(
     labor_items, parts_items = await _load_line_items(db, order.id, invoice)
 
     email_html = _build_invoice_email_html(
-        customer=customer,
+        customer=recipient,
         vehicle_info=vehicle_info,
         invoice=invoice,
         order=order,
@@ -1058,7 +1105,7 @@ async def resend_invoice(
 
     try:
         pdf_bytes = _build_invoice_pdf_bytes(
-            invoice=invoice, order=order, customer=customer,
+            invoice=invoice, order=order, customer=recipient,
             vehicle=vehicle, tenant=tenant,
             labor_items=labor_items, parts_items=parts_items,
             invoice_access_url=invoice_access_url,
