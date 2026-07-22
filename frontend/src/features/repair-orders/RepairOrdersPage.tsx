@@ -6,7 +6,7 @@ import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
 import { format } from 'date-fns'
 import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw, Search } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
@@ -239,6 +239,7 @@ export default function RepairOrdersPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [initialPriceBuildWarningsByOrder, setInitialPriceBuildWarningsByOrder] = useState<Record<string, PriceBuildWarning[]>>({})
   const [showDangerActions, setShowDangerActions] = useState(false)
   const [viewMode, setViewMode] = useViewPreference('repair_orders')
   const [isMobile, setIsMobile] = useState(false)
@@ -1999,16 +2000,24 @@ export default function RepairOrdersPage() {
         // Apply sequentially so a stock-failure on one service doesn't abort the rest,
         // and so we can surface a per-service reason to the user.
         const failures: { name: string; reason: string }[] = []
+        const warnings: PriceBuildWarning[] = []
         for (const svc of selectedServicePayload) {
           try {
-            await api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
+            const response = await api.post(`/repair-orders/${createdOrder.id}/price-build/flat-service`, {
               service_id: svc.id,
               quantity: 1,
             })
+            warnings.push(...(response.data?.warnings || []))
           } catch (err) {
             console.error(`Failed to apply service "${svc.name}" to price builder`, err)
             failures.push({ name: svc.name, reason: getErrorDetail(err, 'could not be applied') })
           }
+        }
+        if (warnings.length > 0) {
+          setInitialPriceBuildWarningsByOrder((current) => ({
+            ...current,
+            [createdOrder.id]: warnings,
+          }))
         }
         if (failures.length > 0) {
           const detail = failures.map((f) => `${f.name}: ${f.reason}`).join('; ')
@@ -3570,6 +3579,7 @@ export default function RepairOrdersPage() {
                     resolveRecommendedPending={resolveRecServiceMutation.isPending}
                     deleteRecommendedPending={deleteRecServiceMutation.isPending}
                     onRecommendedServicesOpenChange={setRecommendedServicesOpen}
+                    initialLineWarnings={initialPriceBuildWarningsByOrder[selectedOrder.id] || []}
                     onUpdated={() => {
                       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
                     }}

@@ -8,10 +8,11 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.customer import Customer
+from app.db.models.inventory import Inventory
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.labor_operation_memory import LaborOperationMemory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
-from app.db.models.service import Service
+from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
 from app.db.models.vehicle import Vehicle
 from app.services.price_build_service import PriceBuildService
@@ -134,6 +135,44 @@ async def test_add_flat_service_line_recomputes_totals(db_session):
     assert len(result.order.labor_items) == 1
     assert result.order.labor_items[0].line_type == LaborLineType.MANUAL
     assert result.order.labor_items[0].source_service_id == service.id
+
+
+@pytest.mark.asyncio
+async def test_add_flat_service_line_keeps_service_when_bundled_part_stock_is_short(db_session):
+    tenant, _, _, order, service = await _seed_context(db_session)
+    inventory = Inventory(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        sku="USED-TIRE",
+        name="Used Tire",
+        stock_quantity=0,
+        cost=Decimal("100.00"),
+        selling_price=Decimal("150.00"),
+        unit_type="each",
+    )
+    service_part = ServicePart(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        service_id=service.id,
+        inventory_id=inventory.id,
+        quantity=Decimal("1.00"),
+    )
+    db_session.add_all([inventory, service_part])
+    await db_session.commit()
+
+    svc = PriceBuildService()
+    loaded = await svc.load_order(db_session, order.id)
+    result = await svc.add_flat_service_line(db_session, loaded, service.id, quantity=1)
+
+    assert len(result.order.labor_items) == 1
+    line = result.order.labor_items[0]
+    assert line.description == service.name
+    assert line.source_service_id == service.id
+    assert result.order.parts_usage == []
+    assert result.warnings
+    assert result.warnings[0].code == "service_part_stock_shortage"
+    assert result.warnings[0].line_id == line.id
+    assert "Used Tire" in result.warnings[0].message
 
 
 @pytest.mark.asyncio

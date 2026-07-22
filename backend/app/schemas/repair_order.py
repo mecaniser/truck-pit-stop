@@ -274,6 +274,7 @@ class RepairOrderStartWorkResponse(RepairOrderResponse):
 class PriceBuildWarning(BaseModel):
     code: str
     message: str
+    line_id: Optional[UUID] = None
 
 
 class PriceBuildFlatServiceRequest(BaseModel):
