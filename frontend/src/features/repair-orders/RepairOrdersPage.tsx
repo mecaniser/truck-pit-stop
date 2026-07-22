@@ -6,9 +6,9 @@ import { formatHoursMinutes } from '@/lib/durationFormat'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority } from '../../types'
+import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw, Search } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -105,6 +105,19 @@ type ManualPaymentResponse = {
   message: string
   warning?: string | null
 }
+
+type RepairOrderFormErrors = Partial<Record<
+  | 'customer'
+  | 'customerFirstName'
+  | 'customerLastName'
+  | 'customerEmail'
+  | 'vehicle'
+  | 'vehicleMake'
+  | 'vehicleModel'
+  | 'vehicleVin'
+  | 'root',
+  string
+>>
 
 const isWalkInPlaceholderCustomer = (customer?: CustomerLookupItem | null): boolean => {
   if (!customer) return false
@@ -243,6 +256,9 @@ export default function RepairOrdersPage() {
     unit_number: '',
     mileage: '',
   })
+  const [formErrors, setFormErrors] = useState<RepairOrderFormErrors>({})
+  const [isDecodingNewVehicleVin, setIsDecodingNewVehicleVin] = useState(false)
+  const lastDecodedNewVehicleVin = useRef('')
   const [addPartInventoryId, setAddPartInventoryId] = useState('')
   const [addPartQuantity, setAddPartQuantity] = useState(1)
   const [addLaborDescription, setAddLaborDescription] = useState('')
@@ -779,6 +795,40 @@ export default function RepairOrdersPage() {
     return `$${parseMoney(value).toFixed(2)}`
   }
 
+  const clearFormError = (field: keyof RepairOrderFormErrors) => {
+    setFormErrors((current) => {
+      if (!current[field]) return current
+      const next = { ...current }
+      delete next[field]
+      if (field !== 'root') delete next.root
+      return next
+    })
+  }
+
+  const clearFormErrors = (...fields: (keyof RepairOrderFormErrors)[]) => {
+    setFormErrors((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const field of fields) {
+        if (next[field]) {
+          delete next[field]
+          changed = true
+        }
+      }
+      if (changed) delete next.root
+      return changed ? next : current
+    })
+  }
+
+  const fieldError = (message?: string) => (
+    message ? <p className="mt-1 text-xs font-medium text-red-600">{message}</p> : null
+  )
+
+  const textInputClass = (hasError?: boolean) =>
+    `w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${
+      hasError ? 'border-red-400' : 'border-gray-300'
+    }`
+
   const canEditPriceBuilderByRole = ['garage_owner', 'garage_admin', 'receptionist'].includes(currentUser?.role || '')
   const showLegacyPriceEditor = false
   const detailStatus = (orderDetail ?? selectedOrder)?.status ?? null
@@ -857,9 +907,63 @@ export default function RepairOrdersPage() {
       return response.data as RepairOrder
     },
     onError: (error: unknown) => {
-      toast.error(getErrorDetail(error, 'Failed to create repair order'))
+      setFormErrors((current) => ({ ...current, root: getErrorDetail(error, 'Failed to create repair order') }))
     },
   })
+
+  const decodeNewVehicleVin = async (rawVin: string, options: { quiet?: boolean } = {}) => {
+    const vin = rawVin.trim().toUpperCase()
+    if (vin.length < 11) {
+      if (!options.quiet) {
+        setFormErrors((current) => ({ ...current, vehicleVin: 'VIN must be at least 11 characters.' }))
+      }
+      return
+    }
+
+    clearFormError('vehicleVin')
+    setIsDecodingNewVehicleVin(true)
+    try {
+      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${encodeURIComponent(vin)}`)
+      const result = response.data
+
+      if (result.error_code && result.error_code !== '0') {
+        setFormErrors((current) => ({
+          ...current,
+          vehicleVin: result.error_text || 'We could not decode that VIN. Check the VIN or enter truck details manually.',
+        }))
+        return
+      }
+
+      setNewVehicle((prev) => ({
+        ...prev,
+        vin: result.vin || vin || prev.vin,
+        make: result.make || prev.make,
+        model: result.model || prev.model,
+        year: result.year?.toString() || prev.year,
+      }))
+      lastDecodedNewVehicleVin.current = vin
+
+      const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
+      toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
+    } catch (error: any) {
+      setFormErrors((current) => ({
+        ...current,
+        vehicleVin: error.response?.data?.detail || 'Failed to decode VIN. Check the VIN or enter truck details manually.',
+      }))
+    } finally {
+      setIsDecodingNewVehicleVin(false)
+    }
+  }
+
+  const handleNewVehicleVinChange = (value: string) => {
+    const vin = value.toUpperCase()
+    setNewVehicle((prev) => ({ ...prev, vin }))
+    clearFormError('vehicleVin')
+    const trimmedVin = vin.trim()
+    if (trimmedVin.length === 17 && trimmedVin !== lastDecodedNewVehicleVin.current) {
+      void decodeNewVehicleVin(trimmedVin, { quiet: true })
+    }
+  }
 
   // Delete/restore/reopen change whether an order shows on the owner's floor
   // board and dashboard, not just the RO lists — invalidate those too so the
@@ -1763,6 +1867,8 @@ export default function RepairOrdersPage() {
     setSelectedServiceOptions([])
     setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
     setNewVehicle({ make: '', model: '', year: '', vin: '', unit_number: '', mileage: '' })
+    setFormErrors({})
+    lastDecodedNewVehicleVin.current = ''
   }
 
   const openModal = () => {
@@ -1775,8 +1881,35 @@ export default function RepairOrdersPage() {
     resetModal()
   }
 
+  const validateRepairOrderForm = () => {
+    const errors: RepairOrderFormErrors = {}
+    const isNewCustomer = selectedCustomerId === 'add_new'
+    const shouldCreateVehicle = isNewCustomer || showNewVehicleForm
+
+    if (isNewCustomer) {
+      if (!newCustomer.first_name.trim()) errors.customerFirstName = 'First name is required.'
+      if (!newCustomer.last_name.trim()) errors.customerLastName = 'Last name is required.'
+      if (!newCustomer.email.trim()) errors.customerEmail = 'Email is required.'
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newCustomer.email.trim())) errors.customerEmail = 'Enter a valid email address.'
+    } else if (!selectedCustomerId) {
+      errors.customer = 'Select a customer or add a new one.'
+    }
+
+    if (shouldCreateVehicle) {
+      if (!newVehicle.make.trim()) errors.vehicleMake = 'Make is required.'
+      if (!newVehicle.model.trim()) errors.vehicleModel = 'Model is required.'
+    } else if (!selectedVehicleId) {
+      errors.vehicle = 'Select an available truck or add a new one.'
+    }
+
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!validateRepairOrderForm()) return
+
     setIsSubmitting(true)
 
     try {
@@ -1786,10 +1919,6 @@ export default function RepairOrdersPage() {
 
       // New customer flow
       if (isNewCustomer) {
-        if (!newCustomer.first_name.trim() || !newCustomer.last_name.trim() || !newCustomer.email.trim()) {
-          toast.error('New customer requires first name, last name, and email')
-          return
-        }
         const createdCustomer = await createCustomerMutation.mutateAsync({
           first_name: newCustomer.first_name.trim(),
           last_name: newCustomer.last_name.trim(),
@@ -1802,20 +1931,24 @@ export default function RepairOrdersPage() {
         })
         finalCustomerId = createdCustomer.id
       } else if (!finalCustomerId) {
-        toast.error('Select a customer or create a new one')
+        setFormErrors((current) => ({ ...current, customer: 'Select a customer or add a new one.' }))
         return
       }
 
       // Vehicle selection can override customer
-      const shouldCreateVehicle = isNewCustomer || showNewVehicleForm || !selectedVehicleId
+      const shouldCreateVehicle = isNewCustomer || showNewVehicleForm
 
       if (shouldCreateVehicle) {
         if (!finalCustomerId) {
-          toast.error('A customer is required to add a vehicle')
+          setFormErrors((current) => ({ ...current, customer: 'A customer is required before adding a truck.' }))
           return
         }
         if (!newVehicle.make.trim() || !newVehicle.model.trim()) {
-          toast.error('New vehicle requires make and model')
+          setFormErrors((current) => ({
+            ...current,
+            vehicleMake: !newVehicle.make.trim() ? 'Make is required.' : current.vehicleMake,
+            vehicleModel: !newVehicle.model.trim() ? 'Model is required.' : current.vehicleModel,
+          }))
           return
         }
         const createdVehicle = await createVehicleMutation.mutateAsync({
@@ -1827,7 +1960,7 @@ export default function RepairOrdersPage() {
       } else {
         const vehicle = vehicleOptions.find((item) => item.id === selectedVehicleId)
         if (!vehicle) {
-          toast.error('Selected vehicle not found')
+          setFormErrors((current) => ({ ...current, vehicle: 'Selected truck was not found. Select another truck or add a new one.' }))
           return
         }
         finalVehicleId = vehicle.id
@@ -1835,7 +1968,7 @@ export default function RepairOrdersPage() {
       }
 
       if (!finalCustomerId || !finalVehicleId) {
-        toast.error('Customer and vehicle are required')
+        setFormErrors((current) => ({ ...current, root: 'Customer and truck are required before creating a repair order.' }))
         return
       }
 
@@ -1906,7 +2039,7 @@ export default function RepairOrdersPage() {
       // building it, instead of hunting for it back in the list.
       openDetail(createdOrder)
     } catch (err: unknown) {
-      toast.error(getErrorDetail(err, 'Failed to create repair order'))
+      setFormErrors((current) => ({ ...current, root: getErrorDetail(err, 'Failed to create repair order') }))
     } finally {
       setIsSubmitting(false)
     }
@@ -2292,50 +2425,63 @@ export default function RepairOrdersPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Customer & Vehicle</h3>
                   </div>
+                  {formErrors.root ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                      {formErrors.root}
+                    </div>
+                  ) : null}
 
                   {selectedCustomerId !== 'add_new' ? (
                     <div className="space-y-4">
-                      <div className="flex items-end gap-3">
-                        <div className="flex-1">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
-                          <CustomerSelect
-                            customers={customerOptions}
-                            isLoading={isLoadingCustomers && customerOptions.length === 0}
-                            searchLoading={isFetchingCustomers}
-                            value={selectedCustomerId}
-                            onQueryChange={setCustomerQuery}
-                            onChange={(val) => {
-                              if (val === 'add_new') {
-                                setSelectedCustomerId('add_new')
-                                setSelectedCustomerOption(null)
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Customer</label>
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <CustomerSelect
+                              customers={customerOptions}
+                              isLoading={isLoadingCustomers && customerOptions.length === 0}
+                              searchLoading={isFetchingCustomers}
+                              value={selectedCustomerId}
+                              onQueryChange={setCustomerQuery}
+                              onChange={(val) => {
+                                clearFormErrors('customer', 'vehicle', 'root')
+                                if (val === 'add_new') {
+                                  clearFormErrors('customerFirstName', 'customerLastName', 'customerEmail', 'vehicleMake', 'vehicleModel', 'vehicleVin')
+                                  setSelectedCustomerId('add_new')
+                                  setSelectedCustomerOption(null)
+                                  setSelectedVehicleId('')
+                                  setSelectedVehicleOption(null)
+                                  setShowNewVehicleForm(true)
+                                  return
+                                }
+                                clearFormErrors('customerFirstName', 'customerLastName', 'customerEmail', 'vehicleMake', 'vehicleModel', 'vehicleVin')
+                                setSelectedCustomerOption(customerOptions.find((customer) => customer.id === val) || null)
+                                setSelectedCustomerId(val)
                                 setSelectedVehicleId('')
                                 setSelectedVehicleOption(null)
-                                setShowNewVehicleForm(true)
-                                return
-                              }
-                              setSelectedCustomerOption(customerOptions.find((customer) => customer.id === val) || null)
-                              setSelectedCustomerId(val)
+                                setVehicleQuery('')
+                                setShowNewVehicleForm(false)
+                              }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              clearFormErrors('customer', 'vehicle', 'root')
+                              clearFormErrors('customerFirstName', 'customerLastName', 'customerEmail', 'vehicleMake', 'vehicleModel', 'vehicleVin')
+                              setSelectedCustomerId('add_new')
+                              setSelectedCustomerOption(null)
                               setSelectedVehicleId('')
                               setSelectedVehicleOption(null)
-                              setVehicleQuery('')
-                              setShowNewVehicleForm(false)
+                              setShowNewVehicleForm(true)
                             }}
-                          />
+                            className="inline-flex h-[42px] items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCustomerId('add_new')
-                            setSelectedCustomerOption(null)
-                            setSelectedVehicleId('')
-                            setSelectedVehicleOption(null)
-                            setShowNewVehicleForm(true)
-                          }}
-                          className="inline-flex h-[42px] items-center gap-1 px-3 text-sm font-medium text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Add
-                        </button>
+                        {fieldError(formErrors.customer)}
                       </div>
 
                       {selectedCustomerId && selectedCustomerId !== 'add_new' && (
@@ -2356,6 +2502,7 @@ export default function RepairOrdersPage() {
                             <button
                               type="button"
                               onClick={() => {
+                                clearFormErrors('vehicle', 'vehicleMake', 'vehicleModel', 'root')
                                 setSelectedVehicleId('')
                                 setSelectedVehicleOption(null)
                                 setShowNewVehicleForm(true)
@@ -2383,6 +2530,7 @@ export default function RepairOrdersPage() {
                                     aria-label={`Select ${vehicleName} · ${unitLabel}`}
                                     title={`${vehicleName} · ${unitLabel}`}
                                     onClick={() => {
+                                      clearFormErrors('vehicle', 'vehicleMake', 'vehicleModel', 'root')
                                       setSelectedVehicleId(vehicle.id)
                                       setSelectedVehicleOption(vehicle)
                                       setShowNewVehicleForm(false)
@@ -2408,6 +2556,7 @@ export default function RepairOrdersPage() {
                               {vehicleQuery.trim() ? 'No company trucks match this search.' : 'No trucks are listed for this company yet.'}
                             </div>
                           )}
+                          {fieldError(formErrors.vehicle)}
                         </div>
                       )}
 
@@ -2415,17 +2564,25 @@ export default function RepairOrdersPage() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <VehicleMakePicker
                             value={newVehicle.make}
-                            onChange={(make) => setNewVehicle((prev) => ({ ...prev, make }))}
+                            onChange={(make) => {
+                              clearFormError('vehicleMake')
+                              setNewVehicle((prev) => ({ ...prev, make }))
+                            }}
+                            error={formErrors.vehicleMake}
                           />
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
                             <input
                               name="model"
                               value={newVehicle.model}
-                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, model: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                              onChange={(e) => {
+                                clearFormError('vehicleModel')
+                                setNewVehicle((prev) => ({ ...prev, model: e.target.value }))
+                              }}
+                              className={textInputClass(!!formErrors.vehicleModel)}
                               placeholder="579, Cascadia..."
                             />
+                            {fieldError(formErrors.vehicleModel)}
                           </div>
                           <YearPicker
                             value={newVehicle.year}
@@ -2433,13 +2590,26 @@ export default function RepairOrdersPage() {
                           />
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
-                            <input
-                              name="vin"
-                              value={newVehicle.vin}
-                              onChange={(e) => setNewVehicle((prev) => ({ ...prev, vin: e.target.value }))}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                              placeholder="1XPBDP9X8JD123456"
-                            />
+                            <div className="flex gap-2">
+                              <input
+                                name="vin"
+                                value={newVehicle.vin}
+                                onChange={(e) => handleNewVehicleVinChange(e.target.value)}
+                                className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase ${formErrors.vehicleVin ? 'border-red-400' : 'border-gray-300'}`}
+                                placeholder="1XPBDP9X8JD123456"
+                                maxLength={17}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => decodeNewVehicleVin(newVehicle.vin)}
+                                disabled={isDecodingNewVehicleVin || newVehicle.vin.trim().length < 11}
+                                className="inline-flex items-center gap-2 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors"
+                              >
+                                {isDecodingNewVehicleVin ? <Spinner size="xs" /> : <Search className="w-4 h-4" />}
+                                Decode
+                              </button>
+                            </div>
+                            {fieldError(formErrors.vehicleVin)}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Unit number</label>
@@ -2472,20 +2642,28 @@ export default function RepairOrdersPage() {
                         <input
                           name="first_name"
                           value={newCustomer.first_name}
-                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, first_name: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          onChange={(e) => {
+                            clearFormError('customerFirstName')
+                            setNewCustomer((prev) => ({ ...prev, first_name: e.target.value }))
+                          }}
+                          className={textInputClass(!!formErrors.customerFirstName)}
                           placeholder="Acme"
                         />
+                        {fieldError(formErrors.customerFirstName)}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
                         <input
                           name="last_name"
                           value={newCustomer.last_name}
-                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, last_name: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          onChange={(e) => {
+                            clearFormError('customerLastName')
+                            setNewCustomer((prev) => ({ ...prev, last_name: e.target.value }))
+                          }}
+                          className={textInputClass(!!formErrors.customerLastName)}
                           placeholder="Doe"
                         />
+                        {fieldError(formErrors.customerLastName)}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
@@ -2503,10 +2681,14 @@ export default function RepairOrdersPage() {
                           type="email"
                           name="email"
                           value={newCustomer.email}
-                          onChange={(e) => setNewCustomer((prev) => ({ ...prev, email: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          onChange={(e) => {
+                            clearFormError('customerEmail')
+                            setNewCustomer((prev) => ({ ...prev, email: e.target.value }))
+                          }}
+                          className={textInputClass(!!formErrors.customerEmail)}
                           placeholder="fleet@acme.com"
                         />
+                        {fieldError(formErrors.customerEmail)}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
@@ -2521,17 +2703,25 @@ export default function RepairOrdersPage() {
 
                       <VehicleMakePicker
                         value={newVehicle.make}
-                        onChange={(make) => setNewVehicle((prev) => ({ ...prev, make }))}
+                        onChange={(make) => {
+                          clearFormError('vehicleMake')
+                          setNewVehicle((prev) => ({ ...prev, make }))
+                        }}
+                        error={formErrors.vehicleMake}
                       />
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
                         <input
                           name="model"
                           value={newVehicle.model}
-                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, model: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+                          onChange={(e) => {
+                            clearFormError('vehicleModel')
+                            setNewVehicle((prev) => ({ ...prev, model: e.target.value }))
+                          }}
+                          className={textInputClass(!!formErrors.vehicleModel)}
                           placeholder="579, Cascadia..."
                         />
+                        {fieldError(formErrors.vehicleModel)}
                       </div>
                       <YearPicker
                         value={newVehicle.year}
@@ -2539,13 +2729,26 @@ export default function RepairOrdersPage() {
                       />
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">VIN</label>
-                        <input
-                          name="vin"
-                          value={newVehicle.vin}
-                          onChange={(e) => setNewVehicle((prev) => ({ ...prev, vin: e.target.value }))}
-                          className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
-                          placeholder="1XPBDP9X8JD123456"
-                        />
+                        <div className="flex gap-2">
+                          <input
+                            name="vin"
+                            value={newVehicle.vin}
+                            onChange={(e) => handleNewVehicleVinChange(e.target.value)}
+                            className={`min-w-0 flex-1 px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors uppercase ${formErrors.vehicleVin ? 'border-red-400' : 'border-gray-300'}`}
+                            placeholder="1XPBDP9X8JD123456"
+                            maxLength={17}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => decodeNewVehicleVin(newVehicle.vin)}
+                            disabled={isDecodingNewVehicleVin || newVehicle.vin.trim().length < 11}
+                            className="inline-flex items-center gap-2 px-3 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 font-medium rounded-lg transition-colors"
+                          >
+                            {isDecodingNewVehicleVin ? <Spinner size="xs" /> : <Search className="w-4 h-4" />}
+                            Decode
+                          </button>
+                        </div>
+                        {fieldError(formErrors.vehicleVin)}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Unit number</label>

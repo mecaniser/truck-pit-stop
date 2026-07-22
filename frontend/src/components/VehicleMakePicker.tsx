@@ -20,24 +20,79 @@ const TRUCK_MAKES = [
   'Scania',
 ]
 
+const normalizeMakeKey = (make: string) => make.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+const MAKE_ALIASES: Record<string, string> = {
+  peterbilt: 'Peterbilt',
+  paccarpeterbilt: 'Peterbilt',
+  kenworth: 'Kenworth',
+  paccarkenworth: 'Kenworth',
+  freightliner: 'Freightliner',
+  freightlinertruck: 'Freightliner',
+  freightlinertrucks: 'Freightliner',
+  daimlerfreightliner: 'Freightliner',
+  volvo: 'Volvo',
+  volvotruck: 'Volvo',
+  volvotrucks: 'Volvo',
+  volvotrucknorthamerica: 'Volvo',
+  mack: 'Mack',
+  macktruck: 'Mack',
+  macktrucks: 'Mack',
+  international: 'International',
+  internationaltruck: 'International',
+  internationaltrucks: 'International',
+  navistar: 'International',
+  navistarinternational: 'International',
+  westernstar: 'Western Star',
+  westernstartruck: 'Western Star',
+  westernstartrucks: 'Western Star',
+  hino: 'Hino',
+  hinotruck: 'Hino',
+  hinotrucks: 'Hino',
+  isuzu: 'Isuzu',
+  isuzutruck: 'Isuzu',
+  isuzutrucks: 'Isuzu',
+  ford: 'Ford',
+  ram: 'Ram',
+  dodge: 'Ram',
+  chevrolet: 'Chevrolet',
+  chevy: 'Chevrolet',
+  gmc: 'GMC',
+  mercedesbenz: 'Mercedes-Benz',
+  mercedes: 'Mercedes-Benz',
+  man: 'MAN',
+  scania: 'Scania',
+}
+
+const canonicalMake = (make: string) => {
+  const trimmed = make.trim()
+  if (!trimmed) return ''
+  return MAKE_ALIASES[normalizeMakeKey(trimmed)] || ''
+}
+
 interface VehicleMakePickerProps {
   value: string
   onChange: (make: string) => void
   label?: string
+  error?: string
 }
 
-export default function VehicleMakePicker({ value, onChange, label = 'Make' }: VehicleMakePickerProps) {
-  const [selection, setSelection] = useState<string>(TRUCK_MAKES.includes(value) ? value : value ? 'custom' : '')
+export default function VehicleMakePicker({ value, onChange, label = 'Make', error }: VehicleMakePickerProps) {
+  const [selection, setSelection] = useState<string>(canonicalMake(value) || (value ? 'custom' : ''))
 
   useEffect(() => {
-    if (TRUCK_MAKES.includes(value)) {
-      setSelection(value)
+    const make = canonicalMake(value)
+    if (make) {
+      setSelection(make)
+      if (value !== make) {
+        onChange(make)
+      }
     } else if (value) {
       setSelection('custom')
     } else {
       setSelection('')
     }
-  }, [value])
+  }, [value, onChange])
 
   const options: BaseSelectOption[] = useMemo(
     () => [
@@ -71,12 +126,13 @@ export default function VehicleMakePicker({ value, onChange, label = 'Make' }: V
             name="make"
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors"
+            className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-colors ${error ? 'border-red-400' : 'border-gray-300'}`}
             placeholder="e.g., Peterbilt or custom make"
             required
           />
         </div>
       ) : null}
+      {error ? <p className="mt-1 text-xs font-medium text-red-600">{error}</p> : null}
     </div>
   )
 }

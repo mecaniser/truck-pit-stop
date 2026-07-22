@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react'
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
@@ -638,33 +638,38 @@ export default function CustomersPage() {
 
   // VIN Decoder
   const [isDecodingVin, setIsDecodingVin] = useState(false)
+  const lastDecodedInitialVehicleVin = useRef('')
   
-  const decodeVin = async (vin: string) => {
+  const decodeVin = async (rawVin: string, options: { quiet?: boolean } = {}) => {
+    const vin = rawVin.trim().toUpperCase()
     if (!vin || vin.length < 11) {
-      toast.error('VIN must be at least 11 characters')
+      if (!options.quiet) toast.error('VIN must be at least 11 characters')
       return
     }
     setIsDecodingVin(true)
     try {
-      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${vin}`)
+      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${encodeURIComponent(vin)}`)
       const result = response.data
       
       if (result.error_code && result.error_code !== '0') {
-        toast.error(result.error_text || 'Failed to decode VIN')
+        if (!options.quiet) toast.error(result.error_text || 'Failed to decode VIN')
         return
       }
       
       // Populate vehicle fields from decoded data
       setFormData(prev => ({
         ...prev,
+        vehicle_vin: result.vin || vin || prev.vehicle_vin,
         vehicle_make: result.make || prev.vehicle_make,
         vehicle_model: result.model || prev.vehicle_model,
         vehicle_year: result.year?.toString() || prev.vehicle_year,
       }))
+      lastDecodedInitialVehicleVin.current = vin
       
-      toast.success(`VIN decoded: ${result.year} ${result.make} ${result.model}`)
+      const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
+      toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+      if (!options.quiet) toast.error(error.response?.data?.detail || 'Failed to decode VIN')
     } finally {
       setIsDecodingVin(false)
     }
@@ -878,6 +883,7 @@ export default function CustomersPage() {
   const resetForm = () => {
     setEditingCustomer(null)
     setFormData(emptyForm)
+    lastDecodedInitialVehicleVin.current = ''
   }
 
   const openCreateModal = () => {
@@ -945,11 +951,13 @@ export default function CustomersPage() {
   const openAddVehicleModal = () => {
     setEditingVehicle(null)
     setVehicleFormData(emptyVehicleForm)
+    lastDecodedVehicleVin.current = ''
     setIsVehicleModalOpen(true)
   }
 
   const openEditVehicleModal = (vehicle: Vehicle) => {
     setEditingVehicle(vehicle)
+    lastDecodedVehicleVin.current = (vehicle.vin || '').trim().toUpperCase()
     setVehicleFormData({
       make: vehicle.make,
       model: vehicle.model,
@@ -968,41 +976,56 @@ export default function CustomersPage() {
     setIsVehicleModalOpen(false)
     setEditingVehicle(null)
     setVehicleFormData(emptyVehicleForm)
+    lastDecodedVehicleVin.current = ''
   }
 
   const handleVehicleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
+    if (name === 'vin') {
+      const vin = value.toUpperCase()
+      setVehicleFormData((prev) => ({ ...prev, vin }))
+      const trimmedVin = vin.trim()
+      if (trimmedVin.length === 17 && trimmedVin !== lastDecodedVehicleVin.current) {
+        void decodeVehicleVin(trimmedVin, { quiet: true })
+      }
+      return
+    }
     setVehicleFormData((prev) => ({ ...prev, [name]: value }))
   }
 
   // VIN decoder for vehicle form (separate from customer form)
   const [isDecodingVehicleVin, setIsDecodingVehicleVin] = useState(false)
+  const lastDecodedVehicleVin = useRef('')
   
-  const decodeVehicleVin = async (vin: string) => {
+  const decodeVehicleVin = async (rawVin: string, options: { quiet?: boolean } = {}) => {
+    const vin = rawVin.trim().toUpperCase()
     if (!vin || vin.length < 11) {
-      toast.error('VIN must be at least 11 characters')
+      if (!options.quiet) toast.error('VIN must be at least 11 characters')
       return
     }
     setIsDecodingVehicleVin(true)
     try {
-      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${vin}`)
+      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${encodeURIComponent(vin)}`)
       const result = response.data
       
       if (result.error_code && result.error_code !== '0') {
-        toast.error(result.error_text || 'Failed to decode VIN')
+        if (!options.quiet) toast.error(result.error_text || 'Failed to decode VIN')
         return
       }
       
       setVehicleFormData(prev => ({
         ...prev,
+        vin: result.vin || vin || prev.vin,
         make: result.make || prev.make,
         model: result.model || prev.model,
         year: result.year?.toString() || prev.year,
       }))
+      lastDecodedVehicleVin.current = vin
       
-      toast.success(`VIN decoded: ${result.year} ${result.make} ${result.model}`)
+      const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
+      toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+      if (!options.quiet) toast.error(error.response?.data?.detail || 'Failed to decode VIN')
     } finally {
       setIsDecodingVehicleVin(false)
     }
@@ -1177,6 +1200,16 @@ export default function CustomersPage() {
     // Reset state when country changes
     if (name === 'billing_country') {
       setFormData((prev) => ({ ...prev, [name]: value, billing_state: '' }))
+      return
+    }
+
+    if (name === 'vehicle_vin') {
+      const vin = value.toUpperCase()
+      setFormData((prev) => ({ ...prev, vehicle_vin: vin }))
+      const trimmedVin = vin.trim()
+      if (trimmedVin.length === 17 && trimmedVin !== lastDecodedInitialVehicleVin.current) {
+        void decodeVin(trimmedVin, { quiet: true })
+      }
       return
     }
     
@@ -1586,7 +1619,7 @@ export default function CustomersPage() {
                     Decode
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Enter VIN and click Decode to auto-fill make, model, and year</p>
+                <p className="text-xs text-gray-500 mt-1">Enter or paste a full VIN to auto-fill make, model, and year.</p>
               </div>
 
               {/* Make & Model */}
@@ -1856,7 +1889,7 @@ export default function CustomersPage() {
             Decode
           </button>
         </div>
-        <p className="text-xs text-gray-500 mt-1">Enter VIN and click Decode to auto-fill make, model, and year</p>
+        <p className="text-xs text-gray-500 mt-1">Enter or paste a full VIN to auto-fill make, model, and year.</p>
       </div>
 
       {/* Unit Number */}

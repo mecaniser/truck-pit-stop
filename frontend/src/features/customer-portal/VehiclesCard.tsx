@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,8 +6,9 @@ import { z } from 'zod'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../../stores/authStore'
 import api from '../../lib/api'
-import { Vehicle } from '../../types'
+import { Vehicle, VINDecodeResult } from '../../types'
 import { Truck } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 const editVehicleSchema = z.object({
   license_plate: z.string().optional(),
@@ -96,9 +97,46 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
   const { user } = useAuthStore()
   const queryClient = useQueryClient()
   
-  const { register, handleSubmit, formState: { errors } } = useForm<AddVehicleData>({
+  const { register, handleSubmit, formState: { errors }, setValue } = useForm<AddVehicleData>({
     resolver: zodResolver(addVehicleSchema),
   })
+  const [isDecodingVin, setIsDecodingVin] = useState(false)
+  const lastDecodedVin = useRef('')
+
+  const decodeVin = async (rawVin: string) => {
+    const vin = rawVin.trim().toUpperCase()
+    if (vin.length !== 17 || vin === lastDecodedVin.current) return
+
+    setIsDecodingVin(true)
+    try {
+      const response = await api.get<VINDecodeResult>(`/customers/vin/decode/${encodeURIComponent(vin)}`)
+      const result = response.data
+      if (result.error_code && result.error_code !== '0') {
+        toast.error(result.error_text || 'Failed to decode VIN')
+        return
+      }
+
+      setValue('vin', result.vin || vin, { shouldDirty: true })
+      if (result.make) setValue('make', result.make, { shouldDirty: true, shouldValidate: true })
+      if (result.model) setValue('model', result.model, { shouldDirty: true, shouldValidate: true })
+      if (result.year) setValue('year', result.year, { shouldDirty: true, shouldValidate: true })
+      lastDecodedVin.current = vin
+      const decodedLabel = [result.year, result.make, result.model].filter(Boolean).join(' ')
+      toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to decode VIN')
+    } finally {
+      setIsDecodingVin(false)
+    }
+  }
+
+  const handleVinChange = (value: string) => {
+    const vin = value.toUpperCase()
+    setValue('vin', vin, { shouldDirty: true })
+    if (vin.trim().length === 17) {
+      void decodeVin(vin)
+    }
+  }
 
   const mutation = useMutation({
     mutationFn: async (data: AddVehicleData) => {
@@ -145,7 +183,15 @@ function AddVehicleForm({ onClose }: { onClose: () => void }) {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1">VIN</label>
-          <input {...register('vin')} className={inputClasses(false)} placeholder="1HTMMAAM45H123456" />
+          <div className="relative">
+            <input
+              {...register('vin', { onChange: (event) => handleVinChange(event.target.value) })}
+              className={`${inputClasses(false)} pr-9 uppercase`}
+              placeholder="1HTMMAAM45H123456"
+              maxLength={17}
+            />
+            {isDecodingVin && <Spinner size="xs" className="absolute right-3 top-1/2 -translate-y-1/2" />}
+          </div>
         </div>
       </div>
 

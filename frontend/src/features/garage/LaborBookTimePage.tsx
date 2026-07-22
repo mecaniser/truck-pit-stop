@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Spinner, LoadingLine } from '@/components/ui'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -132,6 +132,7 @@ export default function LaborBookTimePage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [createState, setCreateState] = useState<CreateState>(emptyCreateState)
+  const lastDecodedVin = useRef('')
   const [editState, setEditState] = useState<EditState>({
     operation_name: '',
     operation_description: '',
@@ -183,6 +184,7 @@ export default function LaborBookTimePage() {
     onSuccess: (entry) => {
       queryClient.invalidateQueries({ queryKey: ['labor-book-time'] })
       setCreateState(emptyCreateState)
+      lastDecodedVin.current = ''
       setIsCreating(false)
       toast.success(`${entry.operation_name} book time created`)
     },
@@ -216,6 +218,7 @@ export default function LaborBookTimePage() {
         engine_displacement_l: decoded.engine_displacement_l ? String(decoded.engine_displacement_l) : prev.engine_displacement_l,
         gvwr: decoded.gvwr || prev.gvwr,
       }))
+      lastDecodedVin.current = (decoded.vin || '').trim().toUpperCase()
       toast.success('VIN decoded into truck scope')
     },
     onError: (err: unknown) => {
@@ -309,6 +312,15 @@ export default function LaborBookTimePage() {
       return
     }
     decodeVinMutation.mutate(vin)
+  }
+
+  const handleVinSampleChange = (value: string) => {
+    const vin = value.toUpperCase()
+    setCreateState((prev) => ({ ...prev, vin_sample: vin }))
+    const trimmedVin = vin.trim()
+    if (trimmedVin.length === 17 && trimmedVin !== lastDecodedVin.current) {
+      decodeVinMutation.mutate(trimmedVin)
+    }
   }
 
   return (
@@ -427,7 +439,7 @@ export default function LaborBookTimePage() {
                   <span className="mb-1 block text-xs font-semibold text-zinc-400">VIN helper</span>
                   <input
                     value={createState.vin_sample}
-                    onChange={(event) => setCreateState((prev) => ({ ...prev, vin_sample: event.target.value.toUpperCase() }))}
+                    onChange={(event) => handleVinSampleChange(event.target.value)}
                     placeholder="Optional VIN or partial VIN"
                     className="h-11 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 text-sm uppercase text-white outline-none focus:border-[var(--accent-400)]"
                   />
@@ -538,6 +550,7 @@ export default function LaborBookTimePage() {
                   type="button"
                   onClick={() => {
                     setCreateState(emptyCreateState)
+                    lastDecodedVin.current = ''
                     setIsCreating(false)
                   }}
                   className="rounded-lg border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:border-zinc-500 hover:text-white"

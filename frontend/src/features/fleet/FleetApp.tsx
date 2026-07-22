@@ -385,7 +385,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
     if (vin.length !== 17) return
     setDecoding(true)
     try {
-      const { data } = await api.get(`/customers/vin/decode/${vin}`)
+      const { data } = await api.get(`/customers/vin/decode/${encodeURIComponent(vin)}`)
       if (!data.make && !data.model) {
         toast.error(data.error_text || 'No match found for that VIN')
         return
@@ -441,11 +441,12 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                 className={inp}
                 value={form.vin}
                 onChange={(e) => {
-                  const v = e.target.value
+                  const v = e.target.value.toUpperCase()
                   setForm((f) => ({ ...f, vin: v }))
                   if (v.trim().length === 17) decodeVin(v)
                 }}
                 placeholder="17-character VIN"
+                maxLength={17}
               />
               <button className="dbtn dbtn-ghost" type="button" onClick={() => decodeVin(form.vin)} disabled={decoding || form.vin.trim().length !== 17}>
                 {decoding ? <Spinner size="xs" /> : 'Decode'}

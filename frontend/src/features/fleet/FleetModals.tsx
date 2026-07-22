@@ -149,7 +149,49 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     heading: truck.heading || '',
   })
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }))
+  const [decodingVin, setDecodingVin] = useState(false)
+  const lastDecodedVin = useRef((truck.vin || '').trim().toUpperCase())
   const numOrUndef = (v: string) => (v.trim() === '' ? undefined : Number(v))
+
+  const decodeVin = async (raw: string, options: { quiet?: boolean } = {}) => {
+    const vin = raw.trim().toUpperCase()
+    if (vin.length < 11) {
+      if (!options.quiet) toast.error('VIN must be at least 11 characters')
+      return
+    }
+
+    setDecodingVin(true)
+    try {
+      const { data } = await api.get(`/customers/vin/decode/${encodeURIComponent(vin)}`)
+      if (data.error_code && data.error_code !== '0') {
+        if (!options.quiet) toast.error(data.error_text || 'Failed to decode VIN')
+        return
+      }
+      setF((p) => ({
+        ...p,
+        vin: data.vin || vin || p.vin,
+        make: data.make || p.make,
+        model: data.model || p.model,
+        year: data.year ? String(data.year) : p.year,
+      }))
+      lastDecodedVin.current = vin
+      const decodedLabel = [data.year, data.make, data.model].filter(Boolean).join(' ')
+      toast.success(decodedLabel ? `VIN decoded: ${decodedLabel}` : 'VIN decoded')
+    } catch (e: any) {
+      if (!options.quiet) toast.error(e.response?.data?.detail || 'Failed to decode VIN')
+    } finally {
+      setDecodingVin(false)
+    }
+  }
+
+  const handleVinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const vin = e.target.value.toUpperCase()
+    setF((p) => ({ ...p, vin }))
+    const trimmedVin = vin.trim()
+    if (trimmedVin.length === 17 && trimmedVin !== lastDecodedVin.current) {
+      void decodeVin(trimmedVin, { quiet: true })
+    }
+  }
 
   const save = useMutation({
     mutationFn: async () => (await api.patch(`/fleet/trucks/${truck.id}`, {
@@ -189,7 +231,14 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
         <Field label="Make"><input value={f.make} onChange={set('make')} /></Field>
         <Field label="Model"><input value={f.model} onChange={set('model')} /></Field>
         <Field label="Year"><input value={f.year} onChange={set('year')} inputMode="numeric" /></Field>
-        <Field label="VIN"><input value={f.vin} onChange={set('vin')} placeholder="17-character VIN" /></Field>
+        <Field label="VIN">
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={f.vin} onChange={handleVinChange} placeholder="17-character VIN" maxLength={17} style={{ minWidth: 0, flex: 1, textTransform: 'uppercase' }} />
+            <button className="dbtn dbtn-ghost" type="button" onClick={() => decodeVin(f.vin)} disabled={decodingVin || f.vin.trim().length < 11}>
+              {decodingVin ? <Spinner size="xs" /> : 'Decode'}
+            </button>
+          </div>
+        </Field>
       </div>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Operations & location</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
