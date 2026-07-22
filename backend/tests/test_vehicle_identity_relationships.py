@@ -149,6 +149,64 @@ async def test_dashboard_vehicle_create_auto_enrolls_fleet_enabled_company(db_se
 
 
 @pytest.mark.asyncio
+async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_session):
+    tenant = Tenant(id=uuid4(), name="Linked Fleet Garage", slug=f"linked-{uuid4().hex[:8]}")
+    owner = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Owner", last_name="Contact",
+        company_name="Owner Trucking LLC", email=f"owner-{uuid4().hex[:6]}@example.com",
+    )
+    operator = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Fleet", last_name="Contact",
+        company_name="77 Cargo", email=f"operator-{uuid4().hex[:6]}@example.com",
+        fleet_enabled=True,
+    )
+    manager = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"manager-{uuid4().hex[:6]}@example.com",
+        hashed_password="x", first_name="Shop", last_name="Owner",
+        role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True,
+    )
+    truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=owner.id,
+        vin="1M1AW07Y1FM654321", make="Mack", model="Pinnacle", year=2020,
+        unit_number="77-22",
+    )
+    db_session.add_all([tenant, owner, operator, manager, truck])
+    await db_session.flush()
+    await seed_vehicle_account_relationships(db_session, truck, owner)
+    await db_session.commit()
+
+    await vehicles.create_vehicle_relationship(
+        vehicle_id=truck.id,
+        body=VehicleRelationshipCreate(
+            customer_id=operator.id,
+            relationship_type="operator",
+        ),
+        db=db_session,
+        current_user=manager,
+    )
+
+    linked_vehicles = await customers.list_customer_vehicles(
+        customer_id=operator.id,
+        skip=0,
+        limit=100,
+        paginated=False,
+        db=db_session,
+        current_user=manager,
+    )
+    assert [item.id for item in linked_vehicles] == [truck.id]
+    membership = (await db_session.execute(select(FleetMembership).where(
+        FleetMembership.vehicle_id == truck.id,
+        FleetMembership.fleet_customer_id == operator.id,
+        FleetMembership.effective_to.is_(None),
+    ))).scalar_one()
+    assert membership.vehicle_id == truck.id
+
+    board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert [item.id for item in board.trucks] == [truck.id]
+    assert board.trucks[0].fleet_company_name == "77 Cargo"
+
+
+@pytest.mark.asyncio
 async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
     tenant = Tenant(id=uuid4(), name="Conflict Garage", slug=f"conflict-{uuid4().hex[:8]}")
     existing_company = Customer(
