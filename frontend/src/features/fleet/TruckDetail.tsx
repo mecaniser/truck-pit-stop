@@ -9,7 +9,7 @@ import {
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto } from './types'
-import { STATUS_META, fmt, money, fmtDate, pmState, initials } from './helpers'
+import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetMap from './FleetMap'
 import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, invalidateFleetAndCockpit } from './FleetModals'
@@ -224,7 +224,7 @@ export default function TruckDetail({
         <div className="dhead-main">
           <div>
             <div className="dhead-unit-row">
-              <h1 className="dhead-unit">{t.unit_number}</h1>
+              <h1 className="dhead-unit">{fleetUnitLabel(t)}</h1>
               <div style={{ position: 'relative' }}>
                 <button
                   className="dbadge"
@@ -622,7 +622,7 @@ export default function TruckDetail({
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={data.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
-      {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={t.unit_number} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
+      {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={fleetUnitLabel(t)} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
       {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
     </div>
   )
@@ -642,7 +642,7 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
   truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void; onClose: () => void
 }) {
   return (
-    <Modal title={`Details · ${truck.unit_number || 'Truck'}`} icon={<Truck size={17} />} onClose={onClose} width={520}>
+    <Modal title={`Details · ${fleetUnitLabel(truck)}`} icon={<Truck size={17} />} onClose={onClose} width={520}>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
       <div className="id-grid">
         <Stat label="VIN" value={truck.vin || '—'} mono />
@@ -651,6 +651,8 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
         <Stat label="Body type" value={truck.body_type || '—'} />
         <Stat label="Make" value={truck.make} />
         <Stat label="Model" value={truck.model} />
+        <Stat label="Listing company" value={truck.owner_company_name || truck.fleet_company_name || '—'} />
+        <Stat label="Operating authority" value={truck.fleet_company_name || '—'} />
       </div>
 
       <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Service record</div>

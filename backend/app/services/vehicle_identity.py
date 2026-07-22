@@ -108,16 +108,47 @@ async def ensure_fleet_membership(
     vehicle_id: UUID,
     fleet_customer_id: UUID,
 ) -> FleetMembership:
-    existing = (await db.execute(
+    active_memberships = list((await db.execute(
         select(FleetMembership).where(
             FleetMembership.tenant_id == tenant_id,
             FleetMembership.vehicle_id == vehicle_id,
-            FleetMembership.fleet_customer_id == fleet_customer_id,
             FleetMembership.effective_to.is_(None),
             FleetMembership.deleted_at.is_(None),
         )
-    )).scalars().first()
+    )).scalars().all())
+    existing = next(
+        (membership for membership in active_memberships if membership.fleet_customer_id == fleet_customer_id),
+        None,
+    )
+    now = datetime.now(timezone.utc)
+    for membership in active_memberships:
+        if membership.fleet_customer_id != fleet_customer_id:
+            membership.effective_to = now
+
+    # One physical truck has one current operating fleet. Preserve previous
+    # operators as dated history, but never let an older Fleet Board assignment
+    # outrank the customer/operator selected now.
+    previous_operators = list((await db.execute(
+        select(VehicleCustomerRelationship).where(
+            VehicleCustomerRelationship.tenant_id == tenant_id,
+            VehicleCustomerRelationship.vehicle_id == vehicle_id,
+            VehicleCustomerRelationship.relationship_type == "operator",
+            VehicleCustomerRelationship.customer_id != fleet_customer_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        )
+    )).scalars().all())
+    for relationship in previous_operators:
+        relationship.effective_to = now
+
     if existing:
+        await ensure_vehicle_relationship(
+            db,
+            tenant_id=tenant_id,
+            vehicle_id=vehicle_id,
+            customer_id=fleet_customer_id,
+            relationship_type="operator",
+        )
         return existing
     membership = FleetMembership(
         tenant_id=tenant_id,
@@ -162,19 +193,43 @@ async def sync_customer_fleet_memberships(
 ) -> None:
     """Enroll/end the customer's compatibility vehicles as one atomic fleet."""
     if enabled:
+        active_operator_for_customer = exists(select(VehicleCustomerRelationship.id).where(
+            VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+            VehicleCustomerRelationship.customer_id == customer.id,
+            VehicleCustomerRelationship.relationship_type == "operator",
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        ))
+        active_other_customer_operator = exists(
+            select(VehicleCustomerRelationship.id)
+            .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+            .where(
+                VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+                VehicleCustomerRelationship.customer_id != customer.id,
+                VehicleCustomerRelationship.relationship_type == "operator",
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+                Customer.is_internal_fleet.is_(False),
+                Customer.deleted_at.is_(None),
+            )
+        )
+        owned_by_customer = or_(
+            Vehicle.customer_id == customer.id,
+            exists(select(VehicleCustomerRelationship.id).where(
+                VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+                VehicleCustomerRelationship.customer_id == customer.id,
+                VehicleCustomerRelationship.relationship_type == "owner",
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+            )),
+        )
         vehicle_ids = list((await db.execute(
             select(Vehicle.id).where(
                 Vehicle.tenant_id == customer.tenant_id,
                 Vehicle.deleted_at.is_(None),
                 or_(
-                    Vehicle.customer_id == customer.id,
-                    exists(select(VehicleCustomerRelationship.id).where(
-                        VehicleCustomerRelationship.vehicle_id == Vehicle.id,
-                        VehicleCustomerRelationship.customer_id == customer.id,
-                        VehicleCustomerRelationship.relationship_type.in_(("owner", "operator")),
-                        VehicleCustomerRelationship.effective_to.is_(None),
-                        VehicleCustomerRelationship.deleted_at.is_(None),
-                    )),
+                    active_operator_for_customer,
+                    and_(owned_by_customer, ~active_other_customer_operator),
                 ),
             )
         )).scalars().all())

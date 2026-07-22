@@ -109,6 +109,7 @@ export interface CatalogService {
 export interface BoardTruck {
   id: string
   unit_number?: string | null
+  display_unit_number?: string | null
   year?: number | null
   make: string
   model: string

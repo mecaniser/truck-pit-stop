@@ -182,6 +182,7 @@ class BoardWorkOrder(BaseModel):
 class BoardTruck(BaseModel):
     id: UUID
     unit_number: Optional[str] = None
+    display_unit_number: Optional[str] = None
     year: Optional[int] = None
     make: str
     model: str

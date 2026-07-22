@@ -15,6 +15,11 @@ export const fmt = (n?: number | null) => (n == null ? '—' : n.toLocaleString(
 export const money = (n?: number | null) =>
   (n == null ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 
+/** Fleet-facing label: listing/owning company plus the truck's raw unit number. */
+export function fleetUnitLabel(t: Pick<BoardTruck, 'display_unit_number' | 'unit_number' | 'make'>): string {
+  return t.display_unit_number || t.unit_number || t.make || 'Truck'
+}
+
 export function fmtDate(s?: string | null) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })

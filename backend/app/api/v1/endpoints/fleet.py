@@ -1356,6 +1356,27 @@ async def _attach_account_context(
     def label(row) -> str:
         return row.company_name or f"{row.first_name} {row.last_name}".strip()
 
+    def display_unit_number(truck: BoardTruck, listing_company: Optional[str]) -> Optional[str]:
+        """Prefix a fleet-facing unit with its current listing/owning company.
+
+        The canonical unit number remains unchanged.  This label is derived so
+        ownership transfers immediately update the board without rewriting the
+        vehicle's identity or its service history.
+        """
+        unit = (truck.unit_number or "").strip()
+        company = (listing_company or "").strip()
+        if not company:
+            return unit or None
+        if not unit:
+            return company
+
+        def normalize(value: str) -> str:
+            return "".join(ch.lower() for ch in value if ch.isalnum())
+
+        if normalize(unit).startswith(normalize(company)):
+            return unit
+        return f"{company} {unit}"
+
     memberships = {}
     for row in membership_rows:
         memberships.setdefault(row.vehicle_id, row)
@@ -1371,6 +1392,12 @@ async def _attach_account_context(
         if owner:
             truck.owner_customer_id = owner.id
             truck.owner_company_name = label(owner)
+        # The owner is the listing/leasing company.  If legacy fleet data has no
+        # owner relationship yet, fall back to the operating authority.
+        truck.display_unit_number = display_unit_number(
+            truck,
+            truck.owner_company_name or truck.fleet_company_name,
+        )
 
 
 async def _fleet_board_from_projection(
