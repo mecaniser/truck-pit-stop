@@ -8,7 +8,9 @@ class Customer(BaseModel):
     __tablename__ = "customers"
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
-    tenant = relationship("Tenant", backref="customers")
+    # Tenant also has an optional default operating-authority FK to Customer,
+    # so make the normal customer-to-tenant ownership join explicit.
+    tenant = relationship("Tenant", backref="customers", foreign_keys=[tenant_id])
     
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)

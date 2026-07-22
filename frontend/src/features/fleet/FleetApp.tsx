@@ -415,6 +415,15 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
     queryKey: ['fleet-companies'],
     queryFn: async () => (await api.get('/fleet/companies')).data,
   })
+  const { data: fleetSettings } = useQuery<{ default_fleet_authority_customer_id: string | null }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => (await api.get('/fleet/settings')).data,
+  })
+  useEffect(() => {
+    if (!customerId && fleetSettings?.default_fleet_authority_customer_id) {
+      setCustomerId(fleetSettings.default_fleet_authority_customer_id)
+    }
+  }, [customerId, fleetSettings?.default_fleet_authority_customer_id])
   const { data: vehicleCandidates = [] } = useQuery<Array<{ id: string; make: string; model: string; year?: number | null; unit_number?: string | null; vin?: string | null }>>({
     queryKey: ['fleet-vehicle-candidates', debouncedVehicleSearch],
     queryFn: async () => (await api.get('/fleet/vehicle-candidates', { params: { q: debouncedVehicleSearch || undefined, limit: 50 } })).data,
@@ -462,9 +471,9 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('new')}>New truck</button>
           <button type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</button>
         </div>
-        <Field label="Operating company / fleet *">
+        <Field label="Operating authority / Fleet Board *">
           <select className="w-full" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-            <option value="">Select company…</option>
+            <option value="">Select operating authority…</option>
             {companies.map((company) => (
               <option key={company.id} value={company.id}>
                 {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}

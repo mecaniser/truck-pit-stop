@@ -2584,11 +2584,21 @@ async def get_fleet_settings(
     ]
 
     trucks = await _fleet_vehicles(db, current_user.tenant_id)
+    default_authority_name = None
+    if tenant.default_fleet_authority_customer_id:
+        default_authority_name = await db.scalar(
+            select(Customer.company_name).where(
+                Customer.id == tenant.default_fleet_authority_customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+            )
+        )
 
     return FleetSettingsResponse(
         internal_labor_rate=float(tenant.internal_labor_rate or 0),
         labor_rate=float(tenant.labor_rate or 0),
         fleet_company_name=tenant.fleet_company_name,
+        default_fleet_authority_customer_id=tenant.default_fleet_authority_customer_id,
+        default_fleet_authority_company_name=default_authority_name,
         fleet_managers=fleet_managers,
         truck_count=len(trucks),
     )

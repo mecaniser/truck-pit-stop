@@ -246,6 +246,8 @@ interface TaxFeeSettings {
   labor_rate: number
   internal_labor_rate: number
   fleet_company_name: string | null
+  default_fleet_authority_customer_id: string | null
+  default_fleet_authority_company_name: string | null
 }
 
 interface FleetManager {
@@ -257,6 +259,8 @@ interface FleetManager {
 interface FleetSettings {
   internal_labor_rate: number
   fleet_company_name: string | null
+  default_fleet_authority_customer_id: string | null
+  default_fleet_authority_company_name: string | null
   fleet_managers: FleetManager[]
   truck_count: number
 }
@@ -2493,6 +2497,7 @@ function FleetSection() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [fleetCompanyName, setFleetCompanyName] = useState('')
+  const [defaultFleetAuthorityCustomerId, setDefaultFleetAuthorityCustomerId] = useState('')
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
@@ -2516,6 +2521,11 @@ function FleetSection() {
     },
   })
 
+  const { data: fleetCompanies = [] } = useQuery<Array<{ id: string; company_name: string; fleet_enabled: boolean; is_internal_fleet: boolean }>>({
+    queryKey: ['fleet-companies'],
+    queryFn: async () => (await api.get('/fleet/companies')).data,
+  })
+
   // The truck list itself comes from the board (single source of truth).
   const { data: fleetBoard } = useQuery<{ trucks: FleetBoardTruck[] }>({
     queryKey: ['fleet-board-summary'],
@@ -2529,11 +2539,13 @@ function FleetSection() {
   useEffect(() => {
     if (taxFeeSettings) {
       setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
+      setDefaultFleetAuthorityCustomerId(taxFeeSettings.default_fleet_authority_customer_id || '')
     }
   }, [taxFeeSettings])
 
   const hasChanges = !!taxFeeSettings &&
-    fleetCompanyName !== (taxFeeSettings.fleet_company_name || '')
+    (fleetCompanyName !== (taxFeeSettings.fleet_company_name || '') ||
+      defaultFleetAuthorityCustomerId !== (taxFeeSettings.default_fleet_authority_customer_id || ''))
 
   const handleUnlock = async () => {
     if (!password) {
@@ -2568,12 +2580,14 @@ function FleetSection() {
         labor_rate: taxFeeSettings?.labor_rate ?? 100,
         internal_labor_rate: taxFeeSettings?.internal_labor_rate ?? 0,
         fleet_company_name: fleetCompanyName.trim() || null,
+        default_fleet_authority_customer_id: defaultFleetAuthorityCustomerId || null,
       })
       return response.data
     },
     onSuccess: () => {
       toast.success('Fleet settings saved')
       queryClient.invalidateQueries({ queryKey: ['tax-fee-settings'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-settings'] })
       setIsUnlocked(false)
     },
     onError: (error: any) => {
@@ -2584,6 +2598,7 @@ function FleetSection() {
   const cancelEdit = () => {
     if (taxFeeSettings) {
       setFleetCompanyName(taxFeeSettings.fleet_company_name || '')
+      setDefaultFleetAuthorityCustomerId(taxFeeSettings.default_fleet_authority_customer_id || '')
     }
     setIsUnlocked(false)
   }
@@ -2602,6 +2617,11 @@ function FleetSection() {
             <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
               <label className={industrialStyles.label}>Fleet Company</label>
               <p className="text-lg text-zinc-100">{taxFeeSettings?.fleet_company_name || 'Not set'}</p>
+            </div>
+            <div className="p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl">
+              <label className={industrialStyles.label}>Default Operating Authority</label>
+              <p className="text-lg text-zinc-100">{taxFeeSettings?.default_fleet_authority_company_name || 'Not set'}</p>
+              <p className="mt-1 text-xs text-zinc-500">Used only when a truck has no operating authority assigned yet.</p>
             </div>
 
             {/* Unlock form */}
@@ -2655,6 +2675,23 @@ function FleetSection() {
                 className={`${industrialStyles.input} max-w-md`}
               />
               <p className="mt-1 text-xs text-zinc-500">The company that operates your internal fleet. Shown as the customer on internal fleet work orders and on the owner's board.</p>
+            </div>
+
+            <div>
+              <label className={industrialStyles.label}>Default Operating Authority</label>
+              <select
+                value={defaultFleetAuthorityCustomerId}
+                onChange={(e) => setDefaultFleetAuthorityCustomerId(e.target.value)}
+                className={`${industrialStyles.input} max-w-md`}
+              >
+                <option value="">No default authority</option>
+                {fleetCompanies.filter((company) => company.fleet_enabled).map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-zinc-500">New or relinked trucks with no authority preselect this company. A truck’s explicit authority always wins.</p>
             </div>
 
             <div className="flex gap-4 pt-4 border-t border-zinc-800/50">

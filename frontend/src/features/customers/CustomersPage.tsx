@@ -507,6 +507,12 @@ export default function CustomersPage() {
     enabled: isVehicleModalOpen && vehicleModalMode === 'existing',
   })
 
+  const { data: fleetSettings } = useQuery<{ default_fleet_authority_customer_id: string | null }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => (await api.get('/fleet/settings')).data,
+    enabled: isVehicleModalOpen && vehicleModalMode === 'existing',
+  })
+
   useEffect(() => {
     if (!selectedLinkVehicle || !selectedCustomer) {
       setVehicleRelationshipTypes([])
@@ -526,8 +532,8 @@ export default function CustomersPage() {
     }
     const activeOperators = vehicleRelationships.filter((relationship) => !relationship.effective_to && relationship.relationship_type === 'operator')
     const operator = activeOperators.find((relationship) => relationship.is_primary) || activeOperators[0]
-    setOperatingAuthorityCustomerId(operator?.customer_id || '')
-  }, [selectedLinkVehicle, vehicleRelationships])
+    setOperatingAuthorityCustomerId((current) => operator?.customer_id || current || fleetSettings?.default_fleet_authority_customer_id || '')
+  }, [selectedLinkVehicle, vehicleRelationships, fleetSettings?.default_fleet_authority_customer_id])
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -2316,7 +2322,7 @@ export default function CustomersPage() {
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-xs text-gray-500">Choose 77 Cargo here when this truck runs under 77 Cargo’s authority. This changes only Fleet Board membership; it does not change the owner/lessor or invoice recipient.</p>
+              <p className="mt-2 text-xs text-gray-500">New links start with your Fleet Board default authority when one is configured. This changes only Fleet Board membership; it does not change the owner/lessor or invoice recipient.</p>
             </div>
             <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
           </div>

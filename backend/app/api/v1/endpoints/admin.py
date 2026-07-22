@@ -935,6 +935,7 @@ class TaxFeeSettingsRequest(BaseModel):
     labor_rate: float  # Default hourly rate
     internal_labor_rate: float = 0.0  # Hourly labor cost for internal fleet repairs
     fleet_company_name: Optional[str] = None  # Company that operates the internal fleet
+    default_fleet_authority_customer_id: Optional[UUID] = None
 
 
 class TaxFeeSettingsResponse(BaseModel):
@@ -944,6 +945,8 @@ class TaxFeeSettingsResponse(BaseModel):
     labor_rate: float
     internal_labor_rate: float = 0.0
     fleet_company_name: Optional[str] = None
+    default_fleet_authority_customer_id: Optional[UUID] = None
+    default_fleet_authority_company_name: Optional[str] = None
 
 
 class WorkforceSettingsRequest(BaseModel):
@@ -1383,6 +1386,15 @@ async def get_tax_fee_settings(
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
     
+    default_authority_name = None
+    if tenant.default_fleet_authority_customer_id:
+        default_authority_name = await db.scalar(
+            select(Customer.company_name).where(
+                Customer.id == tenant.default_fleet_authority_customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+            )
+        )
+
     return TaxFeeSettingsResponse(
         sales_tax_rate=float(tenant.sales_tax_rate or 0),
         shop_supplies_rate=float(tenant.shop_supplies_rate or 0),
@@ -1390,6 +1402,8 @@ async def get_tax_fee_settings(
         labor_rate=float(tenant.labor_rate if tenant.labor_rate is not None else 100),
         internal_labor_rate=float(tenant.internal_labor_rate or 0),
         fleet_company_name=tenant.fleet_company_name,
+        default_fleet_authority_customer_id=tenant.default_fleet_authority_customer_id,
+        default_fleet_authority_company_name=default_authority_name,
     )
 
 
@@ -1422,12 +1436,30 @@ async def update_tax_fee_settings(
     if fleet_company_name is not None and len(fleet_company_name) > 255:
         raise HTTPException(status_code=400, detail="fleet_company_name must be 255 characters or fewer")
 
+    default_authority = None
+    if body.default_fleet_authority_customer_id:
+        default_authority = await db.scalar(
+            select(Customer).where(
+                Customer.id == body.default_fleet_authority_customer_id,
+                Customer.tenant_id == current_user.tenant_id,
+                Customer.fleet_enabled.is_(True),
+            )
+        )
+        if not default_authority:
+            raise HTTPException(
+                status_code=400,
+                detail="Default operating authority must be a Fleet Board company",
+            )
+
     tenant.sales_tax_rate = body.sales_tax_rate
     tenant.shop_supplies_rate = body.shop_supplies_rate
     tenant.service_fee_rate = body.service_fee_rate
     tenant.labor_rate = body.labor_rate
     tenant.internal_labor_rate = body.internal_labor_rate
     tenant.fleet_company_name = fleet_company_name
+    tenant.default_fleet_authority_customer_id = (
+        default_authority.id if default_authority else None
+    )
 
     await db.commit()
     await db.refresh(tenant)
@@ -1439,6 +1471,8 @@ async def update_tax_fee_settings(
         labor_rate=float(tenant.labor_rate),
         internal_labor_rate=float(tenant.internal_labor_rate),
         fleet_company_name=tenant.fleet_company_name,
+        default_fleet_authority_customer_id=tenant.default_fleet_authority_customer_id,
+        default_fleet_authority_company_name=(default_authority.company_name if default_authority else None),
     )
 
 
