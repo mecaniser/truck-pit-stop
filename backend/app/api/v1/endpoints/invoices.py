@@ -22,6 +22,7 @@ from app.db.models.vehicle import Vehicle
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.services.pricing import get_order_checkout_breakdown
 from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
@@ -358,6 +359,10 @@ class InvoiceUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class InvoiceVoidRequest(BaseModel):
+    reason: str
+
+
 class ResendInvoiceRequest(BaseModel):
     custom_email: Optional[str] = None
 
@@ -368,6 +373,9 @@ class PaymentSummary(BaseModel):
     method: str
     paid_at: Optional[datetime]
     recorded_by_name: Optional[str] = None
+    payment_provider: Optional[str] = None
+    reference_number: Optional[str] = None
+    authorization_number: Optional[str] = None
 
 
 class InvoiceResponse(BaseModel):
@@ -387,6 +395,10 @@ class InvoiceResponse(BaseModel):
     due_date: Optional[datetime]
     paid_at: Optional[datetime]
     notes: Optional[str]
+    voided_at: Optional[datetime] = None
+    voided_by_user_id: Optional[UUID] = None
+    void_reason: Optional[str] = None
+    supersedes_invoice_id: Optional[UUID] = None
     pending_zelle_confirmation: bool = False
     zelle_pending_submitted_at: Optional[datetime] = None
     zelle_pending_sender_email: Optional[str] = None
@@ -591,9 +603,16 @@ async def auto_create_invoice_for_order(
     The order must have .customer and .vehicle relationships already loaded.
     created_by_user_id is the staff member approving completion, if known.
     """
-    existing_result = await db.execute(select(Invoice).where(Invoice.repair_order_id == order.id))
-    if existing_result.scalar_one_or_none():
+    latest_result = await db.execute(
+        select(Invoice)
+        .where(Invoice.repair_order_id == order.id)
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
+    )
+    latest_invoice = latest_result.scalar_one_or_none()
+    if latest_invoice and latest_invoice.status != InvoiceStatus.CANCELLED:
         return None
+    supersedes_invoice_id = latest_invoice.id if latest_invoice else None
 
     # Capture relationships before any subsequent commits
     customer = order.customer
@@ -634,6 +653,7 @@ async def auto_create_invoice_for_order(
             notes=None,
             created_by_user_id=created_by_user_id,
             line_items_snapshot=line_items_snapshot,
+            supersedes_invoice_id=supersedes_invoice_id,
         )
         db.add(inv)
         if order.pricing_locked_at is None:
@@ -717,14 +737,18 @@ async def create_invoice(
             detail="Invoice can only be created for completed repair orders",
         )
     result = await db.execute(
-        select(Invoice).where(Invoice.repair_order_id == body.repair_order_id)
+        select(Invoice)
+        .where(Invoice.repair_order_id == body.repair_order_id)
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
     )
-    existing = result.scalar_one_or_none()
-    if existing:
+    latest_invoice = result.scalar_one_or_none()
+    if latest_invoice and latest_invoice.status != InvoiceStatus.CANCELLED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An invoice already exists for this repair order",
         )
+    supersedes_invoice_id = latest_invoice.id if latest_invoice else None
     
     # Get tenant for tax/fee settings
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -794,6 +818,7 @@ async def create_invoice(
             notes=None,
             created_by_user_id=current_user.id,
             line_items_snapshot=line_items_snapshot,
+            supersedes_invoice_id=supersedes_invoice_id,
         )
         db.add(invoice)
         if order.pricing_locked_at is None:
@@ -902,6 +927,9 @@ async def list_invoices(
                 method=pay.method.value if hasattr(pay.method, "value") else str(pay.method),
                 paid_at=pay.created_at,
                 recorded_by_name=recorded_by_name or None,
+                payment_provider=pay.payment_provider,
+                reference_number=pay.reference_number,
+                authorization_number=pay.authorization_number,
             )
 
     items = []
@@ -974,6 +1002,8 @@ async def update_invoice(
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify a paid invoice")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot modify a voided invoice")
     
     if body.due_date is not None:
         invoice.due_date = body.due_date
@@ -986,19 +1016,37 @@ async def update_invoice(
     return InvoiceResponse.model_validate(invoice)
 
 
-@router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_invoice(
+@router.post("/{invoice_id}/void", response_model=InvoiceResponse)
+async def void_invoice(
     invoice_id: UUID,
+    body: InvoiceVoidRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Delete an invoice (only if not paid)"""
-    _require_staff(current_user)
+    """Void an unpaid invoice and reopen its repair order for revision."""
+    if current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only shop managers can void an invoice",
+        )
+
+    reason = body.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A reason of at least 3 characters is required",
+        )
+    if len(reason) > 1000:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Void reason cannot exceed 1000 characters",
+        )
     
     result = await db.execute(
         select(Invoice)
         .options(selectinload(Invoice.repair_order))
         .where(Invoice.id == invoice_id)
+        .with_for_update()
     )
     invoice = result.scalar_one_or_none()
     
@@ -1009,19 +1057,41 @@ async def delete_invoice(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
     if invoice.status == InvoiceStatus.PAID:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete a paid invoice")
-    
-    # Revert repair order status to completed
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Paid invoices require a refund or credit note")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invoice is already voided")
+    if invoice.pending_zelle_confirmation:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Confirm or dismiss the pending Zelle payment before voiding this invoice",
+        )
+
     order = invoice.repair_order
-    order.status = RepairOrderStatus.COMPLETED
-    # Resetting an unpaid invoice opens a new manager revision. Preserve the
-    # invoice deletion audit behavior for now, but do not leave pricing frozen.
+    order.status = RepairOrderStatus.PENDING_REVIEW
     order.pricing_locked_at = None
     order.pricing_lock_reason = None
-    
-    await db.delete(invoice)
-    await db.commit()
 
+    now = datetime.now(timezone.utc)
+    invoice.status = InvoiceStatus.CANCELLED
+    invoice.voided_at = now
+    invoice.voided_by_user_id = current_user.id
+    invoice.void_reason = reason
+    actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+    db.add(
+        RepairOrderHistoryEvent(
+            tenant_id=order.tenant_id,
+            repair_order_id=order.id,
+            created_at=now,
+            event_type="invoice_voided",
+            label="Invoice voided for revision",
+            detail=f"{invoice.invoice_number} · {reason}",
+            entity_id=invoice.id,
+            actor_name=actor_name,
+        )
+    )
+
+    await db.commit()
+    await db.refresh(invoice)
     await db.refresh(order)
 
     # Broadcast status rollback so active views update in real time.
@@ -1032,6 +1102,17 @@ async def delete_invoice(
         order_number=order.order_number,
         status=order.status.value,
         updated_at=order.updated_at.isoformat() if order.updated_at else None,
+    )
+
+    return InvoiceResponse.model_validate(invoice)
+
+
+@router.delete("/{invoice_id}", status_code=status.HTTP_405_METHOD_NOT_ALLOWED)
+async def delete_invoice(invoice_id: UUID):
+    """Reject legacy destructive invoice deletion."""
+    raise HTTPException(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        detail="Invoices are financial records and must be voided with a reason",
     )
 
 
@@ -1066,6 +1147,8 @@ async def resend_invoice(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot resend a voided invoice")
     
     recipient = _invoice_recipient(invoice, customer, vehicle)
     # Use custom email if provided, otherwise use the invoice's recipient

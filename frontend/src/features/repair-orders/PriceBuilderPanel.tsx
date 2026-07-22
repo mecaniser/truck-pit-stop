@@ -49,13 +49,14 @@ import {
   RepairOrderStatus,
 } from '@/types'
 
-// Human labels for the Payment.method enum (stripe/cash/check/ach/zelle/other).
+// Human labels for the Payment.method enum.
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   stripe: 'Card',
   cash: 'Cash',
   check: 'Check',
   ach: 'ACH transfer',
   zelle: 'Zelle',
+  fleet_payment: 'Fleet payment',
   other: 'Other',
 }
 
@@ -177,7 +178,7 @@ type Props = {
   invoiceActionPending?: boolean
   onResendInvoice?: () => void
   onRecordPayment?: () => void
-  onDeleteInvoice?: () => void
+  onVoidInvoice?: () => void
   historyEvents?: PriceBuilderHistoryEvent[]
   onClose?: () => void
   onPrev?: () => void
@@ -909,7 +910,7 @@ export default function PriceBuilderPanel({
   invoiceActionPending = false,
   onResendInvoice,
   onRecordPayment,
-  onDeleteInvoice,
+  onVoidInvoice,
   historyEvents = [],
   onClose,
   onPrev,
@@ -1264,6 +1265,13 @@ export default function PriceBuilderPanel({
 
   const isLocked = !!summary?.pricing_locked
   const hasInvoice = !!invoice && ['invoiced', 'paid'].includes(orderStatus)
+  const invoiceDisplayTotal = invoice
+    ? Math.max(
+        0,
+        parseFloat(invoice.total_amount || '0')
+          - (invoice.pending_zelle_confirmation ? parseFloat(invoice.service_fee_amount || '0') : 0),
+      )
+    : 0
   const canCreateInvoice = !isInternalOrder && orderStatus === 'completed' && !!onCreateInvoice
   const showRecommendedServicesPanel = !['completed', 'invoiced', 'paid'].includes(orderStatus)
   // Work-first: the repair order is editable throughout active shop work. The
@@ -2314,7 +2322,7 @@ export default function PriceBuilderPanel({
                   </span>
                 )}
                 <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold leading-none text-purple-950">
-                  {money(invoice.total_amount)}
+                  {money(invoiceDisplayTotal)}
                 </span>
               </span>
               <ChevronRight className={`h-4 w-4 text-purple-500 transition-transform ${invoiceDetailsOpen ? 'rotate-90' : ''}`} />
@@ -2339,7 +2347,7 @@ export default function PriceBuilderPanel({
                 <span className="font-semibold text-gray-900">{money(invoice.shop_supplies_amount)}</span>
               </div>
             )}
-            {parseFloat(invoice.service_fee_amount || '0') > 0 && (
+            {!invoice.pending_zelle_confirmation && parseFloat(invoice.service_fee_amount || '0') > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-gray-500">Card processing fee</span>
                 <span className="font-semibold text-gray-900">{money(invoice.service_fee_amount)}</span>
@@ -2358,8 +2366,10 @@ export default function PriceBuilderPanel({
               </div>
             )}
             <div className="flex items-center justify-between border-t border-purple-100 pt-2">
-              <span className="font-semibold text-purple-950">Invoice total</span>
-              <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold text-purple-950">{money(invoice.total_amount)}</span>
+              <span className="font-semibold text-purple-950">
+                {invoice.pending_zelle_confirmation ? 'Zelle total' : 'Invoice total'}
+              </span>
+              <span className="font-['Barlow_Condensed',sans-serif] text-2xl font-extrabold text-purple-950">{money(invoiceDisplayTotal)}</span>
             </div>
             {invoice.payment && (
               <div className="mt-2 flex items-start justify-between gap-3 rounded-xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
@@ -2370,6 +2380,15 @@ export default function PriceBuilderPanel({
                     {invoice.payment.paid_at && ` · ${new Date(invoice.payment.paid_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`}
                     {invoice.payment.recorded_by_name && ` · by ${invoice.payment.recorded_by_name}`}
                   </p>
+                  {(invoice.payment.payment_provider || invoice.payment.reference_number) && (
+                    <p className="mt-0.5 break-all text-[11px] text-emerald-700">
+                      {[
+                        invoice.payment.payment_provider,
+                        invoice.payment.reference_number && `Ref ${invoice.payment.reference_number}`,
+                        invoice.payment.authorization_number && `Auth ${invoice.payment.authorization_number}`,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                 </div>
                 <span className="shrink-0 font-['Barlow_Condensed',sans-serif] text-xl font-extrabold text-emerald-700">
                   {money(invoice.payment.amount)}
@@ -4070,7 +4089,7 @@ export default function PriceBuilderPanel({
                 {isInitialSummaryLoad || summaryLoadFailed ? '…' : money(orderTotalValue)}
               </p>
             </div>
-            {!isInternalOrder && (
+            {(!isInternalOrder || hasInvoice) && (
               canCreateInvoice ? (
                 <div className="relative">
                   <button
@@ -4146,7 +4165,7 @@ export default function PriceBuilderPanel({
                       className="inline-flex h-11 items-center gap-2 rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
                     >
                       <CreditCard className="h-4 w-4" />
-                      Record payment
+                      {invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                     </button>
                   )}
                   <button
@@ -4158,16 +4177,16 @@ export default function PriceBuilderPanel({
                     <Mail className="h-4 w-4" />
                     {orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
                   </button>
-                  {orderStatus !== 'paid' && onDeleteInvoice && (
+                  {orderStatus !== 'paid' && !invoice.pending_zelle_confirmation && onVoidInvoice && (
                     <button
                       type="button"
-                      onClick={onDeleteInvoice}
+                      onClick={onVoidInvoice}
                       disabled={invoiceActionPending}
                       className="inline-flex h-11 items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      title="Void this invoice and return the order to Completed so you can re-issue it"
+                      title="Preserve this invoice as voided and reopen the order for revision"
                     >
                       <RotateCcw className="h-4 w-4" />
-                      Reset invoice
+                      Void &amp; revise
                     </button>
                   )}
                 </div>

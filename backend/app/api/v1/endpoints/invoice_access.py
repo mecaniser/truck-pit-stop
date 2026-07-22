@@ -377,6 +377,8 @@ async def submit_guest_zelle_payment(
 
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid.")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This invoice has been voided.")
 
     was_pending = invoice.pending_zelle_confirmation
     sender_email = str(body.sender_email).strip().lower() if body.sender_email else (customer.email.strip().lower() if customer and customer.email else None)
@@ -461,6 +463,8 @@ async def create_guest_payment_intent(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invoice already paid.",
         )
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This invoice has been voided.")
 
     if invoice.total_amount < Decimal("0.50"):
         raise HTTPException(
@@ -549,6 +553,9 @@ async def confirm_guest_payment(
     invoice, order, customer, vehicle = await _load_invoice_context(db, payload["invoice_id"])
 
     _validate_invoice_link_subject(payload, invoice, order)
+
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This invoice has been voided.")
 
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = tenant_result.scalar_one_or_none()

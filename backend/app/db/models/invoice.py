@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -16,12 +16,21 @@ class InvoiceStatus(str, enum.Enum):
 
 class Invoice(BaseModel):
     __tablename__ = "invoices"
+    __table_args__ = (
+        Index(
+            "ux_invoices_active_repair_order_id",
+            "repair_order_id",
+            unique=True,
+            postgresql_where=text("status <> 'cancelled'"),
+            sqlite_where=text("status <> 'cancelled'"),
+        ),
+    )
     
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     tenant = relationship("Tenant", backref="invoices")
     
-    repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=False, unique=True)
-    repair_order = relationship("RepairOrder", back_populates="invoice")
+    repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=False, index=True)
+    repair_order = relationship("RepairOrder", back_populates="invoices")
     
     invoice_number = Column(String(50), unique=True, nullable=False, index=True)
     # Internal fleet invoice: a cost record for the garage's own work orders —
@@ -55,6 +64,16 @@ class Invoice(BaseModel):
     source = Column(String(50), nullable=True, index=True)  # e.g. easy_truck_shop_import
     created_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_by_user = relationship("User", foreign_keys=[created_by_user_id])
+
+    # Invoice revisions are preserved rather than deleted. A replacement can
+    # point to the voided invoice it supersedes, keeping the financial trail
+    # explicit while allowing another invoice for the same repair order.
+    voided_at = Column(DateTime(timezone=True), nullable=True)
+    voided_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    voided_by_user = relationship("User", foreign_keys=[voided_by_user_id])
+    void_reason = Column(Text, nullable=True)
+    supersedes_invoice_id = Column(UUID(as_uuid=True), ForeignKey("invoices.id"), nullable=True, index=True)
+    supersedes_invoice = relationship("Invoice", remote_side="Invoice.id", foreign_keys=[supersedes_invoice_id])
 
     # Pending Zelle confirmation tracking (customer marked as sent, staff must confirm receipt)
     zelle_pending_submitted_at = Column(DateTime(timezone=True), nullable=True, index=True)

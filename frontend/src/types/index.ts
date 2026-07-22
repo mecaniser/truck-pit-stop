@@ -575,6 +575,10 @@ export interface Invoice {
   due_date: string | null
   paid_at: string | null
   notes: string | null
+  voided_at?: string | null
+  voided_by_user_id?: string | null
+  void_reason?: string | null
+  supersedes_invoice_id?: string | null
   pending_zelle_confirmation?: boolean
   zelle_pending_submitted_at?: string | null
   zelle_pending_sender_email?: string | null
@@ -591,6 +595,9 @@ export interface InvoicePaymentSummary {
   method: string
   paid_at: string | null
   recorded_by_name?: string | null
+  payment_provider?: string | null
+  reference_number?: string | null
+  authorization_number?: string | null
 }
 
 export interface InvoiceDetail extends Invoice {

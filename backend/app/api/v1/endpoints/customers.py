@@ -20,7 +20,7 @@ from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
-from app.db.models.invoice import Invoice
+from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment
 from app.db.models.message_thread import MessageThread
 from app.db.models.sms_message import SMSMessage
@@ -64,7 +64,10 @@ async def get_customer_balances(db: AsyncSession, customer_ids: list) -> dict:
     invoiced_result = await db.execute(
         select(RepairOrder.customer_id, func.coalesce(func.sum(Invoice.total_amount), 0))
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .where(RepairOrder.customer_id.in_(customer_ids))
+        .where(
+            RepairOrder.customer_id.in_(customer_ids),
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
         .group_by(RepairOrder.customer_id)
     )
     invoiced_by_customer = dict(invoiced_result.all())
@@ -321,7 +324,10 @@ def _balance_subquery():
         select(func.coalesce(func.sum(Invoice.total_amount), 0))
         .select_from(RepairOrder)
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
-        .where(RepairOrder.customer_id == Customer.id)
+        .where(
+            RepairOrder.customer_id == Customer.id,
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
         .correlate(Customer)
         .scalar_subquery()
     )
@@ -1406,7 +1412,13 @@ async def get_customer_history_detail(
             mechanic_name = f"{mech.first_name} {mech.last_name}".strip()
 
     invoice_row = await db.execute(
-        select(Invoice).where(Invoice.repair_order_id == order.id).limit(1)
+        select(Invoice)
+        .where(
+            Invoice.repair_order_id == order.id,
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
+        .order_by(Invoice.created_at.desc())
+        .limit(1)
     )
     invoice = invoice_row.scalar_one_or_none()
     amount_paid = None

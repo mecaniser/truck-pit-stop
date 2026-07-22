@@ -74,8 +74,11 @@ class ConfirmPaymentRequest(BaseModel):
 
 class ManualPaymentRequest(BaseModel):
     invoice_id: UUID
-    method: str  # 'cash', 'zelle', 'check', 'ach', 'other'
+    method: str  # 'cash', 'zelle', 'check', 'ach', 'fleet_payment', 'other'
     notes: Optional[str] = None
+    payment_provider: Optional[str] = None
+    reference_number: Optional[str] = None
+    authorization_number: Optional[str] = None
     zelle_sender_email: Optional[EmailStr] = None
     zelle_sender_phone: Optional[str] = None
     update_customer_from_sender: bool = False
@@ -121,6 +124,55 @@ def _normalize_email(email: Optional[str]) -> Optional[str]:
         return None
     normalized = email.strip().lower()
     return normalized or None
+
+
+def _normalized_manual_payment_details(body: ManualPaymentRequest) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """Normalize and validate staff-supplied settlement evidence."""
+    provider = body.payment_provider.strip() if body.payment_provider else None
+    reference = body.reference_number.strip() if body.reference_number else None
+    authorization = body.authorization_number.strip() if body.authorization_number else None
+    notes = body.notes.strip() if body.notes else None
+
+    for label, value, maximum in (
+        ("Payment provider", provider, 100),
+        ("Reference number", reference, 255),
+        ("Authorization number", authorization, 255),
+        ("Payment notes", notes, 1000),
+    ):
+        if value and len(value) > maximum:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{label} cannot exceed {maximum} characters",
+            )
+
+    if body.method == "ach" and not reference:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A bank trace or transfer reference is required to confirm an ACH payment",
+        )
+    if body.method == "check" and not reference:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A check number is required to confirm a check payment",
+        )
+    if body.method == "fleet_payment":
+        if not provider:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A fleet payment provider is required",
+            )
+        if not reference:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="A fleet check or payment code is required",
+            )
+        if not authorization:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="An authorization or approval number is required",
+            )
+
+    return provider, reference, authorization, notes
 
 
 def _is_placeholder_walkin_customer(customer: Customer) -> bool:
@@ -337,6 +389,8 @@ async def create_payment_intent_for_invoice(
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
     
     # Stripe minimum is $0.50 USD
     if invoice.total_amount < Decimal("0.50"):
@@ -448,6 +502,8 @@ async def confirm_payment(
 
     if invoice.repair_order.customer_id != current_user.customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
 
     # Get tenant to check for Stripe Connect
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
@@ -530,10 +586,15 @@ async def record_manual_payment(
         'zelle': PaymentMethodEnum.ZELLE,
         'check': PaymentMethodEnum.CHECK,
         'ach': PaymentMethodEnum.ACH,
+        'fleet_payment': PaymentMethodEnum.FLEET_PAYMENT,
         'other': PaymentMethodEnum.OTHER,
     }
     if body.method not in method_map:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid payment method: {body.method}")
+
+    payment_provider, reference_number, authorization_number, payment_notes = (
+        _normalized_manual_payment_details(body)
+    )
     
     # Get invoice (with repair order + vehicle eagerly loaded)
     result = await db.execute(
@@ -548,6 +609,8 @@ async def record_manual_payment(
     
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
 
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == invoice.tenant_id))
     tenant = tenant_result.scalar_one_or_none()
@@ -624,7 +687,8 @@ async def record_manual_payment(
     # Update repair order status
     invoice.repair_order.status = RepairOrderStatus.PAID
     
-    # Create payment record. Manual methods (cash, zelle, check, ach, other) are
+    # Create payment record. Manual methods (cash, Zelle, checks, ACH, and fleet
+    # instruments) are
     # not card payments, so they don't incur the card processing fee — the amount
     # actually collected is the invoice total minus that fee. Only Stripe (card)
     # collects the full total_amount.
@@ -637,7 +701,10 @@ async def record_manual_payment(
         amount=collected_amount,
         method=method_map[body.method],
         status=PaymentStatus.COMPLETED,
-        notes=body.notes,
+        notes=payment_notes,
+        payment_provider=payment_provider,
+        reference_number=reference_number,
+        authorization_number=authorization_number,
         recorded_by_user_id=current_user.id,
     )
     db.add(payment)
@@ -774,6 +841,8 @@ async def submit_customer_zelle_payment(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invoice already paid")
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Voided invoices cannot be paid")
 
     was_pending = invoice.pending_zelle_confirmation
     sender_email = _normalize_email(str(body.sender_email) if body.sender_email else current_user.email)

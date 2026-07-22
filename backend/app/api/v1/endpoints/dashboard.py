@@ -393,6 +393,7 @@ async def get_dashboard_stats(
                 Invoice.tenant_id == tenant_id,
                 Invoice.zelle_pending_submitted_at.is_not(None),
                 Invoice.status != InvoiceStatus.PAID,
+                Invoice.status != InvoiceStatus.CANCELLED,
             )
         )
         .order_by(Invoice.zelle_pending_submitted_at.desc())
@@ -464,6 +465,7 @@ async def get_dashboard_stats(
                 and_(
                     Invoice.tenant_id == tenant_id,
                     Invoice.repair_order_id.in_(ready_order_ids),
+                    Invoice.status != InvoiceStatus.CANCELLED,
                 )
             )
         )

@@ -105,9 +105,10 @@ class RepairOrder(BaseModel):
     # vehicle's next_pm_miles. Drives the "PM" kind in the fleet service history.
     is_pm = Column(Boolean, nullable=False, default=False, index=True)
 
-    # One-to-one relationships (Quote and Invoice reference RepairOrder, not vice versa)
+    # Quotes are one-to-one. Invoices retain cancelled revisions, so a repair
+    # order can have multiple historical invoice rows but only one active one.
     quote = relationship("Quote", back_populates="repair_order", uselist=False)
-    invoice = relationship("Invoice", back_populates="repair_order", uselist=False)
+    invoices = relationship("Invoice", back_populates="repair_order")
     
     parent_repair_order = relationship("RepairOrder", remote_side="RepairOrder.id", foreign_keys=[parent_repair_order_id])
 

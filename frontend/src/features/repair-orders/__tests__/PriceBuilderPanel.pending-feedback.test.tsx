@@ -320,4 +320,51 @@ describe('PriceBuilderPanel pending feedback', () => {
     await user.click(screen.getByRole('button', { name: 'Mark completed' }))
     expect(onAdminCompleteWork).toHaveBeenCalledTimes(1)
   })
+
+  it('shows Zelle confirmation actions and the non-card total for an invoiced internal fleet order', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    const onRecordPayment = vi.fn()
+    const onVoidInvoice = vi.fn()
+    const user = userEvent.setup()
+    renderPanel({
+      orderStatus: 'invoiced',
+      isInternalOrder: true,
+      onRecordPayment,
+      onVoidInvoice,
+      invoice: {
+        id: 'invoice-1',
+        tenant_id: 'tenant-1',
+        repair_order_id: 'order-1',
+        invoice_number: 'INV-1001',
+        status: 'sent',
+        subtotal: '12.50',
+        shop_supplies_amount: '0.38',
+        service_fee_amount: '0.37',
+        tax_amount: '0.89',
+        discount_amount: '0.00',
+        total_amount: '14.14',
+        due_date: null,
+        paid_at: null,
+        notes: null,
+        pending_zelle_confirmation: true,
+        created_at: '2026-07-22T00:00:00Z',
+        updated_at: '2026-07-22T00:00:00Z',
+      },
+    })
+
+    expect(await screen.findByText('$13.77')).toBeInTheDocument()
+    const confirmButton = screen.getByRole('button', { name: 'Confirm Zelle payment' })
+    expect(screen.queryByRole('button', { name: 'Void & revise' })).not.toBeInTheDocument()
+    await user.click(confirmButton)
+    expect(onRecordPayment).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: /Invoice INV-1001/i }))
+    expect(screen.getByText('Zelle total')).toBeInTheDocument()
+    expect(screen.queryByText('Card processing fee')).not.toBeInTheDocument()
+  })
 })
