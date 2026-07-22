@@ -229,7 +229,7 @@ class PriceBuildService:
             .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
             .options(
                 selectinload(RepairOrder.vehicle),
-                selectinload(RepairOrder.parts_usage),
+                selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
                 selectinload(RepairOrder.labor_items),
             )
             .execution_options(populate_existing=True)
@@ -237,8 +237,6 @@ class PriceBuildService:
         order = result.scalar_one_or_none()
         if not order:
             raise PriceBuildNotFoundError("Repair order not found")
-        # Keep relationship collections fresh across write->read cycles in the same session.
-        await db.refresh(order, attribute_names=["vehicle", "parts_usage", "labor_items"])
         return order
 
     async def add_flat_service_line(

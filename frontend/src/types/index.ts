@@ -392,6 +392,7 @@ export interface PriceBuildSummary {
   can_start_work?: boolean
   can_finalize?: boolean
   lines: PriceBuildLine[]
+  parts: PartsUsage[]
   warnings: PriceBuildWarning[]
 }
 

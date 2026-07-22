@@ -1205,14 +1205,8 @@ export default function PriceBuilderPanel({
     })
   }, [summary?.lines])
 
-  const { data: partsUsed, isFetching: partsFetching } = useQuery<PartsUsage[]>({
-    queryKey: ['price-build-parts', orderId],
-    queryFn: async ({ signal }) => {
-      const response = await api.get(`/repair-orders/${orderId}/parts`, { signal })
-      return response.data
-    },
-    enabled: !!orderId && !isDeleted,
-  })
+  const partsUsed = summary?.parts
+  const partsFetching = summaryFetching
 
   const partSearchTerm = useDebouncedValue(searchTerm.trim(), 250)
   const operationPartSearchTerm = useDebouncedValue(
@@ -1341,7 +1335,6 @@ export default function PriceBuilderPanel({
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['price-build', orderId] }),
-      queryClient.invalidateQueries({ queryKey: ['price-build-parts', orderId] }),
       queryClient.invalidateQueries({ queryKey: ['price-build-part-suggestions', orderId] }),
       queryClient.invalidateQueries({ queryKey: ['inventory-typeahead'] }),
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] }),
