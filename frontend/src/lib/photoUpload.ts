@@ -26,6 +26,8 @@ export interface DirectPhotoUploadOptions {
   file: File
   signEndpoint: string
   recordEndpoint: string
+  fallbackEndpoint?: string
+  fallbackMode?: 'multipart' | 'base64-json'
   caption?: string
   onProgress?: (progress: PhotoUploadProgress) => void
 }
@@ -117,17 +119,72 @@ function uploadToCloudinary(signature: DirectPhotoUploadSignature, file: File, o
         resolve({ secure_url: payload.secure_url, public_id: payload.public_id })
         return
       }
-      reject(new Error(payload?.error?.message || 'Cloudinary upload failed'))
+      reject(Object.assign(new Error(payload?.error?.message || 'Cloudinary upload failed'), { status: xhr.status }))
     }
-    xhr.onerror = () => reject(new Error('Network error while uploading photo'))
+    xhr.onerror = () => reject(Object.assign(new Error('Network error while uploading photo'), { status: xhr.status }))
     xhr.send(formData)
   })
+}
+
+function isMethodNotAllowed(error: unknown) {
+  if ((error as any)?.response?.status === 405 || (error as any)?.status === 405) return true
+  const message = error instanceof Error ? error.message : String(error || '')
+  return message.toLowerCase().includes('method not allowed')
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function uploadViaAppEndpoint<TPhoto>(
+  endpoint: string,
+  file: File,
+  caption: string | undefined,
+  mode: 'multipart' | 'base64-json',
+  onProgress?: (progress: PhotoUploadProgress) => void,
+) {
+  onProgress?.({ status: 'uploading', progress: 18 })
+  if (mode === 'base64-json') {
+    const image = await readFileAsDataUrl(file)
+    const response = await api.post<TPhoto>(
+      endpoint,
+      { image, caption: caption?.trim() || undefined },
+      {
+        onUploadProgress: (event) => {
+          if (!event.total) return
+          onProgress?.({ status: 'uploading', progress: 18 + Math.round((event.loaded / event.total) * 72) })
+        },
+      },
+    )
+    onProgress?.({ status: 'done', progress: 100 })
+    return response.data
+  }
+
+  const formData = new FormData()
+  formData.append('image', file)
+  if (caption?.trim()) formData.append('caption', caption.trim())
+  const response = await api.post<TPhoto>(endpoint, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (!event.total) return
+      onProgress?.({ status: 'uploading', progress: 18 + Math.round((event.loaded / event.total) * 72) })
+    },
+  })
+  onProgress?.({ status: 'done', progress: 100 })
+  return response.data
 }
 
 export async function uploadDirectPhoto<TPhoto>({
   file,
   signEndpoint,
   recordEndpoint,
+  fallbackEndpoint,
+  fallbackMode = 'multipart',
   caption,
   onProgress,
 }: DirectPhotoUploadOptions) {
@@ -135,19 +192,26 @@ export async function uploadDirectPhoto<TPhoto>({
   const compressedFile = await compressPhoto(file)
   onProgress?.({ status: 'uploading', progress: 15 })
 
-  const signature = (await api.post<DirectPhotoUploadSignature>(signEndpoint)).data
-  const uploaded = await uploadToCloudinary(signature, compressedFile, (percent) => {
-    onProgress?.({ status: 'uploading', progress: 15 + Math.round(percent * 0.75) })
-  })
+  try {
+    const signature = (await api.post<DirectPhotoUploadSignature>(signEndpoint)).data
+    const uploaded = await uploadToCloudinary(signature, compressedFile, (percent) => {
+      onProgress?.({ status: 'uploading', progress: 15 + Math.round(percent * 0.75) })
+    })
 
-  onProgress?.({ status: 'saving', progress: 92 })
-  const response = await api.post<TPhoto>(recordEndpoint, {
-    image_url: uploaded.secure_url,
-    public_id: uploaded.public_id,
-    caption: caption?.trim() || undefined,
-  })
-  onProgress?.({ status: 'done', progress: 100 })
-  return response.data
+    onProgress?.({ status: 'saving', progress: 92 })
+    const response = await api.post<TPhoto>(recordEndpoint, {
+      image_url: uploaded.secure_url,
+      public_id: uploaded.public_id,
+      caption: caption?.trim() || undefined,
+    })
+    onProgress?.({ status: 'done', progress: 100 })
+    return response.data
+  } catch (error) {
+    if (fallbackEndpoint && isMethodNotAllowed(error)) {
+      return uploadViaAppEndpoint<TPhoto>(fallbackEndpoint, compressedFile, caption, fallbackMode, onProgress)
+    }
+    throw error
+  }
 }
 
 export async function runPhotoUploadQueue<TFile>(

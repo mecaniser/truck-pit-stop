@@ -1086,6 +1086,7 @@ export default function PriceBuilderPanel({
           file: item.file,
           signEndpoint: `/repair-orders/${orderId}/photos/direct-upload-signature`,
           recordEndpoint: `/repair-orders/${orderId}/photos/direct`,
+          fallbackEndpoint: `/repair-orders/${orderId}/photos`,
           caption,
           onProgress: (progress) => updateRepairPhotoUpload(item.id, progress),
         })
@@ -1094,7 +1095,6 @@ export default function PriceBuilderPanel({
       } catch (error) {
         updateRepairPhotoUpload(item.id, {
           status: 'error',
-          progress: 100,
           error: errorDetail(error, 'Upload failed'),
         })
       }
@@ -3773,8 +3773,11 @@ export default function PriceBuilderPanel({
                           <p className="line-clamp-2 text-xs font-semibold text-orange-800">
                             {item.name}
                           </p>
+                          <p className={`text-lg font-black ${item.status === 'error' ? 'text-red-500' : 'text-orange-600'}`}>
+                            {item.progress}%
+                          </p>
                           <p className="text-[10px] font-semibold text-gray-500">
-                            {item.status === 'error' ? (item.error || 'Upload failed') : `${item.status} · ${formatFileSize(item.size)}`}
+                            {item.status === 'error' ? `Failed: ${item.error || 'Upload failed'}` : `${item.status} · ${formatFileSize(item.size)}`}
                           </p>
                           <div className="h-1.5 w-full overflow-hidden rounded-full bg-white">
                             <div

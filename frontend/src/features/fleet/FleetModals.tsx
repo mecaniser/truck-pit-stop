@@ -1103,12 +1103,12 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
             file: photo.file,
             signEndpoint: `/fleet/incidents/${incident.id}/photos/direct-upload-signature`,
             recordEndpoint: `/fleet/incidents/${incident.id}/photos/direct`,
+            fallbackEndpoint: `/fleet/incidents/${incident.id}/photos`,
             onProgress: (progress) => updatePhotoUpload(photo.id, progress),
           })
         } catch (error: any) {
           updatePhotoUpload(photo.id, {
             status: 'error',
-            progress: 100,
             error: error.response?.data?.detail || error.message || 'Failed',
           })
           throw error

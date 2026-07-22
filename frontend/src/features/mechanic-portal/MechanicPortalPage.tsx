@@ -560,6 +560,8 @@ export default function MechanicPortalPage() {
             file: photo.file,
             signEndpoint: `/mechanics/my-jobs/${expandedJobId}/photos/direct-upload-signature`,
             recordEndpoint: `/mechanics/my-jobs/${expandedJobId}/photos/direct`,
+            fallbackEndpoint: `/mechanics/my-jobs/${expandedJobId}/photos`,
+            fallbackMode: 'base64-json',
             caption,
             onProgress: (progress) => updateSelectedPhoto(photo.id, progress),
           })
@@ -569,7 +571,6 @@ export default function MechanicPortalPage() {
         } catch (error: any) {
           updateSelectedPhoto(photo.id, {
             status: 'error',
-            progress: 100,
             error: error.response?.data?.detail || error.message || 'Upload failed',
           })
         }

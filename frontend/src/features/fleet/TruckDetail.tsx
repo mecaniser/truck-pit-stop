@@ -179,6 +179,7 @@ export default function TruckDetail({
           file: item.file,
           signEndpoint: `/fleet/incidents/${item.incidentId}/photos/direct-upload-signature`,
           recordEndpoint: `/fleet/incidents/${item.incidentId}/photos/direct`,
+          fallbackEndpoint: `/fleet/incidents/${item.incidentId}/photos`,
           onProgress: (progress) => updatePendingIncidentPhoto(item.id, progress),
         })
         uploadedCount += 1
@@ -197,7 +198,6 @@ export default function TruckDetail({
       } catch (error: any) {
         updatePendingIncidentPhoto(item.id, {
           status: 'error',
-          progress: 100,
           error: error.response?.data?.detail || error.message || 'Failed',
         })
       }
