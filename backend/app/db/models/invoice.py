@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Numeric, Text, Enum as SQLEnum, Integer, Boolean
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
 from decimal import Decimal
 from app.db.base import BaseModel
@@ -40,6 +40,9 @@ class Invoice(BaseModel):
     tax_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     discount_amount = Column(Numeric(10, 2), default=Decimal("0.00"), nullable=False)
     total_amount = Column(Numeric(10, 2), nullable=False)
+    # Immutable labor/parts captured when the invoice is finalized. PDFs,
+    # emails, and resends render from this snapshot rather than live RO rows.
+    line_items_snapshot = Column(JSONB, nullable=True)
     
     due_date = Column(DateTime(timezone=True), nullable=True)
     paid_at = Column(DateTime(timezone=True), nullable=True)

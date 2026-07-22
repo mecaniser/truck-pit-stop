@@ -1,168 +1,90 @@
-# Flow Verification Guide
+# Work-First Repair Order Verification
 
-Step-by-step guide to verify the Repair Order flow after recent UI/UX changes.
-
----
+Use this guide to verify the canonical repair-order workflow. Estimates are optional authorization documents; they are not gates for shop work.
 
 ## Prerequisites
 
-1. Backend running (`cd backend && uvicorn app.main:app --reload`)
-2. Frontend running (`cd frontend && npm run dev`)
-3. At least one mechanic user in the system
-4. Some inventory items with stock > 0
-5. Some services defined (e.g., "Brake Pad Replacement", "Oil Change")
+1. Run the database migrations, including revision `092`.
+2. Start the backend and frontend.
+3. Have a staff user, a mechanic, a customer with a vehicle, and inventory with available stock.
 
----
+## Canonical flow
 
-## Complete Repair Order Flow
+1. Staff creates a repair order. It appears as **Checked in**.
+2. Staff may immediately add services, operations, labor, parts, discounts, notes, and photos.
+3. Staff may assign a technician and start work without creating or approving an estimate.
+4. The customer sees operational progress, but no live line-item prices or running total.
+5. An estimate may be created, sent, approved, declined, or revised without changing the repair order's operational status or locking its live pricing.
+6. Technician completion moves the order to **Quality review**.
+7. Staff selects **Finalize & Send Invoice**. Finalization locks pricing, captures immutable invoice lines, and sends/publishes the final invoice.
+8. The customer can see the final itemized amount and pay it.
 
-### Correct Order of Operations:
+## Scenario A: direct work without an estimate
 
-1. **Staff creates RO** (status: draft)
-2. **Staff adds parts/services**
-3. **Staff creates quote** (status: quoted)
-4. **Staff sends quote to customer** → Email sent
-5. **Customer approves quote via portal** (status: approved)
-6. **Staff assigns mechanic** (status: in_progress)
-7. **Mechanic completes work** (status: completed)
-8. **Staff creates invoice** (status: invoiced)
-9. **Customer pays** (status: paid)
+1. Create an order with a customer, vehicle, complaint, and optional services.
+2. Confirm that no estimate is created automatically.
+3. Open the workspace and confirm the initial label is **Checked in**.
+4. Add and edit an operation, labor line, part, and discount.
+5. Assign a mechanic immediately.
+6. Start work, make another pricing change, and confirm it saves.
+7. Complete technician work and confirm the order reaches **Quality review**.
+8. Finalize the order and confirm it becomes **Invoiced**.
 
----
+Expected results:
 
-## Test Flow: Create Repair Order with Services
+- Assignment and work are never blocked by missing estimate approval.
+- Pricing stays editable through quality review.
+- Finalization creates the invoice and changes the pricing lock reason to `invoice_finalized`.
+- Editing financial work lines after invoicing is rejected.
 
-### 1. Create New Repair Order
+## Scenario B: optional estimate
 
-1. Go to **Repair Orders** page
-2. Click **+ New Repair Order**
-3. Select or create a customer
-4. Select or create a vehicle
-5. **Select services** (e.g., "Brake Pad Replacement" - $150)
-6. Add optional description
-7. Click **Create Repair Order**
+1. From an active order, select **Create estimate**.
+2. Send it to the customer and authorize or decline it in the customer portal.
+3. Confirm that the repair order keeps its operational state throughout.
+4. Continue assigning, starting, and editing the order before and after the estimate response.
 
-**Expected**: RO created, appears in list
+Expected results:
 
----
+- Sending an estimate does not stamp a pricing lock.
+- Authorizing or declining an estimate does not move the repair order to `approved` or `declined`.
+- The estimate remains an authorization snapshot while the live work record can evolve.
 
-### 2. Open Repair Order Detail Panel
+## Scenario C: customer visibility
 
-Click on the newly created RO to open the side panel.
+Inspect the order as the customer while it is checked in, assigned, in progress, and in quality review.
 
-**Verify these sections:**
+Expected results:
 
-#### Selected Services Section
-- Shows each selected service with its price
-- Shows **Labor** line at bottom with total (sum of service prices)
-- Labor amount is amber colored
+- Operational status and permitted customer-facing updates are visible.
+- Internal notes are hidden.
+- Live labor/part lines, discounts, and totals are hidden.
+- A sent estimate exposes only that estimate and its requested action.
+- Final line items and totals appear only after the order is invoiced or paid.
 
-#### Parts Section
-- Shows "Select part" dropdown, quantity input, and "Add" button
-- All three elements should be **same height**
-- No "No parts added" text when empty
+## Scenario D: immutable invoice snapshot
 
-#### Labor Section
-- **Should NOT appear** when services are selected (services include labor)
+1. Finalize an order containing labor and parts.
+2. Download the invoice PDF and record its lines and totals.
+3. Resend the invoice and open its public PDF link.
+4. Trigger a paid-invoice confirmation email.
 
-#### Mechanic Section
-- **DISABLED** until quote is approved by customer
-- Shows amber note: "Quote must be approved before assigning a mechanic."
-- Dropdown and quick-pick cards are grayed out and not clickable
-- After customer approves quote → section becomes active
+Expected results:
 
-#### Customer & Vehicle Section
-- **Collapsed by default** - shows only customer name
-- Click to expand and see:
-  - Customer details (name, email)
-  - Vehicle details (year, make, model, VIN, plate)
+- All invoice render paths use the `line_items_snapshot` stored at finalization.
+- PDFs, resends, and payment confirmations show identical lines and totals.
+- Existing invoices without a snapshot continue to render using legacy live rows as a compatibility fallback.
 
-#### Totals Section
-- Single line: `Parts $X · Labor $Y · Total $Z`
-- Parts = sum of added parts
-- Labor = backend labor + services labor
-- Total = Parts + Labor
+## Regression checklist
 
-#### Quote Section
-- Shows two buttons: **Create** → **Send to customer**
-- Arrow between buttons shows flow direction
-- "Create" is active, "Send to customer" is grayed out initially
-- After clicking "Create":
-  - Quote details appear (number, amount, expiry)
-  - "Create" becomes disabled
-  - "Send to customer" becomes active
-- After clicking "Send to customer":
-  - Email sent to customer with quote details and portal link
-  - Shows "Quote sent to customer. Waiting for approval..." message
-  - Button becomes disabled
-- **Customer approves via portal** → RO status changes to "approved"
-- After customer approval:
-  - Shows "Quote approved by customer — ready to assign mechanic."
-  - **Mechanic section becomes active**
-
----
-
-## Test Flow: Customer Approves Quote (Portal)
-
-1. Log in as customer (or check email for portal link)
-2. Go to **Customer Portal**
-3. Find the repair order with pending quote
-4. Click **Approve quote**
-5. **Verify**: Quote status changes to approved
-
----
-
-## Test Flow: Assign Mechanic (After Approval)
-
-1. Open RO that has been approved by customer
-2. **Verify**: Mechanic section is now **active**
-3. Either:
-   - Use dropdown to select mechanic, OR
-   - Click a mechanic from quick-pick grid (3 columns, sorted by load)
-4. **Verify**: 
-   - Mechanic assigned, highlighted with amber border
-   - RO status changes to "in_progress"
-
----
-
-## Test Flow: Create Repair Order WITHOUT Services (Manual Labor)
-
-### 1. Create RO without selecting services
-
-1. Click **+ New Repair Order**
-2. Select customer and vehicle
-3. **Skip service selection** (leave empty)
-4. Add description like "Custom diagnostic work"
-5. Click **Create Repair Order**
-
-### 2. Open Detail Panel
-
-**Verify:**
-
-#### Labor Section
-- **Should appear** (since no services selected)
-- Shows description input (optional)
-- Shows hours input
-- Shows rate display: `$100/hr` with pencil icon
-  - Click pencil to edit rate inline
-  - Press Enter or click away to confirm
-- Click "Add" to add labor line
-
----
-
-## Checklist Summary
-
-| Feature | Expected Behavior |
-|---------|-------------------|
-| Services selected | Labor section hidden, services show labor total |
-| No services | Labor section visible with manual entry |
-| Labor rate | Shows $100/hr with edit icon, not text input |
-| Parts inputs | Same height (dropdown, quantity, button) |
-| Mechanic section | **Disabled until customer approves quote** |
-| Mechanic note | "Quote must be approved before assigning a mechanic." |
-| Mechanic quick pick | 3-column grid, sorted by load, color-coded |
-| Customer & Vehicle | Collapsible, collapsed by default |
-| Quote buttons | Create → Send to customer |
-| Send quote | Emails customer, shows "waiting for approval" |
-| Customer approval | Done via portal, unlocks mechanic assignment |
-| Totals | Parts + Labor (from services) = Total |
+| Area | Expected behavior |
+|---|---|
+| Intake | Creates a checked-in order, not an automatic estimate |
+| Workspace | Operational workflow is primary; estimate is secondary |
+| Assignment | Available on active customer orders without approval |
+| Work editing | Allowed from checked in through quality review |
+| Customer portal | No unpublished financials on active work |
+| Estimate | Optional and independent of operational status |
+| Finalization | Locks pricing and snapshots invoice lines |
+| Invoice delivery | Email, resend, authenticated PDF, and token PDF use the snapshot |
+| Payment | Paid state and confirmation retain the finalized invoice content |

@@ -86,9 +86,43 @@ logger = get_logger(__name__)
 router = APIRouter()
 price_build_service = PriceBuildService()
 
-# Only draft and quoted ROs can have parts/labor modified
-EDITABLE_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
-DANGER_ACTION_RO_STATUSES = (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED)
+# Work-first is the canonical customer workflow. A repair order is the shop's
+# live work record, so parts/labor/pricing stay editable until manager review is
+# finalized into an invoice. Quotes are optional authorization snapshots and do
+# not freeze the underlying work record.
+EDITABLE_RO_STATUSES = (
+    RepairOrderStatus.DRAFT,
+    RepairOrderStatus.QUOTED,
+    RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED,
+    RepairOrderStatus.ASSIGNED,
+    RepairOrderStatus.ACKNOWLEDGED,
+    RepairOrderStatus.IN_PROGRESS,
+    RepairOrderStatus.PENDING_REVIEW,
+)
+ASSIGNABLE_RO_STATUSES = (
+    RepairOrderStatus.DRAFT,
+    RepairOrderStatus.QUOTED,
+    RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED,
+    RepairOrderStatus.ASSIGNED,
+    RepairOrderStatus.ACKNOWLEDGED,
+    RepairOrderStatus.IN_PROGRESS,
+)
+STARTABLE_WITHOUT_MECHANIC_STATUSES = (
+    RepairOrderStatus.DRAFT,
+    RepairOrderStatus.QUOTED,
+    RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED,
+)
+DANGER_ACTION_RO_STATUSES = (
+    RepairOrderStatus.DRAFT,
+    RepairOrderStatus.QUOTED,
+    RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED,
+    RepairOrderStatus.ASSIGNED,
+    RepairOrderStatus.ACKNOWLEDGED,
+)
 # Deleting is also allowed once an order is cancelled — cancelling doesn't
 # clean anything up, so customers need a way to remove cancelled clutter.
 DELETABLE_RO_STATUSES = DANGER_ACTION_RO_STATUSES + (RepairOrderStatus.CANCELLED,)
@@ -157,6 +191,10 @@ def _to_price_build_summary(
 ) -> PriceBuildSummaryResponse:
     labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
     pricing_locked = _is_pricing_locked_for_edits(order)
+    can_edit_work = not pricing_locked and (
+        (order.is_internal and order.status not in INTERNAL_FROZEN_RO_STATUSES)
+        or (not order.is_internal and order.status in EDITABLE_RO_STATUSES)
+    )
     return PriceBuildSummaryResponse(
         order_id=order.id,
         labor_total=order.total_labor_cost,
@@ -167,6 +205,15 @@ def _to_price_build_summary(
         pricing_locked=pricing_locked,
         pricing_locked_at=order.pricing_locked_at,
         pricing_lock_reason=order.pricing_lock_reason,
+        can_edit_work=can_edit_work,
+        can_assign_technician=(
+            not order.is_internal and order.status in ASSIGNABLE_RO_STATUSES
+        ),
+        can_start_work=(
+            order.status in STARTABLE_WITHOUT_MECHANIC_STATUSES
+            or order.status in (RepairOrderStatus.ASSIGNED, RepairOrderStatus.ACKNOWLEDGED)
+        ),
+        can_finalize=order.status == RepairOrderStatus.PENDING_REVIEW,
         lines=labor_resp,
         warnings=warnings or [],
     )
@@ -175,9 +222,16 @@ def _to_price_build_summary(
 def _is_pricing_locked_for_edits(order: RepairOrder) -> bool:
     if order.pricing_locked_at is None:
         return False
-    if order.pricing_lock_reason == "quote_sent" and order.status == RepairOrderStatus.QUOTED:
+    # Legacy quote sends stamped a lock marker. In the work-first model an
+    # estimate never freezes the live repair order, regardless of its status.
+    if order.pricing_lock_reason == "quote_sent":
         return False
     return True
+
+
+def _customer_financials_are_published(order: RepairOrder) -> bool:
+    """Live work-order money is staff-only until a final invoice exists."""
+    return order.status in (RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)
 
 
 def _packages_consumed(quantity: Decimal) -> int:
@@ -823,12 +877,13 @@ async def list_repair_orders(
     order_ids = [o.id for o in orders]
     if order_ids:
         quote_result = await db.execute(
-            select(Quote.repair_order_id, Quote.sent_to_customer, Quote.sent_at)
+            select(Quote.repair_order_id, Quote.sent_to_customer, Quote.sent_at, Quote.is_approved)
             .where(Quote.repair_order_id.in_(order_ids))
         )
         quote_rows = quote_result.fetchall()
         quote_sent_map = {row[0]: row[1] for row in quote_rows}
         quote_sent_at_map = {row[0]: row[2] for row in quote_rows}
+        quote_approved_map = {row[0]: row[3] for row in quote_rows}
 
         invoice_result = await db.execute(
             select(
@@ -847,6 +902,7 @@ async def list_repair_orders(
     else:
         quote_sent_map = {}
         quote_sent_at_map = {}
+        quote_approved_map = {}
         pending_zelle_map = {}
         invoice_created_at_map = {}
         invoice_due_date_map = {}
@@ -874,7 +930,7 @@ async def list_repair_orders(
         return {"customer_first_name": c.first_name or "", "customer_last_name": c.last_name or "", "customer_company_name": c.company_name, "customer_email": c.email, "customer_phone": c.phone}
 
     _vf_exclude = {
-        'quote_sent', 'quote_sent_at', 'invoice_created_at', 'invoice_due_date', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
+        'quote_sent', 'quote_approved', 'quote_sent_at', 'invoice_created_at', 'invoice_due_date', 'pending_zelle_confirmation', 'vehicle_make', 'vehicle_model', 'vehicle_year',
         'vehicle_unit_number', 'vehicle_vin', 'cancelled_by_name', 'deleted_by_name',
         'customer_first_name', 'customer_last_name', 'customer_company_name', 'customer_email', 'customer_phone',
     }
@@ -884,6 +940,7 @@ async def list_repair_orders(
             **_vehicle_fields(o.vehicle),
             **_customer_fields(o.customer),
             quote_sent=quote_sent_map.get(o.id),
+            quote_approved=quote_approved_map.get(o.id),
             quote_sent_at=quote_sent_at_map.get(o.id),
             invoice_created_at=invoice_created_at_map.get(o.id),
             invoice_due_date=invoice_due_date_map.get(o.id),
@@ -893,6 +950,15 @@ async def list_repair_orders(
         )
         for o in orders
     ]
+    if current_user.role == UserRole.CUSTOMER:
+        for item, order in zip(items, orders):
+            item.internal_notes = None
+            if not _customer_financials_are_published(order):
+                item.total_parts_cost = Decimal("0.00")
+                item.total_labor_cost = Decimal("0.00")
+                item.total_cost = Decimal("0.00")
+                item.labor_discount_amount = Decimal("0.00")
+                item.order_discount_amount = Decimal("0.00")
     return paginated_or_list(items, total, skip, limit, paginated)
 
 
@@ -922,8 +988,12 @@ async def get_repair_order_detail(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
     _check_ro_access(current_user, order)
-    parts_resp = [_build_parts_usage_response(pu) for pu in order.parts_usage]
-    labor_resp = [LaborResponse.model_validate(li) for li in order.labor_items]
+    customer_financials_hidden = (
+        current_user.role == UserRole.CUSTOMER
+        and not _customer_financials_are_published(order)
+    )
+    parts_resp = [] if customer_financials_hidden else [_build_parts_usage_response(pu) for pu in order.parts_usage]
+    labor_resp = [] if customer_financials_hidden else [LaborResponse.model_validate(li) for li in order.labor_items]
     history_result = await db.execute(
         select(RepairOrderHistoryEvent)
         .where(
@@ -966,8 +1036,20 @@ async def get_repair_order_detail(
     def _user_name(u: Optional[User]) -> Optional[str]:
         return f"{u.first_name} {u.last_name}".strip() if u else None
 
+    detail_base = RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude)
+    if current_user.role == UserRole.CUSTOMER:
+        detail_base["internal_notes"] = None
+    if customer_financials_hidden:
+        detail_base.update({
+            "total_parts_cost": Decimal("0.00"),
+            "total_labor_cost": Decimal("0.00"),
+            "total_cost": Decimal("0.00"),
+            "labor_discount_amount": Decimal("0.00"),
+            "order_discount_amount": Decimal("0.00"),
+        })
+
     return RepairOrderDetailResponse(
-        **RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude),
+        **detail_base,
         vehicle_make=v.make or "" if v else "",
         vehicle_model=v.model or "" if v else "",
         vehicle_year=v.year if v else None,
@@ -1285,7 +1367,7 @@ async def override_start_work_without_mechanic(
         UserRole.GARAGE_ADMIN,
     )),
 ):
-    """Owner/admin override: start approved customer work without assigning a mechanic."""
+    """Owner/admin: start active customer work without assigning a mechanic."""
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -1311,10 +1393,10 @@ async def override_start_work_without_mechanic(
             detail="This repair order already has an assigned mechanic",
         )
 
-    if order.status != RepairOrderStatus.APPROVED:
+    if order.status not in STARTABLE_WITHOUT_MECHANIC_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only override technician assignment for approved repair orders",
+            detail="Work can only be started from an active checked-in repair order",
         )
 
     order.status = RepairOrderStatus.IN_PROGRESS
@@ -1383,19 +1465,18 @@ async def assign_mechanic(
                 detail="Only shop managers can reassign mechanics. Please contact your manager.",
             )
     else:
-        # First assignment - customer ROs must be approved. Internal fleet WOs
-        # skip the approval flow (draft → in_progress), so allow assigning a
-        # mechanic any time before they're frozen.
+        # First assignment is an operational action. Customer quote approval is
+        # optional and must not gate putting a checked-in truck into a bay.
         if order.is_internal:
             if order.status in INTERNAL_FROZEN_RO_STATUSES:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Can't assign a mechanic after the work order is completed",
                 )
-        elif order.status != RepairOrderStatus.APPROVED:
+        elif order.status not in ASSIGNABLE_RO_STATUSES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Can only assign mechanic to approved repair orders",
+                detail="Can't assign a technician after the repair order is finalized",
             )
     
     # Verify mechanic exists and belongs to tenant
@@ -1415,8 +1496,15 @@ async def assign_mechanic(
     # Assign mechanic and update status
     order.assigned_mechanic_id = body.mechanic_id
     order.assigned_at = datetime.now(timezone.utc)
-    # Set status to ASSIGNED if still APPROVED (handles edge cases where previous assignment didn't update status)
-    if order.status == RepairOrderStatus.APPROVED:
+    # Any intake/authorization state becomes operationally assigned. Existing
+    # in-progress work remains in progress when it is reassigned.
+    if order.status in (
+        RepairOrderStatus.DRAFT,
+        RepairOrderStatus.QUOTED,
+        RepairOrderStatus.DECLINED,
+        RepairOrderStatus.APPROVED,
+        RepairOrderStatus.ACKNOWLEDGED,
+    ):
         order.status = RepairOrderStatus.ASSIGNED
     
     await db.commit()
@@ -2283,7 +2371,7 @@ async def approve_completion(
         UserRole.FLEET_MANAGER,
     )),
 ):
-    """Manager approves completed work - notifies customer"""
+    """Finalize reviewed work, lock pricing, create the invoice, and notify the customer."""
     result = await db.execute(
         select(RepairOrder)
         .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
@@ -2308,6 +2396,10 @@ async def approve_completion(
         order.mileage_out = body.mileage_out
 
     order.status = RepairOrderStatus.COMPLETED
+    # Finalization is the financial lock boundary in the work-first model.
+    # Quotes never lock pricing; manager approval does.
+    order.pricing_locked_at = datetime.now(timezone.utc)
+    order.pricing_lock_reason = "invoice_finalized"
     if order.assigned_mechanic_id is None:
         _record_repair_order_history_event(
             db,
@@ -2699,8 +2791,8 @@ def _require_editable_ro(order: RepairOrder) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="Pricing is locked for this repair order",
         )
-    # Internal fleet WOs log labor/parts throughout the active flow; they only
-    # freeze once completed/invoiced/cancelled. Customer ROs stay draft/quoted.
+    # Internal and customer work records remain editable throughout the active
+    # repair lifecycle. Finalization/invoicing is the financial lock boundary.
     if order.is_internal:
         if order.status in INTERNAL_FROZEN_RO_STATUSES:
             raise HTTPException(
@@ -2711,7 +2803,7 @@ def _require_editable_ro(order: RepairOrder) -> None:
     if order.status not in EDITABLE_RO_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Parts and labor can only be modified when repair order is draft or quoted",
+            detail="Parts and labor can't be modified after the repair order is finalized",
         )
 
 

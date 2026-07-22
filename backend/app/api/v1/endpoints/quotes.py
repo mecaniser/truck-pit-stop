@@ -60,6 +60,17 @@ router = APIRouter()
 price_build_service = PriceBuildService()
 logger = logging.getLogger(__name__)
 
+QUOTE_ALLOWED_RO_STATUSES = {
+    RepairOrderStatus.DRAFT,
+    RepairOrderStatus.QUOTED,
+    RepairOrderStatus.DECLINED,
+    RepairOrderStatus.APPROVED,
+    RepairOrderStatus.ASSIGNED,
+    RepairOrderStatus.ACKNOWLEDGED,
+    RepairOrderStatus.IN_PROGRESS,
+    RepairOrderStatus.PENDING_REVIEW,
+}
+
 
 def _money(value: object) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
@@ -498,10 +509,10 @@ async def create_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Internal fleet repair orders are not quoted to a customer",
         )
-    if order.status not in (RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED):
+    if order.status not in QUOTE_ALLOWED_RO_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Quote can only be created for draft or quoted repair orders",
+            detail="An estimate can't be created after the repair order is finalized",
         )
     result = await db.execute(
         select(Quote).where(Quote.repair_order_id == body.repair_order_id)
@@ -530,7 +541,6 @@ async def create_quote(
             is_approved=False,
         )
         db.add(quote)
-        order.status = RepairOrderStatus.QUOTED
         # Don't commit here - create_with_retry uses savepoints and handles commit
         return quote
     
@@ -669,9 +679,8 @@ async def delete_quote(
             detail="Cannot delete an approved quote",
         )
 
-    # Quote deletion reverts the order to draft to keep workflow explicit:
-    # Create/Update quote -> Send quote -> Customer action.
-    order.status = RepairOrderStatus.DRAFT
+    # Estimates are optional authorization records. Deleting an unapproved
+    # estimate must not move the operational repair-order lifecycle.
     await db.delete(quote)
     await db.commit()
     await db.refresh(order)
@@ -748,7 +757,7 @@ async def send_quote_to_customer(
     # even if the quote draft was created before later edits.
     try:
         pb_order = await price_build_service.load_order(db, order.id)
-        if pb_order.pricing_locked_at is None:
+        if pb_order.pricing_locked_at is None or pb_order.pricing_lock_reason == "quote_sent":
             try:
                 await price_build_service.recalculate_order(db, pb_order)
             except (PriceBuildValidationError, PriceBuildLockedError):
@@ -910,23 +919,17 @@ async def send_quote_to_customer(
     quote.sent_to_customer = True
     quote.sent_at = datetime.now(timezone.utc)
     quote.sent_by_user_id = current_user_id
-    if order.pricing_locked_at is None:
-        order.pricing_locked_at = quote.sent_at
-    order.pricing_lock_reason = "quote_sent"
     if quote.is_declined:
         quote.is_declined = False
         quote.decline_notes = None
-        order.status = RepairOrderStatus.QUOTED  # Back to quoted from declined
     
-    # Auto-approval: if customer has a threshold and quote is within it, approve immediately
-    # Only auto-approve if order is still in a pre-approval state (DRAFT, QUOTED, DECLINED)
+    # Auto-approval authorizes this estimate only; it never changes the shop's
+    # operational repair-order state or locks the live work record.
     threshold = getattr(customer, 'auto_approval_threshold', None)
     auto_approved = False
-    pre_approval_statuses = [RepairOrderStatus.DRAFT, RepairOrderStatus.QUOTED, RepairOrderStatus.DECLINED]
-    if threshold is not None and quote.total_amount <= threshold and order.status in pre_approval_statuses:
+    if threshold is not None and quote.total_amount <= threshold:
         quote.is_approved = True
         quote.is_declined = False
-        order.status = RepairOrderStatus.APPROVED
         auto_approved = True
     
     if auto_approved:
@@ -1068,7 +1071,6 @@ async def approve_quote(
     quote.is_approved = True
     quote.is_declined = False
     quote.decline_notes = None
-    order.status = RepairOrderStatus.APPROVED
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
@@ -1144,7 +1146,6 @@ async def decline_quote(
     
     quote.is_declined = True
     quote.decline_notes = body.notes
-    order.status = RepairOrderStatus.DECLINED  # New status for declined quotes
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
@@ -1309,7 +1310,6 @@ async def approve_quote_by_token(
     
     quote.is_approved = True
     quote.is_declined = False
-    order.status = RepairOrderStatus.APPROVED
     # Keep token valid so customer can view their approved quote status
     await db.commit()
     await db.refresh(quote)
@@ -1528,7 +1528,6 @@ async def decline_quote_by_token(
     
     quote.is_declined = True
     quote.decline_notes = body.notes
-    order.status = RepairOrderStatus.DECLINED  # New status instead of DRAFT
     # Keep token valid so customer can change their mind
     await db.commit()
     await db.refresh(quote)

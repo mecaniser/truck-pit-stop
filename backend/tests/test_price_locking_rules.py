@@ -172,7 +172,7 @@ async def test_quote_sent_lock_allows_discount_revisions(db_session):
 
 
 @pytest.mark.asyncio
-async def test_quote_send_locks_order_pricing(db_session, monkeypatch):
+async def test_quote_send_does_not_lock_live_order_pricing(db_session, monkeypatch):
     staff_user, order, service, quote = await _seed_quote_context(db_session)
 
     svc = PriceBuildService()
@@ -205,8 +205,8 @@ async def test_quote_send_locks_order_pricing(db_session, monkeypatch):
     order_id = order.id
     db_session.expire_all()
     refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order_id))).scalar_one()
-    assert refreshed_order.pricing_locked_at is not None
-    assert refreshed_order.pricing_lock_reason == "quote_sent"
+    assert refreshed_order.pricing_locked_at is None
+    assert refreshed_order.pricing_lock_reason is None
 
 
 @pytest.mark.asyncio

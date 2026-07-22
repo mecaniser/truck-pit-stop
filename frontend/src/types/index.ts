@@ -304,6 +304,7 @@ export interface RepairOrder {
   created_at: string
   updated_at: string
   quote_sent?: boolean | null
+  quote_approved?: boolean | null
   quote_sent_at?: string | null
   invoice_created_at?: string | null
   invoice_due_date?: string | null
@@ -383,6 +384,10 @@ export interface PriceBuildSummary {
   pricing_locked: boolean
   pricing_locked_at?: string | null
   pricing_lock_reason?: string | null
+  can_edit_work?: boolean
+  can_assign_technician?: boolean
+  can_start_work?: boolean
+  can_finalize?: boolean
   lines: PriceBuildLine[]
   warnings: PriceBuildWarning[]
 }
