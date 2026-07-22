@@ -220,6 +220,11 @@ async def test_enabling_customer_fleet_enrolls_owned_and_operated_trucks(db_sess
         id=uuid4(), tenant_id=tenant.id, first_name="Owner", last_name="Contact",
         company_name="Owner LLC", email=f"owner-{uuid4().hex[:6]}@example.com",
     )
+    legacy_fleet = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Garage", last_name="Fleet",
+        company_name="Internal Fleet", email=f"internal-{uuid4().hex[:6]}@example.com",
+        is_internal_fleet=True, fleet_enabled=True,
+    )
     manager = User(
         id=uuid4(), tenant_id=tenant.id, email=f"manager-{uuid4().hex[:6]}@example.com",
         hashed_password="x", first_name="Shop", last_name="Owner",
@@ -233,10 +238,16 @@ async def test_enabling_customer_fleet_enrolls_owned_and_operated_trucks(db_sess
         id=uuid4(), tenant_id=tenant.id, customer_id=other_owner.id,
         make="Peterbilt", model="579", unit_number="77-02",
     )
-    db_session.add_all([tenant, company, other_owner, manager, company_truck, leased_truck])
+    db_session.add_all([tenant, company, other_owner, legacy_fleet, manager, company_truck, leased_truck])
     await db_session.flush()
     await seed_vehicle_account_relationships(db_session, company_truck, company)
     await seed_vehicle_account_relationships(db_session, leased_truck, other_owner)
+    legacy_membership = await ensure_fleet_membership(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=company_truck.id,
+        fleet_customer_id=legacy_fleet.id,
+    )
     await ensure_vehicle_relationship(
         db_session,
         tenant_id=tenant.id,
@@ -254,11 +265,21 @@ async def test_enabling_customer_fleet_enrolls_owned_and_operated_trucks(db_sess
     )
 
     assert updated.fleet_enabled is True
+    await db_session.refresh(legacy_membership)
+    assert legacy_membership.effective_to is not None
     memberships = list((await db_session.execute(select(FleetMembership).where(
-        FleetMembership.fleet_customer_id == company.id,
+        FleetMembership.vehicle_id.in_((company_truck.id, leased_truck.id)),
         FleetMembership.effective_to.is_(None),
     ))).scalars().all())
     assert {membership.vehicle_id for membership in memberships} == {company_truck.id, leased_truck.id}
+    assert {membership.fleet_customer_id for membership in memberships} == {company.id}
+
+    active_operators = list((await db_session.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.vehicle_id.in_((company_truck.id, leased_truck.id)),
+        VehicleCustomerRelationship.relationship_type == "operator",
+        VehicleCustomerRelationship.effective_to.is_(None),
+    ))).scalars().all())
+    assert {relationship.customer_id for relationship in active_operators} == {company.id}
 
     board = await fleet.fleet_board(db=db_session, current_user=manager)
     assert {item.id for item in board.trucks} == {company_truck.id, leased_truck.id}
