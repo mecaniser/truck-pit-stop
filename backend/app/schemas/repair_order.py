@@ -223,6 +223,7 @@ class RepairOrderResponse(RepairOrderBase):
     parent_repair_order_id: Optional[UUID] = None
     is_warranty_repair: bool = False
     is_internal: bool = False
+    bill_labor_at_customer_rate: bool = False
     is_pm: bool = False
     # Vehicle summary fields (denormalized for display)
     vehicle_make: str = ""

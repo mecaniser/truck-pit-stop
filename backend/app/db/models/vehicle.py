@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey, Text, Float, DateTime, Date
+from sqlalchemy import Boolean, Column, String, Integer, ForeignKey, Text, Float, DateTime, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import BaseModel
@@ -31,6 +31,15 @@ class Vehicle(BaseModel):
     # Assigned driver (simple fields; not a managed entity in v1).
     driver_name = Column(String(160), nullable=True)
     driver_phone = Column(String(20), nullable=True)
+
+    # Fleet invoices are addressed to the person responsible for this specific
+    # truck, not the shared internal-fleet house-account customer.
+    billing_contact_name = Column(String(160), nullable=True)
+    billing_contact_email = Column(String(255), nullable=True)
+    billing_contact_phone = Column(String(20), nullable=True)
+    # Off by default: fleet labor is billed at the garage's internal cost rate.
+    # Parts remain at inventory cost in both modes.
+    bill_labor_at_customer_rate = Column(Boolean, nullable=False, default=False)
 
     # Manual status for the idle (no open work order) state — operator sets it
     # from the board. One of: active (on the road), yard, available,
@@ -78,4 +87,3 @@ class Vehicle(BaseModel):
     nhtsa_decoded_at = Column(DateTime(timezone=True), nullable=True)
     
     repair_orders = relationship("RepairOrder", back_populates="vehicle")
-

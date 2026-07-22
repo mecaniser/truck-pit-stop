@@ -38,6 +38,7 @@ from app.services.price_build_service import (
     PriceBuildService,
     PriceBuildValidationError,
 )
+from app.services.internal_fleet import fleet_labor_uses_customer_rate
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
 from app.core.logging import get_logger
@@ -483,6 +484,10 @@ async def create_repair_order(
             status=RepairOrderStatus.DRAFT,
             # Repairs on the garage's own fleet are internal-cost (no markup/invoice).
             is_internal=customer.is_internal_fleet,
+            bill_labor_at_customer_rate=(
+                bool(vehicle.bill_labor_at_customer_rate)
+                if customer.is_internal_fleet else False
+            ),
             **order_data.model_dump(),
         )
         db.add(repair_order)
@@ -3088,8 +3093,8 @@ async def add_parts_to_repair_order(
                 available_packages=available_packages,
             ),
         )
-    # Internal fleet repairs price parts at cost (no markup, no customer-facing list price);
-    # customer repairs default to the selling price.
+    # Fleet parts are always billed at inventory cost. The truck's pricing
+    # preference changes labor only; non-fleet repairs use selling price.
     default_price = inv.cost if order.is_internal else inv.selling_price
     unit_price = body.unit_price if body.unit_price is not None else default_price
     list_price = inv.cost if order.is_internal else inv.selling_price
@@ -3524,13 +3529,19 @@ async def add_labor_to_repair_order(
     _require_editable_ro(order)
     if order.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    total_cost = body.hours * body.hourly_rate
+    hourly_rate = body.hourly_rate
+    if order.is_internal:
+        tenant = (await db.execute(select(Tenant).where(Tenant.id == order.tenant_id))).scalar_one()
+        hourly_rate = (
+            tenant.labor_rate if fleet_labor_uses_customer_rate(order) else tenant.internal_labor_rate
+        )
+    total_cost = body.hours * hourly_rate
     labor = Labor(
         tenant_id=current_user.tenant_id,
         repair_order_id=order_id,
         description=body.description or "",
         hours=body.hours,
-        hourly_rate=body.hourly_rate,
+        hourly_rate=hourly_rate,
         total_cost=total_cost,
         mechanic_id=body.mechanic_id,
         service_code=body.service_code,

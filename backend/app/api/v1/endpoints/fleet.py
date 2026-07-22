@@ -75,7 +75,11 @@ from app.schemas.fleet import (
     FleetPhotoResponse,
 )
 from app.core.logging import get_logger
-from app.services.internal_fleet import ensure_internal_fleet_customer, project_pm_due_date
+from app.services.internal_fleet import (
+    ensure_internal_fleet_customer,
+    fleet_labor_uses_customer_rate,
+    project_pm_due_date,
+)
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 
 router = APIRouter()
@@ -1388,6 +1392,10 @@ async def truck_detail(
         truck=board,
         open_work_orders=[_board_work_order(r) for r in open_ros],
         driver_phone=vehicle.driver_phone,
+        billing_contact_name=vehicle.billing_contact_name,
+        billing_contact_email=vehicle.billing_contact_email,
+        billing_contact_phone=vehicle.billing_contact_phone,
+        bill_labor_at_customer_rate=vehicle.bill_labor_at_customer_rate,
         lifetime_spend=round(lifetime, 2),
         incidents_count=len(incident_rows),
         crew=sorted(crew),
@@ -1426,6 +1434,14 @@ async def update_truck(
         vehicle.driver_name = body.driver_name or None
     if body.driver_phone is not None:
         vehicle.driver_phone = normalize_phone(body.driver_phone)
+    if body.billing_contact_name is not None:
+        vehicle.billing_contact_name = body.billing_contact_name or None
+    if body.billing_contact_email is not None:
+        vehicle.billing_contact_email = body.billing_contact_email.strip().lower() or None
+    if body.billing_contact_phone is not None:
+        vehicle.billing_contact_phone = normalize_phone(body.billing_contact_phone)
+    if body.bill_labor_at_customer_rate is not None:
+        vehicle.bill_labor_at_customer_rate = body.bill_labor_at_customer_rate
     if body.odometer is not None:
         vehicle.mileage = body.odometer
     if body.pm_interval_miles is not None:
@@ -1475,48 +1491,6 @@ async def update_truck(
     return _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
 
 
-async def _create_internal_invoice(
-    db: AsyncSession, tenant_id: UUID, ro: RepairOrder, created_by_user_id: Optional[UUID] = None,
-) -> None:
-    """Generate the internal invoice (cost record) for a completed work order.
-    No customer billing/tax/markup; idempotent (one invoice per RO).
-    created_by_user_id is the staff member who completed the work order, if known."""
-    from datetime import datetime, timezone
-    from decimal import Decimal
-    from app.db.models.invoice import Invoice, InvoiceStatus
-    from app.api.v1.endpoints.invoices import generate_invoice_number
-    from app.core.unique_id import create_with_retry
-
-    existing = await db.execute(select(Invoice).where(Invoice.repair_order_id == ro.id))
-    if existing.scalar_one_or_none():
-        return
-
-    total = ro.total_cost or Decimal("0.00")
-
-    async def _create(invoice_number: str) -> Invoice:
-        # Internal invoices are a cost record for work already completed on the
-        # garage's own fleet — there's no customer to bill and no pending
-        # payment, so DRAFT never has anything to graduate to. Mark them PAID
-        # (the cost was incurred) at creation time.
-        now = datetime.now(timezone.utc)
-        inv = Invoice(
-            tenant_id=tenant_id, repair_order_id=ro.id, invoice_number=invoice_number,
-            status=InvoiceStatus.PAID, is_internal=True,
-            subtotal=total, shop_supplies_amount=Decimal("0.00"), service_fee_amount=Decimal("0.00"),
-            tax_amount=Decimal("0.00"), discount_amount=Decimal("0.00"), total_amount=total,
-            due_date=None, paid_at=now, notes="Internal fleet work order",
-            created_by_user_id=created_by_user_id,
-        )
-        db.add(inv)
-        return inv
-
-    await create_with_retry(
-        db=db, create_fn=_create,
-        generate_number_fn=lambda: generate_invoice_number(db, tenant_id),
-        entity_name="invoice",
-    )
-
-
 async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) -> RepairOrder:
     result = await db.execute(
         select(RepairOrder)
@@ -1526,7 +1500,11 @@ async def _load_fleet_ro_or_404(db: AsyncSession, tenant_id: UUID, ro_id: UUID) 
             RepairOrder.is_internal.is_(True),
             RepairOrder.deleted_at.is_(None),
         ))
-        .options(selectinload(RepairOrder.assigned_mechanic))
+        .options(
+            selectinload(RepairOrder.assigned_mechanic),
+            selectinload(RepairOrder.customer),
+            selectinload(RepairOrder.vehicle),
+        )
     )
     ro = result.scalar_one_or_none()
     if not ro:
@@ -1565,14 +1543,18 @@ async def complete_work_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    """Complete an internal work order. No external invoice; an internal
-    invoice (cost record) is generated."""
+    """Complete a fleet work order and create its billable customer invoice."""
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     if ro.status not in (RepairOrderStatus.IN_PROGRESS, RepairOrderStatus.PENDING_REVIEW):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot complete a work order in '{ro.status.value}' status")
 
     veh_result = await db.execute(select(Vehicle).where(Vehicle.id == ro.vehicle_id))
     veh = veh_result.scalar_one_or_none()
+    if not veh or not veh.billing_contact_email:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Add this truck's invoice contact email before completing its work order.",
+        )
 
     # Mileage-out: use the manual reading if provided (fallback), otherwise the
     # truck's current odometer (kept current by inspections).
@@ -1595,8 +1577,11 @@ async def complete_work_order(
     if veh is not None:
         veh.active_warning_lights = None
     await db.commit()
-    # No external invoice for internal repairs — generate an internal cost record.
-    await _create_internal_invoice(db, current_user.tenant_id, ro, created_by_user_id=current_user.id)
+    from app.api.v1.endpoints.invoices import auto_create_invoice_for_order
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
+    await auto_create_invoice_for_order(
+        db=db, order=ro, tenant=tenant, created_by_user_id=current_user.id,
+    )
     ro = await _load_fleet_ro_or_404(db, current_user.tenant_id, ro_id)
     return _board_work_order(ro)
 
@@ -1613,6 +1598,7 @@ async def _spawn_internal_ro(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle
             id=uuid4(), tenant_id=tenant_id, customer_id=fleet_customer_id,
             vehicle_id=vehicle.id, order_number=order_number,
             status=RepairOrderStatus.DRAFT, is_internal=True, is_pm=is_pm,
+            bill_labor_at_customer_rate=vehicle.bill_labor_at_customer_rate,
             description=description,
             # Auto-capture mileage-in from the truck's current odometer (kept
             # current by inspections). Fleet managers don't re-enter it.
@@ -1771,19 +1757,21 @@ async def _apply_pm_services_to_ro(
         names = ", ".join(s.name for s in services)
         ro.description = f"Preventive maintenance: {names}"
 
-    # 4) Owner-facing costing: seed labor (duration × internal rate) and parts
-    # (at internal cost) for each service.
+    # 4) Owner-facing costing: fleet parts are always at inventory cost. Labor
+    # may use the truck's snapshotted customer-rate setting.
     tenant_res = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = tenant_res.scalar_one_or_none()
-    internal_rate = Decimal(str(tenant.internal_labor_rate or 0)) if tenant else Decimal("0")
+    labor_rate = Decimal(str(
+        (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
+    ))
 
     for s in services:
         hours = Decimal(str(s.duration_minutes or 0)) / Decimal("60")
         if hours > 0:
             db.add(Labor(
                 id=uuid4(), tenant_id=tenant_id, repair_order_id=ro.id,
-                description=s.name, hours=hours, hourly_rate=internal_rate,
-                total_cost=(hours * internal_rate).quantize(Decimal("0.01")),
+                description=s.name, hours=hours, hourly_rate=labor_rate,
+                total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
                 line_type=LaborLineType.FLAT_SERVICE, source_service_id=s.id,
             ))
         for sp in s.service_parts:
@@ -1952,14 +1940,16 @@ async def add_service_to_work_order(
 
     tenant_res = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     tenant = tenant_res.scalar_one_or_none()
-    internal_rate = Decimal(str(tenant.internal_labor_rate or 0)) if tenant else Decimal("0")
+    labor_rate = Decimal(str(
+        (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
+    ))
 
     hours = Decimal(str(service.duration_minutes or 0)) / Decimal("60")
     if hours > 0:
         db.add(Labor(
             id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
-            description=service.name, hours=hours, hourly_rate=internal_rate,
-            total_cost=(hours * internal_rate).quantize(Decimal("0.01")),
+            description=service.name, hours=hours, hourly_rate=labor_rate,
+            total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
             line_type=LaborLineType.FLAT_SERVICE, source_service_id=service.id,
         ))
     for sp in service.service_parts:
@@ -2017,6 +2007,7 @@ async def get_fleet_settings(
 
     return FleetSettingsResponse(
         internal_labor_rate=float(tenant.internal_labor_rate or 0),
+        labor_rate=float(tenant.labor_rate or 0),
         fleet_company_name=tenant.fleet_company_name,
         fleet_managers=fleet_managers,
         truck_count=len(trucks),
@@ -2028,8 +2019,7 @@ async def list_fleet_invoices(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    """Internal fleet invoices (cost records) generated when internal work orders
-    complete. Read-only list, newest first, with truck context."""
+    """Invoices for fleet work orders, newest first, with truck context."""
     from app.db.models.invoice import Invoice
 
     result = await db.execute(
@@ -2038,7 +2028,7 @@ async def list_fleet_invoices(
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id, isouter=True)
         .where(and_(
             Invoice.tenant_id == current_user.tenant_id,
-            Invoice.is_internal.is_(True),
+            RepairOrder.is_internal.is_(True),
         ))
         .order_by(Invoice.created_at.desc())
     )

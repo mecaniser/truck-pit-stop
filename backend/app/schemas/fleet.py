@@ -276,6 +276,10 @@ class TruckDetailResponse(BaseModel):
     truck: BoardTruck
     open_work_orders: List[BoardWorkOrder] = []
     driver_phone: Optional[str] = None
+    billing_contact_name: Optional[str] = None
+    billing_contact_email: Optional[str] = None
+    billing_contact_phone: Optional[str] = None
+    bill_labor_at_customer_rate: bool = False
     lifetime_spend: float = 0.0
     incidents_count: int = 0
     crew: List[str] = []
@@ -296,6 +300,10 @@ class TruckUpdate(BaseModel):
     # Operational
     driver_name: Optional[str] = None
     driver_phone: Optional[str] = None
+    billing_contact_name: Optional[str] = None
+    billing_contact_email: Optional[str] = None
+    billing_contact_phone: Optional[str] = None
+    bill_labor_at_customer_rate: Optional[bool] = None
     odometer: Optional[int] = None
     pm_interval_miles: Optional[int] = None
     next_pm_miles: Optional[int] = None
@@ -370,6 +378,7 @@ class FleetInvoiceEntry(BaseModel):
 class FleetSettingsResponse(BaseModel):
     # In-house labor cost rate, configured by owner/admin in garage settings.
     internal_labor_rate: float = 0.0
+    labor_rate: float = 0.0
     # Name of the company that operates the internal fleet (e.g. "77 Cargo").
     fleet_company_name: Optional[str] = None
     # Users who manage the fleet (FLEET_MANAGER role in this tenant).

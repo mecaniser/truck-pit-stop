@@ -67,6 +67,19 @@ def fleet_display_name(customer, fleet_company_name: Optional[str]) -> str:
     return f"{customer.first_name} {customer.last_name}".strip()
 
 
+def fleet_labor_uses_customer_rate(order) -> bool:
+    """Whether this fleet order bills labor at the tenant's normal rate.
+
+    Fleet work remains operationally internal even when it is invoiced. The
+    order-level snapshot, rather than the mutable truck setting, is the source
+    of truth once work has begun.
+    """
+    return bool(
+        getattr(order, "is_internal", False)
+        and getattr(order, "bill_labor_at_customer_rate", False)
+    )
+
+
 async def get_internal_fleet_customer(
     db: AsyncSession, tenant_id: UUID
 ) -> Optional[Customer]:
