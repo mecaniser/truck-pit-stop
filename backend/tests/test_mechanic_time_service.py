@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import uuid4
 from unittest.mock import AsyncMock
@@ -27,6 +27,9 @@ class _ScalarListResult:
 
     def all(self):
         return self._values
+
+    def first(self):
+        return self._values[0] if self._values else None
 
 
 class _RowResult:
@@ -106,27 +109,8 @@ def test_timer_stop_reasons_include_hold_and_resume_from_hold():
 
 
 @pytest.mark.asyncio
-async def test_start_session_requires_manager_reason_for_manager_actor():
-    tenant, mechanic, manager = _build_tenant_and_users()
-    db = _FakeDB()
-
-    with pytest.raises(ValueError) as exc:
-        await mechanic_time_service.start_session(
-            db,
-            tenant=tenant,
-            mechanic=mechanic,
-            actor_user=manager,
-            session_type=MechanicSessionType.MISC.value,
-            misc_category="shop_support",
-            manager_reason=None,
-        )
-
-    assert str(exc.value) == "Manager reason is required for this action"
-
-
-@pytest.mark.asyncio
 async def test_start_session_auto_switches_existing_active_timer(monkeypatch):
-    tenant, mechanic, _manager = _build_tenant_and_users()
+    tenant, mechanic, manager = _build_tenant_and_users()
     db = _FakeDB()
 
     current = MechanicTimeSession(
@@ -186,7 +170,7 @@ async def test_start_session_auto_switches_existing_active_timer(monkeypatch):
         db,
         tenant=tenant,
         mechanic=mechanic,
-        actor_user=mechanic,
+        actor_user=manager,
         session_type=MechanicSessionType.REPAIR_ORDER.value,
         repair_order_id=uuid4(),
         stop_previous_reason="auto_switch",
@@ -231,6 +215,27 @@ async def test_clock_in_rejects_duplicate_active_attendance(monkeypatch):
             actor_user=mechanic,
         )
     assert str(exc.value) == "Mechanic is already clocked in"
+
+
+@pytest.mark.asyncio
+async def test_manager_clock_in_does_not_require_a_reason(monkeypatch):
+    tenant, mechanic, manager = _build_tenant_and_users()
+    db = _FakeDB(execute_result=_ScalarListResult([]))
+    monkeypatch.setattr(mechanic_time_service, "get_active_attendance_session", AsyncMock(return_value=None))
+    monkeypatch.setattr(mechanic_time_service, "_create_attendance_audit", AsyncMock(return_value=None))
+
+    attendance = await mechanic_time_service.clock_in(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        actor_user=manager,
+        manager_reason=None,
+        start_source="manager_clock_in",
+        started_at=datetime(2026, 2, 13, 13, 0, tzinfo=timezone.utc),
+    )
+
+    assert attendance.mechanic_id == mechanic.id
+    assert attendance.start_source == "manager_clock_in"
 
 
 @pytest.mark.asyncio
@@ -290,6 +295,54 @@ async def test_clock_out_stops_timer_and_break(monkeypatch):
 
     assert result.attendance_session.id == attendance.id
     assert result.stopped_timer_session.id == stopped_timer.id
+
+
+@pytest.mark.asyncio
+async def test_historical_day_summary_uses_attendance_shift_snapshot(monkeypatch):
+    tenant, mechanic, _manager = _build_tenant_and_users()
+    work_date = date(2026, 6, 10)
+    attendance = MechanicAttendanceSession(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        mechanic_id=mechanic.id,
+        local_date=work_date,
+        started_at=datetime(2026, 6, 10, 10, 15, tzinfo=timezone.utc),  # 06:15 local
+        ended_at=datetime(2026, 6, 10, 18, 0, tzinfo=timezone.utc),  # 14:00 local
+        started_by_user_id=mechanic.id,
+        ended_by_user_id=mechanic.id,
+        start_source="manual_clock_in",
+        end_source="manual_clock_out",
+        snapshot_timezone="America/New_York",
+        snapshot_core_target_minutes=420,
+        snapshot_shift_start_local="06:00",
+        snapshot_shift_end_local="14:00",
+    )
+    results = iter([
+        _ScalarListResult([]),
+        _ScalarListResult([attendance]),
+        _ScalarListResult([]),
+    ])
+    db = _FakeDB(execute_result=lambda _statement: next(results))
+    monkeypatch.setattr(
+        mechanic_time_service,
+        "_compute_book_hours_for_orders",
+        AsyncMock(return_value=0.0),
+    )
+
+    summary = await mechanic_time_service.compute_day_summary(
+        db,
+        tenant=tenant,
+        mechanic=mechanic,
+        target_date=work_date,
+        now_utc=datetime(2026, 6, 11, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert summary["shift_start_local"] == "06:00"
+    assert summary["shift_end_local"] == "14:00"
+    assert summary["core_target_minutes"] == 420
+    assert summary["attendance_minutes"] == 465
+    assert summary["late_arrival_minutes"] == 15
+    assert summary["early_leave_minutes"] == 0
 
 
 @pytest.mark.skip(reason="Test needs update: compute_day_summary now queries MechanicAttendanceSession with local_date")

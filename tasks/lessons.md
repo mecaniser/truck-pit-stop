@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-07-22
+- Correction: Multiple concurrent task sessions shared a broad working branch, making unrelated edits accumulate together and obscuring what was safe to commit, review, and ship.
+- Rule: Every discrete user request must begin in its own dedicated Git worktree and focused branch, created from the latest `origin/main`; never let parallel tasks edit the same checkout or share an uncommitted diff.
+- Prevention: Before editing, run `git fetch origin`, create or select a task-specific `codex/<task>` branch/worktree from `origin/main`, keep commits scoped to that task, and open one PR per outcome. Use a temporary integration branch only when intentionally testing several completed PRs together.
+
 ## 2026-07-14
 - Correction: A rejected insufficient-stock part request only surfaced as a toast, so the specific picker row gave no indication of the quantity conflict or a supported next action.
 - Rule: Recoverable validation failures in the repair-order builder must persist at the field or row that caused them, with the failed values and any authorized remediation action visible in place.

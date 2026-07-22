@@ -1,3 +1,13 @@
+# Git Worktree / Task Isolation (Standing Rule — 2026-07-22)
+
+## Required Before Every New Task
+- [x] Treat one user request as one branch, one dedicated worktree, and one focused PR.
+- [x] Start each new task branch from the latest `origin/main` after `git fetch origin`.
+- [x] Keep `main` clean and never allow parallel agents/tasks to edit the same checkout.
+- [x] Commit only the task's files; use a temporary integration branch when several completed PRs must be tested together.
+
+---
+
 # Customer Vehicle Cards Unit Number (2026-07-19)
 
 ## Plan
