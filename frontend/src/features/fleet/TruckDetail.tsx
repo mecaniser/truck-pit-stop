@@ -413,19 +413,20 @@ export default function TruckDetail({
                                   <input
                                     type="file"
                                     accept="image/*"
-                                    capture="environment"
+                                    multiple
                                     disabled={uploadIncidentPhoto.isPending}
                                     style={{ display: 'none' }}
                                     onChange={(e) => {
-                                      const file = e.target.files?.[0]
+                                      const files = Array.from(e.target.files || [])
                                       e.target.value = ''
-                                      if (file && validFleetPhoto(file)) {
+                                      const validFiles = files.filter(validFleetPhoto)
+                                      validFiles.forEach((file, index) => {
                                         const previewUrl = URL.createObjectURL(file)
-                                        const pendingId = `${inc.id}-${Date.now()}`
+                                        const pendingId = `${inc.id}-${Date.now()}-${index}`
                                         setPendingIncidentPhotos((photos) => [...photos, { id: pendingId, incidentId: inc.id, previewUrl }])
                                         uploadIncidentPhoto.mutate({ incidentId: inc.id, file, pendingId, previewUrl })
-                                        setIncidentMenuOpenId(null)
-                                      }
+                                      })
+                                      if (validFiles.length > 0) setIncidentMenuOpenId(null)
                                     }}
                                   />
                                 </label>

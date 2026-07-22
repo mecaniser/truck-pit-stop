@@ -1056,14 +1056,19 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
   const [location, setLocation] = useState('')
   const [severity, setSeverity] = useState<IncidentSeverity>('medium')
   const [attempted, setAttempted] = useState(false)
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [photoFiles, setPhotoFiles] = useState<File[]>([])
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
+  const photoPreviewsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    photoPreviewsRef.current = photoPreviews
+  }, [photoPreviews])
 
   useEffect(() => {
     return () => {
-      if (photoPreview) URL.revokeObjectURL(photoPreview)
+      photoPreviewsRef.current.forEach((preview) => URL.revokeObjectURL(preview))
     }
-  }, [photoPreview])
+  }, [])
 
   const descError = description.trim() === '' ? 'Describe what happened before logging the incident.' : null
 
@@ -1073,7 +1078,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
         vehicle_id: vehicleId, occurred_at: new Date().toISOString(),
         location: location || undefined, severity, description,
       })).data as IncidentEntry
-      if (photoFile) {
+      for (const photoFile of photoFiles) {
         const formData = new FormData()
         formData.append('image', photoFile)
         await api.post(`/fleet/incidents/${incident.id}/photos`, formData, {
@@ -1136,11 +1141,24 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       </div>
       <div style={{ marginTop: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Photo</span>
-        {photoPreview ? (
+        {photoPreviews.length > 0 ? (
           <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 8, background: 'var(--ink)' }}>
             <div style={{ position: 'relative' }}>
-              <img src={photoPreview} alt="Incident upload preview" style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 9 }} />
-              <button className={ghostBtn} style={{ position: 'absolute', top: 8, right: 8, height: 30, padding: '0 10px' }} onClick={() => { if (photoPreview) URL.revokeObjectURL(photoPreview); setPhotoPreview(null); setPhotoFile(null) }} disabled={create.isPending}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 8 }}>
+                {photoPreviews.map((preview) => (
+                  <img key={preview} src={preview} alt="Incident upload preview" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 9 }} />
+                ))}
+              </div>
+              <button
+                className={ghostBtn}
+                style={{ position: 'absolute', top: 8, right: 8, height: 30, padding: '0 10px' }}
+                onClick={() => {
+                  photoPreviews.forEach((preview) => URL.revokeObjectURL(preview))
+                  setPhotoPreviews([])
+                  setPhotoFiles([])
+                }}
+                disabled={create.isPending}
+              >
                 <X size={13} /> Remove
               </button>
             </div>
@@ -1151,18 +1169,21 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
             <input
               type="file"
               accept="image/*"
-              capture="environment"
+              multiple
               disabled={create.isPending}
               style={{ display: 'none' }}
               onChange={(e) => {
-                const file = e.target.files?.[0]
+                const files = Array.from(e.target.files || [])
                 e.target.value = ''
-                if (!file) return
-                if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return }
-                if (file.size > 10 * 1024 * 1024) { toast.error('Image too large. Max 10MB'); return }
-                if (photoPreview) URL.revokeObjectURL(photoPreview)
-                setPhotoFile(file)
-                setPhotoPreview(URL.createObjectURL(file))
+                const validFiles = files.filter((file) => {
+                  if (!file.type.startsWith('image/')) { toast.error(`${file.name} is not an image file`); return false }
+                  if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} is too large. Max 10MB`); return false }
+                  return true
+                })
+                if (validFiles.length === 0) return
+                photoPreviews.forEach((preview) => URL.revokeObjectURL(preview))
+                setPhotoFiles(validFiles)
+                setPhotoPreviews(validFiles.map((file) => URL.createObjectURL(file)))
               }}
             />
           </label>

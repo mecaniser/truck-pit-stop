@@ -132,6 +132,11 @@ interface WorkPhoto {
   mechanic_name: string
 }
 
+interface SelectedWorkPhoto {
+  name: string
+  dataUrl: string
+}
+
 interface MechanicDaySummary {
   date: string
   timezone: string
@@ -291,7 +296,7 @@ export default function MechanicPortalPage() {
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null)
   const toggleExpand = (jobId: string) => {
     setExpandedJobId(prev => prev === jobId ? null : jobId)
-    setShowPhotoPreview(null)
+    setSelectedPhotoPreviews([])
     setPhotoCaption('')
   }
   
@@ -403,7 +408,7 @@ export default function MechanicPortalPage() {
   // Photo upload state
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [photoCaption, setPhotoCaption] = useState('')
-  const [showPhotoPreview, setShowPhotoPreview] = useState<string | null>(null)
+  const [selectedPhotoPreviews, setSelectedPhotoPreviews] = useState<SelectedWorkPhoto[]>([])
   const [showClockOutModal, setShowClockOutModal] = useState(false)
   const [isTimerPanelExpanded, handleTimerPanelToggle] = useTimerPanelPersistence(user?.id)
   const fileInputRef = useCallback((node: HTMLInputElement | null) => {
@@ -479,9 +484,6 @@ export default function MechanicPortalPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['work-photos', expandedJobId] })
-      setShowPhotoPreview(null)
-      setPhotoCaption('')
-      toast.success('Photo uploaded!')
     },
     onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to upload photo'),
   })
@@ -499,28 +501,56 @@ export default function MechanicPortalPage() {
   
   // Handle photo file selection
   const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    
-    // Convert to base64
-    const reader = new FileReader()
-    reader.onload = () => {
-      const base64 = reader.result as string
-      setShowPhotoPreview(base64)
-    }
-    reader.readAsDataURL(file)
-    
-    // Reset input
+    const files = Array.from(e.target.files || [])
     e.target.value = ''
+    if (files.length === 0) return
+
+    const imageFiles = files.filter((file) => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image file`)
+        return false
+      }
+      return true
+    })
+    if (imageFiles.length === 0) return
+
+    const readFile = (file: File) => new Promise<SelectedWorkPhoto>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve({ name: file.name, dataUrl: reader.result as string })
+      reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
+      reader.readAsDataURL(file)
+    })
+
+    try {
+      setSelectedPhotoPreviews(await Promise.all(imageFiles.map(readFile)))
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to read selected photos')
+    }
   }
   
-  const handlePhotoUpload = () => {
-    if (!showPhotoPreview || !expandedJobId) return
+  const handlePhotoUpload = async () => {
+    if (selectedPhotoPreviews.length === 0 || !expandedJobId) return
     setIsUploadingPhoto(true)
-    uploadPhotoMutation.mutate(
-      { jobId: expandedJobId, image: showPhotoPreview, caption: photoCaption || undefined },
-      { onSettled: () => setIsUploadingPhoto(false) }
-    )
+    try {
+      let uploadedCount = 0
+      for (const photo of selectedPhotoPreviews) {
+        try {
+          await uploadPhotoMutation.mutateAsync(
+            { jobId: expandedJobId, image: photo.dataUrl, caption: photoCaption || undefined }
+          )
+          uploadedCount += 1
+        } catch {
+          // The mutation's onError shows the failed upload; keep the batch moving.
+        }
+      }
+      if (uploadedCount > 0) {
+        toast.success(`${uploadedCount} photo${uploadedCount === 1 ? '' : 's'} uploaded!`)
+        setSelectedPhotoPreviews([])
+        setPhotoCaption('')
+      }
+    } finally {
+      setIsUploadingPhoto(false)
+    }
   }
 
   const createRequestMutation = useMutation({
@@ -2483,7 +2513,7 @@ export default function MechanicPortalPage() {
                                   <input
                                     type="file"
                                     accept="image/*"
-                                    capture="environment"
+                                    multiple
                                     className="hidden"
                                     onChange={handlePhotoSelect}
                                     ref={fileInputRef}
@@ -2492,16 +2522,19 @@ export default function MechanicPortalPage() {
                               </div>
                               
                               {/* Photo Preview */}
-                              {showPhotoPreview && (
+                              {selectedPhotoPreviews.length > 0 && (
                                 <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/50 p-3 mb-2">
-                                  <div className="relative">
-                                    <img 
-                                      src={showPhotoPreview} 
-                                      alt="Preview" 
-                                      className="w-full rounded-lg max-h-40 object-cover"
-                                    />
+                                  <div className="relative grid grid-cols-3 gap-1.5">
+                                    {selectedPhotoPreviews.map((photo) => (
+                                      <img
+                                        key={`${photo.name}-${photo.dataUrl.slice(0, 24)}`}
+                                        src={photo.dataUrl}
+                                        alt={photo.name}
+                                        className="aspect-square w-full rounded-lg object-cover"
+                                      />
+                                    ))}
                                     <button
-                                      onClick={() => { setShowPhotoPreview(null); setPhotoCaption('') }}
+                                      onClick={() => { setSelectedPhotoPreviews([]); setPhotoCaption('') }}
                                       className="absolute top-1.5 right-1.5 p-1.5 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
                                     >
                                       <X className="w-3 h-3 text-white" />
@@ -2520,7 +2553,7 @@ export default function MechanicPortalPage() {
                                     className="w-full mt-2 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all hover:shadow-[0_0_16px_rgba(16,185,129,0.4)]"
                                   >
                                     {isUploadingPhoto ? <Spinner size="xs" /> : <Camera className="w-3.5 h-3.5" />}
-                                    Upload
+                                    Upload {selectedPhotoPreviews.length} photo{selectedPhotoPreviews.length === 1 ? '' : 's'}
                                   </button>
                                 </div>
                               )}
@@ -2552,7 +2585,7 @@ export default function MechanicPortalPage() {
                               )}
                               
                               {/* Empty state */}
-                              {(!workPhotos || workPhotos.length === 0) && !showPhotoPreview && (
+                              {(!workPhotos || workPhotos.length === 0) && selectedPhotoPreviews.length === 0 && (
                                 <p className="text-xs text-zinc-600 text-center py-2">No photos</p>
                               )}
                             </div>

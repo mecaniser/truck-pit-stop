@@ -1032,8 +1032,6 @@ export default function PriceBuilderPanel({
       setPendingPhotoName(file.name)
     },
     onSuccess: () => {
-      toast.success('Photo uploaded')
-      setPhotoCaption('')
       queryClient.invalidateQueries({ queryKey: ['repair-order-photos', orderId] })
     },
     onError: (error: unknown) => {
@@ -1057,19 +1055,39 @@ export default function PriceBuilderPanel({
     },
   })
 
-  const handleRepairPhotoSelect = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+  const handleRepairPhotoSelect = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
     event.target.value = ''
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file')
-      return
+    if (files.length === 0) return
+
+    const validFiles: File[] = []
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image file`)
+        continue
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large. Max 10MB`)
+        continue
+      }
+      validFiles.push(file)
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image too large. Max 10MB')
-      return
+    if (validFiles.length === 0) return
+
+    let uploadedCount = 0
+    for (const file of validFiles) {
+      try {
+        await uploadPhotoMutation.mutateAsync(file)
+        uploadedCount += 1
+      } catch {
+        // The mutation's onError shows the specific upload failure; keep trying
+        // the rest of the selected batch.
+      }
     }
-    uploadPhotoMutation.mutate(file)
+    if (uploadedCount > 0) {
+      toast.success(`${uploadedCount} photo${uploadedCount === 1 ? '' : 's'} uploaded`)
+      setPhotoCaption('')
+    }
   }
 
   const visiblePhotoThumbs = repairPhotos.slice(0, 5)
@@ -3716,6 +3734,7 @@ export default function PriceBuilderPanel({
                       <input
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         disabled={uploadPhotoMutation.isPending}
                         onChange={handleRepairPhotoSelect}
