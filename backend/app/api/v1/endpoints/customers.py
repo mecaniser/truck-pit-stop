@@ -656,6 +656,11 @@ async def update_customer(
     
     # Update fields
     update_data = customer_data.model_dump(exclude_unset=True)
+    if current_user.role == UserRole.CUSTOMER and "fleet_enabled" in update_data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only shop staff can change Fleet Board membership",
+        )
     if "phone" in update_data:
         update_data["phone"] = normalize_phone(update_data["phone"])
     if "company_name" in update_data:

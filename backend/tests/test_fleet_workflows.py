@@ -733,6 +733,45 @@ async def test_complete_generates_billable_fleet_invoice(db_session):
 
 
 @pytest.mark.asyncio
+async def test_customer_fleet_invoice_uses_customer_without_truck_contact(db_session):
+    import sqlalchemy
+    from app.db.models.invoice import Invoice
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    customer = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Billing", last_name="Contact",
+        company_name="77 Cargo", email="billing@77cargo.example", phone="+17045550199",
+        fleet_enabled=True,
+    )
+    vehicle.billing_contact_name = None
+    vehicle.billing_contact_email = None
+    vehicle.billing_contact_phone = None
+    db_session.add(customer)
+    await db_session.commit()
+
+    await fleet.new_work_order(
+        vehicle_id=vehicle.id,
+        body=WorkOrderCreate(description="Brakes", bill_to_customer_id=customer.id),
+        db=db_session,
+        current_user=user,
+    )
+    ro = (await db_session.execute(
+        sqlalchemy.select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalar_one()
+    assert ro.customer_id == customer.id
+    assert ro.is_internal is False
+
+    await fleet.start_work_order(ro_id=ro.id, db=db_session, current_user=user)
+    await fleet.complete_work_order(ro_id=ro.id, db=db_session, current_user=user)
+
+    invoice = (await db_session.execute(
+        sqlalchemy.select(Invoice).where(Invoice.repair_order_id == ro.id)
+    )).scalar_one()
+    assert invoice.recipient_email is None
+    assert ro.status == RepairOrderStatus.INVOICED
+
+
+@pytest.mark.asyncio
 async def test_dashboard_stats_reports_internal_costs_separately_from_revenue(db_session):
     import sqlalchemy
     from app.api.v1.endpoints import dashboard

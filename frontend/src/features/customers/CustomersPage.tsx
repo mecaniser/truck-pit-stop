@@ -32,6 +32,7 @@ interface CustomerFormData {
   auto_approval_threshold: string
   usdot_number: string
   mc_number: string
+  fleet_enabled: boolean
   // Initial vehicle fields (for new customers)
   no_vehicle: boolean
   vehicle_vin: string
@@ -155,6 +156,7 @@ const emptyForm: CustomerFormData = {
   auto_approval_threshold: '',
   usdot_number: '',
   mc_number: '',
+  fleet_enabled: false,
   // Initial vehicle
   no_vehicle: false,
   vehicle_vin: '',
@@ -758,6 +760,8 @@ export default function CustomersPage() {
     },
     onSuccess: (updatedCustomer: Customer) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-companies'] })
       if (isEditingInPanel) {
         setSelectedCustomer(updatedCustomer)
         setIsEditingInPanel(false)
@@ -1029,6 +1033,7 @@ export default function CustomersPage() {
       auto_approval_threshold: customer.auto_approval_threshold ? String(customer.auto_approval_threshold) : '',
       usdot_number: stripRegNumber(customer.usdot_number),
       mc_number: stripRegNumber(customer.mc_number),
+      fleet_enabled: !!customer.fleet_enabled,
     })
   }
 
@@ -1346,6 +1351,7 @@ export default function CustomersPage() {
         auto_approval_threshold: formData.auto_approval_threshold ? parseFloat(formData.auto_approval_threshold) : null,
         usdot_number: stripRegNumber(formData.usdot_number) || null,
         mc_number: stripRegNumber(formData.mc_number) || null,
+        fleet_enabled: formData.fleet_enabled,
       }
       updateMutation.mutate({ id: editingCustomer.id, data: payload as any })
     } else {
@@ -1354,7 +1360,12 @@ export default function CustomersPage() {
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
+    const { name, value, type } = e.target
+
+    if (type === 'checkbox') {
+      setFormData((prev) => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }))
+      return
+    }
     
     // Format phone number
     if (name === 'phone') {
@@ -1696,6 +1707,32 @@ export default function CustomersPage() {
 
       {editingCustomer && (
         <>
+          <div className={`rounded-xl border p-4 ${formData.fleet_enabled ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                name="fleet_enabled"
+                checked={formData.fleet_enabled}
+                onChange={handleInputChange}
+                className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-2 font-semibold text-gray-900">
+                  <Truck className="h-4 w-4 text-amber-600" />
+                  Add this customer to Fleet Board
+                </span>
+                <span className="mt-1 block text-sm text-gray-600">
+                  Enroll every truck this company owns or operates. Fleet work orders use this customer’s company name, email, phone, and billing address for invoicing—no per-truck contact entry required.
+                </span>
+                {formData.fleet_enabled && (
+                  <span className="mt-2 block text-xs font-medium text-amber-700">
+                    Fleet membership is enabled. New trucks added under this customer will join Fleet Board automatically.
+                  </span>
+                )}
+              </span>
+            </label>
+          </div>
+
           {/* Auto-Approval Threshold */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

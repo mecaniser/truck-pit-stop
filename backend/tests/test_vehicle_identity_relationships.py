@@ -11,9 +11,11 @@ from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
+from app.schemas.customer import CustomerUpdate
 from app.schemas.vehicle import VehicleBase, VehicleRelationshipCreate, VehicleUpdate
 from app.services.vehicle_identity import (
     ensure_fleet_membership,
+    ensure_vehicle_relationship,
     seed_vehicle_account_relationships,
 )
 
@@ -204,6 +206,63 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
     board = await fleet.fleet_board(db=db_session, current_user=manager)
     assert [item.id for item in board.trucks] == [truck.id]
     assert board.trucks[0].fleet_company_name == "77 Cargo"
+
+
+@pytest.mark.asyncio
+async def test_enabling_customer_fleet_enrolls_owned_and_operated_trucks(db_session):
+    tenant = Tenant(id=uuid4(), name="Customer Fleet Garage", slug=f"customer-fleet-{uuid4().hex[:8]}")
+    company = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Fleet", last_name="Contact",
+        company_name="77 Cargo", email=f"fleet-{uuid4().hex[:6]}@example.com",
+        fleet_enabled=False,
+    )
+    other_owner = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Owner", last_name="Contact",
+        company_name="Owner LLC", email=f"owner-{uuid4().hex[:6]}@example.com",
+    )
+    manager = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"manager-{uuid4().hex[:6]}@example.com",
+        hashed_password="x", first_name="Shop", last_name="Owner",
+        role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True,
+    )
+    company_truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=company.id,
+        make="Volvo", model="VNL 760", unit_number="77-01",
+    )
+    leased_truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=other_owner.id,
+        make="Peterbilt", model="579", unit_number="77-02",
+    )
+    db_session.add_all([tenant, company, other_owner, manager, company_truck, leased_truck])
+    await db_session.flush()
+    await seed_vehicle_account_relationships(db_session, company_truck, company)
+    await seed_vehicle_account_relationships(db_session, leased_truck, other_owner)
+    await ensure_vehicle_relationship(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=leased_truck.id,
+        customer_id=company.id,
+        relationship_type="operator",
+    )
+    await db_session.commit()
+
+    updated = await customers.update_customer(
+        customer_id=company.id,
+        customer_data=CustomerUpdate(fleet_enabled=True),
+        db=db_session,
+        current_user=manager,
+    )
+
+    assert updated.fleet_enabled is True
+    memberships = list((await db_session.execute(select(FleetMembership).where(
+        FleetMembership.fleet_customer_id == company.id,
+        FleetMembership.effective_to.is_(None),
+    ))).scalars().all())
+    assert {membership.vehicle_id for membership in memberships} == {company_truck.id, leased_truck.id}
+
+    board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert {item.id for item in board.trucks} == {company_truck.id, leased_truck.id}
+    assert {item.fleet_company_name for item in board.trucks} == {"77 Cargo"}
 
 
 @pytest.mark.asyncio

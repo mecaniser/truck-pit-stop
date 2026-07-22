@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.customer import Customer
@@ -165,8 +165,17 @@ async def sync_customer_fleet_memberships(
         vehicle_ids = list((await db.execute(
             select(Vehicle.id).where(
                 Vehicle.tenant_id == customer.tenant_id,
-                Vehicle.customer_id == customer.id,
                 Vehicle.deleted_at.is_(None),
+                or_(
+                    Vehicle.customer_id == customer.id,
+                    exists(select(VehicleCustomerRelationship.id).where(
+                        VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+                        VehicleCustomerRelationship.customer_id == customer.id,
+                        VehicleCustomerRelationship.relationship_type.in_(("owner", "operator")),
+                        VehicleCustomerRelationship.effective_to.is_(None),
+                        VehicleCustomerRelationship.deleted_at.is_(None),
+                    )),
+                ),
             )
         )).scalars().all())
         for vehicle_id in vehicle_ids:
