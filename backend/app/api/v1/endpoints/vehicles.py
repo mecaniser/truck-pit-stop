@@ -1,8 +1,9 @@
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import select, and_, exists, func, or_
 from sqlalchemy.orm import selectinload
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
@@ -10,9 +11,24 @@ from app.core.phone import normalize_phone
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.customer import Customer
-from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleCustomerUpdate, VehicleResponse
+from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
+from app.schemas.vehicle import (
+    VehicleCreate,
+    VehicleUpdate,
+    VehicleCustomerUpdate,
+    VehicleRelationshipCreate,
+    VehicleRelationshipResponse,
+    VehicleResponse,
+)
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
+from app.services.vehicle_identity import (
+    ensure_fleet_membership,
+    ensure_vehicle_relationship,
+    find_vehicle_by_vin,
+    normalize_vin,
+    seed_vehicle_account_relationships,
+)
 
 router = APIRouter()
 
@@ -58,14 +74,22 @@ async def create_vehicle(
             detail="Access denied",
         )
 
-    # Fleet managers only manage the garage's own internal-fleet trucks.
-    if current_user.role == UserRole.FLEET_MANAGER and not customer.is_internal_fleet:
+    # Fleet managers can create a truck only for a company already participating
+    # in fleet operations. The dedicated Fleet endpoint can enroll a company.
+    if current_user.role == UserRole.FLEET_MANAGER and not customer.fleet_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Fleet managers can only manage internal fleet vehicles",
+            detail="Fleet managers can only manage fleet-enabled companies",
         )
 
     create_data = vehicle_data.model_dump(exclude={"customer_id"})
+    create_data["vin"] = normalize_vin(create_data.get("vin"))
+    duplicate = await find_vehicle_by_vin(db, customer.tenant_id, create_data.get("vin"))
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+        )
     if "driver_phone" in create_data:
         create_data["driver_phone"] = normalize_phone(create_data["driver_phone"])
 
@@ -77,10 +101,139 @@ async def create_vehicle(
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
     db.add(vehicle)
+    await db.flush()
+    await seed_vehicle_account_relationships(db, vehicle, customer)
+    if customer.fleet_enabled:
+        await ensure_fleet_membership(
+            db,
+            tenant_id=customer.tenant_id,
+            vehicle_id=vehicle.id,
+            fleet_customer_id=customer.id,
+        )
     await db.commit()
     await db.refresh(vehicle)
     
     return VehicleResponse.model_validate(vehicle)
+
+
+@router.get("/{vehicle_id}/relationships", response_model=List[VehicleRelationshipResponse])
+async def list_vehicle_relationships(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    vehicle = (await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vehicle not found")
+    if current_user.tenant_id != vehicle.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if current_user.role == UserRole.CUSTOMER:
+        linked = (await db.execute(select(exists(select(VehicleCustomerRelationship.id).where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.customer_id == current_user.customer_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        ))))).scalar()
+        if vehicle.customer_id != current_user.customer_id and not linked:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    rows = (await db.execute(
+        select(VehicleCustomerRelationship, Customer)
+        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+        .where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.tenant_id == vehicle.tenant_id,
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        )
+        .order_by(
+            VehicleCustomerRelationship.effective_to.is_(None).desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        )
+    )).all()
+    return [
+        VehicleRelationshipResponse(
+            id=relationship.id,
+            vehicle_id=relationship.vehicle_id,
+            customer_id=relationship.customer_id,
+            relationship_type=relationship.relationship_type,
+            effective_from=relationship.effective_from,
+            effective_to=relationship.effective_to,
+            is_primary=relationship.is_primary,
+            customer_company_name=(customer.company_name or f"{customer.first_name} {customer.last_name}".strip()),
+        )
+        for relationship, customer in rows
+    ]
+
+
+@router.post("/{vehicle_id}/relationships", response_model=VehicleRelationshipResponse, status_code=status.HTTP_201_CREATED)
+async def create_vehicle_relationship(
+    vehicle_id: UUID,
+    body: VehicleRelationshipCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(
+        UserRole.GARAGE_OWNER,
+        UserRole.GARAGE_ADMIN,
+        UserRole.RECEPTIONIST,
+        UserRole.FLEET_MANAGER,
+    )),
+):
+    vehicle = (await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.tenant_id == current_user.tenant_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    customer = (await db.execute(select(Customer).where(
+        Customer.id == body.customer_id,
+        Customer.tenant_id == current_user.tenant_id,
+        Customer.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not vehicle or not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck or company not found")
+    if current_user.role == UserRole.FLEET_MANAGER and body.relationship_type == "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only shop administrators can record an ownership transfer",
+        )
+
+    if body.replace_primary:
+        now = datetime.now(timezone.utc)
+        current_rows = list((await db.execute(select(VehicleCustomerRelationship).where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.relationship_type == body.relationship_type,
+            VehicleCustomerRelationship.is_primary.is_(True),
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        ))).scalars().all())
+        for current in current_rows:
+            current.effective_to = now
+            current.is_primary = False
+
+    relationship = await ensure_vehicle_relationship(
+        db,
+        tenant_id=vehicle.tenant_id,
+        vehicle_id=vehicle.id,
+        customer_id=customer.id,
+        relationship_type=body.relationship_type,
+        is_primary=body.is_primary or body.replace_primary,
+    )
+    if body.relationship_type == "owner" and (body.is_primary or body.replace_primary):
+        # Compatibility pointer for old customer-specific screens. Historical
+        # repair orders retain their own customer_id and are never rewritten.
+        vehicle.customer_id = customer.id
+    await db.commit()
+    await db.refresh(relationship)
+    return VehicleRelationshipResponse(
+        id=relationship.id,
+        vehicle_id=relationship.vehicle_id,
+        customer_id=relationship.customer_id,
+        relationship_type=relationship.relationship_type,
+        effective_from=relationship.effective_from,
+        effective_to=relationship.effective_to,
+        is_primary=relationship.is_primary,
+        customer_company_name=(customer.company_name or f"{customer.first_name} {customer.last_name}".strip()),
+    )
 
 
 @router.get("", response_model=List[VehicleResponse])
@@ -151,10 +304,26 @@ async def vehicle_typeahead(
             return []
         filters.append(Vehicle.tenant_id == current_user.tenant_id)
         if current_user.role == UserRole.FLEET_MANAGER:
-            filters.append(Customer.is_internal_fleet.is_(True))
+            filters.append(or_(
+                Customer.is_internal_fleet.is_(True),
+                exists(select(FleetMembership.id).where(
+                    FleetMembership.vehicle_id == Vehicle.id,
+                    FleetMembership.tenant_id == current_user.tenant_id,
+                    FleetMembership.effective_to.is_(None),
+                    FleetMembership.deleted_at.is_(None),
+                )),
+            ))
 
     if customer_id:
-        filters.append(Vehicle.customer_id == customer_id)
+        filters.append(or_(
+            Vehicle.customer_id == customer_id,
+            exists(select(VehicleCustomerRelationship.id).where(
+                VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+                VehicleCustomerRelationship.customer_id == customer_id,
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+            )),
+        ))
 
     term = (q or "").strip()
     if term:
@@ -255,17 +424,31 @@ async def update_vehicle(
             detail="Access denied",
         )
 
-    # Fleet managers only manage the garage's own internal-fleet trucks.
-    if current_user.role == UserRole.FLEET_MANAGER and not (
-        vehicle.customer and vehicle.customer.is_internal_fleet
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Fleet managers can only manage internal fleet vehicles",
-        )
+    if current_user.role == UserRole.FLEET_MANAGER:
+        membership = (await db.execute(select(FleetMembership.id).where(
+            FleetMembership.vehicle_id == vehicle.id,
+            FleetMembership.tenant_id == current_user.tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if not membership and not (vehicle.customer and vehicle.customer.is_internal_fleet):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Fleet managers can only manage active fleet vehicles",
+            )
     
     # Update fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
+    if "vin" in update_data:
+        update_data["vin"] = normalize_vin(update_data["vin"])
+        duplicate = await find_vehicle_by_vin(
+            db, vehicle.tenant_id, update_data["vin"], exclude_vehicle_id=vehicle.id
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This VIN already belongs to truck {duplicate.id}.",
+            )
     if "driver_phone" in update_data:
         update_data["driver_phone"] = normalize_phone(update_data["driver_phone"])
     for field, value in update_data.items():

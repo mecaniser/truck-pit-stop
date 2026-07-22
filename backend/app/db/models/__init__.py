@@ -7,6 +7,7 @@ from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.contact import Contact
 from app.db.models.user_customer_link import UserCustomerLink
 from app.db.models.vehicle import Vehicle
+from app.db.models.vehicle_relationship import VehicleCustomerRelationship, FleetMembership
 from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import Inventory, PartsUsage
 from app.db.models.supplier import Supplier
@@ -71,6 +72,8 @@ __all__ = [
     "Contact",
     "UserCustomerLink",
     "Vehicle",
+    "VehicleCustomerRelationship",
+    "FleetMembership",
     "RepairOrder",
     "Inventory",
     "PartsUsage",

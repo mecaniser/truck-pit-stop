@@ -2029,7 +2029,9 @@ export default function RepairOrdersPage() {
         return
       }
 
-      // Vehicle selection can override customer
+      // The selected company is the bill-to account for this visit. Selecting
+      // an existing truck must never replace it with the truck's current owner;
+      // vehicle_id anchors service history while customer_id snapshots billing.
       const shouldCreateVehicle = isNewCustomer || showNewVehicleForm
 
       if (shouldCreateVehicle) {
@@ -2058,7 +2060,6 @@ export default function RepairOrdersPage() {
           return
         }
         finalVehicleId = vehicle.id
-        finalCustomerId = vehicle.customer_id
       }
 
       if (!finalCustomerId || !finalVehicleId) {

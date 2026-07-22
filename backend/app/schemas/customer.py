@@ -72,6 +72,7 @@ class CustomerUpdate(BaseModel):
     auto_approval_threshold: Optional[Decimal] = None
     usdot_number: Optional[str] = None
     mc_number: Optional[str] = None
+    fleet_enabled: Optional[bool] = None
 
 
 class CustomerResponse(CustomerBase):
@@ -79,6 +80,7 @@ class CustomerResponse(CustomerBase):
     tenant_id: UUID
     source: Optional[str] = None
     is_internal_fleet: bool = False
+    fleet_enabled: bool = False
     sms_opt_out: bool = False
     sms_opted_out_at: Optional[datetime] = None
     sms_opt_out_source: Optional[str] = None
@@ -130,6 +132,7 @@ class CustomerWithVehiclesResponse(CustomerBase):
     id: UUID
     tenant_id: UUID
     source: Optional[str] = None
+    fleet_enabled: bool = False
     sms_opt_out: bool = False
     sms_opted_out_at: Optional[datetime] = None
     sms_opt_out_source: Optional[str] = None

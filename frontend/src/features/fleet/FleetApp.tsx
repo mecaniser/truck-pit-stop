@@ -14,6 +14,7 @@ import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
 import { STATUS_META, fmt, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
@@ -376,6 +377,11 @@ function DriversPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: st
 
 function AddTruckModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
+  const [mode, setMode] = useState<'new' | 'existing'>('new')
+  const [customerId, setCustomerId] = useState('')
+  const [vehicleSearch, setVehicleSearch] = useState('')
+  const debouncedVehicleSearch = useDebouncedValue(vehicleSearch, 250)
+  const [existingVehicleId, setExistingVehicleId] = useState('')
   const [form, setForm] = useState({ make: '', model: '', year: '', unit_number: '', vin: '', license_plate: '', mileage: '', driver_name: '', driver_phone: '' })
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const [decoding, setDecoding] = useState(false)
@@ -405,26 +411,43 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
       setDecoding(false)
     }
   }
-  const { data: fleetCustomer } = useQuery<{ id: string }>({
-    queryKey: ['internal-fleet-customer'],
-    queryFn: async () => (await api.get('/customers/internal-fleet')).data,
+  const { data: companies = [] } = useQuery<Array<{ id: string; company_name: string; fleet_enabled: boolean; is_internal_fleet: boolean }>>({
+    queryKey: ['fleet-companies'],
+    queryFn: async () => (await api.get('/fleet/companies')).data,
+  })
+  const { data: vehicleCandidates = [] } = useQuery<Array<{ id: string; make: string; model: string; year?: number | null; unit_number?: string | null; vin?: string | null }>>({
+    queryKey: ['fleet-vehicle-candidates', debouncedVehicleSearch],
+    queryFn: async () => (await api.get('/fleet/vehicle-candidates', { params: { q: debouncedVehicleSearch || undefined, limit: 50 } })).data,
+    enabled: mode === 'existing',
   })
   const create = useMutation({
     mutationFn: async () => {
-      if (!fleetCustomer?.id) throw new Error('Fleet account not ready')
-      return (await api.post('/vehicles', {
-        customer_id: fleetCustomer.id,
-        make: form.make.trim(), model: form.model.trim(),
-        year: form.year ? parseInt(form.year, 10) : undefined,
-        unit_number: form.unit_number.trim() || undefined,
-        vin: form.vin.trim() || undefined,
-        license_plate: form.license_plate.trim() || undefined,
-        mileage: form.mileage ? parseInt(form.mileage, 10) : undefined,
-        driver_name: form.driver_name.trim() || undefined,
-        driver_phone: form.driver_phone.trim() || undefined,
-      })).data
+      if (!customerId) throw new Error('Select the company that operates this truck')
+      if (mode === 'existing') {
+        if (!existingVehicleId) throw new Error('Select an existing truck')
+        return (await api.post('/fleet/memberships', {
+          vehicle_id: existingVehicleId,
+          fleet_customer_id: customerId,
+        })).data
+      }
+      return (await api.post('/fleet/trucks', {
+          customer_id: customerId,
+          make: form.make.trim(), model: form.model.trim(),
+          year: form.year ? parseInt(form.year, 10) : undefined,
+          unit_number: form.unit_number.trim() || undefined,
+          vin: form.vin.trim() || undefined,
+          license_plate: form.license_plate.trim() || undefined,
+          mileage: form.mileage ? parseInt(form.mileage, 10) : undefined,
+          driver_name: form.driver_name.trim() || undefined,
+          driver_phone: form.driver_phone.trim() || undefined,
+        })).data
     },
-    onSuccess: () => { toast.success('Truck added to fleet'); qc.invalidateQueries({ queryKey: ['fleet-board'] }); onClose() },
+    onSuccess: () => {
+      toast.success(mode === 'existing' ? 'Existing truck linked to fleet' : 'Truck added to fleet')
+      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      qc.invalidateQueries({ queryKey: ['fleet-companies'] })
+      onClose()
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail || e.message || 'Failed to add truck'),
   })
   const inp = 'w-full'
@@ -435,6 +458,37 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <div className="dsec-title"><Wrench size={17} /><h3>Add truck</h3></div>
           <button className="person-call" onClick={onClose}><X size={15} /></button>
         </div>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('new')}>New truck</button>
+          <button type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</button>
+        </div>
+        <Field label="Operating company / fleet *">
+          <select className="w-full" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+            <option value="">Select company…</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {mode === 'existing' ? (
+          <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+            <Field label="Find truck by VIN, unit, plate, make, or model">
+              <input className="w-full" value={vehicleSearch} onChange={(e) => setVehicleSearch(e.target.value)} placeholder="Search existing trucks…" />
+            </Field>
+            <Field label="Existing truck *">
+              <select className="w-full" value={existingVehicleId} onChange={(e) => setExistingVehicleId(e.target.value)}>
+                <option value="">Select truck…</option>
+                {vehicleCandidates.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>
+                    {[vehicle.unit_number ? `Unit ${vehicle.unit_number}` : null, vehicle.year, vehicle.make, vehicle.model, vehicle.vin ? `VIN …${vehicle.vin.slice(-6)}` : null].filter(Boolean).join(' · ')}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div style={{ gridColumn: '1 / -1' }}>
             <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>VIN — paste to auto-fill make / model / year</span>
@@ -464,9 +518,10 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <Field label="Driver"><input className={inp} value={form.driver_name} onChange={set('driver_name')} placeholder="Driver name (optional)" /></Field>
           <Field label="Driver phone"><input className={inp} value={form.driver_phone} onChange={(e) => setForm((f) => ({ ...f, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" /></Field>
         </div>
+        )}
         <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
-          disabled={!form.make.trim() || !form.model.trim() || create.isPending} onClick={() => create.mutate()}>
-          {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Add truck
+          disabled={!customerId || (mode === 'new' ? (!form.make.trim() || !form.model.trim()) : !existingVehicleId) || create.isPending} onClick={() => create.mutate()}>
+          {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} {mode === 'existing' ? 'Link truck' : 'Add truck'}
         </button>
       </div>
     </div>

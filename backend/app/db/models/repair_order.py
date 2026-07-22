@@ -96,6 +96,10 @@ class RepairOrder(BaseModel):
     # no customer quote/invoice/payment. Set when the customer is the internal fleet.
     is_internal = Column(Boolean, nullable=False, default=False, index=True)
 
+    # Operational Fleet Board scope, independent from pricing/billing. External
+    # customer work can be fleet-managed without becoming internal-cost work.
+    is_fleet_work = Column(Boolean, nullable=False, default=False, index=True)
+
     # Snapshot the fleet truck's labor-pricing policy when the work order is
     # created. A later truck preference change cannot rewrite an open invoice.
     # Parts on internal fleet orders always remain at inventory cost.

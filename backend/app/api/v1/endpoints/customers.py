@@ -3,7 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, or_, asc, desc, literal_column, case
+from sqlalchemy import select, and_, exists, func, or_, asc, desc, literal_column, case
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from app.core.dependencies import get_db, get_current_active_user
@@ -16,6 +16,7 @@ from app.db.models.customer import Customer
 from app.db.models.customer_read_model import CustomerReadModel
 from app.db.models.contact import Contact
 from app.db.models.vehicle import Vehicle
+from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
 from app.db.models.repair_order import RepairOrder
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
@@ -37,6 +38,13 @@ from app.schemas.typeahead import CustomerTypeaheadResponse
 from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
+from app.services.vehicle_identity import (
+    ensure_fleet_membership,
+    find_vehicle_by_vin,
+    normalize_vin,
+    seed_vehicle_account_relationships,
+    sync_customer_fleet_memberships,
+)
 from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
 router = APIRouter()
@@ -215,13 +223,25 @@ async def create_customer(
     
     # Create initial vehicle if provided
     if customer_data.initial_vehicle:
+        vehicle_fields = customer_data.initial_vehicle.model_dump()
+        vehicle_fields["vin"] = normalize_vin(vehicle_fields.get("vin"))
+        duplicate = await find_vehicle_by_vin(
+            db, current_user.tenant_id, vehicle_fields.get("vin")
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+            )
         vehicle = Vehicle(
             tenant_id=current_user.tenant_id,
             customer_id=customer.id,
-            **customer_data.initial_vehicle.model_dump(),
+            **vehicle_fields,
         )
         await sync_vehicle_nhtsa_snapshot(vehicle)
         db.add(vehicle)
+        await db.flush()
+        await seed_vehicle_account_relationships(db, vehicle, customer)
     
     await db.commit()
     
@@ -606,8 +626,16 @@ async def update_customer(
     if "company_name" in update_data:
         company = (update_data.get("company_name") or "").strip()
         update_data["company_name"] = company or None
+    fleet_enabled_changed = (
+        "fleet_enabled" in update_data
+        and bool(update_data["fleet_enabled"]) != bool(customer.fleet_enabled)
+    )
     for field, value in update_data.items():
         setattr(customer, field, value)
+    if fleet_enabled_changed:
+        await sync_customer_fleet_memberships(
+            db, customer, enabled=bool(customer.fleet_enabled)
+        )
     
     await db.commit()
     await db.refresh(customer)
@@ -750,6 +778,46 @@ async def merge_customers(
         v.customer_id = winner.id
     vehicles_moved = len(vehicles)
 
+    # Preserve dated vehicle/account history and fleet assignments. Equivalent
+    # active links collapse into the winner; historical rows are reassigned.
+    loser_relationships = list((await db.execute(
+        select(VehicleCustomerRelationship).where(
+            VehicleCustomerRelationship.customer_id == loser.id
+        )
+    )).scalars().all())
+    for relationship in loser_relationships:
+        duplicate = None
+        if relationship.effective_to is None and relationship.deleted_at is None:
+            duplicate = (await db.execute(select(VehicleCustomerRelationship).where(
+                VehicleCustomerRelationship.vehicle_id == relationship.vehicle_id,
+                VehicleCustomerRelationship.customer_id == winner.id,
+                VehicleCustomerRelationship.relationship_type == relationship.relationship_type,
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+            ))).scalars().first()
+        if duplicate:
+            await db.delete(relationship)
+        else:
+            relationship.customer_id = winner.id
+
+    loser_memberships = list((await db.execute(select(FleetMembership).where(
+        FleetMembership.fleet_customer_id == loser.id
+    ))).scalars().all())
+    for membership in loser_memberships:
+        duplicate = None
+        if membership.effective_to is None and membership.deleted_at is None:
+            duplicate = (await db.execute(select(FleetMembership).where(
+                FleetMembership.vehicle_id == membership.vehicle_id,
+                FleetMembership.fleet_customer_id == winner.id,
+                FleetMembership.effective_to.is_(None),
+                FleetMembership.deleted_at.is_(None),
+            ))).scalars().first()
+        if duplicate:
+            await db.delete(membership)
+        else:
+            membership.fleet_customer_id = winner.id
+    winner.fleet_enabled = bool(winner.fleet_enabled or loser.fleet_enabled)
+
     # Repair orders — carries labor, parts_usage, invoices, payments along
     # automatically since those key off repair_order_id, not customer_id.
     ros_result = await db.execute(select(RepairOrder).where(RepairOrder.customer_id == loser.id))
@@ -886,6 +954,17 @@ async def merge_customers(
 # NESTED VEHICLE ENDPOINTS
 # ============================================================================
 
+def _vehicle_linked_to_customer(customer_id: UUID):
+    return or_(
+        Vehicle.customer_id == customer_id,
+        exists(select(VehicleCustomerRelationship.id).where(
+            VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+            VehicleCustomerRelationship.customer_id == customer_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        )),
+    )
+
 @router.get("/{customer_id}/vehicles", response_model=List[VehicleResponse])
 async def list_customer_vehicles(
     customer_id: UUID,
@@ -920,11 +999,12 @@ async def list_customer_vehicles(
         )
     
     # Get vehicles
-    total_result = await db.execute(select(func.count(Vehicle.id)).where(Vehicle.customer_id == customer_id))
+    customer_vehicle_filter = _vehicle_linked_to_customer(customer_id)
+    total_result = await db.execute(select(func.count(Vehicle.id)).where(customer_vehicle_filter))
     total = total_result.scalar() or 0
     query = (
         select(Vehicle)
-        .where(Vehicle.customer_id == customer_id)
+        .where(customer_vehicle_filter)
         .offset(skip)
         .limit(limit)
     )
@@ -965,14 +1045,31 @@ async def create_customer_vehicle(
             detail="Access denied",
         )
     
+    vehicle_fields = vehicle_data.model_dump()
+    vehicle_fields["vin"] = normalize_vin(vehicle_fields.get("vin"))
+    duplicate = await find_vehicle_by_vin(db, customer.tenant_id, vehicle_fields.get("vin"))
+    if duplicate:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+        )
     vehicle = Vehicle(
         tenant_id=customer.tenant_id,
         customer_id=customer_id,
-        **vehicle_data.model_dump(),
+        **vehicle_fields,
     )
     await sync_vehicle_nhtsa_snapshot(vehicle)
     
     db.add(vehicle)
+    await db.flush()
+    await seed_vehicle_account_relationships(db, vehicle, customer)
+    if customer.fleet_enabled:
+        await ensure_fleet_membership(
+            db,
+            tenant_id=customer.tenant_id,
+            vehicle_id=vehicle.id,
+            fleet_customer_id=customer.id,
+        )
     await db.commit()
     await db.refresh(vehicle)
     
@@ -991,7 +1088,7 @@ async def get_customer_vehicle(
         select(Vehicle).where(
             and_(
                 Vehicle.id == vehicle_id,
-                Vehicle.customer_id == customer_id,
+                _vehicle_linked_to_customer(customer_id),
             )
         )
     )
@@ -1032,7 +1129,7 @@ async def update_customer_vehicle(
         select(Vehicle).where(
             and_(
                 Vehicle.id == vehicle_id,
-                Vehicle.customer_id == customer_id,
+                _vehicle_linked_to_customer(customer_id),
             )
         )
     )
@@ -1059,6 +1156,16 @@ async def update_customer_vehicle(
     
     # Update fields
     update_data = vehicle_data.model_dump(exclude_unset=True)
+    if "vin" in update_data:
+        update_data["vin"] = normalize_vin(update_data["vin"])
+        duplicate = await find_vehicle_by_vin(
+            db, vehicle.tenant_id, update_data["vin"], exclude_vehicle_id=vehicle.id
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"This VIN already belongs to truck {duplicate.id}.",
+            )
     for field, value in update_data.items():
         setattr(vehicle, field, value)
 

@@ -214,6 +214,10 @@ class BoardTruck(BaseModel):
     open_incident_count: int = 0
     status_override: Optional[str] = None  # operator's manual idle status, if set
     warning_lights: List[str] = []  # dashboard warning lights currently on
+    fleet_customer_id: Optional[UUID] = None
+    fleet_company_name: Optional[str] = None
+    owner_customer_id: Optional[UUID] = None
+    owner_company_name: Optional[str] = None
 
 
 class FleetStats(BaseModel):
@@ -327,6 +331,8 @@ class TruckUpdate(BaseModel):
 class WorkOrderCreate(BaseModel):
     # Optional description of the work needed; defaults server-side when blank.
     description: Optional[str] = None
+    # Visit-specific payer. Defaults to the truck's primary/default account.
+    bill_to_customer_id: Optional[UUID] = None
 
 
 class PMServicesUpdate(BaseModel):
@@ -350,6 +356,34 @@ class SchedulePMRequest(BaseModel):
     service_ids: Optional[List[UUID]] = None
     # Also save service_ids as the truck's new default PM package.
     save_as_default: bool = False
+    bill_to_customer_id: Optional[UUID] = None
+
+
+class FleetCompanyOption(BaseModel):
+    id: UUID
+    company_name: str
+    fleet_enabled: bool = False
+    is_internal_fleet: bool = False
+
+
+class FleetMembershipCreate(BaseModel):
+    vehicle_id: UUID
+    fleet_customer_id: UUID
+
+
+class FleetTruckCreate(BaseModel):
+    customer_id: UUID
+    vin: Optional[str] = None
+    unit_number: Optional[str] = None
+    make: str
+    model: str
+    year: Optional[int] = None
+    license_plate: Optional[str] = None
+    color: Optional[str] = None
+    mileage: Optional[int] = None
+    notes: Optional[str] = None
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
 
 
 class FleetMechanicOption(BaseModel):

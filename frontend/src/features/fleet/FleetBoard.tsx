@@ -32,6 +32,14 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
         </div>
         <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
       </div>
+      {t.fleet_company_name && (
+        <div className="tcard-type">
+          {t.fleet_company_name}
+          {t.owner_company_name && t.owner_company_name !== t.fleet_company_name
+            ? ` · Owner: ${t.owner_company_name}`
+            : ''}
+        </div>
+      )}
       {t.body_type && <div className="tcard-type">{t.body_type}</div>}
       <div className="tcard-row">
         <span className="tcard-row-ic"><MapPin size={14} /></span>
@@ -95,7 +103,7 @@ export default function FleetBoard({
     const words = query.toLowerCase().trim().split(/\s+/)
     list = list.filter((t) => {
       const haystack =
-        `${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''}`.toLowerCase()
+        `${t.unit_number || ''} ${t.make} ${t.model} ${t.driver_name || ''} ${t.vin || ''} ${t.plate || ''} ${t.body_type || ''} ${t.fleet_company_name || ''} ${t.owner_company_name || ''}`.toLowerCase()
       const squashedHaystack = squash(haystack)
       return words.every((word) => {
         if (haystack.includes(word)) return true

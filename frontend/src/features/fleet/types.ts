@@ -141,6 +141,10 @@ export interface BoardTruck {
   open_incident_count: number
   status_override?: string | null
   warning_lights?: string[]
+  fleet_customer_id?: string | null
+  fleet_company_name?: string | null
+  owner_customer_id?: string | null
+  owner_company_name?: string | null
 }
 
 export interface FleetStats {

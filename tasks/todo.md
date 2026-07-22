@@ -8,6 +8,38 @@
 
 ---
 
+# Vehicle-Centered Ownership, Billing, and Fleet Assignment (2026-07-22)
+
+## Plan
+- [x] Add permanent vehicle identity relationships for owner, operator, and default payer.
+- [x] Add temporal fleet membership independent of vehicle ownership and billing.
+- [x] Backfill existing customer vehicles and internal-fleet trucks without rewriting repair history.
+- [x] Make Fleet Board membership queries independent of the internal house account.
+- [x] Create Fleet Board trucks under a selected real customer and support linking an existing truck.
+- [x] Keep repair-order `customer_id` as the visit-specific bill-to account while `vehicle_id` anchors service history.
+- [x] Prevent duplicate valid VINs within a tenant and return a useful existing-truck conflict.
+- [x] Add focused backend/frontend regression coverage and run migration checks.
+
+## Progress Notes
+- [x] Confirmed the original checkout was the dirty primary `main` worktree, so created `codex/vehicle-identity` from the latest `origin/main` in a dedicated worktree.
+- [x] Confirmed the current Fleet Board equates fleet membership with `Customer.is_internal_fleet`, and fleet-created work orders overwrite the truck's real customer with the hidden house account.
+- [x] Added temporal owner/operator/default-payer relationships plus temporal fleet memberships; retained `Vehicle.customer_id` as a compatibility pointer during rollout.
+- [x] Added `RepairOrder.is_fleet_work` so Fleet access is independent from `is_internal` pricing.
+- [x] Existing vehicle/customer rows backfill as owner + default payer; existing internal-fleet trucks backfill active memberships; historical repair-order customer IDs remain untouched.
+- [x] Fleet Add Truck now selects a real operating company and can link an existing truck instead of creating a duplicate.
+- [x] Fleet corrective and PM work-order modals now let staff choose the invoice company for that visit.
+- [x] New Repair Order preserves the selected bill-to customer instead of replacing it with the truck's compatibility owner.
+- [x] Fleet cards expose/search operator and owner company names when they differ.
+- [x] Valid-length VIN creates/updates reject an existing tenant truck and direct staff to link it.
+- [x] Passed 26 focused backend tests, frontend production build, Python compile, Alembic single-head check, PostgreSQL offline migration generation, and `git diff --check`.
+- [x] Full backend-suite sampling found pre-existing failures in admin messaging dependency invocation and duplicate-registration copy; focused vehicle/fleet/typeahead suites pass.
+
+## Review
+- The truck is now the durable service-history identity. Ownership, operation, fleet assignment, and visit-specific billing can change without moving or rewriting prior repair orders.
+
+
+---
+
 # Customer Vehicle Cards Unit Number (2026-07-19)
 
 ## Plan
