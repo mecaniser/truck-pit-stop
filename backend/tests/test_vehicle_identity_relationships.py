@@ -12,7 +12,7 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
 from app.schemas.customer import CustomerUpdate
-from app.schemas.vehicle import VehicleBase, VehicleRelationshipCreate, VehicleUpdate
+from app.schemas.vehicle import VehicleBase, VehicleRelationshipCreate, VehicleRelationshipSync, VehicleUpdate
 from app.services.vehicle_identity import (
     ensure_fleet_membership,
     ensure_vehicle_relationship,
@@ -212,6 +212,112 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
     assert [item.id for item in board.trucks] == [truck.id]
     assert board.trucks[0].fleet_company_name == "77 Cargo"
     assert board.trucks[0].display_unit_number == "Owner Trucking LLC 77-22"
+
+
+@pytest.mark.asyncio
+async def test_truck_connections_can_be_relinked_and_unlinked_without_losing_history(db_session):
+    tenant = Tenant(id=uuid4(), name="Relink Garage", slug=f"relink-{uuid4().hex[:8]}")
+    house = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="House", last_name="Account",
+        company_name="House Account", email=f"house-{uuid4().hex[:6]}@example.com",
+        is_internal_fleet=True, fleet_enabled=True,
+    )
+    owner = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="ELS", last_name="Dispatch",
+        company_name="ELS Logistics LLC", email=f"els-{uuid4().hex[:6]}@example.com",
+    )
+    operator = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Fleet", last_name="Dispatch",
+        company_name="77 Cargo", email=f"77-{uuid4().hex[:6]}@example.com",
+        fleet_enabled=True,
+    )
+    manager = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"manager-{uuid4().hex[:6]}@example.com",
+        hashed_password="x", first_name="Shop", last_name="Owner",
+        role=UserRole.GARAGE_OWNER, is_active=True, is_verified=True,
+    )
+    truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=house.id,
+        vin="4V4WC9EG9LN250022", make="Volvo", model="VNR", year=2020,
+        unit_number="77 Cargo 603",
+    )
+    db_session.add_all([tenant, house, owner, operator, manager, truck])
+    await db_session.flush()
+    await seed_vehicle_account_relationships(db_session, truck, house)
+    await ensure_fleet_membership(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=truck.id,
+        fleet_customer_id=operator.id,
+    )
+    await db_session.commit()
+
+    await vehicles.sync_vehicle_relationships(
+        vehicle_id=truck.id,
+        body=VehicleRelationshipSync(
+            customer_id=owner.id,
+            relationship_types=["owner", "default_payer"],
+            unit_number="603",
+        ),
+        db=db_session,
+        current_user=manager,
+    )
+
+    await db_session.refresh(truck)
+    assert truck.customer_id == owner.id
+    assert truck.unit_number == "603"
+    board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert board.trucks[0].display_unit_number == "ELS Logistics LLC 603"
+    assert board.trucks[0].fleet_company_name == "77 Cargo"
+
+    await vehicles.sync_vehicle_relationships(
+        vehicle_id=truck.id,
+        body=VehicleRelationshipSync(
+            customer_id=operator.id,
+            relationship_types=[],
+            unit_number="603",
+        ),
+        db=db_session,
+        current_user=manager,
+    )
+    assert (await fleet.fleet_board(db=db_session, current_user=manager)).trucks == []
+
+    await vehicles.sync_vehicle_relationships(
+        vehicle_id=truck.id,
+        body=VehicleRelationshipSync(
+            customer_id=operator.id,
+            relationship_types=["operator"],
+            unit_number="603",
+        ),
+        db=db_session,
+        current_user=manager,
+    )
+    relinked_board = await fleet.fleet_board(db=db_session, current_user=manager)
+    assert relinked_board.trucks[0].display_unit_number == "ELS Logistics LLC 603"
+    operator_periods = list((await db_session.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.vehicle_id == truck.id,
+        VehicleCustomerRelationship.customer_id == operator.id,
+        VehicleCustomerRelationship.relationship_type == "operator",
+    ))).scalars().all())
+    assert len(operator_periods) == 2
+    assert len([period for period in operator_periods if period.effective_to is None]) == 1
+    assert len([period for period in operator_periods if period.effective_to is not None]) == 1
+
+    active_operator = next(period for period in operator_periods if period.effective_to is None)
+    await vehicles.unlink_vehicle_relationship(
+        vehicle_id=truck.id,
+        relationship_id=active_operator.id,
+        db=db_session,
+        current_user=manager,
+    )
+    assert (await fleet.fleet_board(db=db_session, current_user=manager)).trucks == []
+    refreshed_periods = list((await db_session.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.vehicle_id == truck.id,
+        VehicleCustomerRelationship.customer_id == operator.id,
+        VehicleCustomerRelationship.relationship_type == "operator",
+    ))).scalars().all())
+    assert len([period for period in refreshed_periods if period.effective_to is None]) == 0
+    assert len([period for period in refreshed_periods if period.effective_to is not None]) == 2
 
 
 @pytest.mark.asyncio
