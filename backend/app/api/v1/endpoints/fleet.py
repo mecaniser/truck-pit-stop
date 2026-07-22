@@ -1867,10 +1867,15 @@ async def complete_work_order(
 
     veh_result = await db.execute(select(Vehicle).where(Vehicle.id == ro.vehicle_id))
     veh = veh_result.scalar_one_or_none()
-    if not veh or not veh.billing_contact_email:
+    if not veh:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Truck not found for this work order.",
+        )
+    if ro.is_internal and not veh.billing_contact_email:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Add this truck's invoice contact email before completing its work order.",
+            detail="Add an invoice contact email for this internal house-account truck before completing its work order.",
         )
 
     # Mileage-out: use the manual reading if provided (fallback), otherwise the

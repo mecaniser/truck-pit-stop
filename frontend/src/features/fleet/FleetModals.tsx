@@ -291,11 +291,14 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
           />
         </Field>
       </div>
-      <div className="dmap-side-h" style={{ margin: '18px 0 8px' }}>Invoice contact & pricing</div>
+      <div className="dmap-side-h" style={{ margin: '18px 0 4px' }}>House-account fallback & pricing</div>
+      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--muted-2)' }}>
+        Customer fleet work uses the company selected on the work order—its company name, email, phone, and billing address. These truck-level contact fields are only a fallback for internal house-account work.
+      </p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Invoice contact name"><input value={f.billing_contact_name} onChange={set('billing_contact_name')} placeholder="Accounts payable" /></Field>
-        <Field label="Invoice contact email"><input value={f.billing_contact_email} onChange={set('billing_contact_email')} type="email" placeholder="billing@example.com" /></Field>
-        <Field label="Invoice contact phone"><input value={f.billing_contact_phone} onChange={set('billing_contact_phone')} placeholder="+1 704 555 1234" /></Field>
+        <Field label="Fallback contact name"><input value={f.billing_contact_name} onChange={set('billing_contact_name')} placeholder="Accounts payable" /></Field>
+        <Field label="Fallback contact email"><input value={f.billing_contact_email} onChange={set('billing_contact_email')} type="email" placeholder="billing@example.com" /></Field>
+        <Field label="Fallback contact phone"><input value={f.billing_contact_phone} onChange={set('billing_contact_phone')} placeholder="+1 704 555 1234" /></Field>
       </div>
       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
         <input
