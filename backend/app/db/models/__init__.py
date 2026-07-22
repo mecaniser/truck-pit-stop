@@ -3,6 +3,7 @@ from app.db.models.user import User
 from app.db.models.customer import Customer
 from app.db.models.customer_read_model import CustomerReadModel
 from app.db.models.repair_order_read_model import RepairOrderReadModel
+from app.db.models.invoice_read_model import InvoiceReadModel
 from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.contact import Contact
 from app.db.models.user_customer_link import UserCustomerLink
@@ -68,6 +69,7 @@ __all__ = [
     "Customer",
     "CustomerReadModel",
     "RepairOrderReadModel",
+    "InvoiceReadModel",
     "FleetBoardReadModel",
     "Contact",
     "UserCustomerLink",

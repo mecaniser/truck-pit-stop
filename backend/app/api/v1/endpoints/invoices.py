@@ -16,6 +16,7 @@ from app.core.vehicle_display import vehicle_display_label
 from app.db.models.user import User, UserRole
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.invoice_read_model import InvoiceReadModel
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
@@ -865,6 +866,64 @@ async def create_invoice(
 
 @router.get("", response_model=List[InvoiceResponse])
 async def list_invoices(
+    status_filter: Optional[str] = Query(None),
+    repair_order_id: Optional[UUID] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    paginated: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    if current_user.role == UserRole.CUSTOMER:
+        if not current_user.customer_id:
+            return paginated_or_list([], 0, skip, limit, paginated)
+        source_filters = [RepairOrder.customer_id == current_user.customer_id]
+        projection_filters = [InvoiceReadModel.customer_id == current_user.customer_id]
+    else:
+        if not current_user.tenant_id:
+            return paginated_or_list([], 0, skip, limit, paginated)
+        source_filters = [Invoice.tenant_id == current_user.tenant_id]
+        projection_filters = [InvoiceReadModel.tenant_id == current_user.tenant_id]
+    if status_filter:
+        source_filters.append(Invoice.status == status_filter)
+        projection_filters.append(InvoiceReadModel.status == status_filter)
+    if repair_order_id:
+        source_filters.append(Invoice.repair_order_id == repair_order_id)
+        projection_filters.append(InvoiceReadModel.repair_order_id == repair_order_id)
+
+    source_count, projected_count = (
+        await db.execute(
+            select(func.count(Invoice.id), func.count(InvoiceReadModel.invoice_id))
+            .select_from(Invoice)
+            .join(RepairOrder, Invoice.repair_order_id == RepairOrder.id)
+            .outerjoin(InvoiceReadModel, InvoiceReadModel.invoice_id == Invoice.id)
+            .where(*source_filters)
+        )
+    ).one()
+    total = source_count or 0
+    if total != (projected_count or 0):
+        return await _list_invoices_legacy(
+            status_filter=status_filter, repair_order_id=repair_order_id, skip=skip,
+            limit=limit, paginated=paginated, db=db, current_user=current_user,
+        )
+
+    rows = await db.execute(
+        select(InvoiceReadModel.payload)
+        .where(*projection_filters)
+        .order_by(InvoiceReadModel.created_at.desc(), InvoiceReadModel.invoice_id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    return paginated_or_list(
+        [InvoiceResponse.model_validate(payload) for payload in rows.scalars().all()],
+        total,
+        skip,
+        limit,
+        paginated,
+    )
+
+
+async def _list_invoices_legacy(
     status_filter: Optional[str] = Query(None),
     repair_order_id: Optional[UUID] = Query(None),
     skip: int = Query(0, ge=0),
