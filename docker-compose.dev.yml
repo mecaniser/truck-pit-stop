@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    container_name: dieselbridge_api_dev
+    env_file:
+      - backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dieselbridge:dieselbridge_dev@postgres:5432/truckpitstop
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS_STR: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:5174
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

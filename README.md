@@ -70,7 +70,7 @@ truck-pit-stop/
 
 ```bash
 # Start PostgreSQL and Redis with Docker
-docker-compose up -d
+docker compose up -d postgres redis
 
 # Backend setup
 cd backend
@@ -89,6 +89,30 @@ alembic upgrade head
 # Start development server
 uvicorn app.main:app --reload
 ```
+
+### Docker Backend Dev Server
+
+Use this when you want the backend in Docker without a stale baked app image.
+The backend source is mounted into the container and `uvicorn --reload` watches
+for route/code changes.
+
+```bash
+# Stop the production-style local app container if it owns port 8000
+docker rm -f dieselbridge_app 2>/dev/null || true
+
+# Start Postgres, Redis, and the hot-reload API
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build api
+```
+
+Keep the frontend on Vite:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Avoid using a baked `truck-pit-stop-local` app image for local feature testing
+unless you rebuild and recreate it after every backend or frontend change.
 
 ### Frontend Setup
 
