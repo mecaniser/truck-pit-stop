@@ -1645,11 +1645,19 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
     mutationFn: async () => (await api.post('/quickbooks/health/check')).data as QuickBooksConnectionStatus,
     onSuccess: (data) => {
       queryClient.setQueryData(['quickbooks-status'], data)
-      if (data.token_health === 'healthy') toast.success('QuickBooks connection is healthy')
+      if (data.token_health === 'healthy' || (data.token_health === 'refresh_required' && !data.last_token_refresh_error)) {
+        toast.success('QuickBooks connection is ready. Token renewal is automatic.')
+      }
       else toast.error('QuickBooks needs attention before it can sync or take payments')
     },
     onError: (error: unknown) => toast.error(apiErrorDetail(error, 'Unable to check QuickBooks connection')),
   })
+
+  const connectionNeedsAttention = Boolean(
+    status?.is_connected
+    && (status.token_health === 'reconnect_required' || status.last_token_refresh_error),
+  )
+  const lastTokenUpdate = status?.last_token_refresh_at || status?.connected_at
 
   const statusConfig = !status?.configured
     ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
@@ -1713,17 +1721,22 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
 
           {status?.is_connected && (
             <div className={`mb-6 rounded-xl border p-4 text-sm ${
-              status.token_health === 'healthy'
+              !connectionNeedsAttention
                 ? 'border-emerald-700/35 bg-emerald-950/15 text-emerald-100/85'
                 : 'border-amber-700/40 bg-amber-950/20 text-amber-100/85'
             }`}>
               <p className="font-medium">
-                {status.token_health === 'healthy' ? 'Connection health: ready' : 'Connection health: attention needed'}
+                {!connectionNeedsAttention ? 'Connection health: ready' : 'Connection health: attention needed'}
               </p>
               <p className="mt-1 text-zinc-300">
-                {status.token_health === 'healthy'
-                  ? 'Authorization tokens are current. Finalized invoices sync in the background, and captured Intuit payments are linked back to their QuickBooks invoices.'
+                {!connectionNeedsAttention
+                  ? status.token_health === 'refresh_required'
+                    ? 'Connected. The access token will renew automatically before the next QuickBooks request.'
+                    : 'Authorization tokens are current. Finalized invoices sync in the background, and captured Intuit payments are linked back to their QuickBooks invoices.'
                   : status.last_token_refresh_error || 'Check the connection to refresh Intuit authorization before enabling sync or payments.'}
+              </p>
+              <p className="mt-2 text-xs text-zinc-400">
+                Last token update: {lastTokenUpdate ? new Date(lastTokenUpdate).toLocaleString() : 'Not recorded yet'}
               </p>
               {status.last_webhook_at && (
                 <p className="mt-2 text-xs text-zinc-400">Last Intuit event: {status.last_webhook_event || 'received'} at {new Date(status.last_webhook_at).toLocaleString()}</p>
@@ -1740,13 +1753,15 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
                   <StatusLED status="active" />
                   Accounting + Payments Authorized
                 </IndustrialBadge>
-                <button
-                  onClick={() => healthMutation.mutate()}
-                  disabled={healthMutation.isPending}
-                  className={industrialStyles.btnSecondary}
-                >
-                  {healthMutation.isPending ? 'Checking...' : 'Check Connection'}
-                </button>
+                {connectionNeedsAttention && (
+                  <button
+                    onClick={() => healthMutation.mutate()}
+                    disabled={healthMutation.isPending}
+                    className={industrialStyles.btnSecondary}
+                  >
+                    {healthMutation.isPending ? 'Checking...' : 'Retry Connection Check'}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (window.confirm('Disconnect QuickBooks? This removes local authorization tokens and stops future sync.')) {

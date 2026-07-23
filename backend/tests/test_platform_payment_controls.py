@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -112,6 +113,7 @@ async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_ses
     tenant = Tenant(name="QuickBooks Garage", slug="quickbooks-control-garage")
     db_session.add(tenant)
     await db_session.flush()
+    token_updated_at = datetime.now(timezone.utc) - timedelta(hours=1)
     connection = QuickBooksConnection(
         tenant_id=tenant.id,
         realm_id="913035829570002",
@@ -119,6 +121,8 @@ async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_ses
         status="connected",
         encrypted_access_token="encrypted-access",
         encrypted_refresh_token="encrypted-refresh",
+        connected_at=token_updated_at,
+        last_token_refresh_at=token_updated_at,
     )
     db_session.add(connection)
     await db_session.commit()
@@ -130,6 +134,9 @@ async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_ses
     merchant = overview.json()["merchants"][0]
     assert merchant["tenant_name"] == "QuickBooks Garage"
     assert merchant["status"] == "active"
+    assert merchant["token_health"] == "healthy"
+    assert merchant["requirements"] == []
+    assert merchant["last_token_refresh_at"] is not None
     assert merchant["accounting_enabled"] is True
     assert merchant["payments_scope_enabled"] is True
     assert merchant["payments_enabled"] is True
@@ -152,3 +159,43 @@ async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_ses
     assert connection.realm_id is None
     assert connection.encrypted_access_token is None
     assert connection.encrypted_refresh_token is None
+
+
+def test_quickbooks_routine_access_token_renewal_remains_active():
+    token_updated_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    tenant = Tenant(name="QuickBooks Garage", slug="quickbooks-routine-renewal")
+    connection = QuickBooksConnection(
+        tenant=tenant,
+        realm_id="913035829570003",
+        scopes="com.intuit.quickbooks.accounting com.intuit.quickbooks.payment",
+        status="connected",
+        encrypted_access_token="encrypted-access",
+        encrypted_refresh_token="encrypted-refresh",
+        connected_at=token_updated_at,
+        access_token_expires_at=token_updated_at + timedelta(minutes=30),
+        refresh_token_expires_at=token_updated_at + timedelta(days=90),
+        last_token_refresh_at=token_updated_at,
+    )
+    merchant = platform_payments._quickbooks_merchant_status(
+        tenant,
+        connection,
+        {
+            "payments_environment_valid": True,
+        },
+    )
+
+    assert merchant["token_health"] == "refresh_required"
+    assert merchant["status"] == "active"
+    assert merchant["requirements"] == []
+    assert merchant["payments_enabled"] is True
+
+    connection.last_token_refresh_error = "Intuit rejected token renewal"
+    failed_merchant = platform_payments._quickbooks_merchant_status(
+        tenant,
+        connection,
+        {
+            "payments_environment_valid": True,
+        },
+    )
+    assert failed_merchant["status"] == "attention"
+    assert failed_merchant["requirements"] == ["Resolve the latest token refresh error"]
