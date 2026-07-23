@@ -97,7 +97,10 @@ async def process_quickbooks_invoice_sync_events(
                 continue
             invoice = (await db.execute(
                 select(Invoice)
-                .options(selectinload(Invoice.repair_order).selectinload(RepairOrder.customer))
+                .options(
+                    selectinload(Invoice.tenant),
+                    selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
+                )
                 .where(Invoice.id == event.aggregate_id)
             )).scalar_one_or_none()
             connection = (await db.execute(
@@ -156,6 +159,7 @@ async def reconcile_quickbooks_payments(
         payments = (await db.execute(
             select(Payment)
             .options(
+                selectinload(Payment.invoice).selectinload(Invoice.tenant),
                 selectinload(Payment.invoice)
                 .selectinload(Invoice.repair_order)
                 .selectinload(RepairOrder.customer)
@@ -203,6 +207,7 @@ async def reconcile_quickbooks_payments(
         refund_records = (await db.execute(
             select(Payment)
             .options(
+                selectinload(Payment.invoice).selectinload(Invoice.tenant),
                 selectinload(Payment.invoice)
                 .selectinload(Invoice.repair_order)
                 .selectinload(RepairOrder.customer)

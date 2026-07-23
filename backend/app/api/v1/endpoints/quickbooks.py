@@ -65,6 +65,7 @@ from app.services.quickbooks_payments_service import (
 from app.services.quickbooks_accounting_service import (
     QuickBooksAccountingError,
     create_refund_receipt,
+    quickbooks_invoice_memo,
     sync_invoice,
     sync_payment,
 )
@@ -273,7 +274,10 @@ async def _invoice_accounting_context(
 ) -> tuple[Invoice, RepairOrder, Customer]:
     invoice = (await db.execute(
         select(Invoice)
-        .options(selectinload(Invoice.repair_order).selectinload(RepairOrder.customer))
+        .options(
+            selectinload(Invoice.tenant),
+            selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
+        )
         .where(Invoice.id == invoice_id)
     )).scalar_one_or_none()
     if not invoice or not invoice.repair_order or not invoice.repair_order.customer:
@@ -425,6 +429,7 @@ async def charge_quickbooks_invoice(
     invoice = (await db.execute(
         select(Invoice)
         .options(
+            selectinload(Invoice.tenant),
             selectinload(Invoice.repair_order).selectinload(RepairOrder.customer),
             selectinload(Invoice.repair_order).selectinload(RepairOrder.vehicle),
         )
@@ -461,7 +466,7 @@ async def charge_quickbooks_invoice(
             connection=connection,
             token=body.token,
             amount=outstanding_amount,
-            description=f"DieselBridge invoice {invoice.invoice_number}",
+            description=quickbooks_invoice_memo(invoice),
             request_id=body.idempotency_key,
         )
     except QuickBooksPaymentError as exc:

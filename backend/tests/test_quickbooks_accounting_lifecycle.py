@@ -8,6 +8,7 @@ from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice, InvoiceStatus
 from app.db.models.payment import Payment, PaymentMethod, PaymentStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection
+from app.db.models.tenant import Tenant
 from app.services import quickbooks_accounting_service as accounting
 
 
@@ -33,7 +34,7 @@ def _customer(tenant_id) -> Customer:
 
 
 def _invoice(tenant_id) -> Invoice:
-    return Invoice(
+    invoice = Invoice(
         id=uuid4(),
         tenant_id=tenant_id,
         repair_order_id=uuid4(),
@@ -46,6 +47,8 @@ def _invoice(tenant_id) -> Invoice:
         discount_amount=Decimal("0.00"),
         created_at=datetime.now(timezone.utc),
     )
+    invoice.tenant = Tenant(id=tenant_id, name="Acme Diesel Repair")
+    return invoice
 
 
 @pytest.mark.asyncio
@@ -74,6 +77,11 @@ async def test_invoice_and_payment_sync_are_idempotent_and_linked(monkeypatch):
     monkeypatch.setattr(accounting, "_request", fake_request)
 
     assert await accounting.sync_invoice(connection, invoice, customer) == "501"
+    invoice_body = next(kwargs["json"] for _method, resource, kwargs in calls if resource == "invoice")
+    expected_memo = "Acme Diesel Repair invoice INV-QBO-1001"
+    assert invoice_body["PrivateNote"] == expected_memo
+    assert invoice_body["CustomerMemo"] == {"value": expected_memo}
+    assert invoice_body["Line"][0]["Description"] == expected_memo
     payment = Payment(
         id=uuid4(),
         tenant_id=connection.tenant_id,
@@ -88,6 +96,10 @@ async def test_invoice_and_payment_sync_are_idempotent_and_linked(monkeypatch):
 
     payment_body = next(kwargs["json"] for _method, resource, kwargs in calls if resource == "payment")
     assert payment_body["Line"][0]["LinkedTxn"] == [{"TxnId": "501", "TxnType": "Invoice"}]
+    assert payment_body["PrivateNote"] == (
+        "Acme Diesel Repair invoice INV-QBO-1001 payment PAY-QBO-1001; "
+        "Intuit charge charge-123"
+    )
     assert payment.quickbooks_reconciled_at is not None
 
     # Stored provider IDs make worker/webhook retries local no-ops.
