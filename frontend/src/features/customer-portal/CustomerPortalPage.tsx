@@ -1407,86 +1407,14 @@ export default function CustomerPortalPage() {
 
   useEffect(() => {
     const root = document.documentElement
-    const body = document.body
-    const appRoot = document.getElementById('root')
-    const visualViewport = window.visualViewport
     const previousScrollY = window.scrollY
-    const previousRootOverflow = root.style.overflow
-    const previousRootOverscroll = root.style.overscrollBehavior
-    const previousRootHeight = root.style.height
-    const previousViewportHeight = root.style.getPropertyValue('--portal-viewport-height')
-    const previousBodyOverflow = body.style.overflow
-    const previousBodyOverscroll = body.style.overscrollBehavior
-    const previousBodyPosition = body.style.position
-    const previousBodyTop = body.style.top
-    const previousBodyLeft = body.style.left
-    const previousBodyRight = body.style.right
-    const previousBodyWidth = body.style.width
-    const previousBodyHeight = body.style.height
-    const previousAppRootHeight = appRoot?.style.height
-    const previousAppRootOverflow = appRoot?.style.overflow
-    let viewportFrame: number | null = null
 
-    const syncViewportHeight = () => {
-      viewportFrame = null
-      const viewportHeight = Math.round(visualViewport?.height || window.innerHeight)
-      root.style.setProperty('--portal-viewport-height', `${viewportHeight}px`)
-      root.style.height = `${viewportHeight}px`
-      body.style.height = `${viewportHeight}px`
-      if (appRoot) appRoot.style.height = `${viewportHeight}px`
-    }
-    const scheduleViewportSync = () => {
-      if (viewportFrame !== null) return
-      viewportFrame = window.requestAnimationFrame(syncViewportHeight)
-    }
-
-    // `overflow: hidden` alone does not stop root scrolling on iOS WebKit.
-    // Fix the document in place and size every shell layer from visualViewport,
-    // which follows Chrome's moving address and toolbar chrome.
+    // Keep the document stationary; the portal's middle grid row owns scroll.
     window.scrollTo(0, 0)
-    root.style.overflow = 'hidden'
-    root.style.overscrollBehavior = 'none'
-    body.style.position = 'fixed'
-    body.style.top = '0'
-    body.style.left = '0'
-    body.style.right = '0'
-    body.style.width = '100%'
-    body.style.overflow = 'hidden'
-    body.style.overscrollBehavior = 'none'
-    if (appRoot) appRoot.style.overflow = 'hidden'
-    syncViewportHeight()
-
-    visualViewport?.addEventListener('resize', scheduleViewportSync)
-    visualViewport?.addEventListener('scroll', scheduleViewportSync)
-    window.addEventListener('resize', scheduleViewportSync)
-    window.addEventListener('orientationchange', scheduleViewportSync)
+    root.classList.add('customer-portal-active')
 
     return () => {
-      if (viewportFrame !== null) window.cancelAnimationFrame(viewportFrame)
-      visualViewport?.removeEventListener('resize', scheduleViewportSync)
-      visualViewport?.removeEventListener('scroll', scheduleViewportSync)
-      window.removeEventListener('resize', scheduleViewportSync)
-      window.removeEventListener('orientationchange', scheduleViewportSync)
-      root.style.overflow = previousRootOverflow
-      root.style.overscrollBehavior = previousRootOverscroll
-      root.style.height = previousRootHeight
-      if (previousViewportHeight) {
-        root.style.setProperty('--portal-viewport-height', previousViewportHeight)
-      } else {
-        root.style.removeProperty('--portal-viewport-height')
-      }
-      body.style.position = previousBodyPosition
-      body.style.top = previousBodyTop
-      body.style.left = previousBodyLeft
-      body.style.right = previousBodyRight
-      body.style.width = previousBodyWidth
-      body.style.height = previousBodyHeight
-      body.style.overflow = previousBodyOverflow
-      body.style.overscrollBehavior = previousBodyOverscroll
-      if (appRoot) {
-        appRoot.style.height = previousAppRootHeight || ''
-        appRoot.style.overflow = previousAppRootOverflow || ''
-      }
+      root.classList.remove('customer-portal-active')
       window.scrollTo(0, previousScrollY)
     }
   }, [])
@@ -1518,11 +1446,11 @@ export default function CustomerPortalPage() {
   const portalBrandName = tenantBranding?.name || 'Diesel Bridge Network'
 
   return (
-    <div
-      className="fixed inset-x-0 top-0 flex min-h-0 flex-col overflow-hidden bg-[#0f172a]"
-      style={{ height: 'var(--portal-viewport-height, 100dvh)' }}
-    >
-      <nav className="relative z-50 shrink-0 bg-white/90 backdrop-blur shadow-sm">
+    <div className="fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0f172a]">
+      <nav
+        className="relative z-50 shrink-0 bg-white/90 backdrop-blur shadow-sm"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
@@ -1590,7 +1518,11 @@ export default function CustomerPortalPage() {
       <main
         ref={portalScrollRef}
         className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-x-hidden overflow-y-auto overscroll-none px-4 py-4 pb-4 sm:py-6 md:pb-6"
-        style={{ WebkitOverflowScrolling: 'touch' }}
+        style={{
+          WebkitOverflowScrolling: 'touch',
+          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1rem, env(safe-area-inset-right))',
+        }}
       >
         {/* Real-time notification banners */}
         <NotificationBanner
@@ -1632,7 +1564,11 @@ export default function CustomerPortalPage() {
       <div className="relative z-50 shrink-0 md:hidden">
         <div
           className="flex justify-around border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur"
-          style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+          style={{
+            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+            paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
+            paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
+          }}
         >
           <Link
             to="/portal"
