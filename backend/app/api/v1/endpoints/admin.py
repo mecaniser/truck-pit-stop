@@ -37,9 +37,20 @@ from app.services.quickbooks_service import (
 from app.core.logging import get_logger
 
 router = APIRouter()
-twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 SMS_PROVISION_COOLDOWN_SECONDS = 15
 logger = get_logger(__name__)
+
+
+def _get_twilio_client() -> Client:
+    """Build a Twilio client only for an admin action that needs it."""
+    account_sid = settings.TWILIO_ACCOUNT_SID.strip()
+    auth_token = settings.TWILIO_AUTH_TOKEN.strip()
+    if not account_sid or not auth_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Twilio account credentials are not configured",
+        )
+    return Client(account_sid, auth_token)
 
 
 class ProvisionSMSNumberRequest(BaseModel):
@@ -401,11 +412,7 @@ async def provision_tenant_sms_number(
             detail="Tenant already has a provisioned SMS number",
         )
 
-    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Twilio account credentials are not configured",
-        )
+    twilio_client = _get_twilio_client()
 
     cooldown_key = f"sms_provision_cooldown:{tenant_id}"
     try:
@@ -501,11 +508,7 @@ async def attach_existing_sms_number(
             detail="Tenant already has an SMS number. Set replace_existing=true to replace it.",
         )
 
-    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Twilio account credentials are not configured",
-        )
+    twilio_client = _get_twilio_client()
 
     try:
         twilio_number = twilio_client.incoming_phone_numbers(phone_sid).fetch()
