@@ -165,7 +165,7 @@ export default function MechanicsBoardPage() {
       setStopReason('')
       queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
       queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
     },
     onError: (error: any) => toast.error(error?.response?.data?.detail || 'Failed to stop misc timer'),
   })

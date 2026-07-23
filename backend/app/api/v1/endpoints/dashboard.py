@@ -151,6 +151,236 @@ class DashboardStats(BaseModel):
     orders_ready_to_close: List[RecentOrder] = []
 
 
+class DashboardActionQueue(BaseModel):
+    orders_needing_action: List[RecentOrder] = []
+    orders_on_floor: List[RecentOrder] = []
+    orders_ready_to_close: List[RecentOrder] = []
+
+
+class MechanicOption(BaseModel):
+    mechanic_id: str
+    mechanic_name: str
+
+
+def _dashboard_order(
+    order: RepairOrder,
+    customer: Customer,
+    vehicle: Vehicle,
+    fleet_company_name: Optional[str],
+    mechanic: Optional[User] = None,
+    *,
+    pending_zelle_confirmation: bool = False,
+    quote_sent: Optional[bool] = None,
+) -> RecentOrder:
+    mechanic_name = None
+    if mechanic and mechanic.first_name:
+        mechanic_name = f"{mechanic.first_name} {mechanic.last_name}".strip()
+    return RecentOrder(
+        id=str(order.id),
+        order_number=order.order_number,
+        status=order.status.value if hasattr(order.status, "value") else order.status,
+        pending_zelle_confirmation=pending_zelle_confirmation,
+        description=order.description,
+        customer_name=fleet_display_name(customer, fleet_company_name),
+        vehicle_info=vehicle_display_label(vehicle.year, vehicle.make, vehicle.model, vehicle.unit_number),
+        total_cost=str(get_effective_total(order)),
+        created_at=order.created_at,
+        updated_at=order.updated_at,
+        mechanic_name=mechanic_name,
+        work_started_at=order.work_started_at,
+        hold_reason=order.hold_reason,
+        held_at=order.held_at,
+        quote_sent=quote_sent,
+    )
+
+
+async def _load_dashboard_action_queue(
+    db: AsyncSession,
+    tenant_id: UUID,
+    fleet_company_name: Optional[str],
+) -> DashboardActionQueue:
+    """Load only the repair-order lanes used by the operational dashboard."""
+    mechanic = aliased(User)
+    new_order_float_cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+    needs_action_priority = case(
+        (
+            and_(
+                RepairOrder.status == RepairOrderStatus.DRAFT,
+                RepairOrder.created_at >= new_order_float_cutoff,
+            ),
+            0,
+        ),
+        (RepairOrder.status == RepairOrderStatus.PENDING_REVIEW, 1),
+        (RepairOrder.status == RepairOrderStatus.QUOTED, 2),
+        (RepairOrder.status == RepairOrderStatus.DRAFT, 3),
+        (RepairOrder.status == RepairOrderStatus.DECLINED, 4),
+        else_=5,
+    )
+    quote_sent = (
+        select(Quote.sent_to_customer)
+        .where(Quote.repair_order_id == RepairOrder.id)
+        .order_by(Quote.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    needs_action_result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, mechanic, quote_sent.label("quote_sent"))
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.in_([
+                RepairOrderStatus.DRAFT,
+                RepairOrderStatus.QUOTED,
+                RepairOrderStatus.DECLINED,
+                RepairOrderStatus.PENDING_REVIEW,
+            ]),
+        )
+        .order_by(
+            needs_action_priority.asc(),
+            RepairOrder.created_at.desc(),
+            RepairOrder.updated_at.desc(),
+        )
+    )
+    standard_needs_action = [
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, quote_sent=sent)
+        for order, customer, vehicle, assigned_mechanic, sent in needs_action_result.all()
+    ]
+
+    pending_zelle_result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, mechanic)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            Invoice.tenant_id == tenant_id,
+            Invoice.zelle_pending_submitted_at.is_not(None),
+            Invoice.status.not_in([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+        )
+        .order_by(Invoice.zelle_pending_submitted_at.desc())
+    )
+    pending_zelle_orders = [
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, pending_zelle_confirmation=True)
+        for order, customer, vehicle, assigned_mechanic in pending_zelle_result.all()
+    ]
+    pending_zelle_order_ids = {order.id for order in pending_zelle_orders}
+
+    on_floor_result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, mechanic)
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.in_([
+                RepairOrderStatus.APPROVED,
+                RepairOrderStatus.ASSIGNED,
+                RepairOrderStatus.ACKNOWLEDGED,
+                RepairOrderStatus.IN_PROGRESS,
+            ]),
+        )
+        .order_by(RepairOrder.updated_at.desc())
+    )
+    orders_on_floor = [
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic)
+        for order, customer, vehicle, assigned_mechanic in on_floor_result.all()
+    ]
+
+    pending_zelle = (
+        select(Invoice.id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.repair_order_id == RepairOrder.id,
+            Invoice.zelle_pending_submitted_at.is_not(None),
+            Invoice.status.not_in([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+        )
+        .exists()
+    )
+    ready_priority = case(
+        (RepairOrder.status == RepairOrderStatus.COMPLETED, 0),
+        (RepairOrder.status == RepairOrderStatus.INVOICED, 1),
+        else_=2,
+    )
+    ready_result = await db.execute(
+        select(RepairOrder, Customer, Vehicle, mechanic, pending_zelle.label("pending_zelle"))
+        .join(Customer, RepairOrder.customer_id == Customer.id)
+        .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
+        .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .where(
+            RepairOrder.tenant_id == tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.in_([RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED]),
+            or_(
+                RepairOrder.source.is_(None),
+                RepairOrder.source != "easy_truck_shop_import",
+                RepairOrder.status != RepairOrderStatus.COMPLETED,
+                RepairOrder.total_cost > 0,
+            ),
+        )
+        .order_by(ready_priority.asc(), RepairOrder.updated_at.desc())
+    )
+    orders_ready_to_close = [
+        _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic)
+        for order, customer, vehicle, assigned_mechanic, is_pending_zelle in ready_result.all()
+        if not is_pending_zelle
+    ]
+
+    return DashboardActionQueue(
+        orders_needing_action=pending_zelle_orders + [
+            order for order in standard_needs_action if order.id not in pending_zelle_order_ids
+        ],
+        orders_on_floor=orders_on_floor,
+        orders_ready_to_close=orders_ready_to_close,
+    )
+
+
+@router.get("/action-queue", response_model=DashboardActionQueue)
+async def get_dashboard_action_queue(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    if not current_user.tenant_id:
+        return DashboardActionQueue()
+
+    fleet_company_name = await db.scalar(
+        select(Tenant.fleet_company_name).where(Tenant.id == current_user.tenant_id)
+    )
+    return await _load_dashboard_action_queue(db, current_user.tenant_id, fleet_company_name)
+
+
+@router.get("/mechanics/options", response_model=List[MechanicOption])
+async def get_mechanic_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    if not current_user.tenant_id:
+        return []
+
+    result = await db.execute(
+        select(User.id, User.first_name, User.last_name)
+        .where(
+            User.tenant_id == current_user.tenant_id,
+            User.role == UserRole.MECHANIC,
+            User.is_active.is_(True),
+        )
+        .order_by(User.first_name, User.last_name)
+    )
+    return [
+        MechanicOption(
+            mechanic_id=str(mechanic_id),
+            mechanic_name=f"{first_name} {last_name}".strip(),
+        )
+        for mechanic_id, first_name, last_name in result.all()
+    ]
+
+
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),

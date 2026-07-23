@@ -77,12 +77,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pingInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const authRecoveryAttempted = useRef(false)
+  const onNotificationRef = useRef(onNotification)
   const queryClient = useQueryClient()
   const { token, isAuthenticated } = useAuthStore()
   const [isConnected, setIsConnected] = useState(false)
   
   // Track if we should reconnect (false when intentionally disconnecting)
   const shouldReconnect = useRef(true)
+
+  // Notification handlers can legitimately change as a page rerenders. Keep the
+  // current callback without making the socket lifecycle depend on its identity.
+  onNotificationRef.current = onNotification
   
   const log = useCallback((message: string, ...args: unknown[]) => {
     if (debug) {
@@ -146,17 +151,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
-          // refetchType 'all': the cockpit is unmounted whenever the user is in
-          // the RO drawer, so ['dashboard-stats'] is an *inactive* query. A default
-          // invalidate only refetches active ones — it would mark this stale and,
-          // because that query sets refetchOnMount:false, serve the stale cache on
-          // the way back (still listing an order that was just deleted).
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' })
+          // The home screen is unmounted while the workspace is open. Refresh its
+          // focused action queue even while inactive so navigation back is honest.
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'], refetchType: 'all' })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
 
           // Route to notification manager
-          if (onNotification && data.order_number && data.status) {
-            onNotification({
+          if (onNotificationRef.current && data.order_number && data.status) {
+            onNotificationRef.current({
               type: 'repair_order_update',
               orderId: data.order_id,
               orderNumber: data.order_number,
@@ -171,8 +173,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quotes'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
-          if (onNotification && data.quote_number) {
-            onNotification({
+          if (onNotificationRef.current && data.quote_number) {
+            onNotificationRef.current({
               type: 'quote_created',
               orderId: data.order_id,
               quoteNumber: data.quote_number,
@@ -184,10 +186,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quotes'] })
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
-          if (onNotification && data.quote_number) {
-            onNotification({
+          if (onNotificationRef.current && data.quote_number) {
+            onNotificationRef.current({
               type: 'quote_approved',
               orderId: data.order_id,
               quoteNumber: data.quote_number,
@@ -199,8 +201,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['quotes'] })
           queryClient.invalidateQueries({ queryKey: ['quote'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          if (onNotification && data.quote_number) {
-            onNotification({
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+          if (onNotificationRef.current && data.quote_number) {
+            onNotificationRef.current({
               type: 'quote_declined',
               orderId: data.order_id,
               quoteNumber: data.quote_number,
@@ -212,9 +215,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['invoices'] })
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
-          if (onNotification && data.invoice_number) {
-            onNotification({
+          if (onNotificationRef.current && data.invoice_number) {
+            onNotificationRef.current({
               type: 'invoice_created',
               orderId: data.order_id,
               invoiceNumber: data.invoice_number,
@@ -228,10 +232,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['invoice'] })
           queryClient.invalidateQueries({ queryKey: ['payments'] })
           queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
-          if (onNotification) {
-            onNotification({
+          if (onNotificationRef.current) {
+            onNotificationRef.current({
               type: 'payment_received',
               orderId: data.order_id,
             })
@@ -252,7 +256,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           break
 
         case 'mechanic_attendance_update':
@@ -260,12 +264,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail'] })
-          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           break
 
         case 'mechanic_idle_alert':
-          if (onNotification) {
-            onNotification({
+          if (onNotificationRef.current) {
+            onNotificationRef.current({
               type: 'mechanic_idle_alert',
               mechanicId: data.mechanic_id,
               mechanicName: data.mechanic_name,
@@ -281,13 +285,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     } catch (err) {
       log('Failed to parse message:', err)
     }
-  }, [queryClient, onNotification, log])
+  }, [queryClient, log])
   
   const connect = useCallback(async () => {
     const state = useAuthStore.getState()
     if (!state.token || !state.isAuthenticated) {
       log('No token or not authenticated, skipping connection')
       return
+    }
+
+    const existingSocket = ws.current
+    if (existingSocket && (
+      existingSocket.readyState === WebSocket.OPEN
+      || existingSocket.readyState === WebSocket.CONNECTING
+    )) {
+      return
+    }
+
+    if (reconnectTimeout.current) {
+      clearTimeout(reconnectTimeout.current)
+      reconnectTimeout.current = null
     }
 
     let activeToken = state.token
@@ -300,16 +317,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       }
       activeToken = refreshedToken
     }
-    
-    // Close existing connection if any
-    if (ws.current) {
-      ws.current.close()
-    }
-    
-    // Clear any pending reconnect
-    if (reconnectTimeout.current) {
-      clearTimeout(reconnectTimeout.current)
-      reconnectTimeout.current = null
+
+    // Another caller may have opened a connection while token refresh ran.
+    if (ws.current && (
+      ws.current.readyState === WebSocket.OPEN
+      || ws.current.readyState === WebSocket.CONNECTING
+    )) {
+      return
     }
     
     // Build WebSocket URL
@@ -331,9 +345,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     log('Connecting to:', wsUrl.replace(encodeURIComponent(activeToken), '[TOKEN]'))
     
     try {
-      ws.current = new WebSocket(wsUrl)
-      
-      ws.current.onopen = () => {
+      const socket = new WebSocket(wsUrl)
+      ws.current = socket
+
+      socket.onopen = () => {
+        if (ws.current !== socket) return
         log('Connected')
         setIsConnected(true)
         authRecoveryAttempted.current = false
@@ -343,15 +359,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           clearInterval(pingInterval.current)
         }
         pingInterval.current = setInterval(() => {
-          if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send('ping')
+          if (ws.current === socket && socket.readyState === WebSocket.OPEN) {
+            socket.send('ping')
           }
         }, 30000) // Ping every 30 seconds
       }
-      
-      ws.current.onmessage = handleMessage
-      
-      ws.current.onclose = (event) => {
+
+      socket.onmessage = (event) => {
+        if (ws.current === socket) handleMessage(event)
+      }
+
+      socket.onclose = (event) => {
+        // A deliberately replaced socket must not schedule a second reconnect.
+        if (ws.current !== socket) return
+        ws.current = null
         log('Disconnected:', event.code, event.reason)
         setIsConnected(false)
         
@@ -385,7 +406,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         }
       }
       
-      ws.current.onerror = (error) => {
+      socket.onerror = (error) => {
         log('Error:', error)
       }
     } catch (err) {
@@ -395,6 +416,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   
   const reconnect = useCallback(() => {
     shouldReconnect.current = true
+    if (reconnectTimeout.current) {
+      clearTimeout(reconnectTimeout.current)
+      reconnectTimeout.current = null
+    }
+    const socket = ws.current
+    ws.current = null
+    socket?.close()
     void connect()
   }, [connect])
   
@@ -414,9 +442,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       if (pingInterval.current) {
         clearInterval(pingInterval.current)
       }
-      if (ws.current) {
-        ws.current.close()
-      }
+      const socket = ws.current
+      ws.current = null
+      socket?.close()
     }
   }, [isAuthenticated, token, connect])
   
