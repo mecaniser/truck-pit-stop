@@ -434,9 +434,9 @@ export default function MessagesInboxPage() {
       />
 
       {/* Message + send */}
-      <div className="flex gap-2">
+      <div className="flex min-w-0 gap-2">
         <input
-          className="flex-1 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors"
+          className="min-w-0 flex-1 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors"
           placeholder="Write your message…"
           value={newThreadBody}
           onChange={(e) => setNewThreadBody(e.target.value)}
@@ -466,7 +466,7 @@ export default function MessagesInboxPage() {
   )
 
   const threadListPanel = (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex min-w-0 flex-col flex-1 min-h-0">
       {/* Mobile header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 lg:hidden">
         <div className="flex items-center gap-2">
@@ -631,7 +631,7 @@ export default function MessagesInboxPage() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1">
+          <div className="min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 space-y-1">
             {messagesHasMore && (
               <div className="flex justify-center mb-2">
                 <button
@@ -666,14 +666,14 @@ export default function MessagesInboxPage() {
                       </span>
                     </div>
                   )}
-                  <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'} mb-0.5`}>
+                  <div className={`flex w-full min-w-0 ${isOutbound ? 'justify-end' : 'justify-start'} mb-0.5`}>
                     <div
-                      className={`max-w-[80%] sm:max-w-[72%] rounded-2xl px-3.5 py-2 text-sm ${
+                      className={`min-w-0 max-w-[88%] overflow-hidden rounded-2xl px-3.5 py-2 text-sm sm:max-w-[72%] ${
                         isOutbound ? 'rounded-tr-sm text-white' : 'rounded-tl-sm bg-white/10 text-gray-100'
                       }`}
                       style={isOutbound ? { backgroundColor: accentColors[600] } : undefined}
                     >
-                      <p className="leading-relaxed break-words">{message.body}</p>
+                      <p className="whitespace-pre-wrap leading-relaxed [overflow-wrap:anywhere]">{message.body}</p>
                       {isOutbound && (
                         <div className="flex items-center justify-end gap-1 mt-1 opacity-70">
                           <DeliveryIcon status={message.delivery_status} />
@@ -695,11 +695,11 @@ export default function MessagesInboxPage() {
                 This thread is archived. Sending a reply will not unarchive it.
               </p>
             )}
-            <div className="flex items-end gap-2">
+            <div className="flex min-w-0 items-end gap-2">
               <textarea
                 ref={replyRef}
                 rows={1}
-                className="flex-1 resize-none rounded-xl bg-white/10 border border-white/20 px-3.5 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors"
+                className="min-w-0 flex-1 resize-none rounded-xl bg-white/10 border border-white/20 px-3.5 py-2.5 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-white/40 transition-colors"
                 placeholder="Type a reply… (Enter to send)"
                 value={replyBody}
                 onChange={(e) => {
@@ -727,7 +727,7 @@ export default function MessagesInboxPage() {
   )
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
+    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden" style={{ minHeight: 0 }}>
 
       {/* Desktop header — hidden on mobile (mobile header is inside threadListPanel) */}
       <div className="hidden lg:flex items-center justify-between mb-4">
@@ -754,11 +754,11 @@ export default function MessagesInboxPage() {
 
       {/* Main panel */}
       <div
-        className="flex flex-1 rounded-xl border border-white/10 overflow-hidden"
+        className="flex w-full min-w-0 flex-1 rounded-xl border border-white/10 overflow-hidden"
         style={{ minHeight: 0, height: 'calc(100vh - 13rem)' }}
       >
         {/* Mobile: single panel navigation */}
-        <div className="flex flex-col flex-1 min-h-0 lg:hidden">
+        <div className="flex w-full min-w-0 flex-col flex-1 min-h-0 lg:hidden">
           {mobileShowConversation ? conversationPanel : threadListPanel}
         </div>
 
