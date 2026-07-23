@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
+import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -2061,6 +2061,34 @@ export default function RepairOrdersPage() {
     resetModal()
   }
 
+  const returnToCustomerSearch = () => {
+    setSelectedCustomerId('')
+    setSelectedCustomerOption(null)
+    setSelectedVehicleId('')
+    setSelectedVehicleOption(null)
+    setShowNewVehicleForm(false)
+    setNewCustomer({ first_name: '', last_name: '', company_name: '', email: '', phone: '' })
+    setNewVehicle({ make: '', model: '', year: '', vin: '', unit_number: '', mileage: '' })
+    setVehicleQuery('')
+    setFormErrors((current) => {
+      const next = { ...current }
+      const customerDraftFields = [
+        'customer',
+        'customerFirstName',
+        'customerLastName',
+        'customerEmail',
+        'vehicle',
+        'vehicleMake',
+        'vehicleModel',
+        'vehicleVin',
+        'root',
+      ] as const
+      customerDraftFields.forEach((field) => delete next[field])
+      return next
+    })
+    lastDecodedNewVehicleVin.current = ''
+  }
+
   const validateRepairOrderForm = () => {
     const errors: RepairOrderFormErrors = {}
     const isNewCustomer = selectedCustomerId === 'add_new'
@@ -2597,8 +2625,19 @@ export default function RepairOrdersPage() {
               <form onSubmit={handleSubmit} className="p-6 space-y-6">
                 {/* Customer + Vehicle */}
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Customer & Vehicle</h3>
+                    {selectedCustomerId === 'add_new' && (
+                      <button
+                        type="button"
+                        onClick={returnToCustomerSearch}
+                        className="inline-flex min-h-10 shrink-0 items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-amber-700 transition-colors hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        aria-label="Back to customer search"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Back to search
+                      </button>
+                    )}
                   </div>
                   {formErrors.root ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">

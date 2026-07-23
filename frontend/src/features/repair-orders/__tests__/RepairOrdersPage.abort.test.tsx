@@ -117,6 +117,33 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(screen.queryByText('2022 · ELIS-204')).not.toBeInTheDocument()
   })
 
+  it('returns from the new-customer form to customer search without closing the repair-order modal', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') {
+        return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      }
+      if (url === '/customers/typeahead') return Promise.resolve({ data: [] })
+      if (url === '/services/typeahead') return Promise.resolve({ data: [] })
+      if (url === '/dashboard/stats') return Promise.resolve({ data: { mechanic_workload: [] } })
+      return Promise.resolve({ data: { labor_rate: 100 } })
+    })
+
+    renderPage(['/?new=true'])
+
+    await screen.findByRole('heading', { name: 'New Repair Order' })
+    fireEvent.click(await screen.findByRole('button', { name: /choose a customer/i }))
+    fireEvent.mouseDown(await screen.findByRole('option', { name: /add new customer/i }))
+
+    const backButton = await screen.findByRole('button', { name: 'Back to customer search' })
+    expect(screen.getByPlaceholderText('Acme')).toBeInTheDocument()
+
+    fireEvent.click(backButton)
+
+    expect(screen.getByRole('heading', { name: 'New Repair Order' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /choose a customer/i })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Acme')).not.toBeInTheDocument()
+  })
+
   it('records normal and stock-override part additions in repair-order history', () => {
     const basePart: PartsUsage = {
       id: 'usage-1',
