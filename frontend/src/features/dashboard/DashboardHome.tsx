@@ -953,12 +953,13 @@ export default function DashboardHome() {
               <button
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
-                className="flex items-center gap-2 px-2.5 py-1 text-xs 2xl:text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                className="flex items-center justify-center gap-1 rounded-md bg-white/5 px-1.5 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-white sm:gap-2 sm:px-2.5 2xl:text-sm"
                 title="Refresh dashboard"
+                aria-label={isRefreshing ? 'Refreshing dashboard' : `Refresh dashboard, updated ${formatLastUpdated() || 'recently'}`}
               >
                 <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span>{formatLastUpdated() || 'Refresh'}</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="hidden sm:inline">{formatLastUpdated() || 'Refresh'}</span>
+                <span className={`h-1.5 w-1.5 rounded-full ${error ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
               </button>
             </div>
           </div>
