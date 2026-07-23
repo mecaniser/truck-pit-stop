@@ -99,7 +99,7 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess 
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
       <button type="submit" disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:bg-gray-600">
         <CreditCard className="h-5 w-5" />
-        {isProcessing ? 'Processing...' : 'Pay with QuickBooks'}
+        {isProcessing ? 'Processing...' : 'Submit secure payment'}
       </button>
     </form>
   )

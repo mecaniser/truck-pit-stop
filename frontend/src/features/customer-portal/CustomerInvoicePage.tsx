@@ -465,14 +465,14 @@ export default function CustomerInvoicePage() {
             )}
             {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
               <div className="border-t border-gray-700 pt-5">
-                <p className="mb-2 text-xs uppercase tracking-wide text-gray-400">Pay with your shop's QuickBooks account</p>
+                <p className="mb-2 text-xs uppercase tracking-wide text-gray-400">Secure card payment · Powered by QuickBooks</p>
                 {!showQuickBooksPayment ? (
                   <button
                     type="button"
                     onClick={() => setShowQuickBooksPayment(true)}
                     className="w-full rounded-lg border border-emerald-500/60 py-3 font-semibold text-emerald-300 hover:bg-emerald-500/10"
                   >
-                    Pay with QuickBooks
+                    Pay securely by card
                   </button>
                 ) : (
                   <QuickBooksPaymentPanel
