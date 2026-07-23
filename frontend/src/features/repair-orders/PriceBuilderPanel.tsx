@@ -960,7 +960,9 @@ export default function PriceBuilderPanel({
   const [openLineIds, setOpenLineIds] = useState<Set<string>>(new Set())
   const [discountsOpen, setDiscountsOpen] = useState(false)
   const [footerDetailsOpen, setFooterDetailsOpen] = useState<'parts' | 'labor' | 'discounts' | 'savings' | null>(null)
-  const [expandedInvoiceAction, setExpandedInvoiceAction] = useState<'resend' | 'void'>('resend')
+  const [expandedInvoiceAction, setExpandedInvoiceAction] = useState<'payment' | 'resend' | 'void'>(
+    orderStatus === 'paid' ? 'resend' : 'payment',
+  )
   const [totalJustChanged, setTotalJustChanged] = useState(false)
   const [totalMotionActive, setTotalMotionActive] = useState(false)
   const previousTotalRef = useRef<string | null>(null)
@@ -996,12 +998,11 @@ export default function PriceBuilderPanel({
     setLineWarnings({})
     setPartQuantityOverrides({})
     setPartQuantitySavingKey(null)
-    setExpandedInvoiceAction('resend')
   }, [orderId])
 
   useEffect(() => {
-    if (orderStatus === 'paid') setExpandedInvoiceAction('resend')
-  }, [orderStatus])
+    setExpandedInvoiceAction(orderStatus === 'paid' ? 'resend' : 'payment')
+  }, [orderId, orderStatus])
 
   useEffect(() => {
     const targetedWarnings = initialLineWarnings.filter((warning) => warning.line_id)
@@ -3925,7 +3926,7 @@ export default function PriceBuilderPanel({
       </div>
       </div>
 
-      <div className="z-10 border-t border-gray-200 bg-white/95 px-5 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur">
+      <div className="z-10 border-t border-gray-200 bg-white/95 px-3 py-4 shadow-[0_-10px_30px_rgba(20,25,35,.08)] backdrop-blur sm:px-5">
         <div ref={footerDetailsRef} className="relative mb-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -4074,8 +4075,11 @@ export default function PriceBuilderPanel({
           )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="ml-auto flex items-center gap-3">
-            <div className="text-right">
+          <div className={hasInvoice
+            ? 'flex w-full min-w-0 items-end justify-between gap-2'
+            : 'ml-auto flex items-center gap-3'
+          }>
+            <div className={hasInvoice ? 'shrink-0 text-left' : 'text-right'}>
               <div className="flex items-center justify-end gap-2">
                 <p className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.18em] ${
                   summaryLoadFailed ? 'text-red-600' : totalMotionActive || isInitialSummaryLoad ? 'text-orange-700' : 'text-gray-400'
@@ -4094,7 +4098,7 @@ export default function PriceBuilderPanel({
                 </p>
               </div>
               <p
-                className={`price-total-amount font-['Barlow_Condensed',sans-serif] text-[34px] font-extrabold leading-none text-gray-950 ${
+                className={`price-total-amount font-['Barlow_Condensed',sans-serif] text-[30px] font-extrabold leading-none text-gray-950 sm:text-[34px] ${
                   totalJustChanged ? 'price-total-amount--changed' : totalMotionActive ? 'price-total-amount--updating' : ''
                 }`}
               >
@@ -4168,71 +4172,90 @@ export default function PriceBuilderPanel({
                   )}
                 </div>
               ) : hasInvoice && invoice ? (
-                <div className="flex flex-col items-end gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                <div className="flex min-w-0 items-center justify-end gap-1.5 sm:flex-wrap sm:gap-2">
                   {orderStatus !== 'paid' && (
-                    <button
-                      type="button"
-                      onClick={onRecordPayment}
-                      disabled={invoiceActionPending || !onRecordPayment}
-                      className="inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-green-600 px-4 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] hover:bg-green-700 disabled:bg-gray-300"
-                    >
-                      <CreditCard className="h-4 w-4" />
-                      {invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
-                    </button>
-                  )}
-                  <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => {
                         const compact = typeof window.matchMedia === 'function'
                           && window.matchMedia('(max-width: 639px)').matches
-                        if (compact && expandedInvoiceAction !== 'resend') {
-                          setExpandedInvoiceAction('resend')
+                        if (compact && expandedInvoiceAction !== 'payment') {
+                          setExpandedInvoiceAction('payment')
                           return
                         }
-                        onResendInvoice?.()
+                        onRecordPayment?.()
                       }}
-                      disabled={invoiceActionPending || !onResendInvoice}
-                      className={`inline-flex h-11 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl bg-purple-600 text-sm font-extrabold text-white shadow-[0_6px_16px_rgba(147,51,234,.24)] transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-purple-700 disabled:bg-gray-300 sm:w-auto sm:gap-2 sm:px-4 ${
-                        expandedInvoiceAction === 'resend' ? 'w-[140px] gap-2 px-4' : 'w-11 gap-0 px-0'
+                      disabled={invoiceActionPending || !onRecordPayment}
+                      className={`inline-flex h-10 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl bg-green-600 text-xs font-extrabold text-white shadow-[0_6px_16px_rgba(22,163,74,.28)] transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-green-700 disabled:bg-gray-300 sm:h-11 sm:w-auto sm:gap-2 sm:px-4 sm:text-sm ${
+                        expandedInvoiceAction === 'payment'
+                          ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
+                          : 'w-10 gap-0 px-0'
                       }`}
-                      aria-label={orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                      aria-label={invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                     >
-                      <Mail className="h-4 w-4 shrink-0" />
-                      <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
-                        expandedInvoiceAction === 'resend' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
+                      <CreditCard className="h-4 w-4 shrink-0" />
+                      <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-40 sm:opacity-100 ${
+                        expandedInvoiceAction === 'payment' ? 'max-w-40 opacity-100' : 'max-w-0 opacity-0'
                       }`}>
-                        {orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                        {invoice.pending_zelle_confirmation ? 'Confirm Zelle payment' : 'Record payment'}
                       </span>
                     </button>
-                    {orderStatus !== 'paid' && !invoice.pending_zelle_confirmation && onVoidInvoice && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const compact = typeof window.matchMedia === 'function'
-                            && window.matchMedia('(max-width: 639px)').matches
-                          if (compact && expandedInvoiceAction !== 'void') {
-                            setExpandedInvoiceAction('void')
-                            return
-                          }
-                          onVoidInvoice()
-                        }}
-                        disabled={invoiceActionPending}
-                        className={`inline-flex h-11 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-700 transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-gray-50 disabled:opacity-50 sm:w-auto sm:gap-2 sm:px-4 ${
-                          expandedInvoiceAction === 'void' ? 'w-[138px] gap-2 px-4' : 'w-11 gap-0 px-0'
-                        }`}
-                        title="Preserve this invoice as voided and reopen the order for revision"
-                        aria-label="Void & revise"
-                      >
-                        <RotateCcw className="h-4 w-4 shrink-0" />
-                        <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
-                          expandedInvoiceAction === 'void' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
-                        }`}>
-                          Void &amp; revise
-                        </span>
-                      </button>
-                    )}
-                  </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const compact = typeof window.matchMedia === 'function'
+                        && window.matchMedia('(max-width: 639px)').matches
+                      if (compact && expandedInvoiceAction !== 'resend') {
+                        setExpandedInvoiceAction('resend')
+                        return
+                      }
+                      onResendInvoice?.()
+                    }}
+                    disabled={invoiceActionPending || !onResendInvoice}
+                    className={`inline-flex h-10 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl bg-purple-600 text-xs font-extrabold text-white shadow-[0_6px_16px_rgba(147,51,234,.24)] transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-purple-700 disabled:bg-gray-300 sm:h-11 sm:w-auto sm:gap-2 sm:px-4 sm:text-sm ${
+                      expandedInvoiceAction === 'resend'
+                        ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
+                        : 'w-10 gap-0 px-0'
+                    }`}
+                    aria-label={orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                  >
+                    <Mail className="h-4 w-4 shrink-0" />
+                    <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
+                      expandedInvoiceAction === 'resend' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
+                    }`}>
+                      {orderStatus === 'paid' ? 'Resend copy' : 'Resend invoice'}
+                    </span>
+                  </button>
+                  {orderStatus !== 'paid' && !invoice.pending_zelle_confirmation && onVoidInvoice && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const compact = typeof window.matchMedia === 'function'
+                          && window.matchMedia('(max-width: 639px)').matches
+                        if (compact && expandedInvoiceAction !== 'void') {
+                          setExpandedInvoiceAction('void')
+                          return
+                        }
+                        onVoidInvoice()
+                      }}
+                      disabled={invoiceActionPending}
+                      className={`inline-flex h-10 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-xl border border-gray-300 bg-white text-xs font-semibold text-gray-700 transition-[width,padding,gap,background-color] duration-200 ease-out hover:bg-gray-50 disabled:opacity-50 sm:h-11 sm:w-auto sm:gap-2 sm:px-4 sm:text-sm ${
+                        expandedInvoiceAction === 'void'
+                          ? 'w-[136px] gap-1.5 px-3 max-[360px]:w-[116px] max-[360px]:px-2 max-[360px]:text-[11px]'
+                          : 'w-10 gap-0 px-0'
+                      }`}
+                      title="Preserve this invoice as voided and reopen the order for revision"
+                      aria-label="Void & revise"
+                    >
+                      <RotateCcw className="h-4 w-4 shrink-0" />
+                      <span className={`overflow-hidden transition-[max-width,opacity] duration-150 sm:max-w-32 sm:opacity-100 ${
+                        expandedInvoiceAction === 'void' ? 'max-w-32 opacity-100' : 'max-w-0 opacity-0'
+                      }`}>
+                        Void &amp; revise
+                      </span>
+                    </button>
+                  )}
                 </div>
               ) : completionMode ? (
                 <button
