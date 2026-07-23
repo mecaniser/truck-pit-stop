@@ -463,6 +463,17 @@ export default function CustomerInvoicePage() {
                 Online card payment is currently unavailable for this shop.
               </p>
             )}
+            {!invoice.pending_zelle_confirmation && isQuickBooksPaymentLoading && (
+              <div
+                role="status"
+                aria-label="Checking QuickBooks payment availability"
+                className="animate-pulse border-t border-gray-700 pt-5"
+              >
+                <div className="mb-2 h-3 w-52 rounded bg-gray-700/70" />
+                <div className="h-12 w-full rounded-lg border border-gray-700 bg-gray-800/70" />
+                <span className="sr-only">Checking QuickBooks payment availability…</span>
+              </div>
+            )}
             {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
               <div className="border-t border-gray-700 pt-5">
                 <p className="mb-2 text-xs uppercase tracking-wide text-gray-400">Secure card payment · Powered by QuickBooks</p>
