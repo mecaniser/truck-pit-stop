@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, useRef } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
@@ -64,6 +64,32 @@ export default function SlidePanel({
   nextDisabled,
   navigationLabel,
 }: SlidePanelProps) {
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1) return
+    const target = event.target as HTMLElement
+    if (target.closest('input, textarea, select, button, [contenteditable="true"]')) {
+      touchStart.current = null
+      return
+    }
+    touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }
+  }
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current
+    touchStart.current = null
+    if (!start || event.changedTouches.length !== 1) return
+
+    const deltaX = event.changedTouches[0].clientX - start.x
+    const deltaY = event.changedTouches[0].clientY - start.y
+    const isHorizontalSwipe = Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2
+    if (!isHorizontalSwipe) return
+
+    if (deltaX < 0 && onNext && !nextDisabled) onNext()
+    if (deltaX > 0 && onPrev && !prevDisabled) onPrev()
+  }
+
   if (!isOpen) return null
 
   const isMinimal = headerVariant === 'minimal'
@@ -81,7 +107,9 @@ export default function SlidePanel({
 
         {/* Panel */}
         <div
-          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50`}
+          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y`}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
           {/* Header */}
           {!hideHeader && <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
@@ -171,7 +199,9 @@ export default function SlidePanel({
 
       {/* Panel */}
       <div
-        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right`}
+        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       >
         {/* Header */}
         {!hideHeader && (isMinimal ? (

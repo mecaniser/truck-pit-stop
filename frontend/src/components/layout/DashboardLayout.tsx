@@ -1,7 +1,8 @@
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, Truck, CreditCard } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, X } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -26,6 +27,7 @@ import useTenantBranding from '@/hooks/useTenantBranding'
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const { accentColors } = useTheme()
   // Owner/admin/receptionist/mechanic have messaging by role; other roles
   // (notably fleet managers) need the can_access_messaging grant. Either way,
@@ -56,9 +58,7 @@ export default function DashboardLayout() {
   // Get the hex color for the current accent
   const accentHex = accentColors[500]
 
-  // Garage owner/admin own the fleet, so they get a Fleet link into the board.
-  // Fleet managers never reach this dashboard (StaffRoute sends them to /fleet).
-  const canAccessFleet = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const isSuperAdmin = user?.role === 'super_admin'
 
   // Different navigation for SUPER_ADMIN (platform management) vs garage staff
   const navLinks = user?.role === 'super_admin'
@@ -73,13 +73,43 @@ export default function DashboardLayout() {
         { to: '/dashboard', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
         { to: '/dashboard/customers', label: 'Customers', mobileLabel: 'Customers', icon: Users },
         { to: '/dashboard/repair-orders', label: 'Repair Orders', mobileLabel: 'Orders', icon: ClipboardList },
-        ...(canAccessFleet ? [{ to: '/fleet', label: 'Fleet', mobileLabel: 'Fleet', icon: Truck }] : []),
         ...(canAccessMessaging ? [messagesNavLink] : []),
         { to: '/dashboard/garage', label: 'My Shop', mobileLabel: 'Shop', icon: Building2 },
       ]
 
   const isActive = (path: string, exact?: boolean) => 
     exact ? location.pathname === path : location.pathname.startsWith(path)
+
+  const preferredMobilePaths = isSuperAdmin
+    ? ['/dashboard', '/dashboard/garages', '/dashboard/pending-enrollments', '/dashboard/analytics']
+    : ['/dashboard', '/dashboard/customers', '/dashboard/repair-orders', '/dashboard/messages']
+  const preferredMobileLinks = preferredMobilePaths
+    .map(path => navLinks.find(link => link.to === path))
+    .filter((link): link is (typeof navLinks)[number] => Boolean(link))
+  const mobilePrimaryLinks = [
+    ...preferredMobileLinks,
+    ...navLinks.filter(link => !preferredMobileLinks.some(primary => primary.to === link.to)),
+  ].slice(0, 4)
+  const mobileOverflowLinks = navLinks.filter(
+    link => !mobilePrimaryLinks.some(primary => primary.to === link.to),
+  )
+  const isMobileMoreActive =
+    location.pathname === '/dashboard/settings' ||
+    mobileOverflowLinks.some(link => isActive(link.to, link.exact))
+
+  useEffect(() => {
+    setMobileMoreOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!mobileMoreOpen) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMobileMoreOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [mobileMoreOpen])
 
   const isOnSubPage = location.pathname !== '/dashboard'
   
@@ -91,7 +121,6 @@ export default function DashboardLayout() {
     return current?.label || ''
   }
 
-  const isSuperAdmin = user?.role === 'super_admin'
   const isGarageWorkspaceRoute =
     !isSuperAdmin &&
     (location.pathname === '/dashboard/garage' ||
@@ -286,18 +315,99 @@ export default function DashboardLayout() {
             )}
           </Routes>
           {/* Spacer so content clears the fixed bottom nav on mobile */}
-          <div className="h-16 md:hidden flex-shrink-0" />
+          <div
+            className="md:hidden flex-shrink-0"
+            style={{ height: 'calc(4rem + env(safe-area-inset-bottom))' }}
+          />
         </div>
       </main>
 
+      {/* Mobile overflow sheet */}
+      {mobileMoreOpen && (
+        <div className="md:hidden">
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px]"
+            aria-label="Close more navigation"
+            onClick={() => setMobileMoreOpen(false)}
+          />
+          <section
+            id="mobile-more-navigation"
+            role="dialog"
+            aria-modal="true"
+            aria-label="More navigation"
+            className={`fixed bottom-16 left-3 right-3 z-50 overflow-hidden rounded-2xl border shadow-2xl ${
+              isSuperAdmin
+                ? 'border-gold-500/20 bg-noir-900'
+                : 'border-white/10 bg-blueNoir-800'
+            }`}
+            style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+          >
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-white">More</p>
+                <p className="text-xs text-gray-400">Shop tools and account settings</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMoreOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Close more navigation"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 p-3">
+              {mobileOverflowLinks.map(link => {
+                const Icon = link.icon
+                const isLinkActive = isActive(link.to, link.exact)
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    onClick={() => setMobileMoreOpen(false)}
+                    className={`flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-center transition-colors ${
+                      isLinkActive
+                        ? isSuperAdmin
+                          ? 'border-gold-500/30 bg-gold-500/10 text-gold-400'
+                          : 'border-white/15 bg-white/10'
+                        : 'border-white/5 bg-white/[0.03] text-gray-400 hover:bg-white/[0.07] hover:text-white'
+                    }`}
+                    style={!isSuperAdmin && isLinkActive ? { color: accentHex, borderColor: `${accentHex}55` } : undefined}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="text-xs font-medium">{link.label}</span>
+                  </Link>
+                )
+              })}
+              <Link
+                to="/dashboard/settings"
+                onClick={() => setMobileMoreOpen(false)}
+                className={`flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-center transition-colors ${
+                  location.pathname === '/dashboard/settings'
+                    ? isSuperAdmin
+                      ? 'border-gold-500/30 bg-gold-500/10 text-gold-400'
+                      : 'border-white/15 bg-white/10'
+                    : 'border-white/5 bg-white/[0.03] text-gray-400 hover:bg-white/[0.07] hover:text-white'
+                }`}
+                style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex, borderColor: `${accentHex}55` } : undefined}
+              >
+                <User className="h-5 w-5" />
+                <span className="text-xs font-medium">Profile</span>
+              </Link>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* Mobile Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
-        <div className={`px-2 py-2 flex justify-around ${
+        <div className={`px-2 pt-2 flex justify-around ${
           isSuperAdmin 
             ? 'bg-noir-900/95 backdrop-blur-xl border-t border-gold-500/20' 
             : 'bg-blueNoir-800/95 backdrop-blur-xl border-t border-white/10'
-        }`}>
-          {navLinks.map((link) => {
+        }`} style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+          {mobilePrimaryLinks.map((link) => {
             const Icon = link.icon
             const isLinkActive = isActive(link.to, link.exact)
             return (
@@ -323,18 +433,21 @@ export default function DashboardLayout() {
               </Link>
             )
           })}
-          <Link
-            to="/dashboard/settings"
+          <button
+            type="button"
+            onClick={() => setMobileMoreOpen(open => !open)}
+            aria-expanded={mobileMoreOpen}
+            aria-controls="mobile-more-navigation"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname === '/dashboard/settings'
+              mobileMoreOpen || isMobileMoreActive
                 ? isSuperAdmin ? 'text-gold-400' : ''
                 : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
             }`}
-            style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
+            style={!isSuperAdmin && (mobileMoreOpen || isMobileMoreActive) ? { color: accentHex } : undefined}
           >
-            <User className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Profile</span>
-          </Link>
+            <MoreHorizontal className="w-5 h-5" />
+            <span className="text-[10px] font-medium">More</span>
+          </button>
         </div>
       </div>
 

@@ -1,17 +1,19 @@
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, Settings2, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
+import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
 import GarageAnalyticsPage from './GarageAnalyticsPage'
 import LaborBookTimePage from './LaborBookTimePage'
+import { useAuthStore } from '@/stores/authStore'
 
 type GarageSection = {
   to: string
   label: string
   shortLabel: string
   icon: LucideIcon
+  ownerOrAdminOnly?: boolean
 }
 
 const GARAGE_SECTIONS: GarageSection[] = [
@@ -19,7 +21,8 @@ const GARAGE_SECTIONS: GarageSection[] = [
   { to: 'services', label: 'Services', shortLabel: 'Services', icon: ClipboardList },
   { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
-  { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: Truck },
+  { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: PackageSearch },
+  { to: '/fleet', label: 'Fleet', shortLabel: 'Fleet', icon: Truck, ownerOrAdminOnly: true },
   { to: 'analytics', label: 'Analytics', shortLabel: 'Analytics', icon: BarChart3 },
 ]
 
@@ -30,12 +33,12 @@ const staggeredReveal = (index: number) => ({
 const sectionHeaderClass =
   'text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 border-b border-zinc-800/50 pb-2 mb-6 flex items-center gap-3'
 
-function MobileGarageNav() {
+function MobileGarageNav({ sections }: { sections: GarageSection[] }) {
   return (
     <div className="lg:hidden">
       <div className="rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-2 backdrop-blur-sm">
         <nav className="flex gap-2 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-          {GARAGE_SECTIONS.map((section, index) => (
+          {sections.map((section, index) => (
             <NavLink
               key={section.to}
               to={section.to}
@@ -70,7 +73,7 @@ function MobileGarageNav() {
   )
 }
 
-function DesktopGarageNav() {
+function DesktopGarageNav({ sections }: { sections: GarageSection[] }) {
   return (
     <div className="hidden w-64 shrink-0 self-stretch lg:flex">
       <div className="flex h-full flex-1 flex-col rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-4 backdrop-blur-sm">
@@ -80,7 +83,7 @@ function DesktopGarageNav() {
             Shop
           </h3>
           <nav className="space-y-1">
-            {GARAGE_SECTIONS.map((section, index) => (
+            {sections.map((section, index) => (
               <NavLink
                 key={section.to}
                 to={section.to}
@@ -124,14 +127,17 @@ function DesktopGarageNav() {
 
 export default function MyGaragePage() {
   const location = useLocation()
+  const { user } = useAuthStore()
+  const canAccessFleet = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const garageSections = GARAGE_SECTIONS.filter(section => !section.ownerOrAdminOnly || canAccessFleet)
   const usesInternalDesktopScroll =
     location.pathname.startsWith('/dashboard/garage/services') ||
     location.pathname.startsWith('/dashboard/garage/inventory')
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6 lg:h-[calc(100vh-9.25rem)] lg:min-h-0 lg:flex-none lg:flex-row lg:items-stretch lg:overflow-hidden">
-      <MobileGarageNav />
-      <DesktopGarageNav />
+      <MobileGarageNav sections={garageSections} />
+      <DesktopGarageNav sections={garageSections} />
 
       <div
         className={`min-h-[400px] flex-1 scrollbar-dark lg:min-h-0 ${

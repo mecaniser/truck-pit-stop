@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import {
   AlertTriangle,
@@ -371,6 +371,8 @@ export default function DashboardHome() {
   const [quickTouched, setQuickTouched] = useState(false)
   const [openStatusPanel, setOpenStatusPanel] = useState<'team' | 'revenue' | null>(null)
   const [activeMobileLane, setActiveMobileLane] = useState<0 | 1 | 2>(0)
+  const teamCapacityTouchStartY = useRef<number | null>(null)
+  const teamCapacityDidSwipe = useRef(false)
   const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
   const [activityCount, setActivityCount] = useState(0)
   const [isDesktop, setIsDesktop] = useState(() =>
@@ -382,6 +384,20 @@ export default function DashboardHome() {
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
+  const handleTeamCapacityTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    if (isDesktop || !event.touches[0]) return
+    teamCapacityTouchStartY.current = event.touches[0].clientY
+    teamCapacityDidSwipe.current = false
+  }
+  const handleTeamCapacityTouchEnd = (event: React.TouchEvent<HTMLElement>) => {
+    const startY = teamCapacityTouchStartY.current
+    teamCapacityTouchStartY.current = null
+    if (isDesktop || startY === null || !event.changedTouches[0]) return
+    const deltaY = startY - event.changedTouches[0].clientY
+    if (Math.abs(deltaY) < 24) return
+    teamCapacityDidSwipe.current = true
+    setOpenStatusPanel(deltaY > 0 ? 'team' : null)
+  }
   const [dismissedAlertKeys, setDismissedAlertKeys] = useState<Set<string>>(new Set())
   const [exitingAlertKey, setExitingAlertKey] = useState<string | null>(null)
   const nowMs = useNow()
@@ -487,16 +503,16 @@ export default function DashboardHome() {
       valueClass: 'text-emerald-300',
     },
     {
-      label: 'Queued Jobs',
-      value: teamQueuedTotal,
-      className: 'border-amber-500/15 bg-amber-500/5',
-      valueClass: 'text-amber-200',
-    },
-    {
       label: 'On Floor',
       value: teamReadyCount + teamWorkingCount,
       className: 'border-sky-500/15 bg-sky-500/5',
       valueClass: 'text-sky-200',
+    },
+    {
+      label: 'Queued Jobs',
+      value: teamQueuedTotal,
+      className: 'border-amber-500/15 bg-amber-500/5',
+      valueClass: 'text-amber-200',
     },
     {
       label: 'Offline',
@@ -512,18 +528,27 @@ export default function DashboardHome() {
   const teamCapacityGridHeightClass = isExpandedFont
     ? 'md:max-h-60 lg:max-h-40 2xl:max-h-44'
     : 'md:max-h-56 lg:max-h-36 2xl:max-h-40'
+  const needsActionCount = stats?.orders_needing_action?.length || 0
+  const onFloorCount = stats?.orders_on_floor?.length || 0
+  const readyToCloseCount = stats?.orders_ready_to_close?.length || 0
+  const highestPriorityMobileLane: 0 | 1 | 2 = needsActionCount > 0 ? 0 : onFloorCount > 0 ? 1 : 2
+  const displayedMobileLane =
+    (activeMobileLane === 0 && needsActionCount === 0) ||
+    (activeMobileLane === 1 && onFloorCount === 0)
+      ? highestPriorityMobileLane
+      : activeMobileLane
   const getLaneContainerClass = (idx: 0 | 1 | 2) =>
     `bg-white/[0.03] rounded-xl border border-white/10 overflow-hidden flex flex-col ${
       isDesktop
         ? 'min-h-0'
-        : activeMobileLane === idx
+        : displayedMobileLane === idx
           ? 'flex-1 min-h-0'
           : 'flex-none'
     }`
   const getLaneBodyClass = (idx: 0 | 1 | 2) =>
     isDesktop
       ? 'flex-1 min-h-0'
-      : activeMobileLane === idx
+      : displayedMobileLane === idx
         ? 'flex-1 min-h-0 overflow-hidden'
         : 'h-0 overflow-hidden'
   // Global alert priority — computed once per render (nowMs ticks every minute)
@@ -946,7 +971,7 @@ export default function DashboardHome() {
           ) : (
           <div className="flex flex-1 min-h-0 flex-col gap-3 p-3 2xl:gap-2.5 2xl:p-2.5 lg:grid lg:grid-cols-3">
               {/* Lane 1: Needs Action */}
-              <div className={getLaneContainerClass(0)}>
+              <div className={`${getLaneContainerClass(0)} ${needsActionCount === 0 ? 'hidden lg:flex' : ''}`}>
                 <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0 cursor-pointer lg:cursor-default" onClick={() => setActiveMobileLane(0)}>
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-red-400" />
@@ -954,7 +979,7 @@ export default function DashboardHome() {
                     <SectionInfoTooltip text="Orders blocked by approvals, missing info, or other manager actions that should be handled first." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
-                    {stats?.orders_needing_action?.length || 0}
+                    {needsActionCount}
                   </span>
                 </div>
                 <div className={getLaneBodyClass(0)}>
@@ -967,7 +992,7 @@ export default function DashboardHome() {
                           key={order.id}
                           order={order}
                           accentColor={accentColors[400]}
-                          onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                          onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}&queue=needs_action`)}
                           alert={getOrderAlert(order, nowMs)}
                           animated={animatedIds.has(order.id)}
                         />
@@ -978,7 +1003,7 @@ export default function DashboardHome() {
               </div>
 
               {/* Lane 2: On the Floor */}
-              <div className={getLaneContainerClass(1)}>
+              <div className={`${getLaneContainerClass(1)} ${onFloorCount === 0 ? 'hidden lg:flex' : ''}`}>
                 <div className="flex items-center justify-between px-3.5 py-2.5 2xl:py-2 border-b border-white/10 flex-shrink-0 cursor-pointer lg:cursor-default" onClick={() => setActiveMobileLane(1)}>
                   <div className="flex items-center gap-2">
                     <Wrench className="w-4 h-4" style={{ color: accentColors[400] }} />
@@ -986,7 +1011,7 @@ export default function DashboardHome() {
                     <SectionInfoTooltip text="Orders currently in production with technicians assigned or actively working." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
-                    {stats?.orders_on_floor?.length || 0}
+                    {onFloorCount}
                   </span>
                 </div>
                 <div className={getLaneBodyClass(1)}>
@@ -999,7 +1024,7 @@ export default function DashboardHome() {
                           key={order.id}
                           order={order}
                           accentColor={accentColors[400]}
-                          onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                          onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}&queue=on_floor`)}
                           alert={getOrderAlert(order, nowMs)}
                           animated={animatedIds.has(order.id)}
                         />
@@ -1018,7 +1043,7 @@ export default function DashboardHome() {
                     <SectionInfoTooltip text="Completed work waiting for invoice to be sent, plus invoiced orders awaiting payment." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                    {stats?.orders_ready_to_close?.length || 0}
+                    {readyToCloseCount}
                   </span>
                 </div>
                 <div className={getLaneBodyClass(2)}>
@@ -1031,7 +1056,7 @@ export default function DashboardHome() {
                           key={order.id}
                           order={order}
                           accentColor={accentColors[400]}
-                          onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}`)}
+                          onClick={() => navigate(`/dashboard/repair-orders?selected=${order.id}&queue=ready_to_close`)}
                           alert={getOrderAlert(order, nowMs)}
                           animated={animatedIds.has(order.id)}
                         />
@@ -1046,22 +1071,38 @@ export default function DashboardHome() {
         </div>
 
         {isManager && (
-          <div className="relative flex-shrink-0 bg-white/5 rounded-xl border border-white/10 flex flex-col sm:flex-row sm:items-stretch">
+          <div
+            className={`fixed bottom-16 left-2 z-30 mb-[env(safe-area-inset-bottom)] flex w-auto flex-shrink-0 flex-col border border-white/10 bg-[#171c23]/95 shadow-[0_-8px_24px_rgba(0,0,0,0.3)] transition-[max-height] duration-300 ease-out md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto md:mb-0 md:w-full md:max-h-none md:flex-row md:items-stretch md:overflow-visible md:rounded-xl md:border-b md:bg-white/5 md:shadow-none ${
+              openStatusPanel !== null
+                ? 'right-2 max-h-[calc(100vh-7rem)] overflow-visible rounded-xl border-b animate-in slide-in-from-bottom-8'
+                : 'right-2 max-h-10 overflow-hidden rounded-t-xl border-b-0'
+            }`}
+          >
             {/* Tabs: one shared strip, so it reads as a single control with two views
                 rather than two unrelated buttons. */}
-            <div className="flex items-stretch">
+            <div
+              className="relative z-50 flex items-stretch bg-[#171c23] md:bg-transparent"
+            >
               <button
                 type="button"
-                onClick={() => setOpenStatusPanel(p => p === 'team' ? null : 'team')}
+                onTouchStart={handleTeamCapacityTouchStart}
+                onTouchEnd={handleTeamCapacityTouchEnd}
+                onClick={() => {
+                  if (teamCapacityDidSwipe.current) {
+                    teamCapacityDidSwipe.current = false
+                    return
+                  }
+                  setOpenStatusPanel(p => p === 'team' ? null : 'team')
+                }}
                 aria-expanded={openStatusPanel === 'team'}
-                className={`flex flex-col items-start gap-1 px-3.5 py-2 2xl:px-3 transition-colors border-b-2 ${openStatusPanel === 'team' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
+                className={`flex flex-1 touch-pan-y flex-row items-center justify-center gap-1 px-2 py-1.5 transition-colors md:flex-none md:flex-col md:items-start md:justify-start md:px-3.5 md:py-2 2xl:px-3 border-b-2 ${openStatusPanel === 'team' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
                 style={openStatusPanel === 'team' ? { borderBottomColor: accentColors[500] } : undefined}
               >
-                <span className={`inline-flex items-center gap-2 ${teamCapacityHeaderClass} font-semibold uppercase tracking-[0.14em]`}>
-                  {openStatusPanel === 'team' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] md:gap-2 md:text-sm md:tracking-[0.14em] 2xl:text-base">
+                  {openStatusPanel === 'team' ? <ChevronUp className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ChevronDown className="h-3.5 w-3.5 md:h-4 md:w-4" />}
                   Team Capacity
                 </span>
-                <span className="flex flex-wrap items-center gap-1.5">
+                <span className="hidden flex-wrap items-center gap-1.5 md:flex">
                   {teamSnapshotCards.map((card) => (
                     <span
                       key={card.label}
@@ -1073,19 +1114,19 @@ export default function DashboardHome() {
                   ))}
                 </span>
               </button>
-              <div className="hidden lg:block w-px my-2 bg-white/10" />
+              <div className="block w-px my-2 bg-white/10" />
               <button
                 type="button"
                 onClick={() => setOpenStatusPanel(p => p === 'revenue' ? null : 'revenue')}
                 aria-expanded={openStatusPanel === 'revenue'}
-                className={`hidden lg:flex lg:flex-col lg:items-start gap-1 px-3.5 py-2 2xl:px-3 transition-colors border-b-2 ${openStatusPanel === 'revenue' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
+                className={`flex flex-1 flex-row items-center justify-center gap-1 px-2 py-1.5 transition-colors md:flex-none md:flex-col md:items-start md:justify-start md:px-3.5 md:py-2 2xl:px-3 border-b-2 ${openStatusPanel === 'revenue' ? 'text-white border-b-current' : 'text-gray-300 border-b-transparent hover:text-white'}`}
                 style={openStatusPanel === 'revenue' ? { borderBottomColor: accentColors[500] } : undefined}
               >
-                <span className="inline-flex items-center gap-2 text-sm 2xl:text-base font-semibold uppercase tracking-[0.14em]">
-                  {openStatusPanel === 'revenue' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.12em] md:gap-2 md:text-sm md:tracking-[0.14em] 2xl:text-base">
+                  {openStatusPanel === 'revenue' ? <ChevronUp className="h-3.5 w-3.5 md:h-4 md:w-4" /> : <ChevronDown className="h-3.5 w-3.5 md:h-4 md:w-4" />}
                   Revenue KPIs
                 </span>
-                <span className="inline-flex items-center text-xs 2xl:text-sm text-gray-400 bg-white/5 border border-white/10 rounded-full px-2.5 py-0.5">
+                <span className="hidden items-center text-[10px] text-gray-400 bg-white/5 border border-white/10 rounded-full px-1.5 py-0.5 md:inline-flex 2xl:text-sm md:px-2.5">
                   {stats?.revenue?.total_paid_orders || 0} paid orders
                 </span>
               </button>
@@ -1101,10 +1142,10 @@ export default function DashboardHome() {
                   onClick={() => setOpenStatusPanel(null)}
                   className="fixed inset-0 z-40 cursor-default bg-black/40"
                 />
-                <div className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-[70vh] overflow-y-auto rounded-xl border border-white/10 bg-[#14181f] p-3.5 2xl:p-3 shadow-2xl space-y-4">
+                <div className="relative z-50 max-h-[calc(100vh-10rem)] overflow-y-auto border-t border-white/10 bg-[#14181f] p-2.5 shadow-2xl space-y-3 md:absolute md:bottom-full md:left-0 md:right-0 md:mb-2 md:max-h-[70vh] md:rounded-xl md:border md:p-3.5 md:space-y-4 2xl:p-3">
                   {openStatusPanel === 'team' && (
                     <div>
-                      <div className="mb-2.5 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="mb-2.5 hidden flex-col gap-2.5 md:flex lg:flex-row lg:items-center lg:justify-between">
                         <div className="flex items-center gap-2">
                           <span className={`${teamCapacityHeaderClass} font-semibold text-gray-300 uppercase tracking-[0.14em]`}>
                             Team Capacity
@@ -1135,33 +1176,12 @@ export default function DashboardHome() {
                         <span className={`${teamCapacityMetaClass} text-gray-500`}>No technicians</span>
                       ) : (
                         <div className="space-y-3 lg:space-y-2">
-                          <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 lg:hidden">
-                            <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
-                              Floor Snapshot
-                            </div>
-                            <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                              {teamSnapshotCards.map((card) => (
-                                <div
-                                  key={card.label}
-                                  className={`rounded-lg border px-3 py-2.5 ${card.className}`}
-                                >
-                                  <div className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
-                                    {card.label}
-                                  </div>
-                                  <div className={`mt-1.5 text-lg 2xl:text-xl font-semibold ${card.valueClass}`}>
-                                    {card.value}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="flex items-end justify-between gap-3 px-1 lg:items-center lg:px-0">
+                          <div className="flex items-center justify-between gap-3 px-1 lg:px-0">
                             <div className="min-w-0">
                               <div className="text-[11px] 2xl:text-xs uppercase tracking-[0.18em] text-gray-500">
                                 Technician Board
                               </div>
-                              <p className="mt-1 text-xs 2xl:text-sm text-gray-500 lg:hidden">
+                              <p className="mt-1 hidden text-xs text-gray-500 md:block 2xl:text-sm lg:hidden">
                                 Tap a technician to open timers and assignments.
                               </p>
                             </div>
@@ -1170,7 +1190,7 @@ export default function DashboardHome() {
                             </span>
                           </div>
 
-                          <div className={`grid grid-cols-1 gap-2.5 overflow-visible md:grid-cols-2 md:overflow-y-auto md:pr-1 xl:grid-cols-3 2xl:grid-cols-4 ${teamCapacityGridHeightClass}`}>
+                          <div className={`grid grid-cols-1 gap-1.5 overflow-visible md:grid-cols-2 md:gap-2.5 md:overflow-y-auto md:pr-1 xl:grid-cols-3 2xl:grid-cols-4 ${teamCapacityGridHeightClass}`}>
                             {prioritizedTeamMembers.slice(0, 8).map((m) => {
                               const loadPct = m.assigned_count > 0
                                 ? Math.round((m.in_progress_count / m.assigned_count) * 100)
@@ -1182,40 +1202,32 @@ export default function DashboardHome() {
                                   type="button"
                                   key={m.mechanic_id}
                                   onClick={() => navigate(`/dashboard/mechanics/${m.mechanic_id}`)}
-                                  className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-left hover:bg-white/[0.06] transition-colors lg:px-2.5 lg:py-2.5"
+                                  className="min-h-[76px] min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-1.5 py-2 text-left transition-colors hover:bg-white/[0.06] md:rounded-xl md:px-3 md:py-3 lg:px-2.5 lg:py-2.5"
                                   title={`${m.mechanic_name}: ${status.label} · ${m.in_progress_count} active / ${m.assigned_count} assigned`}
                                 >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="flex items-center gap-2 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="flex min-w-0 flex-1 items-center gap-2">
                                       <div
-                                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0"
+                                        className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 md:h-7 md:w-7 md:text-xs"
                                         style={{ backgroundColor: `${accentColors[500]}33`, color: accentColors[400] }}
                                       >
                                         {m.mechanic_name.charAt(0).toUpperCase()}
                                       </div>
-                                      <span className={`${teamCapacityNameClass} font-semibold text-white truncate`}>{m.mechanic_name}</span>
+                                      <span className={`${teamCapacityNameClass} text-xs font-semibold text-white truncate md:text-sm`}>{m.mechanic_name}</span>
                                     </div>
-                                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] 2xl:text-xs font-medium ${status.badgeClass}`}>
+                                    <div className="flex shrink-0 items-center gap-1 lg:hidden">
+                                      <span className="inline-flex items-center gap-0.5 rounded-md border border-white/10 bg-black/10 px-1.5 py-0.5">
+                                        <span className="text-[10px] font-semibold text-white">{m.in_progress_count}</span>
+                                        <span className="text-[8px] uppercase tracking-[0.06em] text-gray-500">Active</span>
+                                      </span>
+                                      <span className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 ${queued > 0 ? 'border-amber-500/20 bg-amber-500/10' : 'border-white/10 bg-black/10'}`}>
+                                        <span className={`text-[10px] font-semibold ${queued > 0 ? 'text-amber-200' : 'text-gray-300'}`}>{queued}</span>
+                                        <span className="text-[8px] uppercase tracking-[0.06em] text-gray-500">Queued</span>
+                                      </span>
+                                    </div>
+                                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium md:px-2.5 md:py-1 md:text-[11px] 2xl:text-xs ${status.badgeClass}`}>
                                       {status.badgeLabel}
                                     </span>
-                                  </div>
-                                  <div className="mt-3 grid grid-cols-2 gap-2 lg:hidden">
-                                    <div className="rounded-lg border border-white/10 bg-black/10 px-2.5 py-2">
-                                      <div className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
-                                        Active
-                                      </div>
-                                      <div className="mt-1.5 text-sm 2xl:text-base font-semibold text-white">
-                                        {m.in_progress_count}
-                                      </div>
-                                    </div>
-                                    <div className={`rounded-lg border px-2.5 py-2 ${queued > 0 ? 'border-amber-500/20 bg-amber-500/10' : 'border-white/10 bg-black/10'}`}>
-                                      <div className="text-[10px] uppercase tracking-[0.16em] text-gray-500">
-                                        Queued
-                                      </div>
-                                      <div className={`mt-1.5 text-sm 2xl:text-base font-semibold ${queued > 0 ? 'text-amber-200' : 'text-gray-300'}`}>
-                                        {queued}
-                                      </div>
-                                    </div>
                                   </div>
                                   <div className={`mt-3 hidden md:flex lg:hidden items-center justify-between gap-2 ${teamCapacityBodyClass} text-gray-400`}>
                                     <span className="truncate">{status.label}</span>

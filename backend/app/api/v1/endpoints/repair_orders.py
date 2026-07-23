@@ -1127,6 +1127,7 @@ async def get_repair_order_detail(
         .options(
             selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
             selectinload(RepairOrder.labor_items),
+            selectinload(RepairOrder.customer),
             selectinload(RepairOrder.vehicle),
             selectinload(RepairOrder.cancelled_by_user),
             selectinload(RepairOrder.deleted_by_user),
@@ -1191,6 +1192,14 @@ async def get_repair_order_detail(
         return f"{u.first_name} {u.last_name}".strip() if u else None
 
     detail_base = RepairOrderResponse.model_validate(order).model_dump(exclude=_detail_vf_exclude)
+    customer = order.customer
+    detail_base.update({
+        "customer_first_name": customer.first_name or "" if customer else "",
+        "customer_last_name": customer.last_name or "" if customer else "",
+        "customer_company_name": customer.company_name if customer else None,
+        "customer_email": customer.email if customer else None,
+        "customer_phone": customer.phone if customer else None,
+    })
     if current_user.role == UserRole.CUSTOMER:
         detail_base["internal_notes"] = None
     if customer_financials_hidden:
