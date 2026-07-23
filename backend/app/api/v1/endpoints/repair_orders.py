@@ -2991,16 +2991,28 @@ async def _recompute_repair_order_totals(db: AsyncSession, order_id: UUID) -> No
     order = result.scalar_one_or_none()
     if not order:
         return
-    total_parts = sum(Decimal(str(pu.total_price)) for pu in order.parts_usage)
-    total_labor = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
-    order.total_parts_cost = total_parts
-    order.total_labor_cost = total_labor
+    _apply_repair_order_totals(order)
+    await db.commit()
+
+
+def _apply_repair_order_totals(
+    order: RepairOrder,
+    *,
+    parts_total: Optional[Decimal] = None,
+    labor_total: Optional[Decimal] = None,
+) -> None:
+    """Update totals from relationships that are already loaded on ``order``."""
+    if parts_total is None:
+        parts_total = sum(Decimal(str(pu.total_price)) for pu in order.parts_usage)
+    if labor_total is None:
+        labor_total = sum(Decimal(str(li.total_cost)) for li in order.labor_items)
+    order.total_parts_cost = parts_total
+    order.total_labor_cost = labor_total
     # Apply manager discounts: labor discount off labor, order discount off total.
     labor_disc = Decimal(str(order.labor_discount_amount or 0))
     order_disc = Decimal(str(order.order_discount_amount or 0))
-    labor_net = max(Decimal("0.00"), total_labor - labor_disc)
-    order.total_cost = max(Decimal("0.00"), total_parts + labor_net - order_disc)
-    await db.commit()
+    labor_net = max(Decimal("0.00"), labor_total - labor_disc)
+    order.total_cost = max(Decimal("0.00"), parts_total + labor_net - order_disc)
 
 
 # --- Price Builder ---
@@ -3557,7 +3569,8 @@ async def set_parts_pricing_mode(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)).options(
-            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item)
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.labor_items),
         )
     )
     order = result.scalar_one_or_none()
@@ -3578,9 +3591,9 @@ async def set_parts_pricing_mode(
             price = floor
         pu.unit_price = price
         pu.total_price = price * pu.quantity
+    _apply_repair_order_totals(order)
     await db.commit()
-    await _recompute_repair_order_totals(db, order_id)
-    return _to_price_build_summary(await _load_order_for_summary(db, order_id))
+    return _to_price_build_summary(order)
 
 
 @router.patch("/{order_id}/discounts", response_model=PriceBuildSummaryResponse)
@@ -3595,7 +3608,8 @@ async def update_repair_order_discounts(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User must be associated with a tenant")
     result = await db.execute(
         select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)).options(
-            selectinload(RepairOrder.parts_usage), selectinload(RepairOrder.labor_items)
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+            selectinload(RepairOrder.labor_items),
         )
     )
     order = result.scalar_one_or_none()
@@ -3625,9 +3639,9 @@ async def update_repair_order_discounts(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Order discount cannot exceed the order subtotal (${subtotal})")
         order.order_discount_amount = d
 
+    _apply_repair_order_totals(order, parts_total=parts_total, labor_total=labor_total)
     await db.commit()
-    await _recompute_repair_order_totals(db, order_id)
-    return _to_price_build_summary(await _load_order_for_summary(db, order_id))
+    return _to_price_build_summary(order)
 
 
 @router.delete("/{order_id}/parts/{parts_usage_id}", status_code=status.HTTP_204_NO_CONTENT)

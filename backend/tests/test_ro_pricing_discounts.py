@@ -7,6 +7,7 @@ import os
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import event
 
 os.environ.setdefault("TWILIO_ACCOUNT_SID", "AC00000000000000000000000000000000")
 os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
@@ -109,3 +110,31 @@ async def test_discount_survives_parts_recompute(db_session):
     # 80 parts + (200 labor - 50) = 230, discount preserved
     assert stock.labor_discount_amount == Decimal("50.00")
     assert stock.total_cost == Decimal("230.00")
+
+
+@pytest.mark.asyncio
+async def test_pricing_adjustments_stay_within_query_budget(db_session):
+    _, owner, order = await _seed_order(db_session)
+
+    query_count = 0
+
+    def _count_query(*_args):
+        nonlocal query_count
+        query_count += 1
+
+    sync_engine = db_session.bind.sync_engine
+    event.listen(sync_engine, "before_cursor_execute", _count_query)
+    try:
+        await ro.set_parts_pricing_mode(
+            order_id=order.id,
+            body=PartsPricingModeRequest(mode="stock"),
+            db=db_session,
+            current_user=owner,
+        )
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", _count_query)
+
+    # Load the complete response graph once and persist the new prices/totals
+    # once. Do not reload it to compute totals and then reload it again to
+    # serialize the response.
+    assert query_count <= 6
