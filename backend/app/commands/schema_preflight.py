@@ -148,6 +148,14 @@ def collect_schema_issues(inspector: Any) -> list[str]:
             "provider_outbox.ix_provider_outbox_due(status, available_at)"
         )
 
+    quickbooks_webhook_columns = {
+        column["name"] for column in inspector.get_columns("quickbooks_webhook_events")
+    }
+    if "deleted_at" not in quickbooks_webhook_columns:
+        issues.append(
+            "missing required column quickbooks_webhook_events.deleted_at"
+        )
+
     return issues
 
 
