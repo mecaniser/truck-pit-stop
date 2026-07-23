@@ -1072,7 +1072,7 @@ export default function DashboardHome() {
 
         {isManager && (
           <div
-            className={`fixed bottom-16 left-2 z-30 mb-[env(safe-area-inset-bottom)] flex w-auto flex-shrink-0 flex-col border border-white/10 bg-[#171c23]/95 shadow-[0_-8px_24px_rgba(0,0,0,0.3)] transition-[max-height] duration-300 ease-out md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto md:mb-0 md:w-full md:max-h-none md:flex-row md:items-stretch md:overflow-visible md:rounded-xl md:border-b md:bg-white/5 md:shadow-none ${
+            className={`fixed bottom-[calc(3.75rem+env(safe-area-inset-bottom))] left-2 z-30 mb-0 flex w-auto flex-shrink-0 flex-col border border-white/10 bg-[#171c23]/95 shadow-[0_-8px_24px_rgba(0,0,0,0.3)] transition-[max-height] duration-300 ease-out md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto md:mb-0 md:w-full md:max-h-none md:flex-row md:items-stretch md:overflow-visible md:rounded-xl md:border-b md:bg-white/5 md:shadow-none ${
               openStatusPanel !== null
                 ? 'right-2 max-h-[calc(100vh-7rem)] overflow-visible rounded-xl border-b animate-in slide-in-from-bottom-8'
                 : 'right-2 max-h-10 overflow-hidden rounded-t-xl border-b-0'
