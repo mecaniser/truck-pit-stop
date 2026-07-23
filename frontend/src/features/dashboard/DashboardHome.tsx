@@ -848,7 +848,7 @@ export default function DashboardHome() {
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              <span className="hidden sm:inline">Create</span>
+              <span>Create</span>
             </button>
           </div>
         </form>
