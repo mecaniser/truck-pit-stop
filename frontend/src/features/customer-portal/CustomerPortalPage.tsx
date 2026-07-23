@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
@@ -1380,6 +1380,7 @@ function CustomerRepairs() {
 
 export default function CustomerPortalPage() {
   const location = useLocation()
+  const portalScrollRef = useRef<HTMLElement>(null)
   const { accentColors } = useTheme()
   const { data: tenantBranding } = useTenantBranding()
   const { user } = useAuthStore()
@@ -1404,6 +1405,34 @@ export default function CustomerPortalPage() {
   // Connect to WebSocket for real-time updates
   useWebSocket({ onNotification: notify })
 
+  useEffect(() => {
+    const root = document.documentElement
+    const body = document.body
+    const previousRootOverflow = root.style.overflow
+    const previousRootOverscroll = root.style.overscrollBehavior
+    const previousBodyOverflow = body.style.overflow
+    const previousBodyOverscroll = body.style.overscrollBehavior
+
+    // iOS Chrome uses WebKit and allows the document itself to rubber-band
+    // beyond a fixed footer. Keep the document stationary while the portal's
+    // dedicated content pane owns vertical scrolling.
+    root.style.overflow = 'hidden'
+    root.style.overscrollBehavior = 'none'
+    body.style.overflow = 'hidden'
+    body.style.overscrollBehavior = 'none'
+
+    return () => {
+      root.style.overflow = previousRootOverflow
+      root.style.overscrollBehavior = previousRootOverscroll
+      body.style.overflow = previousBodyOverflow
+      body.style.overscrollBehavior = previousBodyOverscroll
+    }
+  }, [])
+
+  useEffect(() => {
+    portalScrollRef.current?.scrollTo({ top: 0 })
+  }, [location.pathname])
+
   const navLinks = [
     { to: '/portal', label: 'Dashboard', exact: true },
     { to: '/portal/services', label: 'Services' },
@@ -1427,8 +1456,8 @@ export default function CustomerPortalPage() {
   const portalBrandName = tenantBranding?.name || 'Diesel Bridge Network'
 
   return (
-    <div className="min-h-screen">
-      <nav className="bg-white/90 backdrop-blur shadow-sm sticky top-0 z-50">
+    <div className="flex h-screen h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#0f172a]">
+      <nav className="relative z-50 shrink-0 bg-white/90 backdrop-blur shadow-sm">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between h-14 sm:h-16">
             {/* Logo */}
@@ -1493,7 +1522,11 @@ export default function CustomerPortalPage() {
         </div>
       </nav>
 
-      <main className="px-4 py-4 sm:py-6 max-w-7xl mx-auto pb-20 md:pb-6 overflow-x-hidden">
+      <main
+        ref={portalScrollRef}
+        className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 pb-4 sm:py-6 md:pb-6"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {/* Real-time notification banners */}
         <NotificationBanner
           banners={banners}
@@ -1531,8 +1564,11 @@ export default function CustomerPortalPage() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
-        <div className="bg-white/95 backdrop-blur border-t border-gray-200 px-2 py-2 flex justify-around">
+      <div className="relative z-50 shrink-0 md:hidden">
+        <div
+          className="flex justify-around border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur"
+          style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+        >
           <Link
             to="/portal"
             className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
