@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
 from hashlib import sha256
 import base64
 import hashlib
@@ -16,9 +18,15 @@ from sqlalchemy import select
 from app.api.v1.endpoints import quickbooks
 from app.core.quickbooks_crypto import decrypt_quickbooks_token
 from app.core.security import create_access_token
+from app.db.models.customer import Customer
+from app.db.models.invoice import Invoice, InvoiceStatus
+from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
+from app.db.models.vehicle import Vehicle
+from app.services.quickbooks_sync_service import QUICKBOOKS_INVOICE_SYNC_EVENT
 from app.services.quickbooks_service import QuickBooksTokenSet
 from app.services.quickbooks_payments_service import payments_base_url
 
@@ -142,6 +150,110 @@ async def test_quickbooks_connect_callback_encrypts_tokens_and_rejects_state_rep
         params={"state": state_value, "code": "authorization-code", "realmId": "913035829570001"},
     )
     assert replay.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_quickbooks_callback_resets_accounting_links_when_company_changes(
+    client,
+    db_session,
+    monkeypatch,
+):
+    _configure_quickbooks(monkeypatch)
+    tenant, _user, token = await _owner_with_token(db_session, suffix="realm-switch")
+    headers = {"Authorization": f"Bearer {token}"}
+    customer = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="Diesel",
+        last_name="Bridge",
+        email="diesel@example.test",
+        quickbooks_customer_id="old-customer",
+    )
+    vehicle = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        year=2024,
+        make="Freightliner",
+        model="Cascadia",
+    )
+    order = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.INVOICED,
+        total_parts_cost=Decimal("0.00"),
+        total_labor_cost=Decimal("100.00"),
+        total_cost=Decimal("100.00"),
+    )
+    invoice = Invoice(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        repair_order_id=order.id,
+        invoice_number=f"INV-{uuid4().hex[:8]}",
+        status=InvoiceStatus.SENT,
+        subtotal=Decimal("100.00"),
+        tax_amount=Decimal("0.00"),
+        discount_amount=Decimal("0.00"),
+        total_amount=Decimal("100.00"),
+        quickbooks_invoice_id="old-invoice",
+        quickbooks_sync_status="synced",
+        quickbooks_synced_at=datetime.now(timezone.utc),
+    )
+    event = ProviderOutboxEvent(
+        tenant_id=tenant.id,
+        event_type=QUICKBOOKS_INVOICE_SYNC_EVENT,
+        aggregate_type="quickbooks_invoice",
+        aggregate_id=invoice.id,
+        payload={"invoice_id": str(invoice.id), "operation": "sync"},
+        idempotency_key=f"quickbooks-invoice:{invoice.id}:sync:v1",
+        status=ProviderOutboxStatus.SUCCEEDED.value,
+        attempt_count=5,
+        available_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc),
+        last_error="old failure",
+    )
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="111111111111111",
+        scopes="com.intuit.quickbooks.accounting",
+        status="connected",
+        encrypted_access_token="old-access",
+        encrypted_refresh_token="old-refresh",
+    )
+    db_session.add_all([customer, vehicle, order, invoice, event, connection])
+    await db_session.commit()
+
+    async def fake_exchange(_code: str) -> QuickBooksTokenSet:
+        return QuickBooksTokenSet(
+            access_token="new-access",
+            refresh_token="new-refresh",
+            expires_in=3600,
+            refresh_token_expires_in=8_640_000,
+        )
+
+    monkeypatch.setattr(quickbooks, "exchange_authorization_code", fake_exchange)
+    start = await client.post("/api/v1/quickbooks/connect", headers=headers)
+    state_value = parse_qs(urlparse(start.json()["url"]).query)["state"][0]
+    callback = await client.get(
+        "/api/v1/quickbooks/oauth/callback",
+        params={"state": state_value, "code": "authorization-code", "realmId": "222222222222222"},
+    )
+
+    assert callback.status_code == 303
+    await db_session.refresh(customer)
+    await db_session.refresh(invoice)
+    await db_session.refresh(event)
+    assert customer.quickbooks_customer_id is None
+    assert invoice.quickbooks_invoice_id is None
+    assert invoice.quickbooks_sync_status == "pending"
+    assert invoice.quickbooks_sync_error is None
+    assert event.status == ProviderOutboxStatus.PENDING.value
+    assert event.attempt_count == 0
+    assert event.completed_at is None
+    assert event.last_error is None
 
 
 @pytest.mark.asyncio
