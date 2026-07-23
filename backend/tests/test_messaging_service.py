@@ -95,6 +95,13 @@ def test_validate_twilio_signature_without_token(monkeypatch):
     assert messaging_service.validate_twilio_signature("http://localhost/test", {"a": "1"}, None) is False
 
 
+def test_twilio_client_is_optional_without_credentials(monkeypatch):
+    monkeypatch.setattr(messaging_service.settings, "TWILIO_ACCOUNT_SID", "")
+    monkeypatch.setattr(messaging_service.settings, "TWILIO_AUTH_TOKEN", "")
+
+    assert messaging_service._get_twilio_client() is None
+
+
 def test_normalize_for_twilio_us_10_digit_with_plus_prefix():
     assert messaging_service._normalize_for_twilio("+7047050486") == "+17047050486"
 
