@@ -137,6 +137,12 @@ def _customer_display_name(customer: Customer) -> str:
     return f"{natural[:75]} · DB-{str(customer.id)[:8]}"
 
 
+def quickbooks_invoice_memo(invoice: Invoice) -> str:
+    tenant = invoice.__dict__.get("tenant")
+    tenant_name = str(getattr(tenant, "name", "") or "").strip() or "Shop"
+    return f"{tenant_name} invoice {invoice.invoice_number}"
+
+
 async def ensure_customer(
     connection: QuickBooksConnection,
     customer: Customer,
@@ -253,7 +259,7 @@ async def sync_invoice(
         invoice.quickbooks_invoice_id = str(matches[0]["Id"])
     else:
         item_id = await _ensure_service_item(connection)
-        description = f"DieselBridge repair invoice {invoice.invoice_number}"
+        description = quickbooks_invoice_memo(invoice)
         response = await _request(
             connection,
             "POST",
@@ -263,7 +269,7 @@ async def sync_invoice(
                 "CustomerRef": {"value": customer_id},
                 "TxnDate": (invoice.created_at or datetime.now(timezone.utc)).date().isoformat(),
                 "DueDate": invoice.due_date.date().isoformat() if invoice.due_date else None,
-                "PrivateNote": f"DieselBridge invoice {invoice.id}",
+                "PrivateNote": description,
                 "CustomerMemo": {"value": description},
                 "Line": [{
                     "Amount": float(Decimal(invoice.total_amount).quantize(Decimal("0.01"))),
@@ -314,7 +320,10 @@ async def sync_payment(
                 "CustomerRef": {"value": customer_id},
                 "TotalAmt": float(Decimal(payment.amount).quantize(Decimal("0.01"))),
                 "PaymentRefNum": reference,
-                "PrivateNote": f"DieselBridge payment {payment.id}; Intuit charge {payment.quickbooks_charge_id}",
+                "PrivateNote": (
+                    f"{quickbooks_invoice_memo(invoice)} payment {payment.payment_number}; "
+                    f"Intuit charge {payment.quickbooks_charge_id}"
+                ),
                 "Line": [{
                     "Amount": float(Decimal(payment.amount).quantize(Decimal("0.01"))),
                     "LinkedTxn": [{"TxnId": invoice_id, "TxnType": "Invoice"}],
@@ -361,7 +370,7 @@ async def create_refund_receipt(
             "DocNumber": document_number,
             "CustomerRef": {"value": customer_id},
             "TxnDate": datetime.now(timezone.utc).date().isoformat(),
-            "PrivateNote": f"Refund for DieselBridge invoice {invoice.invoice_number}",
+            "PrivateNote": f"{quickbooks_invoice_memo(invoice)} refund",
             "TxnSource": "IntuitPayment",
             "CreditCardPayment": {
                 "CreditChargeInfo": {"ProcessPayment": True},
