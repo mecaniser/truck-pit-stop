@@ -1,4 +1,4 @@
-import { ReactNode, useRef } from 'react'
+import { ReactNode, useRef, useState } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
@@ -64,31 +64,116 @@ export default function SlidePanel({
   nextDisabled,
   navigationLabel,
 }: SlidePanelProps) {
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  const pointerGesture = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startedAt: number
+    axis: 'horizontal' | 'vertical' | null
+  } | null>(null)
+  const suppressNextClick = useRef(false)
+  const [swipeOffset, setSwipeOffset] = useState(0)
+  const [isSwiping, setIsSwiping] = useState(false)
 
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    if (event.touches.length !== 1) return
+  const canSwipe = onPrev !== undefined || onNext !== undefined
+
+  const resetSwipe = () => {
+    pointerGesture.current = null
+    setSwipeOffset(0)
+    setIsSwiping(false)
+  }
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!canSwipe || !['touch', 'pen'].includes(event.pointerType) || !event.isPrimary) return
     const target = event.target as HTMLElement
-    if (target.closest('input, textarea, select, button, [contenteditable="true"]')) {
-      touchStart.current = null
+    if (target.closest('input, textarea, select, [contenteditable="true"], [data-no-swipe]')) {
+      pointerGesture.current = null
       return
     }
-    touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }
+    pointerGesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startedAt: performance.now(),
+      axis: null,
+    }
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Some older WebKit builds do not expose pointer capture consistently.
+    }
   }
 
-  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    const start = touchStart.current
-    touchStart.current = null
-    if (!start || event.changedTouches.length !== 1) return
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = pointerGesture.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
 
-    const deltaX = event.changedTouches[0].clientX - start.x
-    const deltaY = event.changedTouches[0].clientY - start.y
-    const isHorizontalSwipe = Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2
-    if (!isHorizontalSwipe) return
+    const deltaX = event.clientX - gesture.startX
+    const deltaY = event.clientY - gesture.startY
+    if (gesture.axis === null && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 8) {
+      gesture.axis = Math.abs(deltaX) > Math.abs(deltaY) * 1.1 ? 'horizontal' : 'vertical'
+    }
+    if (gesture.axis !== 'horizontal') return
 
-    if (deltaX < 0 && onNext && !nextDisabled) onNext()
-    if (deltaX > 0 && onPrev && !prevDisabled) onPrev()
+    event.preventDefault()
+    setIsSwiping(true)
+    const canMoveInDirection = deltaX < 0 ? onNext && !nextDisabled : onPrev && !prevDisabled
+    const resistedOffset = canMoveInDirection ? deltaX : deltaX * 0.18
+    setSwipeOffset(Math.max(-120, Math.min(120, resistedOffset)))
   }
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = pointerGesture.current
+    if (!gesture || gesture.pointerId !== event.pointerId) return
+
+    const deltaX = event.clientX - gesture.startX
+    const deltaY = event.clientY - gesture.startY
+    const elapsedMs = Math.max(performance.now() - gesture.startedAt, 1)
+    const velocityX = Math.abs(deltaX) / elapsedMs
+    const isHorizontalSwipe =
+      gesture.axis === 'horizontal' &&
+      Math.abs(deltaX) > Math.abs(deltaY) * 1.1 &&
+      (Math.abs(deltaX) >= 52 || (Math.abs(deltaX) >= 28 && velocityX >= 0.35))
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch {
+      // Pointer capture may already have been released by the browser.
+    }
+
+    if (isHorizontalSwipe) {
+      if (deltaX < 0 && onNext && !nextDisabled) {
+        suppressNextClick.current = true
+        window.setTimeout(() => { suppressNextClick.current = false }, 400)
+        onNext()
+      } else if (deltaX > 0 && onPrev && !prevDisabled) {
+        suppressNextClick.current = true
+        window.setTimeout(() => { suppressNextClick.current = false }, 400)
+        onPrev()
+      }
+    }
+    resetSwipe()
+  }
+
+  const handleClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressNextClick.current) return
+    suppressNextClick.current = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const handlePointerCancel = () => {
+    resetSwipe()
+  }
+
+  const swipeStyle = swipeOffset === 0
+    ? undefined
+    : {
+        transform: `translate3d(${swipeOffset}px, 0, 0)`,
+        opacity: Math.max(0.82, 1 - Math.abs(swipeOffset) / 600),
+      }
+
+  const swipeTransitionClass = isSwiping ? '' : 'transition-[transform,opacity] duration-150 ease-out'
 
   if (!isOpen) return null
 
@@ -107,9 +192,13 @@ export default function SlidePanel({
 
         {/* Panel */}
         <div
-          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y`}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
+          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y ${swipeTransitionClass}`}
+          style={swipeStyle}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          onClickCapture={handleClickCapture}
         >
           {/* Header */}
           {!hideHeader && <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
@@ -199,9 +288,13 @@ export default function SlidePanel({
 
       {/* Panel */}
       <div
-        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y`}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y ${swipeTransitionClass}`}
+        style={swipeStyle}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onClickCapture={handleClickCapture}
       >
         {/* Header */}
         {!hideHeader && (isMinimal ? (
