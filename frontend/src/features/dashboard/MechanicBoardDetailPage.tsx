@@ -186,7 +186,7 @@ export default function MechanicBoardDetailPage() {
   const refreshBoard = () => {
     queryClient.invalidateQueries({ queryKey: ['mechanic-board-detail', mechanicId] })
     queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
-    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
     queryClient.invalidateQueries({ queryKey: ['mechanic-day-summary'] })
   }
 

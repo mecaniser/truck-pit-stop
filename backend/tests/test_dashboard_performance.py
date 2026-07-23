@@ -169,3 +169,46 @@ async def test_dashboard_stats_stays_within_query_budget(db_session):
     assert response.total_customers == 0
     assert response.total_repair_orders == 0
     assert query_count == 12
+
+
+@pytest.mark.asyncio
+async def test_dashboard_action_queue_stays_within_query_budget(db_session):
+    tenant_id = uuid4()
+    tenant = Tenant(
+        id=tenant_id,
+        name="Action Queue Shop",
+        slug=f"action-queue-{tenant_id.hex[:8]}",
+        timezone="America/New_York",
+    )
+    manager = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.GARAGE_OWNER,
+        email="action-queue-owner@example.com",
+        hashed_password="hashed-password",
+        first_name="Action",
+        last_name="Owner",
+        is_active=True,
+    )
+    db_session.add_all([tenant, manager])
+    await db_session.commit()
+
+    query_count = 0
+
+    def _count_query(*_args):
+        nonlocal query_count
+        query_count += 1
+
+    sync_engine = db_session.bind.sync_engine
+    event.listen(sync_engine, "before_cursor_execute", _count_query)
+    try:
+        response = await dashboard.get_dashboard_action_queue(db=db_session, current_user=manager)
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", _count_query)
+
+    assert response.orders_needing_action == []
+    assert response.orders_on_floor == []
+    assert response.orders_ready_to_close == []
+    # One tenant lookup plus the four action-lane queries. Keep the home screen
+    # bounded as the tenant's historical orders grow.
+    assert query_count == 5

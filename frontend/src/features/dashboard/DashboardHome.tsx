@@ -74,10 +74,6 @@ interface TeamCapacityStatusItem {
   } | null
 }
 
-interface TeamCapacityBoardResponse {
-  mechanics: TeamCapacityStatusItem[]
-}
-
 interface RevenueStats {
   today: string
   this_week: string
@@ -414,11 +410,12 @@ export default function DashboardHome() {
   // Connect to WebSocket for real-time updates (replaces polling)
   useWebSocket({ onNotification: notify })
   
-  // Dashboard stats query (WebSocket invalidates this on updates)
+  // The home screen is an action queue. Capacity and financial reporting live
+  // on their dedicated screens and are not loaded during routine navigation.
   const { data: stats, isLoading: loading, error: queryError, isFetching: isRefreshing, dataUpdatedAt } = useQuery<DashboardStats>({
-    queryKey: ['dashboard-stats'],
+    queryKey: ['dashboard-action-queue'],
     queryFn: async () => {
-      const response = await api.get('/dashboard/stats')
+      const response = await api.get('/dashboard/action-queue')
       return response.data
     },
     refetchOnWindowFocus: true, // Refresh when tab becomes visible
@@ -426,37 +423,16 @@ export default function DashboardHome() {
     // retrying immediately just extends the block. Let the limiter's
     // window clear instead of hammering it.
     retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
-    // The cockpit unmounts/remounts on every navigation to/from the repair
-    // order drawer (a route change, not a state toggle), so a plain
-    // remount is not a meaningful freshness signal — it just means the user
-    // clicked "close." Freshness here is driven by explicit invalidation
-    // (WebSocket events in useWebSocket.ts, the manual Refresh button), not
-    // by component lifecycle, so skip the automatic refetch-on-mount and
-    // rely on the longer resting staleTime for everything else.
-    refetchOnMount: false,
-    staleTime: 60 * 1000,
-  })
-
-  const { data: teamBoard } = useQuery<TeamCapacityBoardResponse>({
-    queryKey: ['mechanic-board-team'],
-    queryFn: async () => {
-      const response = await api.get('/dashboard/mechanics/board')
-      return response.data
-    },
-    enabled: isManager,
-    refetchOnWindowFocus: true,
-    retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
     refetchOnMount: false,
     staleTime: 60 * 1000,
   })
 
   const isRateLimited = isAxiosError(queryError) && queryError.response?.status === 429
-  const error = queryError ? (isRateLimited ? 'Too many requests — waiting a moment before retrying' : 'Failed to load dashboard stats') : null
+  const error = queryError ? (isRateLimited ? 'Too many requests — waiting a moment before retrying' : 'Failed to load work queue') : null
   const lastUpdated = dataUpdatedAt ? new Date(dataUpdatedAt) : null
   
   const handleManualRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
-    queryClient.invalidateQueries({ queryKey: ['mechanic-board-team'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
   }
 
   // Format "last updated" time
@@ -472,8 +448,8 @@ export default function DashboardHome() {
   }
 
   const metricValue = (value?: string) => parseFloat(value || '0')
-  const teamMembers = stats?.mechanic_workload || []
-  const teamStatusByMechanicId = new Map((teamBoard?.mechanics || []).map((mechanic) => [mechanic.mechanic_id, mechanic]))
+  const teamMembers: MechanicWorkload[] = []
+  const teamStatusByMechanicId = new Map<string, TeamCapacityStatusItem>()
   const teamAssignedTotal = teamMembers.reduce((sum, m) => sum + m.assigned_count, 0)
   const teamInProgressTotal = teamMembers.reduce((sum, m) => sum + m.in_progress_count, 0)
   const teamQueuedTotal = Math.max(teamAssignedTotal - teamInProgressTotal, 0)
@@ -581,11 +557,7 @@ export default function DashboardHome() {
     { label: 'Week Revenue', value: metricValue(stats?.revenue?.this_week), tone: 'text-emerald-400' },
     { label: 'Month Revenue', value: metricValue(stats?.revenue?.this_month), tone: 'text-emerald-400' },
   ]
-  const hasAttentionRequired = isManager && (
-    (stats?.low_stock_count ?? 0) > 0 ||
-    (stats?.overdue_approvals ?? 0) > 0 ||
-    (stats?.declined_quotes ?? 0) > 0
-  )
+  const hasAttentionRequired = false
 
   const handleDismissAlert = (key: string) => {
     setExitingAlertKey(key)
@@ -953,12 +925,13 @@ export default function DashboardHome() {
               <button
                 onClick={handleManualRefresh}
                 disabled={isRefreshing}
-                className="flex items-center gap-2 px-2.5 py-1 text-xs 2xl:text-sm text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-md transition-colors"
+                className="flex items-center justify-center gap-1 rounded-md bg-white/5 px-1.5 py-1 text-xs text-gray-400 transition-colors hover:bg-white/10 hover:text-white sm:gap-2 sm:px-2.5 2xl:text-sm"
                 title="Refresh dashboard"
+                aria-label={isRefreshing ? 'Refreshing dashboard' : `Refresh dashboard, updated ${formatLastUpdated() || 'recently'}`}
               >
                 <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span>{formatLastUpdated() || 'Refresh'}</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="hidden sm:inline">{formatLastUpdated() || 'Refresh'}</span>
+                <span className={`h-1.5 w-1.5 rounded-full ${error ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`} />
               </button>
             </div>
           </div>
@@ -1070,7 +1043,10 @@ export default function DashboardHome() {
           </div>
         </div>
 
-        {isManager && (
+        {/* Team capacity belongs on the dedicated team board and financial KPIs
+            belong in Analytics. Keeping them off the operational home screen
+            also avoids fetching those expensive aggregates on every visit. */}
+        {false && isManager && (
           <div
             className={`fixed bottom-[calc(3.75rem+env(safe-area-inset-bottom))] left-2 z-30 mb-0 flex w-auto flex-shrink-0 flex-col border border-white/10 bg-[#171c23]/95 shadow-[0_-8px_24px_rgba(0,0,0,0.3)] transition-[max-height] duration-300 ease-out md:relative md:bottom-auto md:left-auto md:right-auto md:z-auto md:mb-0 md:w-full md:max-h-none md:flex-row md:items-stretch md:overflow-visible md:rounded-xl md:border-b md:bg-white/5 md:shadow-none ${
               openStatusPanel !== null

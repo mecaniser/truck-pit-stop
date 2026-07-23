@@ -102,13 +102,13 @@ type ZelleModalMode = 'collect' | 'confirm_pending'
 type EvidencePaymentMethod = 'check' | 'ach' | 'fleet_payment'
 type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close'
 
-type WorkQueueStats = {
+type WorkQueue = {
   orders_needing_action: Array<{ id: string }>
   orders_on_floor: Array<{ id: string }>
   orders_ready_to_close: Array<{ id: string }>
 }
 
-const WORK_QUEUE_FIELD: Record<WorkQueueLane, keyof WorkQueueStats> = {
+const WORK_QUEUE_FIELD: Record<WorkQueueLane, keyof WorkQueue> = {
   needs_action: 'orders_needing_action',
   on_floor: 'orders_on_floor',
   ready_to_close: 'orders_ready_to_close',
@@ -376,12 +376,11 @@ export default function RepairOrdersPage() {
 
   const queryClient = useQueryClient()
 
-  // Dashboard cards identify their originating lane in the URL. Reuse the
-  // dashboard stats cache (or fetch it after a refresh) so drawer navigation
-  // can walk the entire lane rather than only the current 25-row list page.
-  const { data: workQueueStats } = useQuery<WorkQueueStats>({
-    queryKey: ['dashboard-stats'],
-    queryFn: async () => (await api.get('/dashboard/stats')).data,
+  // Dashboard cards identify their originating lane in the URL. The focused
+  // queue contract keeps workspace navigation from loading dashboard KPIs.
+  const { data: workQueueStats } = useQuery<WorkQueue>({
+    queryKey: ['dashboard-action-queue'],
+    queryFn: async () => (await api.get('/dashboard/action-queue')).data,
     enabled: !!workQueueLane,
     staleTime: 60 * 1000,
   })
@@ -622,12 +621,22 @@ export default function RepairOrdersPage() {
     staleTime: 30_000,
   })
 
+  // Creating an order does not require the shop roster. Load it only once an
+  // open order reaches the assignment or review stages, where it is actionable.
+  const shouldLoadMechanics = !!(
+    selectedOrder?.id
+    && isDetailOpen
+    && ['approved', 'assigned', 'acknowledged', 'in_progress', 'pending_review'].includes(selectedOrder.status)
+  )
+
   const { data: mechanics } = useQuery<{ mechanic_id: string; mechanic_name: string; assigned_count?: number; in_progress_count?: number }[]>({
     queryKey: ['mechanics'],
     queryFn: async ({ signal }) => {
-      const response = await api.get('/dashboard/stats', { signal })
-      return response.data?.mechanic_workload || []
+      const response = await api.get('/dashboard/mechanics/options', { signal })
+      return response.data
     },
+    enabled: shouldLoadMechanics,
+    staleTime: 60_000,
   })
 
   const { data: orderDetail, refetch: refetchOrderDetail, isLoading: isOrderDetailLoading } = useQuery<RepairOrderDetail>({
@@ -1069,8 +1078,8 @@ export default function RepairOrdersPage() {
   // board and dashboard, not just the RO lists — invalidate those too so the
   // board updates without a manual reload.
   //
-  // refetchType: 'all' is essential here. The cockpit (DashboardHome) is
-  // *unmounted* while the RO drawer is open, so its ['dashboard-stats'] query is
+  // refetchType: 'all' is essential here. The home work queue is unmounted while
+  // the RO drawer is open, so its ['dashboard-action-queue'] query is
   // inactive — and a default invalidate only refetches *active* queries. It would
   // just mark the data stale, and because that query sets refetchOnMount:false it
   // would then serve the stale cache on the way back, still showing the order we
@@ -1079,7 +1088,7 @@ export default function RepairOrdersPage() {
     for (const key of [
       'repair-orders',
       'customerRepairOrders',
-      'dashboard-stats',
+      'dashboard-action-queue',
       'mechanic-board-team',
       'mechanic-board-detail',
       'fleet-board-summary',

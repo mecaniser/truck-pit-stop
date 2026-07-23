@@ -29,13 +29,13 @@ import type { QueryClient } from '@tanstack/react-query'
  * both.
  *
  * refetchType 'all' matters: the cockpit is unmounted while the user is over in
- * Fleet, so its ['dashboard-stats'] query is *inactive* — a default invalidate
+ * Fleet, so its ['dashboard-action-queue'] query is *inactive* — a default invalidate
  * only refetches active queries, and that query sets refetchOnMount:false, so it
  * would serve stale data on the way back (missing the WO we just created).
  */
 export function invalidateFleetAndCockpit(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['fleet-board'] })
-  for (const key of ['dashboard-stats', 'repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
+  for (const key of ['dashboard-action-queue', 'repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
     qc.invalidateQueries({ queryKey: [key], refetchType: 'all' })
   }
 }
