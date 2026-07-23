@@ -43,8 +43,8 @@ export function loadConfig({ allowProduction }) {
     }
   }
 
-  if (target !== 'production' && target !== 'staging' && target !== 'local') {
-    fail('TARGET_ENV must be production, staging, or local')
+  if (target !== 'production' && target !== 'staging' && target !== 'local' && target !== 'performance') {
+    fail('TARGET_ENV must be production, staging, local, or performance')
   }
 
   return {

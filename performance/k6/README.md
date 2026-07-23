@@ -74,6 +74,43 @@ stages only after the lower level is stable. Review the k6 endpoint-specific
 P95/P99 and failure thresholds together with Grafana's API latency, database
 query P95, Redis latency, CPU, memory, and connection-pool metrics.
 
+## Isolated Performance Environment
+
+For capacity work, use a separate Railway environment with fresh PostgreSQL and
+Redis services. Set the backend `ENVIRONMENT` variable to `performance`. Never
+point this setup at the production database or production URL.
+
+The repository provides a synthetic data generator for that environment. It
+creates one large tenant with 151 customers, 270 vehicles (120 fleet trucks),
+2,500 repair orders, 600 inventory items, and a detailed workspace order by
+default. It exits unless its environment and confirmation phrase are explicit.
+
+From the Railway backend shell, after migrations complete:
+
+```bash
+ENVIRONMENT=performance \
+LOAD_TEST_SEED_CONFIRM=seed-performance-data \
+python scripts/seed_performance_environment.py \
+  --owner-email performance-owner@example.com \
+  --owner-password 'use-a-unique-secret'
+```
+
+Record the printed `workspace_repair_order_id`. Use the generated owner account
+to get a k6 bearer token, then run the capacity profile only against the
+isolated environment URL:
+
+```bash
+BASE_URL="https://YOUR-PERFORMANCE-URL" \
+TARGET_ENV=performance \
+K6_ACCESS_TOKEN="$K6_ACCESS_TOKEN" \
+REPAIR_ORDER_ID="WORKSPACE_REPAIR_ORDER_ID" \
+k6 run scenarios/performance_capacity.js
+```
+
+The profile ramps from 1 to 2, 5, and 10 concurrent virtual staff users. It
+rejects production by design. Watch Grafana for API latency, database P95,
+connection-pool waits, Redis latency, CPU, memory, and error rate throughout.
+
 ## Success Criteria
 
 - Error rate remains below 1% and checks remain above 99%.
