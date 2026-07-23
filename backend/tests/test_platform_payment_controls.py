@@ -6,6 +6,7 @@ import pytest
 
 from app.api.v1.endpoints import platform_payments
 from app.core.security import create_access_token
+from app.db.models.quickbooks_connection import QuickBooksConnection
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 
@@ -96,3 +97,58 @@ async def test_super_admin_can_reset_a_stale_stripe_connection(client, db_sessio
     assert tenant.stripe_connection_type is None
     assert tenant.stripe_onboarding_complete is False
     assert tenant.stripe_last_webhook_event is None
+
+
+@pytest.mark.asyncio
+async def test_super_admin_can_view_and_reset_quickbooks_controls(client, db_session, monkeypatch):
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_CLIENT_ID", "configured")
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_CLIENT_SECRET", "configured")
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_REDIRECT_URI", "https://app.example.com/callback")
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_TOKEN_ENCRYPTION_KEY", "configured")
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN", "configured")
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_ACCOUNTING_ENVIRONMENT", "sandbox")
+    monkeypatch.setattr(platform_payments.settings, "QUICKBOOKS_PAYMENTS_ENVIRONMENT", "sandbox")
+
+    tenant = Tenant(name="QuickBooks Garage", slug="quickbooks-control-garage")
+    db_session.add(tenant)
+    await db_session.flush()
+    connection = QuickBooksConnection(
+        tenant_id=tenant.id,
+        realm_id="913035829570002",
+        scopes="com.intuit.quickbooks.accounting com.intuit.quickbooks.payment",
+        status="connected",
+        encrypted_access_token="encrypted-access",
+        encrypted_refresh_token="encrypted-refresh",
+    )
+    db_session.add(connection)
+    await db_session.commit()
+    token = await _super_admin_token(db_session)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    overview = await client.get("/api/v1/admin/payments-control/quickbooks/overview", headers=headers)
+    assert overview.status_code == 200
+    merchant = overview.json()["merchants"][0]
+    assert merchant["tenant_name"] == "QuickBooks Garage"
+    assert merchant["status"] == "active"
+    assert merchant["accounting_enabled"] is True
+    assert merchant["payments_scope_enabled"] is True
+    assert merchant["payments_enabled"] is True
+    assert merchant["company_id_label"] == "••••0002"
+    assert overview.json()["configuration"]["payments_environment"] == "sandbox"
+
+    ledger = await client.get("/api/v1/admin/payments-control/quickbooks/ledger", headers=headers)
+    assert ledger.status_code == 200
+    assert ledger.json()["entries"] == []
+    assert ledger.json()["totals"]["unreconciled"] == 0
+
+    reset = await client.post(
+        f"/api/v1/admin/payments-control/tenants/{tenant.id}/reset-quickbooks-connection",
+        headers=headers,
+    )
+    assert reset.status_code == 200
+    assert reset.json()["status"] == "not_connected"
+    await db_session.refresh(connection)
+    assert connection.status == "disconnected"
+    assert connection.realm_id is None
+    assert connection.encrypted_access_token is None
+    assert connection.encrypted_refresh_token is None
