@@ -1298,7 +1298,7 @@ function PaymentsSection() {
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-4 py-3 text-sm text-zinc-400">
-        Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks prepares accounting sync and future Intuit payment processing.
+        Manage every invoice settlement method here: Stripe collects online card payments, Zelle is confirmed by shop staff, and QuickBooks synchronizes finalized invoices and Intuit payment settlement.
       </div>
       <PaymentIntegrationPanel
         icon={<CreditCard className="h-5 w-5" />}
@@ -1636,7 +1636,7 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
   const statusConfig = !status?.configured
     ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
     : status.is_connected
-      ? { led: 'active' as const, title: 'AUTHORIZATION COMPLETE', desc: 'Accounting and Payments are authorized. Customer, invoice, and payment sync are not active yet.' }
+      ? { led: 'active' as const, title: 'AUTHORIZATION COMPLETE', desc: 'Finalized customers and invoices are queued for QuickBooks sync; Intuit payment settlement is available in the configured environment.' }
       : { led: 'inactive' as const, title: 'CONNECT YOUR COMPANY', desc: 'Sign in to your QuickBooks Online company to authorize this garage.' }
 
   return (
@@ -1670,7 +1670,7 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
           </div>
 
           <div className="mb-6 rounded-xl border border-sky-800/40 bg-sky-950/20 p-4 text-sm text-sky-100/80">
-            DieselBridge keeps this garage’s TruckPitStop bookings as the source of truth. Connecting QuickBooks securely prepares customer, invoice, and payment reconciliation; no customer card details pass through TruckPitStop.
+            DieselBridge keeps this garage’s TruckPitStop bookings as the source of truth. QuickBooks receives the accounting mirror and reconciled payments; raw customer card details never reach the DieselBridge server.
           </div>
 
           {!status?.configured && (
@@ -1704,7 +1704,7 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
               </p>
               <p className="mt-1 text-zinc-300">
                 {status.token_health === 'healthy'
-                  ? 'Authorization tokens are current. Accounting sync and QuickBooks Payments activation will be enabled after the sandbox payment flow is validated.'
+                  ? 'Authorization tokens are current. Finalized invoices sync in the background, and captured Intuit payments are linked back to their QuickBooks invoices.'
                   : status.last_token_refresh_error || 'Check the connection to refresh Intuit authorization before enabling sync or payments.'}
               </p>
               {status.last_webhook_at && (
@@ -3377,10 +3377,17 @@ function SidebarLayout({ activeSection, setActiveSection, isGarageUser, isSuperA
 
 export default function UnifiedSettingsPage() {
   const { user } = useAuthStore()
+  const [settingsSearchParams] = useSearchParams()
   const [activeSection, setActiveSection] = useState<SettingsSection>('profile')
 
   const isGarageUser = user?.role === 'garage_owner' || user?.role === 'garage_admin'
   const isSuperAdmin = user?.role === 'super_admin'
+
+  useEffect(() => {
+    if (settingsSearchParams.has('quickbooks') && isGarageUser) {
+      setActiveSection('payments')
+    }
+  }, [isGarageUser, settingsSearchParams])
 
   // If the active section becomes inaccessible (e.g. the owner revoked a
   // grant), fall back to the profile section instead of a blank pane.

@@ -29,6 +29,7 @@ from app.services.email_service import send_email
 from app.services.invoice_access_service import generate_invoice_access_link
 from app.services.pdf_service import generate_invoice_pdf
 from app.services.provider_outbox_service import enqueue_email_notification
+from app.services.quickbooks_sync_service import enqueue_quickbooks_invoice_sync
 from sqlalchemy.orm import selectinload
 from app.core.websocket import broadcast_invoice_created, broadcast_repair_order_update
 
@@ -370,6 +371,7 @@ class ResendInvoiceRequest(BaseModel):
 
 class PaymentSummary(BaseModel):
     """How a paid invoice was actually settled — surfaced on the order screen."""
+    id: UUID
     amount: Decimal
     method: str
     paid_at: Optional[datetime]
@@ -377,6 +379,8 @@ class PaymentSummary(BaseModel):
     payment_provider: Optional[str] = None
     reference_number: Optional[str] = None
     authorization_number: Optional[str] = None
+    quickbooks_charge_status: Optional[str] = None
+    quickbooks_reconciled_at: Optional[datetime] = None
 
 
 class InvoiceResponse(BaseModel):
@@ -672,6 +676,7 @@ async def auto_create_invoice_for_order(
     )
     await db.refresh(invoice)
     await db.refresh(order)
+    await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
 
     if not commit:
         if notify:
@@ -839,6 +844,7 @@ async def create_invoice(
     )
     await db.refresh(invoice)
     await db.refresh(order)
+    await enqueue_quickbooks_invoice_sync(db, invoice=invoice)
 
     email_queued = await enqueue_invoice_created_email(
         db,
@@ -982,6 +988,7 @@ async def _list_invoices_legacy(
                 if recorder else None
             )
             payments_by_invoice[pay.invoice_id] = PaymentSummary(
+                id=pay.id,
                 amount=pay.amount,
                 method=pay.method.value if hasattr(pay.method, "value") else str(pay.method),
                 paid_at=pay.created_at,
@@ -989,6 +996,8 @@ async def _list_invoices_legacy(
                 payment_provider=pay.payment_provider,
                 reference_number=pay.reference_number,
                 authorization_number=pay.authorization_number,
+                quickbooks_charge_status=pay.quickbooks_charge_status,
+                quickbooks_reconciled_at=pay.quickbooks_reconciled_at,
             )
 
     items = []
@@ -1148,6 +1157,7 @@ async def void_invoice(
             actor_name=actor_name,
         )
     )
+    await enqueue_quickbooks_invoice_sync(db, invoice=invoice, operation="void")
 
     await db.commit()
     await db.refresh(invoice)

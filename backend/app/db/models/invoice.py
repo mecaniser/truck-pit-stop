@@ -85,6 +85,14 @@ class Invoice(BaseModel):
     # Reminder tracking for overdue invoices
     last_reminder_sent_at = Column(DateTime(timezone=True), nullable=True)
     reminder_count = Column(Integer, default=0, nullable=False)
+
+    # QuickBooks Online accounting mirror. Provider IDs are retained on voided
+    # invoices so retries and audit/reconciliation never create a second QBO
+    # transaction for the same DieselBridge invoice.
+    quickbooks_invoice_id = Column(String(64), nullable=True, index=True)
+    quickbooks_sync_status = Column(String(32), nullable=False, default="pending", index=True)
+    quickbooks_synced_at = Column(DateTime(timezone=True), nullable=True)
+    quickbooks_sync_error = Column(Text, nullable=True)
     
     payments = relationship("Payment", back_populates="invoice", cascade="all, delete-orphan")
 

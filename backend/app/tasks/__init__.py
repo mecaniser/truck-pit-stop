@@ -25,6 +25,7 @@ celery_app.conf.update(
         "app.tasks.fleet_inspection_compliance",
         "app.tasks.description_library_refresh",
         "app.tasks.provider_outbox",
+        "app.tasks.quickbooks_sync",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
@@ -51,6 +52,18 @@ celery_app.conf.update(
         "process-provider-outbox": {
             "task": "process_provider_outbox",
             "schedule": timedelta(seconds=10),
+        },
+        "process-quickbooks-invoice-sync": {
+            "task": "process_quickbooks_invoice_sync",
+            "schedule": timedelta(seconds=30),
+        },
+        "reconcile-quickbooks-payments": {
+            "task": "reconcile_quickbooks_payments",
+            "schedule": crontab(hour=4, minute=30),
+        },
+        "backfill-quickbooks-cdc": {
+            "task": "backfill_quickbooks_cdc",
+            "schedule": crontab(hour=5, minute=0),
         },
     },
     task_acks_late=True,

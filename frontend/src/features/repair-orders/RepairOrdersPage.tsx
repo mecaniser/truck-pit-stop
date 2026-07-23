@@ -1456,6 +1456,25 @@ export default function RepairOrdersPage() {
     },
   })
 
+  const refundQuickBooksMutation = useMutation({
+    mutationFn: async ({ paymentId, amount, reason }: { paymentId: string; amount?: string; reason: string }) => {
+      const response = await api.post(`/quickbooks/payments/${paymentId}/refund`, {
+        amount: amount ? Number(amount) : null,
+        reason,
+      })
+      return response.data as { message?: string }
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      queryClient.invalidateQueries({ queryKey: ['invoice-for-order'] })
+      setSelectedOrder(prev => prev ? { ...prev, status: 'invoiced' } : null)
+      toast.success(data.message || 'QuickBooks refund submitted')
+    },
+    onError: (error: unknown) => {
+      toast.error(getErrorDetail(error, 'QuickBooks refund failed'))
+    },
+  })
+
   const updateServicesMutation = useMutation({
     mutationFn: async ({ orderId, selectedServices }: { orderId: string; selectedServices: { id: string; name: string; base_price: string }[] }) => {
       const internal_notes = selectedServices.length > 0
@@ -4662,16 +4681,48 @@ export default function RepairOrdersPage() {
                     </div>
 
                     {!showResendInvoice ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowResendInvoice(true)}
-                        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-                      >
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowResendInvoice(true)}
+                          className="w-full py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                         Resend Invoice Copy
-                      </button>
+                        </button>
+                        {invoiceForOrder.payment?.method === 'quickbooks' && canVoidInvoices && (
+                          <button
+                            type="button"
+                            disabled={refundQuickBooksMutation.isPending}
+                            onClick={() => {
+                              const amount = window.prompt(
+                                `Refund amount (leave blank for full refund of $${parseFloat(invoiceForOrder.payment?.amount || '0').toFixed(2)}):`,
+                                '',
+                              )
+                              if (amount === null) return
+                              if (amount.trim() && (!Number.isFinite(Number(amount)) || Number(amount) <= 0)) {
+                                toast.error('Enter a valid positive refund amount')
+                                return
+                              }
+                              const reason = window.prompt('Reason for the QuickBooks refund:')
+                              if (!reason || reason.trim().length < 3) {
+                                toast.error('A refund reason of at least 3 characters is required')
+                                return
+                              }
+                              refundQuickBooksMutation.mutate({
+                                paymentId: invoiceForOrder.payment!.id,
+                                amount: amount.trim() || undefined,
+                                reason: reason.trim(),
+                              })
+                            }}
+                            className="w-full rounded-lg border border-red-300 bg-white py-2 font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                          >
+                            {refundQuickBooksMutation.isPending ? 'Submitting refund…' : 'Refund QuickBooks payment'}
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <div className="space-y-3">
                         <div>

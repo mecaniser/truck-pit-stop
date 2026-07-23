@@ -6,7 +6,7 @@ stored in this model: they are encrypted before persistence by
 callbacks bound to the shop administrator who initiated consent and prevents
 state replay.
 """
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import backref, relationship
 
@@ -37,6 +37,8 @@ class QuickBooksConnection(BaseModel):
     last_webhook_at = Column(DateTime(timezone=True), nullable=True)
     last_webhook_event = Column(String(160), nullable=True)
     last_webhook_error = Column(Text, nullable=True)
+    last_cdc_at = Column(DateTime(timezone=True), nullable=True)
+    last_cdc_error = Column(Text, nullable=True)
 
 
 class QuickBooksOAuthState(BaseModel):
@@ -52,3 +54,27 @@ class QuickBooksOAuthState(BaseModel):
 
     tenant = relationship("Tenant")
     initiated_by_user = relationship("User")
+
+
+class QuickBooksWebhookEvent(BaseModel):
+    """Durable Intuit webhook deduplication and reconciliation audit record."""
+
+    __tablename__ = "quickbooks_webhook_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "realm_id", "entity_name", "entity_id", "operation", "last_updated_at",
+            name="uq_quickbooks_webhook_delivery",
+        ),
+    )
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    realm_id = Column(String(64), nullable=False, index=True)
+    entity_name = Column(String(64), nullable=False)
+    entity_id = Column(String(64), nullable=False)
+    operation = Column(String(32), nullable=False)
+    last_updated_at = Column(String(64), nullable=False, default="")
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(Text, nullable=True)
+
+    tenant = relationship("Tenant")

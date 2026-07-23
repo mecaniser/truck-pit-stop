@@ -28,6 +28,14 @@ class QuickBooksCharge:
     raw: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class QuickBooksRefund:
+    id: str
+    status: str
+    amount: Decimal
+    raw: dict[str, Any]
+
+
 def payments_base_url() -> str:
     environment = settings.QUICKBOOKS_PAYMENTS_ENVIRONMENT.strip().lower()
     if environment == "sandbox":
@@ -98,3 +106,68 @@ async def create_charge(
 
 def is_successful_charge(charge: QuickBooksCharge) -> bool:
     return charge.status in {"CAPTURED", "SUCCEEDED", "COMPLETED"}
+
+
+async def get_charge(*, connection: QuickBooksConnection, charge_id: str) -> QuickBooksCharge:
+    if not connection.encrypted_access_token or not charge_id:
+        raise QuickBooksPaymentError("QuickBooks charge is unavailable")
+    access_token = decrypt_quickbooks_token(connection.encrypted_access_token)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:
+            response = await client.get(
+                f"{payments_base_url()}/quickbooks/v4/payments/charges/{charge_id}",
+                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        raise QuickBooksPaymentError("Could not retrieve the QuickBooks payment") from exc
+    if response.status_code >= 400:
+        raise QuickBooksPaymentError("QuickBooks payment could not be retrieved")
+    try:
+        return _parse_charge(response.json())
+    except ValueError as exc:
+        raise QuickBooksPaymentError("Intuit returned an invalid payment response") from exc
+
+
+async def refund_charge(
+    *,
+    connection: QuickBooksConnection,
+    charge_id: str,
+    amount: Decimal,
+    description: str,
+    request_id: str,
+) -> QuickBooksRefund:
+    if not connection.encrypted_access_token or not charge_id or amount <= Decimal("0.00"):
+        raise QuickBooksPaymentError("QuickBooks refund request is invalid")
+    access_token = decrypt_quickbooks_token(connection.encrypted_access_token)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(settings.QUICKBOOKS_HTTP_TIMEOUT_SECONDS)) as client:
+            response = await client.post(
+                f"{payments_base_url()}/quickbooks/v4/payments/charges/{charge_id}/refunds",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "Request-Id": request_id,
+                },
+                json={"amount": str(amount.quantize(Decimal("0.01"))), "description": description[:400]},
+            )
+    except httpx.HTTPError as exc:
+        raise QuickBooksPaymentError("Could not reach QuickBooks Payments for the refund") from exc
+    if response.status_code >= 400:
+        raise QuickBooksPaymentError("QuickBooks rejected the refund")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise QuickBooksPaymentError("Intuit returned an invalid refund response") from exc
+    if not isinstance(payload, dict) or not payload.get("id") or not payload.get("status"):
+        raise QuickBooksPaymentError("Intuit returned an incomplete refund response")
+    try:
+        refunded_amount = Decimal(str(payload.get("amount"))).quantize(Decimal("0.01"))
+    except Exception as exc:
+        raise QuickBooksPaymentError("Intuit returned an invalid refund amount") from exc
+    return QuickBooksRefund(
+        id=str(payload["id"]),
+        status=str(payload["status"]).upper(),
+        amount=refunded_amount,
+        raw=payload,
+    )

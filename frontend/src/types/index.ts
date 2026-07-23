@@ -594,6 +594,7 @@ export interface Invoice {
 }
 
 export interface InvoicePaymentSummary {
+  id: string
   amount: string
   method: string
   paid_at: string | null
@@ -601,6 +602,8 @@ export interface InvoicePaymentSummary {
   payment_provider?: string | null
   reference_number?: string | null
   authorization_number?: string | null
+  quickbooks_charge_status?: string | null
+  quickbooks_reconciled_at?: string | null
 }
 
 export interface InvoiceDetail extends Invoice {
