@@ -167,7 +167,7 @@ const statusStyles: Record<StripeMerchantStatus | QuickBooksMerchantStatus, stri
   incomplete: 'border-amber-700/50 bg-amber-950/30 text-amber-300',
   under_review: 'border-sky-700/50 bg-sky-950/30 text-sky-300',
   accounting_only: 'border-sky-700/50 bg-sky-950/30 text-sky-300',
-  refresh_required: 'border-amber-700/50 bg-amber-950/30 text-amber-300',
+  refresh_required: 'border-emerald-700/50 bg-emerald-950/30 text-emerald-300',
   restricted: 'border-red-700/50 bg-red-950/30 text-red-300',
   reconnect_required: 'border-red-700/50 bg-red-950/30 text-red-300',
   attention: 'border-red-700/50 bg-red-950/30 text-red-300',
@@ -191,9 +191,10 @@ function apiErrorDetail(error: unknown, fallback: string) {
 }
 
 function StatusBadge({ status }: { status: StripeMerchantStatus | QuickBooksMerchantStatus }) {
+  const label = status === 'refresh_required' ? 'active' : status.replace(/_/g, ' ')
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium capitalize ${statusStyles[status]}`}>
-      {status.replace(/_/g, ' ')}
+      {label}
     </span>
   )
 }
@@ -381,9 +382,8 @@ function QuickBooksControls({
   onCopyWebhook: (url: string) => void
   onReset: (merchant: QuickBooksMerchant) => void
 }) {
-  const active = overview.merchant_summary.active || 0
+  const active = (overview.merchant_summary.active || 0) + (overview.merchant_summary.refresh_required || 0)
   const needsAttention = (overview.merchant_summary.accounting_only || 0)
-    + (overview.merchant_summary.refresh_required || 0)
     + (overview.merchant_summary.reconnect_required || 0)
     + (overview.merchant_summary.attention || 0)
   const configurationItems: Array<[string, boolean]> = [
@@ -439,7 +439,7 @@ function QuickBooksControls({
                   <td className="px-4 py-4"><StatusBadge status={merchant.status} /><p className="mt-2 text-xs text-zinc-500">Connected {dateTime(merchant.connected_at)}</p></td>
                   <td className="px-4 py-4"><div className="flex max-w-[220px] flex-wrap gap-1.5"><CapabilityBadge enabled={merchant.accounting_enabled}>Accounting</CapabilityBadge><CapabilityBadge enabled={merchant.payments_scope_enabled}>Payments scope</CapabilityBadge><CapabilityBadge enabled={merchant.payments_enabled}>Customer pay</CapabilityBadge></div></td>
                   <td className="max-w-xs px-4 py-4 text-xs text-zinc-400">{merchant.requirements.length ? merchant.requirements.join(', ') : 'No action required'}</td>
-                  <td className="px-4 py-4"><p className="text-xs capitalize text-zinc-300">{merchant.token_health.replace(/_/g, ' ')}</p><p className="mt-1 text-xs text-zinc-500">Last refresh: {dateTime(merchant.last_token_refresh_at)}</p>{merchant.last_token_refresh_error && <p className="mt-1 max-w-xs text-xs text-red-300">{merchant.last_token_refresh_error}</p>}</td>
+                  <td className="px-4 py-4"><p className={`text-xs ${merchant.status === 'active' || merchant.status === 'refresh_required' ? 'text-emerald-300' : 'capitalize text-zinc-300'}`}>{merchant.token_health === 'refresh_required' && !merchant.last_token_refresh_error ? 'Ready · automatic renewal' : merchant.token_health.replace(/_/g, ' ')}</p><p className="mt-1 text-xs text-zinc-500">Last token update: {dateTime(merchant.last_token_refresh_at || merchant.connected_at)}</p>{merchant.last_token_refresh_error && <p className="mt-1 max-w-xs text-xs text-red-300">{merchant.last_token_refresh_error}</p>}</td>
                   <td className="px-4 py-4"><p className="text-xs text-zinc-300">Webhook: {dateTime(merchant.last_webhook_at)}</p><p className="mt-1 text-xs text-zinc-500">CDC: {dateTime(merchant.last_cdc_at)}</p>{(merchant.last_webhook_error || merchant.last_cdc_error) && <p className="mt-1 max-w-xs text-xs text-red-300">{merchant.last_webhook_error || merchant.last_cdc_error}</p>}</td>
                   <td className="px-4 py-4">{merchant.is_connected ? <GlassNoirButton variant="danger" size="sm" onClick={() => onReset(merchant)} disabled={resettingTenantId === merchant.tenant_id}>{resettingTenantId === merchant.tenant_id ? 'Resetting' : 'Reset QuickBooks'}</GlassNoirButton> : <span className="text-xs text-zinc-500">No connection</span>}</td>
                 </tr>

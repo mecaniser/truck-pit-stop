@@ -140,13 +140,13 @@ def _quickbooks_merchant_status(
     elif not payments_scope_enabled:
         merchant_state = "accounting_only"
         requirements.append("Grant the QuickBooks Payments scope")
-    elif token_health == "refresh_required":
-        merchant_state = "refresh_required"
-        requirements.append("Access token refresh is required")
     elif connection.last_token_refresh_error:
         merchant_state = "attention"
         requirements.append("Resolve the latest token refresh error")
     else:
+        # One-hour Intuit access-token rotation is routine and is handled
+        # automatically before QuickBooks API operations. It is not a merchant
+        # action item while the refresh token remains valid.
         merchant_state = "active"
 
     if connection and connection.last_webhook_error:
@@ -157,7 +157,7 @@ def _quickbooks_merchant_status(
         requirements.append("Configure a valid QuickBooks Payments environment")
 
     payments_enabled = (
-        merchant_state in {"active", "refresh_required"}
+        merchant_state == "active"
         and payments_scope_enabled
         and configuration["payments_environment_valid"]
     )
