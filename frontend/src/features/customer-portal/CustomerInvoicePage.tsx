@@ -3,7 +3,7 @@ import { Spinner } from '@/components/ui'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { Camera, CreditCard, FileText, Download, Printer } from 'lucide-react'
+import { Camera, ChevronDown, ChevronUp, CreditCard, FileText, Download, Printer } from 'lucide-react'
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js'
 import type { Stripe } from '@stripe/stripe-js'
 import { AxiosError } from 'axios'
@@ -467,30 +467,40 @@ export default function CustomerInvoicePage() {
               <div
                 role="status"
                 aria-label="Checking QuickBooks payment availability"
-                className="animate-pulse border-t border-gray-700 pt-5"
+                className="animate-pulse overflow-hidden rounded-xl border border-gray-700 bg-slate-950/40"
               >
-                <div className="mb-2 h-3 w-52 rounded bg-gray-700/70" />
-                <div className="h-12 w-full rounded-lg border border-gray-700 bg-gray-800/70" />
+                <div className="px-4 py-3">
+                  <div className="h-4 w-40 rounded bg-gray-700/70" />
+                  <div className="mt-2 h-3 w-28 rounded bg-gray-800" />
+                </div>
                 <span className="sr-only">Checking QuickBooks payment availability…</span>
               </div>
             )}
             {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
-              <div className="border-t border-gray-700 pt-5">
-                <p className="mb-2 text-xs uppercase tracking-wide text-gray-400">Secure card payment · Powered by QuickBooks</p>
-                {!showQuickBooksPayment ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowQuickBooksPayment(true)}
-                    className="w-full rounded-lg border border-emerald-500/60 py-3 font-semibold text-emerald-300 hover:bg-emerald-500/10"
-                  >
-                    Pay securely by card
-                  </button>
-                ) : (
+              <div className="overflow-hidden rounded-xl border border-emerald-500/40 bg-slate-950/40">
+                <button
+                  type="button"
+                  aria-expanded={showQuickBooksPayment}
+                  aria-controls="quickbooks-payment-panel"
+                  onClick={() => setShowQuickBooksPayment(open => !open)}
+                  className="flex w-full items-center justify-between gap-3 bg-emerald-500/10 px-4 py-3 text-left hover:bg-emerald-500/15"
+                >
+                  <span>
+                    <span className="block text-sm font-semibold text-emerald-200">Pay securely by card</span>
+                    <span className="mt-1 block text-xs text-gray-400">Powered by QuickBooks</span>
+                  </span>
+                  {showQuickBooksPayment
+                    ? <ChevronUp className="h-4 w-4 shrink-0 text-emerald-200" />
+                    : <ChevronDown className="h-4 w-4 shrink-0 text-emerald-200" />}
+                </button>
+                {showQuickBooksPayment && (
+                  <div id="quickbooks-payment-panel" className="border-t border-emerald-500/30 px-4 py-4">
                   <QuickBooksPaymentPanel
                     invoiceId={invoice.id}
                     tokenUrl={quickBooksPayment.token_url}
                     onSuccess={handlePaymentSuccess}
                   />
+                  </div>
                 )}
               </div>
             )}
