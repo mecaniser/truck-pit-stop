@@ -18,7 +18,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -77,6 +77,50 @@ from app.services.quickbooks_sync_service import (
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+async def _reset_accounting_links_for_realm_change(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    now: datetime,
+) -> None:
+    """Make provider IDs retryable when a tenant connects a different QBO company."""
+    await db.execute(
+        update(Customer)
+        .where(Customer.tenant_id == tenant_id)
+        .values(quickbooks_customer_id=None)
+    )
+    await db.execute(
+        update(Invoice)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.status.in_([InvoiceStatus.SENT, InvoiceStatus.PAID]),
+        )
+        .values(
+            quickbooks_invoice_id=None,
+            quickbooks_sync_status="pending",
+            quickbooks_synced_at=None,
+            quickbooks_sync_error=None,
+        )
+    )
+    await db.execute(
+        update(ProviderOutboxEvent)
+        .where(
+            ProviderOutboxEvent.tenant_id == tenant_id,
+            ProviderOutboxEvent.event_type == QUICKBOOKS_INVOICE_SYNC_EVENT,
+        )
+        .values(
+            status=ProviderOutboxStatus.PENDING.value,
+            attempt_count=0,
+            available_at=now,
+            locked_at=None,
+            locked_until=None,
+            lock_token=None,
+            completed_at=None,
+            last_error=None,
+        )
+    )
 
 
 class QuickBooksAuthorizationResponse(BaseModel):
@@ -675,6 +719,7 @@ async def quickbooks_oauth_callback(
         return _callback_redirect("realm-in-use")
 
     connection = await _get_connection(db, oauth_state.tenant_id)
+    previous_realm_id = connection.realm_id if connection else None
     if not connection:
         connection = QuickBooksConnection(tenant_id=oauth_state.tenant_id)
         db.add(connection)
@@ -685,6 +730,19 @@ async def quickbooks_oauth_callback(
             token_set=token_set,
             now=datetime.now(timezone.utc),
         )
+        sync_now = datetime.now(timezone.utc)
+        if previous_realm_id and previous_realm_id != realm_id:
+            await _reset_accounting_links_for_realm_change(
+                db,
+                tenant_id=oauth_state.tenant_id,
+                now=sync_now,
+            )
+            logger.info(
+                "quickbooks_realm_changed",
+                tenant_id=str(oauth_state.tenant_id),
+                previous_realm_id=previous_realm_id,
+                realm_id=realm_id,
+            )
         # Backfill finalized invoices that predate the connection and wake any
         # events that were waiting for this garage to authorize QuickBooks.
         waiting_events = (await db.execute(
@@ -696,7 +754,7 @@ async def quickbooks_oauth_callback(
         )).scalars().all()
         existing_invoice_ids = {event.aggregate_id for event in waiting_events}
         for event in waiting_events:
-            event.available_at = datetime.now(timezone.utc)
+            event.available_at = sync_now
             event.last_error = None
         unsynced_invoices = (await db.execute(
             select(Invoice).where(
