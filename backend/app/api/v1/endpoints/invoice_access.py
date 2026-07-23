@@ -85,6 +85,7 @@ class ResolveInvoiceLinkResponse(BaseModel):
     zelle_qr_image: Optional[str] = None
     has_portal_account: bool = False
     requires_password_setup: bool = True
+    stripe_payments_available: bool = False
 
 
 class GuestPaymentIntentResponse(BaseModel):
@@ -360,6 +361,9 @@ async def resolve_invoice_link(
         zelle_qr_image=tenant.zelle_qr_image if tenant else None,
         has_portal_account=existing_user is not None,
         requires_password_setup=existing_user is None,
+        stripe_payments_available=bool(
+            tenant and tenant.stripe_account_id and tenant.stripe_onboarding_complete
+        ),
     )
 
 
