@@ -1,4 +1,8 @@
-import { loadStripe, type Stripe } from '@stripe/stripe-js'
+// The default entrypoint injects Stripe.js as soon as this module is imported.
+// Use the pure loader so staff routes do not create payment iframes until a
+// customer-facing payment flow explicitly requests Stripe.
+import { loadStripe } from '@stripe/stripe-js/pure'
+import type { Stripe } from '@stripe/stripe-js'
 import api from './api'
 
 const stripePromiseCache = new Map<string, Promise<Stripe | null>>()
