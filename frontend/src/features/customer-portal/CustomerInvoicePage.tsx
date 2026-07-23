@@ -209,7 +209,7 @@ export default function CustomerInvoicePage() {
     enabled: !!invoice && invoice.status !== 'paid',
   })
 
-  const { data: quickBooksPayment } = useQuery<QuickBooksPaymentAvailability>({
+  const { data: quickBooksPayment, isLoading: isQuickBooksPaymentLoading } = useQuery<QuickBooksPaymentAvailability>({
     queryKey: ['quickbooks-payment-availability', invoice?.id],
     queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
     enabled: !!invoice && invoice.status !== 'paid',
@@ -454,7 +454,11 @@ export default function CustomerInvoicePage() {
               )}
             </div>
             )}
-            {!invoice.pending_zelle_confirmation && zelleInfo && !zelleInfo.stripe_payments_available && (
+            {!invoice.pending_zelle_confirmation
+              && zelleInfo
+              && !zelleInfo.stripe_payments_available
+              && !isQuickBooksPaymentLoading
+              && !(quickBooksPayment?.available && quickBooksPayment.token_url) && (
               <p className="rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
                 Online card payment is currently unavailable for this shop.
               </p>
