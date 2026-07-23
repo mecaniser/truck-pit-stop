@@ -60,7 +60,7 @@ from app.db.models.fleet import (
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
 from app.db.models.repair_order_history import RepairOrderHistoryEvent
-from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState
+from app.db.models.quickbooks_connection import QuickBooksConnection, QuickBooksOAuthState, QuickBooksWebhookEvent
 from app.db.models.stripe_oauth import StripeOAuthState
 
 __all__ = [
@@ -134,4 +134,5 @@ __all__ = [
     "RepairOrderHistoryEvent",
     "QuickBooksConnection",
     "QuickBooksOAuthState",
+    "QuickBooksWebhookEvent",
 ]

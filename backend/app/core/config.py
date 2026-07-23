@@ -89,9 +89,13 @@ class Settings(BaseSettings):
     QUICKBOOKS_REDIRECT_URI: str = ""
     QUICKBOOKS_TOKEN_ENCRYPTION_KEY: str = ""
     QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN: str = ""
+    # Accounting and Payments can be promoted independently after their
+    # sandbox workflows pass. Both default to Intuit's non-monetary sandbox.
+    QUICKBOOKS_ACCOUNTING_ENVIRONMENT: str = "sandbox"
     # Payments requests use Intuit's sandbox until the production app is
     # approved and explicitly configured for live processing.
     QUICKBOOKS_PAYMENTS_ENVIRONMENT: str = "sandbox"
+    QUICKBOOKS_MINOR_VERSION: int = Field(default=75, ge=1, le=999)
     QUICKBOOKS_HTTP_TIMEOUT_SECONDS: float = Field(default=15.0, gt=0, le=60)
     QUICKBOOKS_OAUTH_STATE_TTL_SECONDS: int = Field(default=600, ge=60, le=1800)
     

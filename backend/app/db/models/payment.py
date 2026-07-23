@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey, Numeric, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, ForeignKey, Numeric, Text, Enum as SQLEnum, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 import enum
@@ -57,6 +57,12 @@ class Payment(BaseModel):
     quickbooks_charge_id = Column(String(255), nullable=True, unique=True, index=True)
     quickbooks_charge_status = Column(String(50), nullable=True, index=True)
     quickbooks_idempotency_key = Column(String(64), nullable=True, unique=True, index=True)
+    quickbooks_payment_id = Column(String(64), nullable=True, index=True)
+    quickbooks_refund_id = Column(String(255), nullable=True, unique=True, index=True)
+    quickbooks_refund_receipt_id = Column(String(64), nullable=True, index=True)
+    quickbooks_refunded_amount = Column(Numeric(10, 2), nullable=True)
+    quickbooks_reconciled_at = Column(DateTime(timezone=True), nullable=True)
+    quickbooks_sync_error = Column(Text, nullable=True)
     
     notes = Column(Text, nullable=True)
     # Manual-payment audit details. These are intentionally provider-neutral:
