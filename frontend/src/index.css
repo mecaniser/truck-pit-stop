@@ -79,6 +79,20 @@ html::-webkit-scrollbar-thumb:hover {
   width: 100%;
 }
 
+/*
+ * iOS zooms the viewport when a focused editable control computes below 16px.
+ * The compact theme intentionally scales general UI text down, so keep form
+ * controls at the platform-safe minimum on touch-first devices.
+ */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: 16px !important;
+  }
+}
+
 /* Slide-in animation for panels */
 @keyframes slide-in-right {
   from {
