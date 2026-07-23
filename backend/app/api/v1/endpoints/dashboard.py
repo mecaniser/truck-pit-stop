@@ -363,7 +363,6 @@ async def get_dashboard_stats(
             RepairOrder.created_at.desc(),
             RepairOrder.updated_at.desc(),
         )
-        .limit(10)
     )
     needs_action_rows = result.all()
     needs_action_ids = [o.id for o, c, v, m in needs_action_rows]
@@ -396,7 +395,6 @@ async def get_dashboard_stats(
             )
         )
         .order_by(Invoice.zelle_pending_submitted_at.desc())
-        .limit(10)
     )
     pending_zelle_orders = [
         _build_order(o, c, v, m, pending_zelle_confirmation=True)
@@ -405,7 +403,7 @@ async def get_dashboard_stats(
     pending_zelle_order_ids = {order.id for order in pending_zelle_orders}
     orders_needing_action = (pending_zelle_orders + [
         order for order in standard_needs_action if order.id not in pending_zelle_order_ids
-    ])[:10]
+    ])
 
     # Lane 2: On the Floor (approved, assigned, acknowledged, in_progress)
     on_floor_statuses = [
@@ -427,7 +425,6 @@ async def get_dashboard_stats(
             )
         )
         .order_by(RepairOrder.updated_at.desc())
-        .limit(10)
     )
     orders_on_floor = [_build_order(o, c, v, m) for o, c, v, m in result.all()]
 

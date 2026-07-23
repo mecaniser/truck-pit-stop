@@ -100,6 +100,19 @@ type ApiErrorLike = {
 
 type ZelleModalMode = 'collect' | 'confirm_pending'
 type EvidencePaymentMethod = 'check' | 'ach' | 'fleet_payment'
+type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close'
+
+type WorkQueueStats = {
+  orders_needing_action: Array<{ id: string }>
+  orders_on_floor: Array<{ id: string }>
+  orders_ready_to_close: Array<{ id: string }>
+}
+
+const WORK_QUEUE_FIELD: Record<WorkQueueLane, keyof WorkQueueStats> = {
+  needs_action: 'orders_needing_action',
+  on_floor: 'orders_on_floor',
+  ready_to_close: 'orders_ready_to_close',
+}
 
 const EVIDENCE_PAYMENT_METHODS: EvidencePaymentMethod[] = ['check', 'ach', 'fleet_payment']
 const FLEET_PAYMENT_PROVIDERS = [
@@ -225,6 +238,10 @@ export default function RepairOrdersPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const queueParam = searchParams.get('queue')
+  const workQueueLane: WorkQueueLane | null = queueParam && queueParam in WORK_QUEUE_FIELD
+    ? queueParam as WorkQueueLane
+    : null
   const RO_PAGE_SIZE = 25
   const [page, setPage] = useState(0)
   // Reset to the first page whenever the search term or status filter changes.
@@ -359,6 +376,19 @@ export default function RepairOrdersPage() {
 
   const queryClient = useQueryClient()
 
+  // Dashboard cards identify their originating lane in the URL. Reuse the
+  // dashboard stats cache (or fetch it after a refresh) so drawer navigation
+  // can walk the entire lane rather than only the current 25-row list page.
+  const { data: workQueueStats } = useQuery<WorkQueueStats>({
+    queryKey: ['dashboard-stats'],
+    queryFn: async () => (await api.get('/dashboard/stats')).data,
+    enabled: !!workQueueLane,
+    staleTime: 60 * 1000,
+  })
+  const workQueueOrderIds = workQueueLane
+    ? (workQueueStats?.[WORK_QUEUE_FIELD[workQueueLane]] ?? []).map((order) => order.id)
+    : []
+
   // Server-side pagination: one page at a time, with search + status pushed to
   // the API instead of loading every order and filtering in the browser.
   const orderPageKey = (p: number) =>
@@ -453,6 +483,14 @@ export default function RepairOrdersPage() {
     // switching orders while open (prev/next, arrow keys) replaces the entry so
     // Back still exits to the origin instead of replaying every order viewed.
     setSearchParams({ selected: order.id }, { replace: isDetailOpen })
+  }
+
+  const openWorkQueueOrder = (orderId: string) => {
+    if (!workQueueLane) return
+    if (selectedOrder?.id && selectedOrder.id !== orderId) {
+      cancelOrderQueries(selectedOrder.id)
+    }
+    setSearchParams({ selected: orderId, queue: workQueueLane }, { replace: true })
   }
 
   const clearDetailState = () => {
@@ -1665,12 +1703,12 @@ export default function RepairOrdersPage() {
     )
   }
 
-  // Navigation state for prev/next browsing in the detail panel. This only
-  // has the current server-fetched page (25 orders) to walk — crossing into
-  // the next/previous page is handled by goToNextOrder/goToPrevOrder below,
-  // which flip `page` and land on the new page's first/last order once it
-  // loads (already prefetched by the effect above in the common case, so it
-  // resolves near-instantly rather than stalling on a fresh fetch).
+  // Dashboard-originated navigation follows its full ordered queue. Normal
+  // list navigation retains the existing 25-row page/cross-page behavior.
+  const workQueueNavIndex = selectedOrder
+    ? workQueueOrderIds.indexOf(selectedOrder.id)
+    : -1
+  const isWorkQueueNavigation = workQueueNavIndex >= 0
   const navigationOrders = filteredOrders ?? []
   const currentNavIndex = selectedOrder
     ? navigationOrders.findIndex(o => o.id === selectedOrder.id)
@@ -1679,16 +1717,28 @@ export default function RepairOrdersPage() {
   const isAtFirstOnPage = currentNavIndex === 0
   const canCrossToNextPage = isAtLastOnPage && !!orderPage?.has_more
   const canCrossToPrevPage = isAtFirstOnPage && page > 0
-  const showNavigation = navigationOrders.length > 1 && currentNavIndex >= 0
-  const hasPrev = (currentNavIndex > 0) || canCrossToPrevPage
-  const hasNext = (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) || canCrossToNextPage
+  const showNavigation = isWorkQueueNavigation || (navigationOrders.length > 1 && currentNavIndex >= 0)
+  const hasPrev = isWorkQueueNavigation
+    ? workQueueNavIndex > 0
+    : (currentNavIndex > 0) || canCrossToPrevPage
+  const hasNext = isWorkQueueNavigation
+    ? workQueueNavIndex < workQueueOrderIds.length - 1
+    : (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) || canCrossToNextPage
   // Position within the current 25-row page, projected onto the true
   // position across every page — otherwise crossing a page boundary reset
   // the counter back to "1 / 25" instead of continuing "26 / <total>".
-  const globalNavPosition = currentNavIndex >= 0 ? page * RO_PAGE_SIZE + currentNavIndex + 1 : 0
-  const globalNavTotal = totalOrders || navigationOrders.length
+  const globalNavPosition = isWorkQueueNavigation
+    ? workQueueNavIndex + 1
+    : currentNavIndex >= 0 ? page * RO_PAGE_SIZE + currentNavIndex + 1 : 0
+  const globalNavTotal = isWorkQueueNavigation
+    ? workQueueOrderIds.length
+    : totalOrders || navigationOrders.length
 
   const goToNextOrder = () => {
+    if (isWorkQueueNavigation) {
+      if (hasNext) openWorkQueueOrder(workQueueOrderIds[workQueueNavIndex + 1])
+      return
+    }
     if (currentNavIndex >= 0 && currentNavIndex < navigationOrders.length - 1) {
       openDetail(navigationOrders[currentNavIndex + 1])
       return
@@ -1700,6 +1750,10 @@ export default function RepairOrdersPage() {
   }
 
   const goToPrevOrder = () => {
+    if (isWorkQueueNavigation) {
+      if (hasPrev) openWorkQueueOrder(workQueueOrderIds[workQueueNavIndex - 1])
+      return
+    }
     if (currentNavIndex > 0) {
       openDetail(navigationOrders[currentNavIndex - 1])
       return
