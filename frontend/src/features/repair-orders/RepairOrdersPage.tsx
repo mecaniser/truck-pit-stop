@@ -3076,8 +3076,8 @@ export default function RepairOrdersPage() {
         subtitle="Repair Order"
         width="max-w-full sm:max-w-[90vw] xl:max-w-[72vw] 2xl:max-w-[1400px]"
         hideHeader={priceBuilderOwnsShell}
-        onPrev={!priceBuilderOwnsShell && (showNavigation || hasPrev) ? goToPrevOrder : undefined}
-        onNext={!priceBuilderOwnsShell && (showNavigation || hasNext) ? goToNextOrder : undefined}
+        onPrev={showNavigation || hasPrev ? goToPrevOrder : undefined}
+        onNext={showNavigation || hasNext ? goToNextOrder : undefined}
         prevDisabled={!hasPrev}
         nextDisabled={!hasNext}
         navigationLabel={!priceBuilderOwnsShell && showNavigation ? `${globalNavPosition} / ${globalNavTotal}` : undefined}
