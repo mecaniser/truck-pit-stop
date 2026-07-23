@@ -168,6 +168,7 @@ interface ZelleInfoResponse {
   zelle_phone: string | null
   zelle_qr_image: string | null
   garage_name: string
+  stripe_payments_available: boolean
 }
 
 interface QuickBooksPaymentAvailability {
@@ -421,7 +422,7 @@ export default function CustomerInvoicePage() {
               onSubmit={() => submitZelleMutation.mutate()}
             />
 
-            {!invoice.pending_zelle_confirmation && (
+            {!invoice.pending_zelle_confirmation && zelleInfo?.stripe_payments_available && (
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Pay instantly by card</p>
               {!showPayment ? (
@@ -452,6 +453,11 @@ export default function CustomerInvoicePage() {
                 </div>
               )}
             </div>
+            )}
+            {!invoice.pending_zelle_confirmation && zelleInfo && !zelleInfo.stripe_payments_available && (
+              <p className="rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+                Online card payment is currently unavailable for this shop.
+              </p>
             )}
             {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
               <div className="border-t border-gray-700 pt-5">

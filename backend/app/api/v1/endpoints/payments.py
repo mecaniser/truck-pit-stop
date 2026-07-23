@@ -89,6 +89,7 @@ class ZelleInfoResponse(BaseModel):
     zelle_phone: Optional[str] = None
     zelle_qr_image: Optional[str] = None
     garage_name: str
+    stripe_payments_available: bool = False
 
 
 class ManualPaymentResponse(BaseModel):
@@ -946,4 +947,7 @@ async def get_zelle_info(
         zelle_phone=tenant.zelle_phone,
         zelle_qr_image=tenant.zelle_qr_image,
         garage_name=tenant.name,
+        stripe_payments_available=bool(
+            tenant.stripe_account_id and tenant.stripe_onboarding_complete
+        ),
     )

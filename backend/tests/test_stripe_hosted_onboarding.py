@@ -120,3 +120,33 @@ async def test_hosted_onboarding_reports_unactivated_platform(client, db_session
 
     assert response.status_code == 409
     assert "platform activation" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_deleted_connected_account_can_be_reset_by_shop(client, db_session, monkeypatch):
+    _configure(monkeypatch)
+    tenant, token = await _owner(db_session)
+    tenant.stripe_account_id = "acct_deleted"
+    tenant.stripe_connection_type = "stripe_hosted"
+    tenant.stripe_onboarding_complete = True
+    await db_session.commit()
+
+    def retrieve_account(_account_id):
+        raise stripe_connect.stripe.error.InvalidRequestError(
+            "No such account: acct_deleted",
+            None,
+        )
+
+    monkeypatch.setattr(stripe_connect.stripe.Account, "retrieve", retrieve_account)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    status_response = await client.get("/api/v1/stripe/connect/status", headers=headers)
+    assert status_response.status_code == 200
+    assert status_response.json()["verification_status"] == "unreachable"
+    assert status_response.json()["onboarding_complete"] is False
+
+    reset_response = await client.post("/api/v1/stripe/connect/disconnect", headers=headers)
+    assert reset_response.status_code == 200
+    await db_session.refresh(tenant)
+    assert tenant.stripe_account_id is None
+    assert tenant.stripe_connection_type is None

@@ -317,6 +317,25 @@ async def get_connect_status(
             last_payout_at=last_payout_at,
             recent_payments=recent_payments,
         )
+    except stripe.error.InvalidRequestError:
+        # A deleted or otherwise invalid connected account must not trap the
+        # shop behind a failing status request. Keep the local ID visible so
+        # the settings UI can offer a deliberate local reset.
+        if tenant.stripe_onboarding_complete:
+            tenant.stripe_onboarding_complete = False
+            await db.commit()
+        return ConnectStatusResponse(
+            configured=_connect_configured(),
+            is_connected=True,
+            onboarding_complete=False,
+            charges_enabled=False,
+            payouts_enabled=False,
+            account_id=tenant.stripe_account_id,
+            connection_type=tenant.stripe_connection_type or "express_legacy",
+            verification_status="unreachable",
+            requirements=[],
+            mode=mode,
+        )
     except stripe.error.StripeError:
         raise HTTPException(status_code=502, detail="Unable to retrieve Stripe account status")
 

@@ -41,6 +41,7 @@ interface InvoiceAccessResolve {
   zelle_qr_image: string | null
   has_portal_account: boolean
   requires_password_setup: boolean
+  stripe_payments_available: boolean
 }
 
 interface PaymentIntentResponse {
@@ -705,39 +706,45 @@ export default function InvoiceAccessPage() {
               ) : (
                 /* Non-portal users: card as hero, Zelle collapsed, portal enrollment below */
                 <>
-                  <section className="bg-white border border-gray-200 rounded-xl p-4">
-                    <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                      <CreditCard className="w-5 h-5 text-green-600" />
-                      Pay Online Now
-                    </h3>
-                    {!showPayment ? (
-                      <button
-                        onClick={() => createIntentMutation.mutate(token)}
-                        disabled={createIntentMutation.isPending}
-                        className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
-                      >
-                        {createIntentMutation.isPending ? 'Preparing checkout...' : 'Continue to Secure Payment'}
-                      </button>
-                    ) : stripeOptions && stripeInstance ? (
-                      <Elements stripe={stripeInstance} options={stripeOptions}>
-                        <GuestPaymentForm
-                          token={token}
-                          onSuccess={(result) => {
-                            setShowPayment(false)
-                            setStripeOptions(null)
-                            setPaymentResult({
-                              paidAt: result.paid_at,
-                              portalEnrollmentToken: result.portal_enrollment_token,
-                            })
-                          }}
-                        />
-                      </Elements>
-                    ) : (
-                      <div className="flex items-center justify-center py-4">
-                        <Spinner size="lg" />
-                      </div>
-                    )}
-                  </section>
+                  {invoice.stripe_payments_available ? (
+                    <section className="bg-white border border-gray-200 rounded-xl p-4">
+                      <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-green-600" />
+                        Pay Online Now
+                      </h3>
+                      {!showPayment ? (
+                        <button
+                          onClick={() => createIntentMutation.mutate(token)}
+                          disabled={createIntentMutation.isPending}
+                          className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg"
+                        >
+                          {createIntentMutation.isPending ? 'Preparing checkout...' : 'Continue to Secure Payment'}
+                        </button>
+                      ) : stripeOptions && stripeInstance ? (
+                        <Elements stripe={stripeInstance} options={stripeOptions}>
+                          <GuestPaymentForm
+                            token={token}
+                            onSuccess={(result) => {
+                              setShowPayment(false)
+                              setStripeOptions(null)
+                              setPaymentResult({
+                                paidAt: result.paid_at,
+                                portalEnrollmentToken: result.portal_enrollment_token,
+                              })
+                            }}
+                          />
+                        </Elements>
+                      ) : (
+                        <div className="flex items-center justify-center py-4">
+                          <Spinner size="lg" />
+                        </div>
+                      )}
+                    </section>
+                  ) : (
+                    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                      Online card payment is currently unavailable for this shop. Please use another payment method or contact the shop.
+                    </section>
+                  )}
                   <div>
                     <button
                       type="button"
