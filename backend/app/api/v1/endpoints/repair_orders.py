@@ -3533,7 +3533,12 @@ async def update_parts_quantity(
 
 async def _load_order_for_summary(db: AsyncSession, order_id: UUID) -> RepairOrder:
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None)).options(selectinload(RepairOrder.labor_items))
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id, RepairOrder.deleted_at.is_(None))
+        .options(
+            selectinload(RepairOrder.labor_items),
+            selectinload(RepairOrder.parts_usage).selectinload(PartsUsage.inventory_item),
+        )
     )
     return result.scalar_one()
 
