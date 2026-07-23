@@ -25,11 +25,19 @@ from app.db.models.sms_message import SMSDeliveryStatus, SMSMessage, SMSMessageD
 from app.db.models.tenant import Tenant
 
 logger = get_logger(__name__)
-twilio_client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 
 _STOP_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"}
 _START_KEYWORDS = {"START", "UNSTOP"}
 _TWILIO_OPTOUT_ERROR_CODE = "21610"
+
+
+def _get_twilio_client() -> Optional[Client]:
+    """Create the provider client only when this deployment has SMS credentials."""
+    account_sid = settings.TWILIO_ACCOUNT_SID.strip()
+    auth_token = settings.TWILIO_AUTH_TOKEN.strip()
+    if not account_sid or not auth_token:
+        return None
+    return Client(account_sid, auth_token)
 
 
 def _coerce_uuid(value: UUID | str) -> UUID:
@@ -369,6 +377,10 @@ async def send_sms_with_tracking(
         await db.flush()
 
     try:
+        twilio_client = _get_twilio_client()
+        if not twilio_client:
+            raise RuntimeError("SMS provider credentials are not configured")
+
         twilio_payload: dict[str, str] = {
             "body": body,
             "from_": _normalize_for_twilio(from_number),
