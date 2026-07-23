@@ -1,4 +1,4 @@
-import { ReactNode, useRef, useState } from 'react'
+import { ReactNode, useEffect, useRef } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
@@ -72,15 +72,38 @@ export default function SlidePanel({
     axis: 'horizontal' | 'vertical' | null
   } | null>(null)
   const suppressNextClick = useRef(false)
-  const [swipeOffset, setSwipeOffset] = useState(0)
-  const [isSwiping, setIsSwiping] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const swipeFrame = useRef<number | null>(null)
+  const pendingSwipeOffset = useRef(0)
 
   const canSwipe = onPrev !== undefined || onNext !== undefined
 
+  const paintSwipe = (offset: number) => {
+    pendingSwipeOffset.current = offset
+    if (swipeFrame.current !== null) return
+    swipeFrame.current = window.requestAnimationFrame(() => {
+      swipeFrame.current = null
+      const panel = panelRef.current
+      if (!panel) return
+      const nextOffset = pendingSwipeOffset.current
+      panel.style.transition = 'none'
+      panel.style.transform = `translate3d(${nextOffset}px, 0, 0)`
+      panel.style.opacity = String(Math.max(0.82, 1 - Math.abs(nextOffset) / 600))
+    })
+  }
+
   const resetSwipe = () => {
     pointerGesture.current = null
-    setSwipeOffset(0)
-    setIsSwiping(false)
+    if (swipeFrame.current !== null) {
+      window.cancelAnimationFrame(swipeFrame.current)
+      swipeFrame.current = null
+    }
+    pendingSwipeOffset.current = 0
+    const panel = panelRef.current
+    if (!panel) return
+    panel.style.transition = 'transform 150ms ease-out, opacity 150ms ease-out'
+    panel.style.transform = ''
+    panel.style.opacity = ''
   }
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -116,10 +139,9 @@ export default function SlidePanel({
     if (gesture.axis !== 'horizontal') return
 
     event.preventDefault()
-    setIsSwiping(true)
     const canMoveInDirection = deltaX < 0 ? onNext && !nextDisabled : onPrev && !prevDisabled
     const resistedOffset = canMoveInDirection ? deltaX : deltaX * 0.18
-    setSwipeOffset(Math.max(-120, Math.min(120, resistedOffset)))
+    paintSwipe(Math.max(-120, Math.min(120, resistedOffset)))
   }
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -166,14 +188,50 @@ export default function SlidePanel({
     resetSwipe()
   }
 
-  const swipeStyle = swipeOffset === 0
-    ? undefined
-    : {
-        transform: `translate3d(${swipeOffset}px, 0, 0)`,
-        opacity: Math.max(0.82, 1 - Math.abs(swipeOffset) / 600),
-      }
+  useEffect(() => () => {
+    if (swipeFrame.current !== null) {
+      window.cancelAnimationFrame(swipeFrame.current)
+    }
+  }, [])
 
-  const swipeTransitionClass = isSwiping ? '' : 'transition-[transform,opacity] duration-150 ease-out'
+  useEffect(() => {
+    if (!isOpen) return
+
+    const body = document.body
+    const root = document.documentElement
+    const scrollY = window.scrollY
+    const previousBodyStyles = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    }
+    const previousRootOverflow = root.style.overflow
+
+    // `overflow: hidden` alone is not reliable on iOS/iPadOS. Fixing the body
+    // preserves the current page position while preventing the exposed drawer
+    // backdrop from dragging the dashboard behind it.
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.left = '0'
+    body.style.right = '0'
+    body.style.width = '100%'
+    body.style.overflow = 'hidden'
+    root.style.overflow = 'hidden'
+
+    return () => {
+      body.style.position = previousBodyStyles.position
+      body.style.top = previousBodyStyles.top
+      body.style.left = previousBodyStyles.left
+      body.style.right = previousBodyStyles.right
+      body.style.width = previousBodyStyles.width
+      body.style.overflow = previousBodyStyles.overflow
+      root.style.overflow = previousRootOverflow
+      window.scrollTo(0, scrollY)
+    }
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -183,17 +241,17 @@ export default function SlidePanel({
   // Dark theme panel
   if (isDark) {
     return (
-      <div className="fixed inset-0 z-[60] overflow-hidden">
+      <div className="fixed inset-0 z-[60] overflow-hidden overscroll-none">
         {/* Backdrop */}
         <div
-          className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+          className="absolute inset-0 touch-none overscroll-none bg-black/60 backdrop-blur-sm transition-opacity"
           onClick={onClose}
         />
 
         {/* Panel */}
         <div
-          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y ${swipeTransitionClass}`}
-          style={swipeStyle}
+          ref={panelRef}
+          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -264,7 +322,7 @@ export default function SlidePanel({
           )}
 
           {/* Content */}
-          <div className="min-h-0 flex-1 overflow-y-auto scrollbar-dark">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-dark">{children}</div>
 
           {/* Footer */}
           {footer && (
@@ -279,17 +337,17 @@ export default function SlidePanel({
 
   // Light theme panel (original)
   return (
-    <div className="fixed inset-0 z-[60] overflow-hidden">
+    <div className="fixed inset-0 z-[60] overflow-hidden overscroll-none">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 touch-none overscroll-none bg-black/40 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
       {/* Panel */}
       <div
-        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y ${swipeTransitionClass}`}
-        style={swipeStyle}
+        ref={panelRef}
+        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -403,7 +461,7 @@ export default function SlidePanel({
         ))}
 
         {/* Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
 
         {/* Footer */}
         {footer && (
