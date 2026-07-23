@@ -244,19 +244,20 @@ export default function PerformanceTab() {
       </div>
 
       {/* System Health Panel */}
-      <GlassNoirCard>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">System Health</h2>
+      <GlassNoirCard padding="none" className="p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <h2 className="text-base font-semibold text-white sm:text-lg">System Health</h2>
           <Server className="w-5 h-5 text-gold-400" />
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-4 md:grid-cols-2 md:gap-6 lg:grid-cols-4">
           {/* API Status */}
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-2 sm:space-y-3">
             <StatusIndicator
               status={health?.status === 'healthy' || health?.status === 'ready' ? 'healthy' : 'error'}
               label="API Status"
               sublabel={health?.environment || 'unknown'}
+              compactOnMobile
             />
             <div className="text-xs text-gray-500">
               Version: {health?.version || 'unknown'}
@@ -264,11 +265,12 @@ export default function PerformanceTab() {
           </div>
 
           {/* Database */}
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-2 sm:space-y-3">
             <StatusIndicator
               status={health?.checks.database ? getHealthStatus(health.checks.database) : 'unknown'}
               label="Database"
               sublabel={health?.checks.database ? `${health.checks.database.latency_ms.toFixed(1)}ms` : 'N/A'}
+              compactOnMobile
             />
             <div className="w-full bg-gray-700 rounded-full h-1.5">
               <div 
@@ -285,11 +287,12 @@ export default function PerformanceTab() {
           </div>
 
           {/* Redis */}
-          <div className="space-y-3">
+          <div className="min-w-0 space-y-2 sm:space-y-3">
             <StatusIndicator
               status={health?.checks.redis ? getHealthStatus(health.checks.redis) : 'unknown'}
               label="Redis Cache"
               sublabel={health?.checks.redis ? `${health.checks.redis.latency_ms.toFixed(1)}ms` : 'N/A'}
+              compactOnMobile
             />
             <div className="w-full bg-gray-700 rounded-full h-1.5">
               <div 
@@ -306,14 +309,14 @@ export default function PerformanceTab() {
           </div>
 
           {/* Uptime */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gold-500/10 rounded-lg border border-gold-500/20">
-                <Clock className="w-5 h-5 text-gold-400" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="shrink-0 p-1.5 bg-gold-500/10 rounded-lg border border-gold-500/20 sm:p-2">
+                <Clock className="w-4 h-4 text-gold-400 sm:w-5 sm:h-5" />
               </div>
-              <div>
-                <div className="font-medium text-gold-400">Uptime</div>
-                <div className="text-lg font-bold text-white">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-gold-400 sm:text-base">Uptime</div>
+                <div className="truncate text-base font-bold text-white sm:text-lg">
                   {formatUptime(health?.uptime_seconds || 0)}
                 </div>
               </div>
@@ -347,18 +350,18 @@ export default function PerformanceTab() {
       </GlassNoirCard>
 
       {/* Process Metrics */}
-      <GlassNoirCard>
-        <div className="flex items-center justify-between mb-4">
+      <GlassNoirCard padding="none" className="p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">Process Metrics</h2>
-            <p className="text-xs text-gray-500 mt-1">
+            <h2 className="text-base font-semibold text-white sm:text-lg">Process Metrics</h2>
+            <p className="text-[11px] leading-4 text-gray-500 mt-0.5 sm:mt-1 sm:text-xs">
               Rolling activity window, up to {Math.round((activityWindow?.window_seconds || 300) / 60)} minutes.
             </p>
           </div>
           <Activity className="w-5 h-5 text-gold-400" />
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
           <MetricCard
             icon={Activity}
             iconColor="text-green-400"
@@ -366,6 +369,7 @@ export default function PerformanceTab() {
             label="Requests"
             value={activityWindow?.request_count || 0}
             sublabel={`Last ${Math.max(1, Math.ceil((activityWindow?.observed_seconds || 0) / 60))} minute(s)`}
+            compactOnMobile
           />
           <MetricCard
             icon={RefreshCw}
@@ -374,6 +378,7 @@ export default function PerformanceTab() {
             label="Request Rate"
             value={`${(activityWindow?.requests_per_minute || 0).toFixed(1)}/min`}
             sublabel="Rolling window"
+            compactOnMobile
           />
           <MetricCard
             icon={Gauge}
@@ -382,6 +387,7 @@ export default function PerformanceTab() {
             label="Recent P95"
             value={formatLatency(activityWindow?.p95_latency_ms || 0)}
             sublabel="Rolling window"
+            compactOnMobile
           />
           <MetricCard
             icon={AlertTriangle}
@@ -390,6 +396,7 @@ export default function PerformanceTab() {
             label="Request Failures"
             value={`${(activityWindow?.error_rate_percent || 0).toFixed(2)}%`}
             sublabel={`${activityWindow?.error_count || 0} in window`}
+            compactOnMobile
           />
         </div>
       </GlassNoirCard>
