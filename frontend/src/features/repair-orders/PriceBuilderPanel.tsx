@@ -1507,15 +1507,34 @@ export default function PriceBuilderPanel({
   const savePricingAdjustments = async () => {
     setDiscountsSaving(true)
     try {
+      let updatedSummary: PriceBuildSummary | undefined
       if (draftPartsPricingMode !== partsPricingMode) {
-        await api.post(`/repair-orders/${orderId}/parts/pricing-mode`, { mode: draftPartsPricingMode })
+        const response = await api.post<PriceBuildSummary>(`/repair-orders/${orderId}/parts/pricing-mode`, { mode: draftPartsPricingMode })
+        updatedSummary = response.data
         setPartsPricingMode(draftPartsPricingMode)
       }
-      await api.patch(`/repair-orders/${orderId}/discounts`, {
-        labor_discount_amount: laborDiscount.trim() === '' ? '0' : laborDiscount,
-        order_discount_amount: orderDiscount.trim() === '' ? '0' : orderDiscount,
-      })
-      await invalidate()
+
+      const nextLaborDiscount = laborDiscount.trim() === '' ? '0' : laborDiscount
+      const nextOrderDiscount = orderDiscount.trim() === '' ? '0' : orderDiscount
+      const discountsChanged = (
+        Math.abs((parseFloat(nextLaborDiscount) || 0) - (parseFloat(summary?.labor_discount_amount || '0') || 0)) >= 0.005
+        || Math.abs((parseFloat(nextOrderDiscount) || 0) - (parseFloat(summary?.order_discount_amount || '0') || 0)) >= 0.005
+      )
+      if (discountsChanged) {
+        const response = await api.patch<PriceBuildSummary>(`/repair-orders/${orderId}/discounts`, {
+          labor_discount_amount: nextLaborDiscount,
+          order_discount_amount: nextOrderDiscount,
+        })
+        updatedSummary = response.data
+      }
+
+      if (updatedSummary) {
+        // Both mutations return the complete summary. Reuse it immediately
+        // instead of waiting for a second price-build request plus unrelated
+        // inventory/detail refetches before the pricing popover can close.
+        queryClient.setQueryData<PriceBuildSummary>(['price-build', orderId], updatedSummary)
+        onUpdated?.()
+      }
     } catch (err: unknown) {
       toast.error(errorDetail(err, 'Failed to apply pricing adjustments'))
     } finally {
