@@ -1,8 +1,8 @@
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { type MouseEvent as ReactMouseEvent, type TouchEvent, useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/authStore'
-import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, X } from 'lucide-react'
+import { Home, Users, ClipboardList, Building2, User, LayoutGrid, BarChart3, UserCheck, Crown, MessageSquare, CreditCard, MoreHorizontal, ChevronLeft } from 'lucide-react'
 import { useTheme } from '../../contexts/ThemeContext'
 import api from '@/lib/api'
 import CustomersPage from '@/features/customers/CustomersPage'
@@ -27,7 +27,9 @@ import useTenantBranding from '@/hooks/useTenantBranding'
 export default function DashboardLayout() {
   const { user } = useAuthStore()
   const location = useLocation()
-  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
+  const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
+  const suppressMobileNavClick = useRef(false)
   const { accentColors } = useTheme()
   // Owner/admin/receptionist/mechanic have messaging by role; other roles
   // (notably fleet managers) need the can_access_messaging grant. Either way,
@@ -98,18 +100,39 @@ export default function DashboardLayout() {
     mobileOverflowLinks.some(link => isActive(link.to, link.exact))
 
   useEffect(() => {
-    setMobileMoreOpen(false)
-  }, [location.pathname])
+    setMobileNavPage(isMobileMoreActive ? 'secondary' : 'primary')
+  }, [isMobileMoreActive, location.pathname])
 
-  useEffect(() => {
-    if (!mobileMoreOpen) return
+  const handleMobileNavTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0]
+    if (!touch) return
+    mobileNavTouchStart.current = { x: touch.clientX, y: touch.clientY }
+  }
 
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileMoreOpen(false)
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [mobileMoreOpen])
+  const handleMobileNavTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = mobileNavTouchStart.current
+    const touch = event.changedTouches[0]
+    mobileNavTouchStart.current = null
+    if (!start || !touch) return
+
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < 36 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return
+
+    suppressMobileNavClick.current = true
+    window.setTimeout(() => {
+      suppressMobileNavClick.current = false
+    }, 350)
+    if (deltaX < 0 && mobileNavPage === 'primary') setMobileNavPage('secondary')
+    if (deltaX > 0 && mobileNavPage === 'secondary') setMobileNavPage('primary')
+  }
+
+  const handleMobileNavClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!suppressMobileNavClick.current) return
+    suppressMobileNavClick.current = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
 
   const isOnSubPage = location.pathname !== '/dashboard'
   
@@ -322,42 +345,87 @@ export default function DashboardLayout() {
         </div>
       </main>
 
-      {/* Mobile overflow sheet */}
-      {mobileMoreOpen && (
-        <div className="md:hidden">
-          <button
-            type="button"
-            className="fixed inset-0 z-40 bg-black/55 backdrop-blur-[2px]"
-            aria-label="Close more navigation"
-            onClick={() => setMobileMoreOpen(false)}
-          />
-          <section
-            id="mobile-more-navigation"
-            role="dialog"
-            aria-modal="true"
-            aria-label="More navigation"
-            className={`fixed bottom-16 left-3 right-3 z-50 overflow-hidden rounded-2xl border shadow-2xl ${
-              isSuperAdmin
-                ? 'border-gold-500/20 bg-noir-900'
-                : 'border-white/10 bg-blueNoir-800'
+      {/* Mobile Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
+        <div className={`overflow-hidden pt-2 ${
+          isSuperAdmin
+            ? 'bg-noir-900/95 backdrop-blur-xl border-t border-gold-500/20'
+            : 'bg-blueNoir-800/95 backdrop-blur-xl border-t border-white/10'
+        }`}
+          style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+          onTouchStart={handleMobileNavTouchStart}
+          onTouchEnd={handleMobileNavTouchEnd}
+          onClickCapture={handleMobileNavClickCapture}
+          aria-label="Mobile navigation"
+        >
+          <div
+            className={`flex w-[200%] transform-gpu transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              mobileNavPage === 'secondary' ? '-translate-x-1/2' : 'translate-x-0'
             }`}
-            style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
           >
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-white">More</p>
-                <p className="text-xs text-gray-400">Shop tools and account settings</p>
-              </div>
+            <div className="flex w-1/2 shrink-0 justify-around px-2" aria-hidden={mobileNavPage !== 'primary'}>
+              {mobilePrimaryLinks.map((link) => {
+                const Icon = link.icon
+                const isLinkActive = isActive(link.to, link.exact)
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    tabIndex={mobileNavPage === 'primary' ? 0 : -1}
+                    className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
+                      isLinkActive
+                        ? isSuperAdmin ? 'text-gold-400' : ''
+                        : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
+                    }`}
+                    style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
+                  >
+                    <div className="relative">
+                      <Icon className="h-5 w-5" />
+                      {link.to === '/dashboard/messages' && unreadCount > 0 && (
+                        <span className="absolute -right-2 -top-2 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                          {unreadBadge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] font-medium">{link.mobileLabel}</span>
+                  </Link>
+                )
+              })}
               <button
                 type="button"
-                onClick={() => setMobileMoreOpen(false)}
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
-                aria-label="Close more navigation"
+                onClick={() => setMobileNavPage('secondary')}
+                tabIndex={mobileNavPage === 'primary' ? 0 : -1}
+                aria-expanded={mobileNavPage === 'secondary'}
+                aria-controls="mobile-secondary-navigation"
+                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
+                  isMobileMoreActive
+                    ? isSuperAdmin ? 'text-gold-400' : ''
+                    : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
+                }`}
+                style={!isSuperAdmin && isMobileMoreActive ? { color: accentHex } : undefined}
               >
-                <X className="h-5 w-5" />
+                <MoreHorizontal className="h-5 w-5" />
+                <span className="text-[10px] font-medium">More</span>
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2 p-3">
+
+            <div
+              id="mobile-secondary-navigation"
+              className="flex w-1/2 shrink-0 justify-around px-2"
+              aria-hidden={mobileNavPage !== 'secondary'}
+            >
+              <button
+                type="button"
+                onClick={() => setMobileNavPage('primary')}
+                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
+                  isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
+                }`}
+                aria-label="Back to primary navigation"
+              >
+                <ChevronLeft className="h-5 w-5" />
+                <span className="text-[10px] font-medium">Back</span>
+              </button>
               {mobileOverflowLinks.map(link => {
                 const Icon = link.icon
                 const isLinkActive = isActive(link.to, link.exact)
@@ -365,89 +433,34 @@ export default function DashboardLayout() {
                   <Link
                     key={link.to}
                     to={link.to}
-                    onClick={() => setMobileMoreOpen(false)}
-                    className={`flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-center transition-colors ${
+                    tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                    className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
                       isLinkActive
-                        ? isSuperAdmin
-                          ? 'border-gold-500/30 bg-gold-500/10 text-gold-400'
-                          : 'border-white/15 bg-white/10'
-                        : 'border-white/5 bg-white/[0.03] text-gray-400 hover:bg-white/[0.07] hover:text-white'
+                        ? isSuperAdmin ? 'text-gold-400' : ''
+                        : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                     }`}
-                    style={!isSuperAdmin && isLinkActive ? { color: accentHex, borderColor: `${accentHex}55` } : undefined}
+                    style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
                   >
                     <Icon className="h-5 w-5" />
-                    <span className="text-xs font-medium">{link.label}</span>
+                    <span className="text-[10px] font-medium">{link.mobileLabel}</span>
                   </Link>
                 )
               })}
               <Link
                 to="/dashboard/settings"
-                onClick={() => setMobileMoreOpen(false)}
-                className={`flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-xl border px-2 py-3 text-center transition-colors ${
+                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 ${
                   location.pathname === '/dashboard/settings'
-                    ? isSuperAdmin
-                      ? 'border-gold-500/30 bg-gold-500/10 text-gold-400'
-                      : 'border-white/15 bg-white/10'
-                    : 'border-white/5 bg-white/[0.03] text-gray-400 hover:bg-white/[0.07] hover:text-white'
-                }`}
-                style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex, borderColor: `${accentHex}55` } : undefined}
-              >
-                <User className="h-5 w-5" />
-                <span className="text-xs font-medium">Profile</span>
-              </Link>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* Mobile Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden">
-        <div className={`px-2 pt-2 flex justify-around ${
-          isSuperAdmin 
-            ? 'bg-noir-900/95 backdrop-blur-xl border-t border-gold-500/20' 
-            : 'bg-blueNoir-800/95 backdrop-blur-xl border-t border-white/10'
-        }`} style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
-          {mobilePrimaryLinks.map((link) => {
-            const Icon = link.icon
-            const isLinkActive = isActive(link.to, link.exact)
-            return (
-              <Link
-                key={link.to}
-                to={link.to}
-                className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-                  isLinkActive
                     ? isSuperAdmin ? 'text-gold-400' : ''
                     : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
                 }`}
-                style={!isSuperAdmin && isLinkActive ? { color: accentHex } : undefined}
+                style={!isSuperAdmin && location.pathname === '/dashboard/settings' ? { color: accentHex } : undefined}
               >
-                <div className="relative">
-                  <Icon className="w-5 h-5" />
-                  {link.to === '/dashboard/messages' && unreadCount > 0 && (
-                    <span className="absolute -top-2 -right-2 inline-flex min-w-[1rem] h-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
-                      {unreadBadge}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[10px] font-medium">{link.mobileLabel}</span>
+                <User className="h-5 w-5" />
+                <span className="text-[10px] font-medium">Profile</span>
               </Link>
-            )
-          })}
-          <button
-            type="button"
-            onClick={() => setMobileMoreOpen(open => !open)}
-            aria-expanded={mobileMoreOpen}
-            aria-controls="mobile-more-navigation"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              mobileMoreOpen || isMobileMoreActive
-                ? isSuperAdmin ? 'text-gold-400' : ''
-                : isSuperAdmin ? 'text-gray-500 hover:text-gold-400' : 'text-gray-500 hover:text-white'
-            }`}
-            style={!isSuperAdmin && (mobileMoreOpen || isMobileMoreActive) ? { color: accentHex } : undefined}
-          >
-            <MoreHorizontal className="w-5 h-5" />
-            <span className="text-[10px] font-medium">More</span>
-          </button>
+            </div>
+          </div>
         </div>
       </div>
 
