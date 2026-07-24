@@ -1134,20 +1134,13 @@ export default function RepairOrdersPage() {
   }
 
   // Delete/restore/reopen change whether an order shows on the owner's floor
-  // board and dashboard, not just the RO lists — invalidate those too so the
-  // board updates without a manual reload.
-  //
-  // refetchType: 'all' is essential here. The home work queue is unmounted while
-  // the RO drawer is open, so its ['dashboard-action-queue'] query is
-  // inactive — and a default invalidate only refetches *active* queries. It would
-  // just mark the data stale, and because that query sets refetchOnMount:false it
-  // would then serve the stale cache on the way back, still showing the order we
-  // just deleted. Forcing a refetch of inactive queries too keeps the board honest.
+  // board and dashboard, not just the RO lists. The dashboard queue refetches
+  // when revisited; the other boards preserve their eager refresh behavior.
   const invalidateOrderBoards = () => {
+    queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
     for (const key of [
       'repair-orders',
       'customerRepairOrders',
-      'dashboard-action-queue',
       'mechanic-board-team',
       'mechanic-board-detail',
       'fleet-board-summary',
