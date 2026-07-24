@@ -1,9 +1,39 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.api.v1.endpoints import fleet
 from app.db.models.fleet_board_read_model import FleetBoardReadModel
+
+
+class _EmptyScalarResult:
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
+
+
+class _StatementRecordingSession:
+    def __init__(self):
+        self.statement = None
+
+    async def execute(self, statement):
+        self.statement = statement
+        return _EmptyScalarResult()
+
+
+@pytest.mark.asyncio
+async def test_projected_id_lookup_is_valid_postgresql_distinct_sql():
+    """The ID-only fallback probe must not order by unselected vehicle fields."""
+    db = _StatementRecordingSession()
+
+    await fleet._fleet_board_vehicle_ids(db, uuid4())
+
+    sql = str(db.statement.compile(dialect=postgresql.dialect()))
+    assert "SELECT DISTINCT vehicles.id" in sql
+    assert "ORDER BY" not in sql
 
 
 @pytest.mark.asyncio
