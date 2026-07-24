@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
 import { format } from 'date-fns'
 import { Check, Copy, Download, Lock, QrCode } from 'lucide-react'
-import { useLocation, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 
 import BackPill from '@/components/navigation/BackPill'
@@ -17,6 +17,7 @@ import type { InvoiceDetail, RepairOrderDetail } from '@/types'
 import { formatUSPhone } from '@/utils/phone'
 
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
+import { getPortalPreferences } from './portal-preferences'
 
 type PaymentMethod = 'zelle' | 'card'
 
@@ -131,9 +132,12 @@ function LoadingPaymentPage() {
 export default function CustomerInvoicePage() {
   const { invoiceId } = useParams<{ invoiceId: string }>()
   const location = useLocation()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const user = useAuthStore(state => state.user)
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('zelle')
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(
+    () => getPortalPreferences(user?.customer_id).defaultPaymentMethod,
+  )
   const [showZelleDetails, setShowZelleDetails] = useState(false)
   const [showCardDetails, setShowCardDetails] = useState(false)
   const [stripeOptions, setStripeOptions] = useState<{ clientSecret: string; appearance: object } | null>(null)
@@ -204,6 +208,7 @@ export default function CustomerInvoicePage() {
     onSuccess: () => {
       toast.success('Zelle payment sent for shop confirmation')
       queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
+      advanceInvoiceQueue()
     },
     onError: error => toast.error(errorDetail(error, 'Unable to submit Zelle payment')),
   })
@@ -212,6 +217,25 @@ export default function CustomerInvoicePage() {
     queryClient.invalidateQueries({ queryKey: ['invoice-detail', invoiceId] })
     setShowCardDetails(false)
     setStripeOptions(null)
+    advanceInvoiceQueue()
+  }
+
+  const paymentState = location.state as {
+    paymentOrigin?: 'History' | 'Dashboard'
+    invoiceQueue?: string[]
+  } | null
+  const invoiceQueue = paymentState?.invoiceQueue?.filter(Boolean) || []
+  const queueIndex = invoiceId ? invoiceQueue.indexOf(invoiceId) : -1
+
+  function advanceInvoiceQueue() {
+    if (queueIndex < 0 || queueIndex >= invoiceQueue.length - 1) return
+    const nextInvoiceId = invoiceQueue[queueIndex + 1]
+    window.setTimeout(() => {
+      navigate(`/portal/invoices/${nextInvoiceId}`, {
+        replace: true,
+        state: { ...paymentState, invoiceQueue },
+      })
+    }, 450)
   }
 
   const zelleEnabled = Boolean(
@@ -260,8 +284,7 @@ export default function CustomerInvoicePage() {
     )
   }
 
-  const state = location.state as { paymentOrigin?: 'History' | 'Dashboard' } | null
-  const backDestination = state?.paymentOrigin || 'History'
+  const backDestination = paymentState?.paymentOrigin || 'History'
   const isPaid = invoice.status === 'paid'
   const isPending = Boolean(invoice.pending_zelle_confirmation)
   const concern = repairOrder?.description?.trim() || 'Service / Repair'
@@ -307,6 +330,11 @@ export default function CustomerInvoicePage() {
         </div>
 
         <section className="py-2 text-center" aria-labelledby="payment-total">
+          {queueIndex >= 0 && invoiceQueue.length > 1 && (
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#a78bfa]">
+              Invoice {queueIndex + 1} of {invoiceQueue.length} · pay one at a time
+            </p>
+          )}
           <p className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-[13px] text-[#8b92a5]">
             <span>{invoice.order_number}</span>
             <span aria-hidden="true">·</span>

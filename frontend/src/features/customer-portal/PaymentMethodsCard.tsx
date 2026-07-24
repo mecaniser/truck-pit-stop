@@ -65,7 +65,7 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="p-4 bg-white/10 rounded-lg border border-white/20">
+      <div className="rounded-xl border border-[#30384b] bg-[#0d1118] p-4">
         <CardElement
           options={{
             style: {
@@ -88,7 +88,7 @@ function AddCardForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
         <button
           type="submit"
           disabled={!stripe || processing}
-          className="flex-1 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+          className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
         >
           {processing ? 'Adding...' : 'Add Card'}
         </button>
@@ -160,7 +160,7 @@ function PaymentMethodsList() {
           {methods.map((method) => (
             <div
               key={method.id}
-              className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/10"
+              className="flex items-center justify-between rounded-xl border border-[#232939] bg-[#0d1118] p-3"
             >
               <div className="flex items-center gap-3">
                 <span className="text-lg">{CARD_BRANDS[method.brand] || '💳'}</span>
@@ -168,7 +168,7 @@ function PaymentMethodsList() {
                   <p className="text-white font-medium">
                     {method.brand.charAt(0).toUpperCase() + method.brand.slice(1)} •••• {method.last4}
                     {method.is_default && (
-                      <span className="ml-2 text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
+                      <span className="ml-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-2 py-0.5 text-xs text-violet-200">
                         Default
                       </span>
                     )}
@@ -218,7 +218,7 @@ function PaymentMethodsList() {
         <button
           onClick={() => setShowAddForm(true)}
           disabled={!stripePromise}
-          className="w-full py-2.5 border border-dashed border-white/20 hover:border-amber-500/50 text-gray-400 hover:text-amber-400 rounded-lg transition-colors flex items-center justify-center gap-2"
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#30384b] py-2.5 text-gray-400 transition-colors hover:border-violet-400/60 hover:text-violet-300"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -232,9 +232,9 @@ function PaymentMethodsList() {
 
 export default function PaymentMethodsCard() {
   return (
-    <div className="bg-white/5 rounded-xl p-6 border border-white/10 h-fit">
+    <div className="h-fit rounded-2xl border border-[#232939] bg-[#12161f] p-6">
       <div className="flex items-center gap-2 mb-4">
-        <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg className="h-5 w-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
         </svg>
         <h2 className="text-lg font-semibold text-white">Payment Methods</h2>

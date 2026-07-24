@@ -106,6 +106,20 @@ html.customer-portal-active #root {
   overflow: hidden;
 }
 
+html.customer-portal-active {
+  color-scheme: dark;
+  --portal-frame: #0d1018;
+  --portal-nav: #0a0d14;
+  --portal-card: #161a26;
+  --portal-row: #12161f;
+  --portal-border: #232939;
+  --portal-control: #272d3d;
+  --portal-primary: #8b7cf7;
+  --portal-primary-text: #0e1118;
+  --portal-text: #eceef4;
+  --portal-muted: #8b92a5;
+}
+
 /*
  * iOS zooms the viewport when a focused editable control computes below 16px.
  * The compact theme intentionally scales general UI text down, so keep form
@@ -116,6 +130,18 @@ html.customer-portal-active #root {
   textarea,
   select,
   [contenteditable='true'] {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile Safari zooms a page when a focused control computes below 16px.
+   Keep the customer portal's editable controls at the safe size even when
+   compact account or checkout typography is selected. */
+@media (max-width: 767px) {
+  html.customer-portal-active input,
+  html.customer-portal-active textarea,
+  html.customer-portal-active select,
+  html.customer-portal-active [contenteditable='true'] {
     font-size: 16px !important;
   }
 }

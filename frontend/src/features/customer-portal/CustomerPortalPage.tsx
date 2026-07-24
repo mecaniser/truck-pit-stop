@@ -11,11 +11,12 @@ import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
-import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Download } from 'lucide-react'
+import PortalDashboardPage from './PortalDashboardPage'
+import PortalVehiclesPage from './PortalVehiclesPage'
+import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Menu, X } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
-import { useTheme } from '../../contexts/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useNotificationManager } from '../../hooks/useNotificationManager'
 import { usePlatformContact } from '../../hooks/usePlatformContact'
@@ -26,20 +27,21 @@ import { formatUSPhone } from '../../utils/phone'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import CustomerZellePaymentPanel from './ZellePaymentPanel'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
+import { DateBlock, formatMoney, Money, PaidBadge, Pill } from './portal-ui'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  quoted: 'bg-blue-100 text-blue-700',
-  declined: 'bg-red-100 text-red-700',
-  approved: 'bg-cyan-100 text-cyan-700',
-  assigned: 'bg-amber-100 text-amber-700',
-  acknowledged: 'bg-amber-100 text-amber-700',
-  in_progress: 'bg-amber-100 text-amber-700',
-  pending_review: 'bg-orange-100 text-orange-700',
-  completed: 'bg-green-100 text-green-700',
-  invoiced: 'bg-purple-100 text-purple-700',
-  paid: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-red-100 text-red-700',
+  draft: 'border border-white/10 bg-white/5 text-gray-300',
+  quoted: 'border border-violet-400/30 bg-violet-500/10 text-violet-200',
+  declined: 'border border-red-400/30 bg-red-500/10 text-red-200',
+  approved: 'border border-violet-400/30 bg-violet-500/10 text-violet-200',
+  assigned: 'border border-amber-400/30 bg-amber-500/10 text-amber-200',
+  acknowledged: 'border border-amber-400/30 bg-amber-500/10 text-amber-200',
+  in_progress: 'border border-amber-400/30 bg-amber-500/10 text-amber-200',
+  pending_review: 'border border-amber-400/30 bg-amber-500/10 text-amber-200',
+  completed: 'border border-emerald-400/30 bg-emerald-500/10 text-emerald-200',
+  invoiced: 'border border-violet-400/30 bg-violet-500/10 text-violet-200',
+  paid: 'border border-emerald-400/30 bg-emerald-500/10 text-emerald-200',
+  cancelled: 'border border-red-400/30 bg-red-500/10 text-red-200',
 }
 
 const CUSTOMER_ACTIVE_REPAIR_STATUSES = [
@@ -577,6 +579,10 @@ function CustomerVehicles() {
   )
 }
 
+// Retained temporarily for parity while the new route-level screens settle.
+void CustomerDashboard
+void CustomerVehicles
+
 // Payment form component
 function PaymentForm({ 
   invoiceId, 
@@ -658,7 +664,7 @@ function PaymentForm({
       <button
         type="submit"
         disabled={!stripe || isProcessing}
-        className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+        className="w-full rounded-xl bg-violet-600 py-3 font-semibold text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
       >
         {isProcessing ? (
           <>
@@ -709,6 +715,11 @@ function CustomerRepairs() {
       }
       return all
     },
+  })
+
+  const { data: allInvoices = [] } = useQuery<Invoice[]>({
+    queryKey: ['customer-history-invoices'],
+    queryFn: async () => (await api.get('/invoices')).data,
   })
 
   const { data: selectedOrderDetail } = useQuery<RepairOrderDetail>({
@@ -962,18 +973,19 @@ function CustomerRepairs() {
     return (
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <button
             onClick={() => {
               setSelectedOrder(null)
               setShowPayment(false)
               setStripeOptions(null)
             }}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="inline-flex h-9 items-center gap-1 rounded-full border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8] hover:border-[#343b52]"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-400" />
+            <ArrowLeft className="h-4 w-4" />
+            History
           </button>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-white">{selectedOrder.order_number}</h1>
             {getVehicleLabel(selectedOrder) && (
               <p className="text-amber-300 text-sm font-medium mt-0.5">{getVehicleLabel(selectedOrder)}</p>
@@ -982,7 +994,7 @@ function CustomerRepairs() {
               {format(new Date(selectedOrder.created_at), 'MMMM d, yyyy')}
             </p>
           </div>
-          <span className={`ml-auto px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[selectedOrder.status] || 'bg-gray-100 text-gray-700'}`}>
+          <span className={`sm:ml-auto px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[selectedOrder.status] || 'bg-gray-100 text-gray-700'}`}>
             {selectedOrder.status.replace('_', ' ')}
           </span>
         </div>
@@ -1121,7 +1133,7 @@ function CustomerRepairs() {
                   type="button"
                   onClick={() => approveQuoteMutation.mutate(selectedQuote.id)}
                   disabled={approveQuoteMutation.isPending}
-                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
                 >
                   <CheckCircle className="w-5 h-5" />
                   {approveQuoteMutation.isPending ? 'Authorizing...' : 'Authorize Estimate'}
@@ -1141,7 +1153,7 @@ function CustomerRepairs() {
                   value={declineNotes}
                   onChange={(e) => setDeclineNotes(e.target.value)}
                   placeholder="e.g., Can we skip the brake fluid flush? Or is there a cheaper option for..."
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                  className="w-full resize-none rounded-xl border border-[#30384b] bg-[#0d1118] px-3 py-2 text-base text-white placeholder-gray-500 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                   rows={3}
                 />
                 <div className="flex gap-3">
@@ -1153,7 +1165,7 @@ function CustomerRepairs() {
                       setShowDeclineForm(false)
                     }}
                     disabled={declineQuoteMutation.isPending}
-                    className="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-500 text-white font-medium rounded-lg transition-colors"
+                    className="flex-1 rounded-xl bg-violet-600 px-4 py-2 font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-500"
                   >
                     {declineQuoteMutation.isPending ? 'Sending...' : 'Send Request'}
                   </button>
@@ -1262,7 +1274,7 @@ function CustomerRepairs() {
                   {!showPayment ? (
                     <button
                       onClick={handlePayClick}
-                      className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 font-semibold text-white transition-colors hover:bg-violet-500"
                     >
                       <CreditCard className="w-5 h-5" />
                       Pay Now
@@ -1362,95 +1374,153 @@ function CustomerRepairs() {
     )
   }
 
-  // List view - only finalized orders (paid, completed, cancelled, declined)
-  const finalizedStatuses = ['paid', 'completed', 'cancelled', 'declined']
+  // List view - only finalized orders
+  const finalizedStatuses = ['paid', 'completed', 'cancelled']
   const historyOrders = orders?.filter(o => finalizedStatuses.includes(o.status)) ?? []
+  const invoiceByOrder = new Map(allInvoices.map(item => [item.repair_order_id, item]))
+  const filteredHistory = statusFilter === 'all'
+    ? historyOrders
+    : historyOrders.filter(order => order.status === statusFilter)
+  const historyGroups = filteredHistory
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    .reduce<Record<string, RepairOrder[]>>((groups, order) => {
+      const key = format(new Date(order.updated_at), 'MMMM yyyy')
+      groups[key] = [...(groups[key] || []), order]
+      return groups
+    }, {})
+  const paidThisYear = historyOrders.filter(order =>
+    order.status === 'paid' && new Date(order.updated_at).getFullYear() === new Date().getFullYear(),
+  )
+  const paidYtd = paidThisYear.reduce((sum, order) => {
+    const invoiceForOrder = invoiceByOrder.get(order.id)
+    return sum + Number(invoiceForOrder?.total_amount || getOrderTotal(order))
+  }, 0)
+
+  const downloadHistoryCsv = () => {
+    const rows = [
+      ['Date', 'Repair order', 'Services', 'Status', 'Amount'],
+      ...historyOrders.map(order => {
+        const invoiceForOrder = invoiceByOrder.get(order.id)
+        return [
+          format(new Date(order.updated_at), 'yyyy-MM-dd'),
+          order.order_number,
+          order.description || '',
+          order.status,
+          Number(invoiceForOrder?.total_amount || getOrderTotal(order)).toFixed(2),
+        ]
+      }),
+    ]
+    const csv = rows
+      .map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `repair-history-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">Repair History</h1>
-        <p className="text-gray-400 mt-1">Completed and finalized repairs</p>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Repair history</h1>
+          <p className="mt-1 text-[13px] text-[#8b92a5]">
+            {paidThisYear.length} completed orders · <Money className="font-bold text-[#3ecf6f]">{formatMoney(paidYtd)} paid in {new Date().getFullYear()}</Money>
+          </p>
+        </div>
+        {historyOrders.length > 12 && (
+          <button type="button" onClick={downloadHistoryCsv} className="h-10 rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8]">
+            Download all (CSV)
+          </button>
+        )}
       </div>
 
-      {/* Status Filter - only finalized statuses */}
-      <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+      <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+        <div className="flex min-w-max gap-2">
         {[
           { value: 'all', label: 'All' },
           { value: 'paid', label: 'Paid' },
           { value: 'completed', label: 'Completed' },
           { value: 'cancelled', label: 'Cancelled' },
-          { value: 'declined', label: 'Declined' },
         ].map((option) => (
-          <button
+          <Pill
             key={option.value}
+            active={statusFilter === option.value}
             onClick={() => setStatusFilter(option.value)}
-            className={`px-3 py-1.5 rounded-full text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
-              statusFilter === option.value
-                ? 'text-white'
-                : 'bg-white/10 text-gray-300 hover:bg-white/20'
-            }`}
-            style={statusFilter === option.value ? { backgroundColor: 'var(--accent-500)' } : undefined}
           >
             {option.label}
-          </button>
+          </Pill>
         ))}
+        </div>
       </div>
 
-      {/* History orders list */}
-      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        {(() => {
-          const filteredOrders = statusFilter === 'all' 
-            ? historyOrders 
-            : historyOrders.filter(o => o.status === statusFilter)
-          
-          return filteredOrders.length > 0 ? (
-            <div className="divide-y divide-white/5">
-              {filteredOrders.map((order) => (
+      {Object.keys(historyGroups).length > 0 ? (
+        <div className="space-y-5">
+          {Object.entries(historyGroups).map(([month, monthOrders]) => {
+            const monthTotal = monthOrders.reduce((sum, order) => {
+              const invoiceForOrder = invoiceByOrder.get(order.id)
+              return sum + Number(invoiceForOrder?.total_amount || getOrderTotal(order))
+            }, 0)
+            return (
+              <section key={month}>
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <h2 className="text-[11px] font-extrabold uppercase tracking-[0.1em]">{month}</h2>
+                  <span className="text-[11px] font-bold text-[#5c6375]">{monthOrders.length} orders · {formatMoney(monthTotal)}</span>
+                </div>
+                <div className="space-y-2">
+                  {monthOrders.map(order => {
+                    const invoiceForOrder = invoiceByOrder.get(order.id)
+                    const amount = Number(invoiceForOrder?.total_amount || getOrderTotal(order))
+                    return (
                 <button
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="w-full p-3 sm:p-6 hover:bg-white/5 active:bg-white/10 transition-colors text-left"
+                        className="grid w-full grid-cols-[52px_1fr_auto] items-center gap-3 rounded-xl border border-[#232939] bg-[#161a26] p-3 text-left hover:border-[#343b52] hover:bg-[#161b26] sm:grid-cols-[52px_1fr_auto_84px_auto] sm:gap-4 sm:px-4"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-white text-sm sm:text-base">{order.order_number}</h3>
-                      {getVehicleLabel(order) && (
-                        <p className="text-amber-300 text-xs font-medium mt-0.5">{getVehicleLabel(order)}</p>
-                      )}
-                      {order.description && (
-                        <p className="text-gray-400 text-xs sm:text-sm mt-1 line-clamp-1">{order.description}</p>
-                      )}
-                      <p className="text-[10px] sm:text-xs text-gray-500 mt-1">
-                        {format(new Date(order.created_at), 'MMM d, yyyy')}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-medium whitespace-nowrap ${STATUS_BADGE_COLORS[order.status] || 'bg-gray-100 text-gray-700'}`}>
-                        {order.status === 'draft' ? 'checked in' : order.status.replace('_', ' ')}
-                      </span>
-                      {['invoiced', 'paid'].includes(order.status) && <div className="text-right">
-                        <div className="text-sm sm:text-lg font-bold text-white">
-                          ${getOrderTotal(order).toFixed(2)}
+                        <DateBlock value={order.updated_at} />
+                        <div className="min-w-0">
+                          <h3 className="truncate text-[13px] font-bold">{order.description || 'Repair service'}</h3>
+                          <p className="mt-1 truncate text-[11px] text-[#8b92a5]">{order.order_number}{getVehicleLabel(order) ? ` · ${getVehicleLabel(order)}` : ''}</p>
                         </div>
-                      </div>}
-                    </div>
-                  </div>
+                        {order.status === 'paid' ? (
+                          <PaidBadge />
+                        ) : (
+                          <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase ${
+                            order.status === 'cancelled'
+                              ? 'border-[#ff6b6e]/30 bg-[#ff6b6e]/10 text-[#ff8b8d]'
+                              : 'border-[#272d3d] bg-[#191d2a] text-[#8b92a5]'
+                          }`}>{order.status}</span>
+                        )}
+                        <Money className="col-start-2 text-sm font-extrabold sm:col-start-auto sm:text-right">{formatMoney(amount)}</Money>
+                        {invoiceForOrder && (
+                          <a
+                            href={`/api/v1/invoices/${invoiceForOrder.id}/pdf`}
+                            download
+                            onClick={event => event.stopPropagation()}
+                            className="col-start-3 text-right text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff] sm:col-start-auto"
+                          >
+                            Invoice ↓
+                          </a>
+                        )}
                 </button>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="flex justify-center mb-3">
-                <ClipboardList className="w-10 h-10 text-purple-300" />
+                    )
+                  })}
+                </div>
+              </section>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-[#232939] bg-[#161a26] py-12 text-center">
+          <ClipboardList className="mx-auto h-9 w-9 text-[#5c6375]" />
+          <h2 className="mt-3 font-extrabold">No repair history yet</h2>
+          <p className="mt-1 text-sm text-[#8b92a5]">
+            {statusFilter === 'all' ? 'Completed repairs will appear here.' : `No ${statusFilter} orders found.`}
+          </p>
               </div>
-              <p className="text-gray-400">
-                {statusFilter === 'all' ? 'No repair history yet' : `No ${statusFilter.replace('_', ' ')} orders`}
-              </p>
-            </div>
-          )
-        })()}
-      </div>
+      )}
     </div>
   )
 }
@@ -1458,23 +1528,19 @@ function CustomerRepairs() {
 export default function CustomerPortalPage() {
   const location = useLocation()
   const portalScrollRef = useRef<HTMLElement>(null)
-  const { accentColors } = useTheme()
-  const { data: tenantBranding } = useTenantBranding()
   const { user } = useAuthStore()
-
-  const accentHex = accentColors[500]
+  const { data: tenantBranding } = useTenantBranding()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const profileNameParts = [user?.first_name, user?.last_name].filter(
     (part): part is string => Boolean(part?.trim()),
   )
-  const profileDisplayName = profileNameParts.join(' ').trim() || user?.email || 'Profile Settings'
+  const profileDisplayName = profileNameParts.join(' ').trim() || user?.email || 'Account'
+  const portalBrandName = tenantBranding?.name || user?.tenant_name || 'Diesel Bridge Network'
   const profileMonogram = (
     profileNameParts.map((part) => part.charAt(0)).join('') ||
     user?.email?.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) ||
     'ME'
   ).slice(0, 2).toUpperCase()
-  const profileTileBorder = `${accentHex}55`
-  const profileTileGlow = `${accentHex}26`
-  const profileTileInset = `linear-gradient(180deg, ${accentHex}18, rgba(0,0,0,0.04))`
   
   // Notification manager for queued, deduplicated notifications
   const { notify, banners, dismissBanner, clearBanners } = useNotificationManager()
@@ -1498,6 +1564,7 @@ export default function CustomerPortalPage() {
 
   useEffect(() => {
     portalScrollRef.current?.scrollTo({ top: 0 })
+    setMobileMenuOpen(false)
   }, [location.pathname])
 
   const navLinks = [
@@ -1508,111 +1575,118 @@ export default function CustomerPortalPage() {
     { to: '/portal/repairs', label: 'History' },
   ]
 
-  const isActive = (path: string, exact?: boolean) => 
-    exact ? location.pathname === path : location.pathname === path
+  const isActive = (path: string, exact?: boolean) =>
+    exact
+      ? location.pathname === path
+      : location.pathname === path || (path === '/portal/services' && location.pathname.startsWith('/portal/book/'))
 
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
-  const portalBrandName = tenantBranding?.name || 'Diesel Bridge Network'
 
   return (
-    <div className={`fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden ${isInvoicePage ? 'bg-[#10131c]' : 'bg-[#0f172a]'}`}>
+    <div className="fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
       <nav
-        className={`relative z-50 shrink-0 ${
-          isInvoicePage
-            ? 'border-b border-[#1e2432] bg-[#0d1018]'
-            : 'bg-white/90 shadow-sm backdrop-blur'
-        }`}
+        className="relative z-50 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
-        <div className="max-w-7xl mx-auto px-4">
-          <div className={`flex justify-between ${isInvoicePage ? 'h-[52px]' : 'h-14 sm:h-16'}`}>
-            {/* Logo */}
-            <div className="flex items-center">
-              <Link to="/portal" className="inline-flex items-center py-1" aria-label={`${portalBrandName} customer portal`}>
-                {isInvoicePage ? (
-                  <span className="flex flex-col leading-none">
-                    <span className="text-sm font-black italic tracking-[-0.04em] text-[#e23b3b]">TRUCK</span>
-                    <span className="mt-0.5 text-[9px] font-bold tracking-[0.28em] text-[#8b92a5]">PIT STOP</span>
-                  </span>
-                ) : (
-                  <TenantBrandLogo
-                    tenantLogoUrl={tenantBranding?.logo_url}
-                    tenantName={tenantBranding?.name}
-                    fallbackVariant="admin"
-                    className="h-8 sm:h-10 w-auto object-contain drop-shadow-[0_1px_1px_rgba(15,23,42,0.35)]"
-                  />
-                )}
-              </Link>
-            </div>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <div className="flex h-14 items-center justify-between">
+            <Link
+              to="/portal"
+              className="inline-flex min-w-0 items-center py-1"
+              aria-label={`${portalBrandName} customer portal`}
+            >
+              <TenantBrandLogo
+                tenantLogoUrl={tenantBranding?.logo_url}
+                tenantName={portalBrandName}
+                fallbackVariant="admin"
+                className="h-8 max-w-[150px] object-contain object-left sm:h-9 sm:max-w-[190px]"
+              />
+            </Link>
 
-            {/* Desktop nav */}
-            <div className={isInvoicePage ? 'flex items-center' : 'hidden md:flex md:items-center md:space-x-6'}>
-              {!isInvoicePage && (
-                <>
-              {navLinks.map((link) => (
+            <div className="hidden items-center gap-1.5 md:flex">
+              {!isInvoicePage && navLinks.map(link => (
                 <Link
                   key={link.to}
                   to={link.to}
-                  className={`text-sm font-medium transition-colors ${
+                  className={`flex h-[34px] items-center rounded-lg px-3 text-[13px] font-bold ${
                     isActive(link.to, link.exact)
-                      ? 'border-b-2'
-                      : 'text-gray-600 hover:opacity-80'
+                      ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                      : 'text-[#8b92a5] hover:bg-[#161a26] hover:text-[#c9cdd8]'
                   }`}
-                  style={isActive(link.to, link.exact) ? { color: accentColors[500], borderColor: accentColors[500] } : { color: undefined }}
                 >
                   {link.label}
                 </Link>
               ))}
-                </>
-              )}
               <Link
                 to="/portal/settings"
-                aria-label={`Open profile settings for ${profileDisplayName}`}
-                className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border transition-all ${
-                  isInvoicePage
-                    ? 'border-[#8b7cf7] bg-[#241f3d] text-[#c9bfff]'
-                    : location.pathname === '/portal/settings'
-                    ? 'bg-white text-gray-800'
-                    : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:bg-white hover:text-gray-700'
+                aria-label={`Open account for ${profileDisplayName}`}
+                className={`ml-2 flex h-8 w-8 items-center justify-center rounded-full border text-[10px] font-extrabold ${
+                  location.pathname === '/portal/settings'
+                    ? 'border-[#c9bfff] bg-[#312a54] text-white'
+                    : 'border-[#8b7cf7] bg-[#241f3d] text-[#c9bfff]'
                 }`}
-                style={{
-                  borderColor: location.pathname === '/portal/settings' ? profileTileBorder : undefined,
-                  boxShadow: `0 10px 24px ${profileTileGlow}`,
-                  color: location.pathname === '/portal/settings' ? accentHex : undefined,
-                }}
-                title={profileDisplayName}
               >
-                <div
-                  className="absolute inset-[3px] rounded-[14px] border border-black/5"
-                  style={{ background: location.pathname === '/portal/settings' ? profileTileInset : undefined }}
-                />
-                <div className="relative flex h-full w-full items-center justify-center rounded-[14px]">
-                  <span className="text-[11px] font-semibold tracking-[0.18em]">
-                    {profileMonogram}
-                  </span>
-                </div>
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white shadow-[0_0_10px_rgba(52,211,153,0.6)]"
-                  style={{ backgroundColor: '#34d399' }}
-                />
+                {profileMonogram}
               </Link>
+            </div>
+
+            <div className="flex items-center gap-2 md:hidden">
+              <Link
+                to="/portal/settings"
+                aria-label={`Open account for ${profileDisplayName}`}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-[#8b7cf7] bg-[#241f3d] text-[10px] font-extrabold text-[#c9bfff]"
+              >
+                {profileMonogram}
+              </Link>
+              {!isInvoicePage && (
+                <button
+                  type="button"
+                  aria-expanded={mobileMenuOpen}
+                  aria-controls="portal-mobile-menu"
+                  aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
+                  onClick={() => setMobileMenuOpen(current => !current)}
+                  className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#161a26] text-[#c9cdd8]"
+                >
+                  {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                </button>
+              )}
             </div>
           </div>
         </div>
+
+        {mobileMenuOpen && !isInvoicePage && (
+          <div id="portal-mobile-menu" className="border-t border-[#1e2432] bg-[#0a0d14] px-4 py-3 md:hidden">
+            <div className="grid grid-cols-2 gap-2">
+              {navLinks.map(link => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className={`flex h-11 items-center rounded-[10px] px-3 text-[13px] font-bold ${
+                    isActive(link.to, link.exact)
+                      ? 'border border-[#8b7cf7]/40 bg-[#8b7cf7]/10 text-[#c9bfff]'
+                      : 'border border-[#232939] bg-[#161a26] text-[#9aa1b3]'
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </nav>
 
       <main
         ref={portalScrollRef}
         className={`min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-none ${
-          isInvoicePage ? 'max-w-none p-0' : 'mx-auto max-w-7xl px-4 py-4 pb-4 sm:py-6 md:pb-6'
+          isInvoicePage ? 'max-w-none p-0' : 'mx-auto max-w-7xl px-4 pb-7 pt-5 sm:px-6 sm:pb-8 sm:pt-[22px]'
         }`}
         style={{
           WebkitOverflowScrolling: 'touch',
           paddingLeft: isInvoicePage ? undefined : 'max(1rem, env(safe-area-inset-left))',
           paddingRight: isInvoicePage ? undefined : 'max(1rem, env(safe-area-inset-right))',
+          paddingBottom: isInvoicePage ? undefined : 'max(1.75rem, env(safe-area-inset-bottom))',
         }}
       >
-        {/* Real-time notification banners */}
         <NotificationBanner
           banners={banners}
           onDismiss={dismissBanner}
@@ -1621,93 +1695,16 @@ export default function CustomerPortalPage() {
         />
 
         <Routes>
-          <Route path="" element={<CustomerDashboard />} />
+          <Route path="" element={<PortalDashboardPage />} />
           <Route path="services" element={<ServicesPage />} />
           <Route path="book/:serviceId" element={<BookingPage />} />
           <Route path="appointments" element={<AppointmentsPage />} />
-          <Route path="vehicles" element={<CustomerVehicles />} />
+          <Route path="vehicles" element={<PortalVehiclesPage />} />
           <Route path="repairs" element={<CustomerRepairs />} />
           <Route path="invoices/:invoiceId" element={<CustomerInvoicePage />} />
           <Route path="settings" element={<ProfileSettingsPage />} />
         </Routes>
       </main>
-
-      {/* Mobile Bottom Navigation */}
-      <div className={`relative z-50 shrink-0 md:hidden ${isInvoicePage ? 'hidden' : ''}`}>
-        <div
-          className="flex justify-around border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur"
-          style={{
-            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
-            paddingLeft: 'max(0.5rem, env(safe-area-inset-left))',
-            paddingRight: 'max(0.5rem, env(safe-area-inset-right))',
-          }}
-        >
-          <Link
-            to="/portal"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname !== '/portal' ? 'text-gray-500 hover:text-gray-700' : ''
-            }`}
-            style={location.pathname === '/portal' ? { color: accentColors[500] } : undefined}
-          >
-            <Home className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Home</span>
-          </Link>
-          <Link
-            to="/portal/services"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              !(location.pathname === '/portal/services' || location.pathname.startsWith('/portal/book/'))
-                ? 'text-gray-500 hover:text-gray-700'
-                : ''
-            }`}
-            style={(location.pathname === '/portal/services' || location.pathname.startsWith('/portal/book/')) ? { color: accentColors[500] } : undefined}
-          >
-            <Wrench className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Services</span>
-          </Link>
-          <Link
-            to="/portal/appointments"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname !== '/portal/appointments' ? 'text-gray-500 hover:text-gray-700' : ''
-            }`}
-            style={location.pathname === '/portal/appointments' ? { color: accentColors[500] } : undefined}
-          >
-            <Calendar className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Appts</span>
-          </Link>
-          <Link
-            to="/portal/vehicles"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname !== '/portal/vehicles' ? 'text-gray-500 hover:text-gray-700' : ''
-            }`}
-            style={location.pathname === '/portal/vehicles' ? { color: accentColors[500] } : undefined}
-          >
-            <Truck className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Vehicles</span>
-          </Link>
-          <Link
-            to="/portal/repairs"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              !(location.pathname === '/portal/repairs' || location.pathname.startsWith('/portal/invoices/'))
-                ? 'text-gray-500 hover:text-gray-700'
-                : ''
-            }`}
-            style={(location.pathname === '/portal/repairs' || location.pathname.startsWith('/portal/invoices/')) ? { color: accentColors[500] } : undefined}
-          >
-            <History className="w-5 h-5" />
-            <span className="text-[10px] font-medium">History</span>
-          </Link>
-          <Link
-            to="/portal/settings"
-            className={`flex flex-col items-center gap-0.5 min-w-0 px-1 ${
-              location.pathname !== '/portal/settings' ? 'text-gray-500 hover:text-gray-700' : ''
-            }`}
-            style={location.pathname === '/portal/settings' ? { color: accentColors[500] } : undefined}
-          >
-            <User className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Profile</span>
-          </Link>
-        </div>
-      </div>
     </div>
   )
 }

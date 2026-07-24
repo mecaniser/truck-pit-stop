@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Spinner } from '@/components/ui'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -12,8 +12,10 @@ import PaymentMethodsCard from './PaymentMethodsCard'
 import VehiclesCard from './VehiclesCard'
 import { formatUSPhone, isValidUSPhone } from '@/utils/phone'
 import toast from 'react-hot-toast'
-import { User, Lock, CreditCard, Truck, Palette, LogOut, Check, RotateCcw, Type, Building2, ArrowRightLeft } from 'lucide-react'
+import { User, Palette, LogOut, Check, RotateCcw, Type, Building2, ArrowRightLeft } from 'lucide-react'
 import { useTheme, ACCENT_OPTIONS, FONT_FAMILY_OPTIONS, FONT_SIZE_OPTIONS } from '../../contexts/ThemeContext'
+import { getPortalPreferences, savePortalPreferences, type CustomerPortalPreferences } from './portal-preferences'
+import { format } from 'date-fns'
 
 // ============ SCHEMAS ============
 const profileSchema = z.object({
@@ -44,7 +46,7 @@ type ProfileFormData = z.infer<typeof profileSchema>
 type PasswordFormData = z.infer<typeof passwordSchema>
 
 // ============ TYPES ============
-type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'vehicles' | 'shops'
+type SettingsSection = 'profile' | 'security' | 'appearance' | 'payments' | 'vehicles' | 'shops' | 'notifications'
 
 // ============ SECTION COMPONENTS ============
 
@@ -257,6 +259,9 @@ function ProfileSection() {
   )
 }
 
+// Kept during the transition so existing profile mutation behavior remains easy to compare.
+void ProfileSection
+
 function SecuritySection() {
   const { logout } = useAuthStore()
   const navigate = useNavigate()
@@ -291,7 +296,7 @@ function SecuritySection() {
     const base = "w-full px-4 py-3 bg-white/10 border rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 text-base"
     return hasError
       ? `${base} border-red-500 focus:ring-red-500`
-      : `${base} border-white/20 focus:ring-amber-500`
+      : `${base} border-[#30384b] focus:border-violet-500 focus:ring-violet-500/30`
   }
 
   return (
@@ -304,7 +309,7 @@ function SecuritySection() {
       {!showForm ? (
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500"
         >
           Change Password
         </button>
@@ -336,7 +341,7 @@ function SecuritySection() {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors"
+              className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:bg-gray-600"
             >
               {mutation.isPending ? 'Changing...' : 'Change Password'}
             </button>
@@ -593,7 +598,7 @@ function ShopsSection() {
               key={shop.id}
               className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${
                 isCurrent
-                  ? 'border-amber-500/40 bg-amber-500/10'
+                  ? 'border-violet-400/40 bg-violet-500/10'
                   : 'border-white/10 bg-white/5'
               }`}
             >
@@ -608,8 +613,8 @@ function ShopsSection() {
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-white truncate">{shop.name}</p>
                 {isCurrent && (
-                  <span className="inline-flex items-center gap-1 text-xs text-amber-400 font-medium mt-0.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                  <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-violet-300">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400" />
                     Active
                   </span>
                 )}
@@ -637,60 +642,317 @@ function ShopsSection() {
   )
 }
 
+interface SavedPaymentMethod {
+  id: string
+  brand: string
+  last4: string
+  is_default: boolean
+}
+
+function PreferenceToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: () => void
+}) {
+  return (
+    <button type="button" onClick={onChange} className="flex w-full items-center justify-between gap-4 py-2 text-left">
+      <span className="text-[13px] text-[#c9cdd8]">{label}</span>
+      <span className={`relative h-[22px] w-10 rounded-full border ${checked ? 'border-[#8b7cf7] bg-[#8b7cf7]' : 'border-[#343b52] bg-[#272d3d]'}`}>
+        <span className={`absolute top-[2px] h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-[19px]' : 'translate-x-[2px]'}`} />
+      </span>
+    </button>
+  )
+}
+
+function ContactDetailsSection() {
+  const { user, setUser } = useAuthStore()
+  const queryClient = useQueryClient()
+  const [preferences, setPreferences] = useState<CustomerPortalPreferences>(() => getPortalPreferences(user?.customer_id))
+
+  const { data: customer, isLoading } = useQuery<Customer>({
+    queryKey: ['customer', user?.customer_id],
+    queryFn: async () => (await api.get(`/customers/${user!.customer_id}`)).data,
+    enabled: Boolean(user?.customer_id),
+  })
+  const { data: paymentMethods = [] } = useQuery<SavedPaymentMethod[]>({
+    queryKey: ['payment-methods'],
+    queryFn: async () => (await api.get('/payments/methods')).data,
+  })
+
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors, isDirty } } = useForm<ProfileFormData>({
+    resolver: zodResolver(profileSchema),
+  })
+
+  useEffect(() => {
+    if (!customer) return
+    reset({
+      first_name: customer.first_name,
+      last_name: customer.last_name,
+      email: customer.email,
+      phone: customer.phone || '',
+      password: '',
+    })
+  }, [customer, reset])
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: ProfileFormData) => (await api.put('/auth/me', data)).data,
+    onSuccess: data => {
+      setUser(data.user || data)
+      queryClient.invalidateQueries({ queryKey: ['customer'] })
+      toast.success(data.email_verification_pending ? 'Check your new email to verify the change.' : 'Contact details saved')
+      setValue('password', '')
+    },
+    onError: (error: { response?: { data?: { detail?: string } } }) => {
+      toast.error(error.response?.data?.detail || 'Unable to save contact details')
+    },
+  })
+
+  if (isLoading) return <div className="flex min-h-[360px] items-center justify-center"><Spinner size="lg" /></div>
+  if (!customer) return <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-8 text-center text-[#8b92a5]">Customer profile not found.</div>
+
+  const emailChanging = watch('email') !== customer.email
+  const defaultCard = paymentMethods.find(method => method.is_default) || paymentMethods[0]
+
+  const updatePreferences = (next: CustomerPortalPreferences) => {
+    setPreferences(next)
+    savePortalPreferences(user?.customer_id, next)
+  }
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <form onSubmit={handleSubmit(data => {
+        if (emailChanging && !data.password) {
+          toast.error('Enter your password to change your email address')
+          return
+        }
+        updateMutation.mutate(data)
+      })} className="overflow-hidden rounded-2xl border border-[#232939] bg-[#161a26]">
+        <div className="flex items-center justify-between border-b border-[#1e2432] px-4 py-3.5 sm:px-5">
+          <span className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Contact details</span>
+          <span className="text-[11px] text-[#5c6375]">Edit fields, then save</span>
+        </div>
+        <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+          {[
+            { name: 'first_name' as const, label: 'First name', type: 'text' },
+            { name: 'last_name' as const, label: 'Last name', type: 'text' },
+          ].map(field => (
+            <label key={field.name} className="block text-xs font-bold text-[#8b92a5]">
+              {field.label}
+              <input
+                {...register(field.name)}
+                type={field.type}
+                className="mt-1.5 h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
+              />
+              {errors[field.name] && <span className="mt-1 block text-[11px] text-[#ff8b8d]">{errors[field.name]?.message}</span>}
+            </label>
+          ))}
+          <label className="block text-xs font-bold text-[#8b92a5] sm:col-span-2">
+            Email
+            <input
+              {...register('email')}
+              type="email"
+              autoComplete="email"
+              className="mt-1.5 h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
+            />
+            {errors.email && <span className="mt-1 block text-[11px] text-[#ff8b8d]">{errors.email.message}</span>}
+          </label>
+          <label className="block text-xs font-bold text-[#8b92a5] sm:col-span-2">
+            Phone
+            <input
+              {...register('phone')}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              onChange={event => setValue('phone', formatUSPhone(event.target.value), { shouldDirty: true, shouldValidate: true })}
+              className="mt-1.5 h-11 w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
+            />
+            {errors.phone && <span className="mt-1 block text-[11px] text-[#ff8b8d]">{errors.phone.message}</span>}
+          </label>
+          {emailChanging && (
+            <label className="block text-xs font-bold text-[#f0b959] sm:col-span-2">
+              Current password required to change email
+              <input
+                {...register('password')}
+                type="password"
+                autoComplete="current-password"
+                className="mt-1.5 h-11 w-full rounded-[10px] border border-[#f0b959]/40 bg-[#12161f] px-3 text-base text-[#eceef4] outline-none focus:ring-2 focus:ring-[#f0b959]/25"
+              />
+            </label>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 border-t border-[#1e2432] bg-[#12161f] p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <button
+            type="submit"
+            disabled={!isDirty || updateMutation.isPending}
+            className="h-[42px] rounded-[11px] bg-[#8b7cf7] px-5 text-sm font-extrabold text-[#0e1118] disabled:opacity-50"
+          >
+            {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+          </button>
+          <span className="text-[11px] text-[#5c6375]">Last updated {format(new Date(customer.updated_at), 'MMM d, yyyy')}</span>
+        </div>
+      </form>
+
+      <aside className="space-y-3">
+        <section className="rounded-[14px] border border-[#232939] bg-[#161a26] p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-[46px] w-[46px] items-center justify-center rounded-full border border-[#8b7cf7] bg-[#241f3d] text-sm font-extrabold text-[#c9bfff]">
+              {(customer.first_name[0] || '')}{(customer.last_name[0] || '')}
+            </div>
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-extrabold">{customer.company_name || `${customer.first_name} ${customer.last_name}`}</h2>
+              <p className="mt-1 text-[11px] text-[#8b92a5]">Customer since {format(new Date(customer.created_at), 'MMM yyyy')}</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[14px] border border-[#232939] bg-[#161a26] p-4">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Default payment</span>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {(['zelle', 'card'] as const).map(method => (
+              <button
+                key={method}
+                type="button"
+                onClick={() => updatePreferences({ ...preferences, defaultPaymentMethod: method })}
+                className={`h-10 rounded-[10px] border text-xs font-extrabold uppercase ${
+                  preferences.defaultPaymentMethod === method
+                    ? method === 'zelle'
+                      ? 'border-[#2dd4bf]/40 bg-[#2dd4bf]/10 text-[#2dd4bf]'
+                      : 'border-[#8b7cf7] bg-[#8b7cf7]/10 text-[#c9bfff]'
+                    : 'border-[#272d3d] bg-[#12161f] text-[#8b92a5]'
+                }`}
+              >
+                {method}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] text-[#8b92a5]">Zelle has no processing fee.</p>
+          <p className="mt-1 text-[11px] text-[#8b92a5]">
+            {defaultCard ? `Card on file: ${defaultCard.brand} ···${defaultCard.last4}` : 'No card on file'}
+          </p>
+        </section>
+
+        <section className="rounded-[14px] border border-[#232939] bg-[#161a26] p-4">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Notifications</span>
+          <div className="mt-2 divide-y divide-[#1e2432]">
+            {[
+              ['Invoice ready', 'invoiceReady'],
+              ['Repair status', 'repairStatus'],
+              ['PM reminders', 'pmReminders'],
+            ].map(([label, key]) => (
+              <PreferenceToggle
+                key={key}
+                label={label}
+                checked={preferences.notifications[key as keyof CustomerPortalPreferences['notifications']]}
+                onChange={() => updatePreferences({
+                  ...preferences,
+                  notifications: {
+                    ...preferences.notifications,
+                    [key]: !preferences.notifications[key as keyof CustomerPortalPreferences['notifications']],
+                  },
+                })}
+              />
+            ))}
+          </div>
+        </section>
+      </aside>
+    </div>
+  )
+}
+
+function NotificationsSection() {
+  const user = useAuthStore(state => state.user)
+  const [preferences, setPreferences] = useState<CustomerPortalPreferences>(() => getPortalPreferences(user?.customer_id))
+
+  const update = (key: keyof CustomerPortalPreferences['notifications']) => {
+    const next = {
+      ...preferences,
+      notifications: { ...preferences.notifications, [key]: !preferences.notifications[key] },
+    }
+    setPreferences(next)
+    savePortalPreferences(user?.customer_id, next)
+  }
+
+  return (
+    <div>
+      <h2 className="text-lg font-extrabold">Notification preferences</h2>
+      <p className="mt-1 text-sm text-[#8b92a5]">Choose the updates you want to receive.</p>
+      <div className="mt-5 divide-y divide-[#1e2432] rounded-[14px] border border-[#232939] bg-[#12161f] px-4">
+        <PreferenceToggle label="Invoice ready" checked={preferences.notifications.invoiceReady} onChange={() => update('invoiceReady')} />
+        <PreferenceToggle label="Repair status" checked={preferences.notifications.repairStatus} onChange={() => update('repairStatus')} />
+        <PreferenceToggle label="PM reminders" checked={preferences.notifications.pmReminders} onChange={() => update('pmReminders')} />
+      </div>
+    </div>
+  )
+}
+
 // ============ LAYOUT ============
 
 const SECTIONS = [
-  { id: 'profile' as const, label: 'Profile', icon: User },
-  { id: 'security' as const, label: 'Security', icon: Lock },
-  { id: 'appearance' as const, label: 'Appearance', icon: Palette },
-  { id: 'payments' as const, label: 'Payments', icon: CreditCard },
-  { id: 'vehicles' as const, label: 'Vehicles', icon: Truck },
-  { id: 'shops' as const, label: 'Shops', icon: Building2 },
+  { id: 'profile' as const, label: 'Profile' },
+  { id: 'security' as const, label: 'Security' },
+  { id: 'appearance' as const, label: 'Appearance' },
+  { id: 'payments' as const, label: 'Payments' },
+  { id: 'vehicles' as const, label: 'Vehicles' },
+  { id: 'shops' as const, label: 'Shops' },
+  { id: 'notifications' as const, label: 'Notifications' },
 ]
 
 export default function ProfileSettingsPage() {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('profile')
+  const { user } = useAuthStore()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') as SettingsSection | null
+  const [activeSection, setActiveSection] = useState<SettingsSection>(
+    requestedTab && SECTIONS.some(section => section.id === requestedTab) ? requestedTab : 'profile',
+  )
+
+  const selectSection = (section: SettingsSection) => {
+    setActiveSection(section)
+    setSearchParams(section === 'profile' ? {} : { tab: section }, { replace: true })
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">Profile Settings</h1>
-        <p className="text-gray-400 mt-1">Manage your account and preferences</p>
+        <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Account</h1>
+        <p className="mt-1 text-[13px] text-[#8b92a5]">
+          {[user?.first_name, user?.last_name].filter(Boolean).join(' ') || 'Customer'} · {user?.email}
+        </p>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Sidebar */}
-        <div className="lg:w-56 flex-shrink-0">
-          <div className="bg-white/5 rounded-xl border border-white/10 p-2 lg:p-3 lg:sticky lg:top-4">
-            <nav className="flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible scrollbar-hide" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {SECTIONS.map((section) => (
-                <button
-                  key={section.id}
-                  onClick={() => setActiveSection(section.id)}
-                  className={`flex items-center gap-1.5 lg:gap-2 px-2.5 lg:px-3 py-2 lg:py-2.5 rounded-lg text-xs lg:text-sm font-medium transition-colors flex-shrink-0 ${
-                    activeSection === section.id
-                      ? 'bg-amber-600/20 text-amber-400'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <section.icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="whitespace-nowrap">{section.label}</span>
-                </button>
-              ))}
-            </nav>
-          </div>
-        </div>
+      <div className="-mx-4 overflow-x-auto border-b border-[#1e2432] px-4 sm:mx-0 sm:px-0">
+        <nav className="flex min-w-max gap-5" aria-label="Account sections">
+          {SECTIONS.map(section => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => selectSection(section.id)}
+              className={`relative h-[38px] text-xs font-bold ${
+                activeSection === section.id ? 'text-[#c9bfff]' : 'text-[#8b92a5] hover:text-[#c9cdd8]'
+              }`}
+            >
+              {section.label}
+              {activeSection === section.id && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#8b7cf7]" />}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-        {/* Content */}
-        <div className="flex-1 bg-white/5 rounded-xl p-6 border border-white/10 min-h-[500px]">
-          {activeSection === 'profile' && <ProfileSection />}
+      {activeSection === 'profile' ? (
+        <ContactDetailsSection />
+      ) : (
+        <div className="min-h-[420px] rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-6">
           {activeSection === 'security' && <SecuritySection />}
           {activeSection === 'appearance' && <AppearanceSection />}
           {activeSection === 'payments' && <PaymentsSection />}
           {activeSection === 'vehicles' && <VehiclesSection />}
           {activeSection === 'shops' && <ShopsSection />}
+          {activeSection === 'notifications' && <NotificationsSection />}
         </div>
-      </div>
+      )}
     </div>
   )
 }

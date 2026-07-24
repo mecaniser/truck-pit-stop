@@ -149,14 +149,14 @@ export default function BookingPage() {
           return (
             <div key={s} className="flex items-center gap-2">
               {i > 0 && (s !== 'vehicle' || service.requires_vehicle) && (
-                <div className={`w-8 h-0.5 ${isCompleted ? 'bg-amber-500' : 'bg-white/20'}`} />
+                <div className={`w-8 h-0.5 ${isCompleted ? 'bg-[#8b7cf7]' : 'bg-[#272d3d]'}`} />
               )}
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium ${
                   isActive
-                    ? 'bg-amber-500 text-white'
-                    : isCompleted
-                    ? 'bg-amber-500/20 text-amber-400'
+                        ? 'bg-[#8b7cf7] text-[#0e1118]'
+                        : isCompleted
+                        ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
                     : 'bg-white/10 text-gray-500'
                 }`}
               >
@@ -168,7 +168,7 @@ export default function BookingPage() {
       </div>
 
       {/* Step Content */}
-      <div className="bg-white/5 rounded-xl p-5 border border-white/10">
+      <div className="rounded-2xl border border-[#232939] bg-[#161a26] p-4 sm:p-5">
         {/* Vehicle Selection */}
         {step === 'vehicle' && service.requires_vehicle && (
           <div className="space-y-4">
@@ -182,12 +182,12 @@ export default function BookingPage() {
                     onClick={() => setSelectedVehicle(vehicle.id)}
                     className={`w-full p-4 rounded-lg border text-left transition-all ${
                       selectedVehicle === vehicle.id
-                        ? 'bg-amber-500/20 border-amber-500'
-                        : 'bg-white/5 border-white/10 hover:border-white/30'
+                        ? 'border-[#8b7cf7] bg-[#8b7cf7]/10'
+                        : 'border-[#272d3d] bg-[#12161f] hover:border-[#343b52]'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <Truck className="w-6 h-6 text-amber-200" />
+                      <Truck className="w-6 h-6 text-[#d9a521]" />
                       <div>
                         <div className="font-medium text-white">
                           {vehicle.year} {vehicle.make} {vehicle.model}
@@ -207,7 +207,7 @@ export default function BookingPage() {
             <button
               onClick={() => setStep('datetime')}
               disabled={!selectedVehicle}
-              className="w-full py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+              className="w-full rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Continue
             </button>
@@ -233,8 +233,8 @@ export default function BookingPage() {
                       }}
                       className={`p-3 rounded-lg text-center min-w-[70px] transition-all ${
                         format(selectedDate, 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
-                          ? 'bg-amber-500 text-white'
-                          : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                          ? 'bg-[#8b7cf7] text-[#0e1118]'
+                          : 'border border-[#272d3d] bg-[#12161f] text-[#c9cdd8] hover:border-[#343b52]'
                       }`}
                     >
                       <div className="text-xs uppercase">{format(date, 'EEE')}</div>
@@ -260,7 +260,7 @@ export default function BookingPage() {
                       disabled={!slot.available}
                       className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
                         selectedTime === slot.time
-                          ? 'bg-amber-500 text-white'
+                          ? 'bg-[#8b7cf7] text-[#0e1118]'
                           : slot.available
                           ? 'bg-white/5 text-gray-300 hover:bg-white/10'
                           : 'bg-white/5 text-gray-600 cursor-not-allowed line-through'
@@ -285,7 +285,7 @@ export default function BookingPage() {
               <button
                 onClick={() => setStep('confirm')}
                 disabled={!selectedTime}
-                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+                className="flex-1 rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Continue
               </button>
@@ -326,7 +326,7 @@ export default function BookingPage() {
               </div>
               <div className="border-t border-white/10 pt-3 flex justify-between">
                 <span className="text-gray-400">Total</span>
-                <span className="text-xl font-bold text-amber-400">
+                <span className="text-xl font-extrabold text-[#eceef4] tabular-nums">
                   ${parseFloat(service.computed_total_price).toFixed(2)}
                 </span>
               </div>
@@ -338,7 +338,7 @@ export default function BookingPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Any special requests or information..."
-                className="w-full p-3 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
+                className="w-full rounded-[10px] border border-[#272d3d] bg-[#12161f] p-3 text-base text-white placeholder-[#5c6375] outline-none focus:border-[#8b7cf7] focus:ring-2 focus:ring-[#8b7cf7]/30"
                 rows={3}
               />
             </div>
@@ -353,7 +353,7 @@ export default function BookingPage() {
               <button
                 onClick={() => createAppointment.mutate()}
                 disabled={createAppointment.isPending}
-                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-600/50 text-white font-medium rounded-lg transition-colors"
+                className="flex-1 rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-50"
               >
                 {createAppointment.isPending ? 'Creating...' : 'Proceed to Payment'}
               </button>
@@ -366,8 +366,8 @@ export default function BookingPage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-white">Payment</h2>
 
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 text-center">
-              <p className="text-amber-400 mb-2">
+            <div className="rounded-lg border border-[#8b7cf7]/30 bg-[#8b7cf7]/10 p-4 text-center">
+              <p className="mb-2 text-[#c9bfff]">
                 Stripe payment integration will be added here
               </p>
               <p className="text-gray-400 text-sm">
@@ -378,7 +378,7 @@ export default function BookingPage() {
             <div className="bg-white/5 rounded-lg p-4">
               <div className="flex justify-between text-lg">
                 <span className="text-gray-400">Amount Due</span>
-                <span className="font-bold text-amber-400">
+                <span className="font-extrabold text-[#eceef4] tabular-nums">
                   ${parseFloat(service.computed_total_price).toFixed(2)}
                 </span>
               </div>
@@ -387,7 +387,7 @@ export default function BookingPage() {
             <button
               onClick={() => confirmPayment.mutate()}
               disabled={confirmPayment.isPending}
-              className="w-full py-3 bg-green-500 hover:bg-green-600 disabled:bg-green-600/50 text-white font-medium rounded-lg transition-colors"
+              className="w-full rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-50"
             >
               {confirmPayment.isPending ? 'Processing...' : 'Complete Payment'}
             </button>
@@ -407,7 +407,7 @@ export default function BookingPage() {
 
             <div className="bg-white/5 rounded-lg p-4 inline-block">
               <div className="text-sm text-gray-400">Confirmation Number</div>
-              <div className="text-2xl font-mono font-bold text-amber-400">
+              <div className="text-2xl font-mono font-extrabold text-[#c9bfff]">
                 {confirmationNumber}
               </div>
             </div>
@@ -434,7 +434,7 @@ export default function BookingPage() {
               </button>
               <button
                 onClick={() => navigate('/portal')}
-                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors"
+                className="flex-1 rounded-[11px] bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110"
               >
                 Back to Dashboard
               </button>
