@@ -363,13 +363,15 @@ export default function MechanicPortalPage() {
     refetchOnWindowFocus: true,
   })
 
-  // History (always load for empty state preview)
+  // Completed work can grow without bound. Keep the job workspace focused on
+  // live work, then fetch the richer history only when the mechanic opens it.
   const { data: history, isLoading: historyLoading } = useQuery<WorkHistoryItem[]>({
     queryKey: ['mechanic-history'],
     queryFn: async () => {
       const response = await api.get('/mechanics/my-history')
       return response.data
     },
+    enabled: view === 'history',
   })
   
   // My PTO requests
@@ -2387,41 +2389,14 @@ export default function MechanicPortalPage() {
               </div>
             </div>
 
-            {/* Recent Completed */}
-            {history && history.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm text-zinc-400 font-medium">Recent Completed</h3>
-                  <button
-                    onClick={() => setView('history')}
-                    className="text-xs text-[var(--accent-400)] hover:opacity-80 transition-opacity"
-                  >
-                    View All →
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {history.slice(0, 3).map((item) => (
-                    <div key={item.id} className="bg-zinc-900/80 backdrop-blur-sm rounded-2xl p-3 border border-zinc-700/50 shadow-xl shadow-black/20">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <p className="text-zinc-100 font-medium text-sm">{item.vehicle_info}</p>
-                          <p className="text-xs text-zinc-500 mt-0.5">{item.order_number}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/30">
-                            +{item.points_earned.toLocaleString()} pts
-                          </span>
-                          <StatusLED status="active" size="sm" />
-                        </div>
-                      </div>
-                      <p className="text-xs text-zinc-600 mt-1">
-                        {format(new Date(item.completed_at), 'MMM d, h:mm a')}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={() => setView('history')}
+              className="w-full rounded-2xl border border-zinc-700/50 bg-zinc-900/80 p-4 text-left shadow-xl shadow-black/20 transition-colors hover:border-[var(--accent-500)]/40 active:bg-zinc-800"
+            >
+              <p className="text-sm font-semibold text-zinc-100">Completed work</p>
+              <p className="mt-1 text-xs text-[var(--accent-400)]">View repair history and earned points</p>
+            </button>
 
           </>
         ) : (
