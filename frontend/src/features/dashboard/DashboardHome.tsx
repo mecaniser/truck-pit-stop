@@ -11,6 +11,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Search,
   Send,
   Truck,
   Wrench,
@@ -122,6 +123,18 @@ function timeAgo(dateStr: string): string {
   if (hrs < 24) return `${hrs}h ago`
   const days = Math.floor(hrs / 24)
   return `${days}d ago`
+}
+
+function filterQueueOrders(orders: RecentOrder[], query: string): RecentOrder[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  if (!normalizedQuery) return orders
+
+  return orders.filter((order) => [
+    order.order_number,
+    order.customer_name,
+    order.vehicle_info,
+    order.description,
+  ].some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)))
 }
 
 function useElapsedTime(startedAt: string | null) {
@@ -370,6 +383,8 @@ export default function DashboardHome() {
   const [quickTouched, setQuickTouched] = useState(false)
   const [openStatusPanel, setOpenStatusPanel] = useState<'team' | 'revenue' | null>(null)
   const [activeMobileLane, setActiveMobileLane] = useState<0 | 1 | 2>(0)
+  const [openLaneSearch, setOpenLaneSearch] = useState<0 | 1 | 2 | null>(null)
+  const [laneSearchQueries, setLaneSearchQueries] = useState<Record<0 | 1 | 2, string>>({ 0: '', 1: '', 2: '' })
   const teamCapacityTouchStartY = useRef<number | null>(null)
   const teamCapacityDidSwipe = useRef(false)
   const [queueView, setQueueView] = useState<'queue' | 'activity'>('queue')
@@ -510,6 +525,12 @@ export default function DashboardHome() {
   const needsActionCount = stats?.orders_needing_action?.length || 0
   const onFloorCount = stats?.orders_on_floor?.length || 0
   const readyToCloseCount = stats?.orders_ready_to_close?.length || 0
+  const needsActionOrders = filterQueueOrders(stats?.orders_needing_action ?? [], laneSearchQueries[0])
+  const onFloorOrders = filterQueueOrders(stats?.orders_on_floor ?? [], laneSearchQueries[1])
+  const readyToCloseOrders = filterQueueOrders(stats?.orders_ready_to_close ?? [], laneSearchQueries[2])
+  const setLaneSearchQuery = (lane: 0 | 1 | 2, value: string) => {
+    setLaneSearchQueries((current) => ({ ...current, [lane]: value }))
+  }
   const laneCountLabel = (count: number, hasMore?: boolean) => hasMore ? `${count}+` : count
   const highestPriorityMobileLane: 0 | 1 | 2 = needsActionCount > 0 ? 0 : onFloorCount > 0 ? 1 : 2
   const displayedMobileLane =
@@ -955,16 +976,51 @@ export default function DashboardHome() {
                     <h3 className="text-sm 2xl:text-base font-semibold text-white">Needs Action</h3>
                     <SectionInfoTooltip text="Orders blocked by approvals, missing info, or other manager actions that should be handled first." />
                   </div>
-                  <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
-                    {laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {needsActionCount >= 9 && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenLaneSearch((lane) => lane === 0 ? null : 0)
+                        }}
+                        className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                        aria-label="Search needs action orders"
+                        aria-expanded={openLaneSearch === 0}
+                      >
+                        <Search className="h-4 w-4" />
+                      </button>
+                    )}
+                    <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
+                      {laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}
+                    </span>
+                  </div>
                 </div>
+                {openLaneSearch === 0 && needsActionCount >= 9 && (
+                  <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-2.5 py-2">
+                    <Search className="h-4 w-4 text-gray-500" />
+                    <input
+                      autoFocus
+                      value={laneSearchQueries[0]}
+                      onChange={(event) => setLaneSearchQuery(0, event.target.value)}
+                      placeholder="Order, company, truck…"
+                      className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+                      aria-label="Search needs action orders"
+                    />
+                    <span className="text-xs text-gray-500">{needsActionOrders.length}/{laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}</span>
+                    <button type="button" onClick={() => laneSearchQueries[0] ? setLaneSearchQuery(0, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[0] ? 'Clear search' : 'Close search'}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 <div className={getLaneBodyClass(0)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
                     {!stats?.orders_needing_action?.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">All clear</p>
+                    ) : !needsActionOrders.length ? (
+                      <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No matching orders</p>
                     ) : (
-                      stats.orders_needing_action.map((order) => (
+                      needsActionOrders.map((order) => (
                         <OrderCard
                           key={order.id}
                           order={order}
@@ -987,16 +1043,51 @@ export default function DashboardHome() {
                     <h3 className="text-sm 2xl:text-base font-semibold text-white">On the Floor</h3>
                     <SectionInfoTooltip text="Orders currently in production with technicians assigned or actively working." />
                   </div>
-                  <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
-                    {laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {onFloorCount >= 9 && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenLaneSearch((lane) => lane === 1 ? null : 1)
+                        }}
+                        className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                        aria-label="Search on the floor orders"
+                        aria-expanded={openLaneSearch === 1}
+                      >
+                        <Search className="h-4 w-4" />
+                      </button>
+                    )}
+                    <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
+                      {laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}
+                    </span>
+                  </div>
                 </div>
+                {openLaneSearch === 1 && onFloorCount >= 9 && (
+                  <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-2.5 py-2">
+                    <Search className="h-4 w-4 text-gray-500" />
+                    <input
+                      autoFocus
+                      value={laneSearchQueries[1]}
+                      onChange={(event) => setLaneSearchQuery(1, event.target.value)}
+                      placeholder="Order, company, truck…"
+                      className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+                      aria-label="Search on the floor orders"
+                    />
+                    <span className="text-xs text-gray-500">{onFloorOrders.length}/{laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}</span>
+                    <button type="button" onClick={() => laneSearchQueries[1] ? setLaneSearchQuery(1, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[1] ? 'Clear search' : 'Close search'}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 <div className={getLaneBodyClass(1)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
                     {!stats?.orders_on_floor?.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No active work</p>
+                    ) : !onFloorOrders.length ? (
+                      <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No matching orders</p>
                     ) : (
-                      stats.orders_on_floor.map((order) => (
+                      onFloorOrders.map((order) => (
                         <OrderCard
                           key={order.id}
                           order={order}
@@ -1019,16 +1110,51 @@ export default function DashboardHome() {
                     <h3 className="text-sm 2xl:text-base font-semibold text-white">Ready to Close</h3>
                     <SectionInfoTooltip text="Completed work waiting for invoice to be sent, plus invoiced orders awaiting payment." />
                   </div>
-                  <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                    {laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {readyToCloseCount >= 9 && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setOpenLaneSearch((lane) => lane === 2 ? null : 2)
+                        }}
+                        className="rounded-md p-1 text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                        aria-label="Search ready to close orders"
+                        aria-expanded={openLaneSearch === 2}
+                      >
+                        <Search className="h-4 w-4" />
+                      </button>
+                    )}
+                    <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                      {laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}
+                    </span>
+                  </div>
                 </div>
+                {openLaneSearch === 2 && readyToCloseCount >= 9 && (
+                  <div className="flex flex-shrink-0 items-center gap-2 border-b border-white/10 px-2.5 py-2">
+                    <Search className="h-4 w-4 text-gray-500" />
+                    <input
+                      autoFocus
+                      value={laneSearchQueries[2]}
+                      onChange={(event) => setLaneSearchQuery(2, event.target.value)}
+                      placeholder="Order, company, truck…"
+                      className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
+                      aria-label="Search ready to close orders"
+                    />
+                    <span className="text-xs text-gray-500">{readyToCloseOrders.length}/{laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}</span>
+                    <button type="button" onClick={() => laneSearchQueries[2] ? setLaneSearchQuery(2, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[2] ? 'Clear search' : 'Close search'}>
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
                 <div className={getLaneBodyClass(2)}>
                   <div className="p-2.5 space-y-2 2xl:space-y-1.5 overflow-y-auto h-full scrollbar-dark">
                     {!stats?.orders_ready_to_close?.length ? (
                       <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">Nothing pending</p>
+                    ) : !readyToCloseOrders.length ? (
+                      <p className="text-gray-500 text-sm 2xl:text-base text-center py-6">No matching orders</p>
                     ) : (
-                      stats.orders_ready_to_close.map((order) => (
+                      readyToCloseOrders.map((order) => (
                         <OrderCard
                           key={order.id}
                           order={order}
