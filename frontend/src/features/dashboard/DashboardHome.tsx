@@ -108,8 +108,11 @@ interface DashboardStats {
   overdue_approvals: number
   declined_quotes: number
   orders_needing_action: RecentOrder[]
+  orders_needing_action_has_more: boolean
   orders_on_floor: RecentOrder[]
+  orders_on_floor_has_more: boolean
   orders_ready_to_close: RecentOrder[]
+  orders_ready_to_close_has_more: boolean
 }
 
 function timeAgo(dateStr: string): string {
@@ -528,6 +531,7 @@ export default function DashboardHome() {
   const setLaneSearchQuery = (lane: 0 | 1 | 2, value: string) => {
     setLaneSearchQueries((current) => ({ ...current, [lane]: value }))
   }
+  const laneCountLabel = (count: number, hasMore?: boolean) => hasMore ? `${count}+` : count
   const highestPriorityMobileLane: 0 | 1 | 2 = needsActionCount > 0 ? 0 : onFloorCount > 0 ? 1 : 2
   const displayedMobileLane =
     (activeMobileLane === 0 && needsActionCount === 0) ||
@@ -988,7 +992,7 @@ export default function DashboardHome() {
                       </button>
                     )}
                     <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
-                      {needsActionCount}
+                      {laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}
                     </span>
                   </div>
                 </div>
@@ -1003,7 +1007,7 @@ export default function DashboardHome() {
                       className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
                       aria-label="Search needs action orders"
                     />
-                    <span className="text-xs text-gray-500">{needsActionOrders.length}/{needsActionCount}</span>
+                    <span className="text-xs text-gray-500">{needsActionOrders.length}/{laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}</span>
                     <button type="button" onClick={() => laneSearchQueries[0] ? setLaneSearchQuery(0, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[0] ? 'Clear search' : 'Close search'}>
                       <X className="h-4 w-4" />
                     </button>
@@ -1055,7 +1059,7 @@ export default function DashboardHome() {
                       </button>
                     )}
                     <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
-                      {onFloorCount}
+                      {laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}
                     </span>
                   </div>
                 </div>
@@ -1070,7 +1074,7 @@ export default function DashboardHome() {
                       className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
                       aria-label="Search on the floor orders"
                     />
-                    <span className="text-xs text-gray-500">{onFloorOrders.length}/{onFloorCount}</span>
+                    <span className="text-xs text-gray-500">{onFloorOrders.length}/{laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}</span>
                     <button type="button" onClick={() => laneSearchQueries[1] ? setLaneSearchQuery(1, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[1] ? 'Clear search' : 'Close search'}>
                       <X className="h-4 w-4" />
                     </button>
@@ -1122,7 +1126,7 @@ export default function DashboardHome() {
                       </button>
                     )}
                     <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                      {readyToCloseCount}
+                      {laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}
                     </span>
                   </div>
                 </div>
@@ -1137,7 +1141,7 @@ export default function DashboardHome() {
                       className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-gray-500"
                       aria-label="Search ready to close orders"
                     />
-                    <span className="text-xs text-gray-500">{readyToCloseOrders.length}/{readyToCloseCount}</span>
+                    <span className="text-xs text-gray-500">{readyToCloseOrders.length}/{laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}</span>
                     <button type="button" onClick={() => laneSearchQueries[2] ? setLaneSearchQuery(2, '') : setOpenLaneSearch(null)} className="rounded p-0.5 text-gray-400 hover:text-white" aria-label={laneSearchQueries[2] ? 'Clear search' : 'Close search'}>
                       <X className="h-4 w-4" />
                     </button>
