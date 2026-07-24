@@ -119,6 +119,30 @@ async def test_truck_detail_history_and_spend(db_session):
 
 
 @pytest.mark.asyncio
+async def test_truck_detail_does_not_rescan_the_fleet_for_nearby_units(db_session, monkeypatch):
+    """Nearby units are derived from the board payload already in the browser."""
+    tenant, fc, user = await _seed(db_session)
+    vehicle = _vehicle(
+        tenant.id,
+        fc.id,
+        unit_number="NEAR",
+        next_pm_miles=120000,
+        last_lat=35.11,
+        last_lng=-80.72,
+    )
+    db_session.add(vehicle)
+    await db_session.commit()
+
+    async def fleet_scan_should_not_run(*_args, **_kwargs):
+        raise AssertionError("truck detail must not scan the full fleet")
+
+    monkeypatch.setattr(fleet, "_fleet_vehicles", fleet_scan_should_not_run)
+    detail = await fleet.truck_detail(vehicle_id=vehicle.id, db=db_session, current_user=user)
+
+    assert detail.nearest == []
+
+
+@pytest.mark.asyncio
 async def test_board_truck_from_legacy_internal_account_can_open_detail(db_session):
     """Board and detail must agree when a tenant has more than one fleet account."""
     tenant, _fleet_customer, user = await _seed(db_session)

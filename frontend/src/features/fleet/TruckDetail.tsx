@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -53,6 +53,17 @@ const incidentMenuItemStyle: React.CSSProperties = {
 }
 const MAX_FLEET_PHOTO_BYTES = 10 * 1024 * 1024
 
+function haversineMiles(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const radius = 3958.8
+  const phi1 = aLat * Math.PI / 180
+  const phi2 = bLat * Math.PI / 180
+  const deltaPhi = (bLat - aLat) * Math.PI / 180
+  const deltaLambda = (bLng - aLng) * Math.PI / 180
+  const h = Math.sin(deltaPhi / 2) ** 2
+    + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2
+  return Math.round(2 * radius * Math.asin(Math.sqrt(h)))
+}
+
 interface PendingIncidentPhoto {
   id: string
   incidentId: string
@@ -93,10 +104,26 @@ export default function TruckDetail({
   truckId, trucks, onBack, onOpen,
 }: { truckId: string; trucks: BoardTruck[]; onBack: () => void; onOpen: (id: string) => void }) {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery<TruckDetailData>({
+  const { data } = useQuery<TruckDetailData>({
     queryKey: ['fleet-truck', truckId],
     queryFn: async () => (await api.get(`/fleet/trucks/${truckId}`)).data,
   })
+  const nearestUnits = useMemo(() => {
+    const truck = data?.truck
+    if (!truck || truck.lat == null || truck.lng == null) return []
+
+    return trucks
+      .filter((candidate) => candidate.id !== truck.id && candidate.lat != null && candidate.lng != null)
+      .map((candidate) => ({
+        id: candidate.id,
+        unit_number: candidate.display_unit_number || candidate.unit_number,
+        city: candidate.location_city,
+        status: candidate.status,
+        miles: haversineMiles(truck.lat!, truck.lng!, candidate.lat!, candidate.lng!),
+      }))
+      .sort((a, b) => a.miles - b.miles)
+      .slice(0, 3)
+  }, [data?.truck, trucks])
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
@@ -209,9 +236,9 @@ export default function TruckDetail({
     }
   }
 
-  if (isLoading || !data) return <div className="loader"><Spinner size="md" /></div>
+  const t = data?.truck || trucks.find((truck) => truck.id === truckId)
+  if (!t) return <div className="loader"><Spinner size="md" /></div>
 
-  const t = data.truck
   const meta = STATUS_META[t.status]
   const pm = pmState(t)
   // map trucks: ensure the focused truck (fresh coords) is represented
@@ -268,6 +295,7 @@ export default function TruckDetail({
                 style={{ height: 30, padding: '0 12px', fontSize: 12.5 }}
                 onClick={() => setDetailsOpen(true)}
                 title="Details"
+                disabled={!data}
               >
                 <Info size={14} /> <span className="dbtn-label">Details</span>
               </button>
@@ -296,7 +324,7 @@ export default function TruckDetail({
             </div>
           </div>
           <div className="dhead-r">
-            <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)} title="Edit">
+            <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)} title="Edit" disabled={!data}>
               <Pencil size={15} /> <span className="dbtn-label">Edit</span>
             </button>
             <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)} title="New work order">
@@ -321,6 +349,7 @@ export default function TruckDetail({
         </div>
       )}
 
+      {data ? (
       <div className="dcol">
           <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} />
 
@@ -602,8 +631,8 @@ export default function TruckDetail({
           <FleetMap trucks={mapTrucks} focusId={t.id} onSelect={(tr) => tr.id !== t.id && onOpen(tr.id)} />
           <div className="dmap-side">
             <div className="dmap-side-h">Nearest units</div>
-            {data.nearest.length === 0 && <div className="empty-note">No located units nearby.</div>}
-            {data.nearest.map((n) => (
+            {nearestUnits.length === 0 && <div className="empty-note">No located units nearby.</div>}
+            {nearestUnits.map((n) => (
               <button key={n.id} className="near-row" onClick={() => onOpen(n.id)}>
                 <i className="near-dot" style={{ background: STATUS_META[n.status].dot }} />
                 <span className="near-unit">{n.unit_number}</span>
@@ -615,11 +644,17 @@ export default function TruckDetail({
         </div>
       </Section>
       </div>
+      ) : (
+        <div className="loader flex-col gap-3 text-sm text-slate-500">
+          <Spinner size="md" />
+          <span>Loading truck activity...</span>
+        </div>
+      )}
 
-      {detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onClose={() => setDetailsOpen(false)} />}
-      {editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
+      {data && detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onClose={() => setDetailsOpen(false)} />}
+      {data && editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {schedulePMOpen && <SchedulePMModal truck={t} onClose={() => setSchedulePMOpen(false)} onDone={refresh} />}
-      {assigningDriver && <AssignDriverModal truck={t} driverPhone={data.driver_phone} onClose={() => setAssigningDriver(false)} />}
+      {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
       {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={fleetUnitLabel(t)} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
