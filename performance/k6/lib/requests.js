@@ -1,9 +1,9 @@
 import http from 'k6/http'
 import { check } from 'k6'
 
-function failureDetails(response) {
+function failureDetails(response, endpoint) {
   const body = response.body ? String(response.body).replace(/\s+/g, ' ').slice(0, 300) : ''
-  return `endpoint=${response.tags.name} status=${response.status} error=${response.error || 'none'} body=${body}`
+  return `endpoint=${endpoint} status=${response.status} error=${response.error || 'none'} body=${body}`
 }
 
 export function get(config, path, name) {
@@ -21,7 +21,7 @@ export function get(config, path, name) {
   })
 
   if (response.status < 200 || response.status >= 300) {
-    console.error(`k6_request_failure ${failureDetails(response)}`)
+    console.error(`k6_request_failure ${failureDetails(response, name)}`)
   }
 
   return response
@@ -47,7 +47,7 @@ export function loginPerformanceUser(config, userNumber) {
     'performance_login returns 2xx': (res) => res.status >= 200 && res.status < 300,
   })
   if (!successful) {
-    console.error(`k6_login_failure vu=${userNumber} ${failureDetails(response)}`)
+    console.error(`k6_login_failure vu=${userNumber} ${failureDetails(response, 'performance_login')}`)
     return null
   }
 
