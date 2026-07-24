@@ -104,11 +104,19 @@ type WorkQueueLane = 'needs_action' | 'on_floor' | 'ready_to_close'
 
 type WorkQueue = {
   orders_needing_action: Array<{ id: string }>
+  orders_needing_action_has_more: boolean
   orders_on_floor: Array<{ id: string }>
+  orders_on_floor_has_more: boolean
   orders_ready_to_close: Array<{ id: string }>
+  orders_ready_to_close_has_more: boolean
 }
 
-const WORK_QUEUE_FIELD: Record<WorkQueueLane, keyof WorkQueue> = {
+type WorkQueueOrdersField =
+  | 'orders_needing_action'
+  | 'orders_on_floor'
+  | 'orders_ready_to_close'
+
+const WORK_QUEUE_FIELD: Record<WorkQueueLane, WorkQueueOrdersField> = {
   needs_action: 'orders_needing_action',
   on_floor: 'orders_on_floor',
   ready_to_close: 'orders_ready_to_close',

@@ -6,8 +6,11 @@ import pytest
 from sqlalchemy import event
 
 from app.api.v1.endpoints import dashboard
+from app.db.models.customer import Customer
+from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
+from app.db.models.vehicle import Vehicle
 
 
 class _ScalarResult:
@@ -212,3 +215,59 @@ async def test_dashboard_action_queue_stays_within_query_budget(db_session):
     # One tenant lookup plus the four action-lane queries. Keep the home screen
     # bounded as the tenant's historical orders grow.
     assert query_count == 5
+
+
+@pytest.mark.asyncio
+async def test_dashboard_action_queue_bounds_each_lane_and_marks_overflow(db_session):
+    tenant_id = uuid4()
+    tenant = Tenant(
+        id=tenant_id,
+        name="Bounded Queue Shop",
+        slug=f"bounded-queue-{tenant_id.hex[:8]}",
+        timezone="America/New_York",
+    )
+    manager = User(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        role=UserRole.GARAGE_OWNER,
+        email="bounded-queue-owner@example.com",
+        hashed_password="hashed-password",
+        first_name="Bounded",
+        last_name="Owner",
+        is_active=True,
+    )
+    customer = Customer(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        first_name="Queue",
+        last_name="Customer",
+        email="queue-customer@example.com",
+    )
+    vehicle = Vehicle(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        customer_id=customer.id,
+        make="Freightliner",
+        model="Cascadia",
+        year=2024,
+    )
+    orders = [
+        RepairOrder(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            customer_id=customer.id,
+            vehicle_id=vehicle.id,
+            order_number=f"QUEUE-{number:04d}",
+            status=RepairOrderStatus.IN_PROGRESS,
+        )
+        for number in range(dashboard.ACTION_QUEUE_LANE_LIMIT + 1)
+    ]
+    db_session.add_all([tenant, manager, customer, vehicle, *orders])
+    await db_session.commit()
+
+    response = await dashboard.get_dashboard_action_queue(db=db_session, current_user=manager)
+
+    assert len(response.orders_on_floor) == dashboard.ACTION_QUEUE_LANE_LIMIT
+    assert response.orders_on_floor_has_more is True
+    assert response.orders_needing_action == []
+    assert response.orders_ready_to_close == []
