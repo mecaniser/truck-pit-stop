@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections import OrderedDict
 from typing import Optional
@@ -12,6 +13,8 @@ from app.core.security import decode_token
 
 _CACHE_MISS = object()
 _token_user_cache: "OrderedDict[str, tuple[Optional[str], float]]" = OrderedDict()
+_PERFORMANCE_LOAD_ACTOR_HEADER = "x-dieselbridge-load-actor"
+_PERFORMANCE_LOAD_ACTOR_PATTERN = re.compile(r"k6-vu-[1-9][0-9]*$")
 
 
 def _get_cached_user_id(token: str) -> object:
@@ -117,7 +120,22 @@ def _extract_user_id_from_request(request: Request) -> Optional[str]:
 
 
 def rate_limit_key(request: Request) -> str:
-    """Use authenticated user id first, then client IP."""
+    """Use authenticated user id first, then client IP.
+
+    Isolated performance tests log in multiple synthetic staff accounts from one
+    k6 host. Give only those login requests distinct principals so the login
+    brute-force guard does not mask application capacity. Authenticated test
+    traffic still keys on each real staff user id.
+    """
+    performance_actor = request.headers.get(_PERFORMANCE_LOAD_ACTOR_HEADER)
+    if (
+        settings.ENVIRONMENT.strip().lower() == "performance"
+        and request.url.path == "/api/v1/auth/login"
+        and performance_actor
+        and _PERFORMANCE_LOAD_ACTOR_PATTERN.fullmatch(performance_actor)
+    ):
+        return f"performance-load:{performance_actor}"
+
     user_id = _extract_user_id_from_request(request)
     if user_id:
         return f"user:{user_id}"

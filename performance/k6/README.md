@@ -91,18 +91,28 @@ From the Railway backend shell, after migrations complete:
 ENVIRONMENT=performance \
 LOAD_TEST_SEED_CONFIRM=seed-performance-data \
 python scripts/seed_performance_environment.py \
-  --owner-email performance-owner@example.com \
+  --owner-email performance-owner@dieselbridge.com \
   --owner-password 'use-a-unique-secret'
 ```
 
-Record the printed `workspace_repair_order_id`. Use the generated owner account
-to get a k6 bearer token, then run the capacity profile only against the
-isolated environment URL:
+Provision ten active garage-admin accounts for the capacity profile. These
+accounts are only for the isolated environment, and each virtual user signs in
+once as a different account so the test respects production-like per-user
+throttling.
+
+```bash
+LOAD_TEST_SEED_CONFIRM=seed-performance-data \
+python scripts/provision_performance_load_users.py \
+  --password 'use-a-different-unique-load-test-secret'
+```
+
+Record the printed `workspace_repair_order_id`, then run the capacity profile
+only against the isolated environment URL:
 
 ```bash
 BASE_URL="https://YOUR-PERFORMANCE-URL" \
 TARGET_ENV=performance \
-K6_ACCESS_TOKEN="$K6_ACCESS_TOKEN" \
+K6_LOAD_TEST_PASSWORD='use-a-different-unique-load-test-secret' \
 REPAIR_ORDER_ID="WORKSPACE_REPAIR_ORDER_ID" \
 k6 run scenarios/performance_capacity.js
 ```
@@ -120,5 +130,6 @@ connection-pool waits, Redis latency, CPU, memory, and error rate throughout.
 - The matching Grafana interval shows no database pool exhaustion, 5xx spike,
   sustained database query regression, or Redis regression.
 
-The scripts label each request with a stable route name. Those labels make the
-k6 summary useful even when the selected order UUID changes between runs.
+The scripts label each request with a stable route name. Any non-2xx response
+is printed with its endpoint and HTTP status, so rate limits and server errors
+are visible immediately in terminal output.

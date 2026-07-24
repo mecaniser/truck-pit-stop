@@ -37,7 +37,7 @@ Open the backend service shell in the `performance` environment and run:
 ```bash
 LOAD_TEST_SEED_CONFIRM=seed-performance-data \
 python scripts/seed_performance_environment.py \
-  --owner-email performance-owner@example.com \
+  --owner-email performance-owner@dieselbridge.com \
   --owner-password 'use-a-unique-secret'
 ```
 
@@ -57,13 +57,22 @@ for the tenant slug: a second run exits without adding duplicate data.
 
 ## Run Capacity Test
 
-Create a short-lived token for `performance-owner@example.com`, then run this
-from the repository's `performance/k6` directory:
+Provision the ten dedicated load-test admins. Each k6 virtual user logs in once
+as a separate account, so the load test does not accidentally exercise a
+single-user rate limit instead of multi-user application capacity.
+
+```bash
+LOAD_TEST_SEED_CONFIRM=seed-performance-data \
+python scripts/provision_performance_load_users.py \
+  --password 'use-a-different-unique-load-test-secret'
+```
+
+Then run this from the repository's `performance/k6` directory:
 
 ```bash
 BASE_URL="https://YOUR-PERFORMANCE-BACKEND-URL" \
 TARGET_ENV=performance \
-K6_ACCESS_TOKEN="$K6_ACCESS_TOKEN" \
+K6_LOAD_TEST_PASSWORD='use-a-different-unique-load-test-secret' \
 REPAIR_ORDER_ID="WORKSPACE_REPAIR_ORDER_ID" \
 k6 run scenarios/performance_capacity.js
 ```
