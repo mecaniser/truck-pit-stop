@@ -1,4 +1,5 @@
 import { fail, sleep } from 'k6'
+import exec from 'k6/execution'
 import { loadConfig, requireLoadTestPassword } from '../lib/config.js'
 import {
   dashboardActionQueue,
@@ -59,7 +60,7 @@ export default function () {
   if (!accessToken) {
     accessToken = loginPerformanceUser(config, __VU)
     if (!accessToken) {
-      fail(`Unable to authenticate performance load user for VU ${__VU}`)
+      exec.test.abort(`Unable to authenticate performance load user for VU ${__VU}`)
     }
   }
 
