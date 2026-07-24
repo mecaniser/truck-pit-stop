@@ -75,29 +75,29 @@ export default function QuickBooksPaymentPanel({ invoiceId, tokenUrl, onSuccess 
   return (
     <form onSubmit={submit} className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="text-sm text-gray-300 sm:col-span-2">
+        <label className="text-sm text-[#c9cdd8] sm:col-span-2">
           Name on card
-          <input required name="name" autoComplete="cc-name" className="mt-1 w-full rounded-lg border border-gray-600 bg-slate-900 px-3 py-2 text-white" />
+          <input required name="name" autoComplete="cc-name" className="mt-1 w-full rounded-lg border border-[#272d3d] bg-[#161a26] px-3 py-2 text-white outline-none focus:border-[#8b7cf7] focus:ring-1 focus:ring-[#8b7cf7]" />
         </label>
-        <label className="text-sm text-gray-300 sm:col-span-2">
+        <label className="text-sm text-[#c9cdd8] sm:col-span-2">
           Card number
-          <input required name="number" inputMode="numeric" autoComplete="cc-number" className="mt-1 w-full rounded-lg border border-gray-600 bg-slate-900 px-3 py-2 text-white" />
+          <input required name="number" inputMode="numeric" autoComplete="cc-number" className="mt-1 w-full rounded-lg border border-[#272d3d] bg-[#161a26] px-3 py-2 text-white outline-none focus:border-[#8b7cf7] focus:ring-1 focus:ring-[#8b7cf7]" />
         </label>
-        <label className="text-sm text-gray-300">
+        <label className="text-sm text-[#c9cdd8]">
           Expiry
-          <input required name="expiry" inputMode="numeric" autoComplete="cc-exp" placeholder="MM / YYYY" className="mt-1 w-full rounded-lg border border-gray-600 bg-slate-900 px-3 py-2 text-white" />
+          <input required name="expiry" inputMode="numeric" autoComplete="cc-exp" placeholder="MM / YYYY" className="mt-1 w-full rounded-lg border border-[#272d3d] bg-[#161a26] px-3 py-2 text-white outline-none focus:border-[#8b7cf7] focus:ring-1 focus:ring-[#8b7cf7]" />
         </label>
-        <label className="text-sm text-gray-300">
+        <label className="text-sm text-[#c9cdd8]">
           Security code
-          <input required name="cvc" inputMode="numeric" autoComplete="cc-csc" className="mt-1 w-full rounded-lg border border-gray-600 bg-slate-900 px-3 py-2 text-white" />
+          <input required name="cvc" inputMode="numeric" autoComplete="cc-csc" className="mt-1 w-full rounded-lg border border-[#272d3d] bg-[#161a26] px-3 py-2 text-white outline-none focus:border-[#8b7cf7] focus:ring-1 focus:ring-[#8b7cf7]" />
         </label>
-        <label className="text-sm text-gray-300 sm:col-span-2">
+        <label className="text-sm text-[#c9cdd8] sm:col-span-2">
           Billing ZIP code
-          <input required name="postalCode" autoComplete="postal-code" className="mt-1 w-full rounded-lg border border-gray-600 bg-slate-900 px-3 py-2 text-white" />
+          <input required name="postalCode" autoComplete="postal-code" className="mt-1 w-full rounded-lg border border-[#272d3d] bg-[#161a26] px-3 py-2 text-white outline-none focus:border-[#8b7cf7] focus:ring-1 focus:ring-[#8b7cf7]" />
         </label>
       </div>
       {error && <p className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
-      <button type="submit" disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-3 font-semibold text-white hover:bg-emerald-700 disabled:bg-gray-600">
+      <button type="submit" disabled={isProcessing} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] py-3 font-extrabold text-[#0e1118] hover:brightness-110 disabled:opacity-60">
         <CreditCard className="h-5 w-5" />
         {isProcessing ? 'Processing...' : 'Submit secure payment'}
       </button>
