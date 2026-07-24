@@ -601,6 +601,11 @@ export default function RepairOrdersPage() {
       const response = await api.get('/fleet/settings', { signal })
       return response.data
     },
+    // Only a new-order flow or an internal-fleet row needs the fleet company
+    // label. Avoid a settings request on customer-only repair-order pages.
+    enabled: isModalOpen || Boolean(
+      selectedOrder?.is_internal || orders?.some((order) => order.is_internal),
+    ),
   })
 
   const { data: vehicleResults = [], isLoading: isLoadingVehicles, isFetching: isFetchingVehicles } = useQuery<VehicleTypeaheadItem[]>({
@@ -705,7 +710,10 @@ export default function RepairOrdersPage() {
   const { data: truckRecipientConnections = [] } = useQuery<TruckInvoiceRecipientConnection[]>({
     queryKey: ['vehicle-account-relationships', selectedOrder?.vehicle_id],
     queryFn: async () => (await api.get(`/vehicles/${selectedOrder!.vehicle_id}/relationships`)).data,
-    enabled: !!selectedOrder?.vehicle_id && isDetailOpen,
+    // Connected bill-to companies matter only inside the invoice chooser. The
+    // default customer remains available immediately, while this list loads on
+    // the explicit "Create Invoice" intent instead of every workspace open.
+    enabled: !!selectedOrder?.vehicle_id && isDetailOpen && showInvoiceCreateOptions,
   })
 
   const invoiceRecipientOptions = useMemo(() => {
@@ -803,6 +811,14 @@ export default function RepairOrdersPage() {
       const response = await api.get('/admin/tax-fee-settings', { signal })
       return response.data
     },
+    // The workspace summary already contains authoritative labor pricing. The
+    // tenant default rate is needed to create an order or for the legacy detail
+    // editor, neither of which should make every workspace open fetch settings.
+    enabled: isModalOpen || Boolean(
+      selectedOrder?.id
+      && isDetailOpen
+      && !PRICE_BUILDER_STATUSES.includes(selectedOrder.status),
+    ),
   })
 
   // Set default labor rate from tenant settings (only on initial load)

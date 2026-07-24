@@ -74,6 +74,26 @@ describe('RepairOrdersPage request cancellation', () => {
     resolveRequest?.()
   })
 
+  it('does not load workspace-only settings before an order workflow needs them', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') {
+        return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      }
+      return Promise.resolve({ data: {} })
+    })
+
+    renderPage()
+
+    await waitFor(() => expect(apiMocks.get).toHaveBeenCalledWith(
+      '/repair-orders',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ))
+
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/admin/tax-fee-settings', expect.anything())
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/fleet/settings', expect.anything())
+    expect(apiMocks.get).not.toHaveBeenCalledWith('/vehicles/undefined/relationships')
+  })
+
   it('shows the selected company trucks as model-and-unit cards', async () => {
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders') {
