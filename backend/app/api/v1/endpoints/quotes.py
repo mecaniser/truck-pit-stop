@@ -561,15 +561,21 @@ async def get_quote_by_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
+    # The workspace asks for the quote whenever the estimate action is visible.
+    # Load the order used for the access check and its optional quote together so
+    # a normal workspace open does not spend a second database round trip.
     result = await db.execute(
-        select(RepairOrder).where(RepairOrder.id == repair_order_id)
+        select(RepairOrder, Quote)
+        .outerjoin(Quote, Quote.repair_order_id == RepairOrder.id)
+        .where(RepairOrder.id == repair_order_id)
     )
-    order = result.scalar_one_or_none()
-    if not order:
+    row = result.one_or_none()
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repair order not found",
         )
+    order, quote = row
     if current_user.role == UserRole.CUSTOMER:
         if not current_user.customer_id or current_user.customer_id != order.customer_id:
             raise HTTPException(
@@ -581,10 +587,6 @@ async def get_quote_by_repair_order(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
-    result = await db.execute(
-        select(Quote).where(Quote.repair_order_id == repair_order_id)
-    )
-    quote = result.scalar_one_or_none()
     if not quote:
         return None
     return QuoteResponse.model_validate(quote)
