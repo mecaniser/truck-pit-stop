@@ -40,7 +40,7 @@ uvicorn app.main:app --reload
 
 The backend is configured to connect to:
 - **Host**: localhost:5432
-- **Database**: dieselbridge
+- **Database**: truckpitstop
 - **User**: dieselbridge
 - **Password**: dieselbridge_dev
 
@@ -66,7 +66,7 @@ docker-compose logs -f redis
 
 ### Connect to PostgreSQL
 ```bash
-docker exec -it dieselbridge_postgres psql -U dieselbridge -d dieselbridge
+docker exec -it dieselbridge_postgres psql -U dieselbridge -d truckpitstop
 ```
 
 ### Reset Database
@@ -90,4 +90,3 @@ For production, you should:
 2. Use environment variables for sensitive data
 3. Set up proper backups
 4. Use Railway's managed PostgreSQL instead of Docker
-
