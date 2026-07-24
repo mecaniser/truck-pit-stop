@@ -180,6 +180,14 @@ const LABOR_BREAKDOWN_STATUSES: RepairOrderStatus[] = ['pending_review', 'comple
 // deleted. Every other status can. (Mirror of the backend rule.)
 const FINANCIALLY_PROTECTED_STATUSES: RepairOrderStatus[] = ['invoiced', 'paid']
 
+interface TruckInvoiceRecipientConnection {
+  customer_id: string
+  relationship_type: 'owner' | 'operator' | 'default_payer'
+  effective_to?: string | null
+  is_primary: boolean
+  customer_company_name?: string | null
+}
+
 function RepairOrderLaborBreakdown({
   laborItems,
   laborTotal,
@@ -318,6 +326,7 @@ export default function RepairOrdersPage() {
   const [mileageOut, setMileageOut] = useState('')
   const [showReviewNotes, setShowReviewNotes] = useState(false)
   const [invoiceDueDate, setInvoiceDueDate] = useState('')
+  const [invoiceRecipientId, setInvoiceRecipientId] = useState('')
   const [showInvoiceCreateOptions, setShowInvoiceCreateOptions] = useState(false)
   const [showInvoicePaymentOptions, setShowInvoicePaymentOptions] = useState(false)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
@@ -692,6 +701,48 @@ export default function RepairOrdersPage() {
     },
     enabled: !!(selectedOrder?.id && isDetailOpen && ['invoiced', 'paid'].includes(selectedOrder?.status || '')),
   })
+
+  const { data: truckRecipientConnections = [] } = useQuery<TruckInvoiceRecipientConnection[]>({
+    queryKey: ['vehicle-account-relationships', selectedOrder?.vehicle_id],
+    queryFn: async () => (await api.get(`/vehicles/${selectedOrder!.vehicle_id}/relationships`)).data,
+    enabled: !!selectedOrder?.vehicle_id && isDetailOpen,
+  })
+
+  const invoiceRecipientOptions = useMemo(() => {
+    const active = truckRecipientConnections.filter((connection) => !connection.effective_to)
+    const byCustomer = new Map<string, TruckInvoiceRecipientConnection>()
+    const priority = (connection: TruckInvoiceRecipientConnection) =>
+      connection.relationship_type === 'default_payer' && connection.is_primary ? 0
+        : connection.relationship_type === 'default_payer' ? 1
+          : connection.relationship_type === 'owner' ? 2 : 3
+    for (const connection of active) {
+      const existing = byCustomer.get(connection.customer_id)
+      if (!existing || priority(connection) < priority(existing)) byCustomer.set(connection.customer_id, connection)
+    }
+    return [...byCustomer.values()]
+      .sort((a, b) => priority(a) - priority(b))
+      .map((connection) => ({
+        id: connection.customer_id,
+        company_name: connection.customer_company_name || 'Company',
+        relationship_label: connection.relationship_type === 'default_payer'
+          ? 'default payer'
+          : connection.relationship_type === 'owner' ? 'owner / lessor' : 'operating authority',
+      }))
+  }, [truckRecipientConnections])
+
+  useEffect(() => {
+    if (!selectedOrder) {
+      setInvoiceRecipientId('')
+      return
+    }
+    setInvoiceRecipientId((current) => {
+      if (invoiceRecipientOptions.some((option) => option.id === current)) return current
+      return invoiceRecipientOptions.find((option) => option.relationship_label === 'default payer')?.id
+        || invoiceRecipientOptions.find((option) => option.id === selectedOrder.customer_id)?.id
+        || invoiceRecipientOptions[0]?.id
+        || selectedOrder.customer_id
+    })
+  }, [selectedOrder?.id, selectedOrder?.customer_id, invoiceRecipientOptions])
 
   const { data: recommendedServices, refetch: refetchRecServices, isFetching: recommendedServicesFetching } = useQuery<RecommendedService[]>({
     queryKey: ['recommended-services', selectedOrder?.id],
@@ -1323,13 +1374,16 @@ export default function RepairOrdersPage() {
     mutationFn: async ({
       repairOrderId,
       dueDate,
+      billToCustomerId,
     }: {
       repairOrderId: string
       dueDate?: string
+      billToCustomerId?: string
     }) => {
       const response = await api.post('/invoices', { 
         repair_order_id: repairOrderId,
         due_date: dueDate || null,
+        bill_to_customer_id: billToCustomerId || null,
       })
       return response.data
     },
@@ -3756,9 +3810,13 @@ export default function RepairOrdersPage() {
                     showInvoiceCreateOptions={showInvoiceCreateOptions}
                     onToggleInvoiceCreateOptions={() => setShowInvoiceCreateOptions((prev) => !prev)}
                     onInvoiceDueDateChange={setInvoiceDueDate}
-                    onCreateInvoice={(dueDate) => selectedOrder.id && createInvoiceMutation.mutate({
+                    invoiceRecipientOptions={invoiceRecipientOptions}
+                    invoiceRecipientId={invoiceRecipientId}
+                    onInvoiceRecipientChange={setInvoiceRecipientId}
+                    onCreateInvoice={(dueDate, billToCustomerId) => selectedOrder.id && createInvoiceMutation.mutate({
                       repairOrderId: selectedOrder.id,
                       dueDate: dueDate || undefined,
+                      billToCustomerId,
                     })}
                     invoice={invoiceForOrder ?? null}
                     invoiceActionPending={

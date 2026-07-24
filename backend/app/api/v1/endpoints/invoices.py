@@ -20,6 +20,7 @@ from app.db.models.invoice_read_model import InvoiceReadModel
 from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.customer import Customer
 from app.db.models.vehicle import Vehicle
+from app.db.models.vehicle_relationship import VehicleCustomerRelationship
 from app.db.models.tenant import Tenant
 from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
@@ -354,6 +355,9 @@ class InvoiceCreate(BaseModel):
     repair_order_id: UUID
     due_date: Optional[date] = None
     discount_amount: Decimal = Decimal("0.00")
+    # The recipient is chosen per visit from the truck's active connections.
+    # It is intentionally separate from the truck's default payer.
+    bill_to_customer_id: Optional[UUID] = None
 
 
 class InvoiceUpdate(BaseModel):
@@ -755,6 +759,33 @@ async def create_invoice(
             detail="An invoice already exists for this repair order",
         )
     supersedes_invoice_id = latest_invoice.id if latest_invoice else None
+
+    if body.bill_to_customer_id and body.bill_to_customer_id != order.customer_id:
+        recipient = (await db.execute(select(Customer).where(
+            Customer.id == body.bill_to_customer_id,
+            Customer.tenant_id == current_user.tenant_id,
+            Customer.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if not recipient:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice recipient not found")
+        is_connected = (await db.execute(select(VehicleCustomerRelationship.id).where(
+            VehicleCustomerRelationship.vehicle_id == order.vehicle_id,
+            VehicleCustomerRelationship.customer_id == recipient.id,
+            VehicleCustomerRelationship.tenant_id == current_user.tenant_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if not is_connected:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Invoice recipient must be an active company connection for this truck",
+            )
+        # The repair order is the financial parent of its invoice. Switch the
+        # customer before totals, email, and PDF are generated; prior orders and
+        # invoices remain untouched.
+        order.customer_id = recipient.id
+        order.customer = recipient
+        order.is_internal = recipient.is_internal_fleet
     
     # Get tenant for tax/fee settings
     tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -764,12 +795,12 @@ async def create_invoice(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to create invoice because the shop configuration is missing",
         )
-    recipient_name = recipient_email = recipient_phone = None
-    if order.is_internal:
-        try:
-            recipient_name, recipient_email, recipient_phone = _fleet_invoice_contact(order.vehicle)
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    # Snapshot the selected payer's live customer record on the invoice. This
+    # keeps LLC, email, and phone correct for this visit even if the truck's
+    # roles or the customer record changes later.
+    recipient_name = f"{order.customer.first_name} {order.customer.last_name}".strip() or order.customer.company_name
+    recipient_email = order.customer.email
+    recipient_phone = order.customer.phone
     
     checkout = get_order_checkout_breakdown(order, tenant)
     subtotal = checkout["repair_total"]
@@ -809,7 +840,7 @@ async def create_invoice(
             repair_order_id=order.id,
             invoice_number=invoice_number,
             status=InvoiceStatus.SENT,
-            is_internal=False,
+            is_internal=order.is_internal,
             recipient_name=recipient_name,
             recipient_email=recipient_email,
             recipient_phone=recipient_phone,
