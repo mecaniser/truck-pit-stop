@@ -1,6 +1,5 @@
 """Fleet operations for trucks assigned to customer or internal fleets."""
 import json
-import math
 from datetime import datetime, timezone, timedelta, date
 from typing import List, Optional
 from uuid import UUID, uuid4
@@ -9,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from pydantic import BaseModel
 from sqlalchemy import select, and_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.image_validation import read_validated_image
@@ -57,7 +56,6 @@ from app.schemas.fleet import (
     HistoryEntry,
     PartEntry,
     IncidentEntry,
-    NearestUnit,
     TruckDetailResponse,
     TruckUpdate,
     WorkOrderCreate,
@@ -1319,15 +1317,8 @@ async def _attach_account_context(
     vehicle_ids = [truck.id for truck in trucks]
     if not vehicle_ids:
         return
-    relationship_rows = (await db.execute(
-        select(
-            VehicleCustomerRelationship.vehicle_id,
-            VehicleCustomerRelationship.relationship_type,
-            Customer.id,
-            Customer.company_name,
-            Customer.first_name,
-            Customer.last_name,
-        )
+    account_rows = (await db.execute(
+        select(VehicleCustomerRelationship, Customer)
         .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
         .where(
             VehicleCustomerRelationship.tenant_id == tenant_id,
@@ -1344,9 +1335,17 @@ async def _attach_account_context(
             VehicleCustomerRelationship.effective_from.desc(),
         )
     )).all()
+    _attach_account_context_rows(trucks, account_rows)
 
-    def label(row) -> str:
-        return row.company_name or f"{row.first_name} {row.last_name}".strip()
+
+def _attach_account_context_rows(
+    trucks: list[BoardTruck],
+    account_rows: list[tuple[VehicleCustomerRelationship, Customer]],
+) -> None:
+    """Apply already-loaded active relationships to fleet board cards."""
+
+    def label(customer: Customer) -> str:
+        return customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
 
     def display_unit_number(truck: BoardTruck, listing_company: Optional[str]) -> Optional[str]:
         """Prefix a fleet-facing unit with its current listing/owning company.
@@ -1371,9 +1370,9 @@ async def _attach_account_context(
 
     owners = {}
     operators = {}
-    for row in relationship_rows:
-        target = operators if row.relationship_type == "operator" else owners
-        target.setdefault(row.vehicle_id, row)
+    for relationship, customer in account_rows:
+        target = operators if relationship.relationship_type == "operator" else owners
+        target.setdefault(relationship.vehicle_id, customer)
     for truck in trucks:
         # An authority is an explicit operator relationship. A legacy House
         # Account FleetMembership is operational bookkeeping, never a company
@@ -1555,15 +1554,6 @@ async def fleet_board(
     return FleetBoardResponse(trucks=trucks, stats=stats)
 
 
-def _haversine_miles(a_lat, a_lng, b_lat, b_lng) -> int:
-    R = 3958.8
-    p1, p2 = math.radians(a_lat), math.radians(b_lat)
-    dphi = math.radians(b_lat - a_lat)
-    dlmb = math.radians(b_lng - a_lng)
-    h = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
-    return round(2 * R * math.asin(math.sqrt(h)))
-
-
 async def _load_fleet_vehicle_or_404(db: AsyncSession, tenant_id: UUID, vehicle_id: UUID) -> Vehicle:
     return await _get_fleet_vehicle(db, tenant_id, vehicle_id)
 
@@ -1583,15 +1573,12 @@ async def truck_detail(
             RepairOrder.vehicle_id == vehicle_id,
             RepairOrder.deleted_at.is_(None),
         ))
-        .options(selectinload(RepairOrder.assigned_mechanic))
+        .options(joinedload(RepairOrder.assigned_mechanic))
         .order_by(RepairOrder.created_at.desc())
     )
     ros = list(ro_result.scalars().all())
     open_ros = [r for r in ros if r.status not in TERMINAL_RO_STATUSES]
     completed = [r for r in ros if r.status in (RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)]
-
-    board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros), pm_ro=_open_pm_ro(open_ros))
-    await _attach_account_context(db, [board], current_user.tenant_id)
 
     account_rows = list((await db.execute(
         select(VehicleCustomerRelationship, Customer)
@@ -1603,15 +1590,17 @@ async def truck_detail(
             VehicleCustomerRelationship.deleted_at.is_(None),
             Customer.deleted_at.is_(None),
         )
+        .order_by(
+            VehicleCustomerRelationship.relationship_type,
+            VehicleCustomerRelationship.vehicle_id,
+            VehicleCustomerRelationship.is_primary.desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        )
     )).all())
+    board = _build_board_truck(vehicle, _most_urgent_ro(open_ros), 0, len(open_ros), pm_ro=_open_pm_ro(open_ros))
+    _attach_account_context_rows([board], account_rows)
     account_customers = {customer.id: customer for _, customer in account_rows}
     fleet_account = account_customers.get(board.fleet_customer_id)
-    if board.fleet_customer_id and not fleet_account:
-        fleet_account = (await db.execute(select(Customer).where(
-            Customer.id == board.fleet_customer_id,
-            Customer.tenant_id == current_user.tenant_id,
-            Customer.deleted_at.is_(None),
-        ))).scalar_one_or_none()
 
     def billing_priority(row) -> tuple[int, datetime]:
         relationship, _ = row
@@ -1680,7 +1669,7 @@ async def truck_detail(
     insp_result = await db.execute(
         select(FleetInspection)
         .where(and_(FleetInspection.vehicle_id == vehicle_id, FleetInspection.status == InspectionStatus.COMPLETED))
-        .options(selectinload(FleetInspection.inspector))
+        .options(joinedload(FleetInspection.inspector))
     )
     for insp in insp_result.scalars().all():
         mech = _mechanic_name(insp.inspector)
@@ -1702,7 +1691,7 @@ async def truck_detail(
         pu_result = await db.execute(
             select(PartsUsage)
             .where(PartsUsage.repair_order_id.in_(ro_ids))
-            .options(selectinload(PartsUsage.inventory_item))
+            .options(joinedload(PartsUsage.inventory_item))
             .order_by(PartsUsage.created_at.desc())
         )
         today = datetime.now(timezone.utc).date()
@@ -1722,10 +1711,10 @@ async def truck_detail(
     inc_result = await db.execute(
         select(FleetIncident)
         .where(FleetIncident.vehicle_id == vehicle_id)
-        .options(selectinload(FleetIncident.photos).selectinload(FleetIncidentPhoto.uploaded_by))
+        .options(joinedload(FleetIncident.photos).joinedload(FleetIncidentPhoto.uploaded_by))
         .order_by(FleetIncident.occurred_at.desc())
     )
-    incident_rows = list(inc_result.scalars().all())
+    incident_rows = list(inc_result.unique().scalars().all())
     incidents = [
         IncidentEntry(
             id=i.id,
@@ -1742,23 +1731,6 @@ async def truck_detail(
     ]
     open_incident_count = sum(1 for i in incident_rows if i.status != IncidentStatus.RESOLVED)
     board.open_incident_count = open_incident_count
-
-    # Nearest units (needs coordinates on both ends).
-    nearest: list[NearestUnit] = []
-    if vehicle.last_lat is not None and vehicle.last_lng is not None:
-        others = await _fleet_vehicles(db, current_user.tenant_id)
-        others_open = await _open_ros_by_vehicle(db, [o.id for o in others if o.id != vehicle_id])
-        cand = []
-        for o in others:
-            if o.id == vehicle_id or o.last_lat is None or o.last_lng is None:
-                continue
-            miles = _haversine_miles(vehicle.last_lat, vehicle.last_lng, o.last_lat, o.last_lng)
-            cand.append(NearestUnit(
-                id=o.id, unit_number=o.unit_number, city=o.last_location_city,
-                status=_derive_status(o, _most_urgent_ro(others_open.get(o.id, []))), miles=miles,
-            ))
-        cand.sort(key=lambda n: n.miles)
-        nearest = cand[:3]
 
     return TruckDetailResponse(
         truck=board,
@@ -1798,7 +1770,10 @@ async def truck_detail(
         history=history,
         parts=parts,
         incidents=incidents,
-        nearest=nearest,
+        # The board payload already has every truck's current location and
+        # status. The client derives nearby units from that cached data rather
+        # than issuing a full-fleet + open-work-order scan on every truck click.
+        nearest=[],
     )
 
 
