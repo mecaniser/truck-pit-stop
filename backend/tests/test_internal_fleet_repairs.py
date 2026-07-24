@@ -36,9 +36,42 @@ from app.db.models.vehicle import Vehicle
 from app.services.internal_fleet import (
     ensure_internal_fleet_customer,
     get_internal_fleet_customer,
+    uses_internal_fleet_pricing,
 )
 from app.services.price_build_service import PriceBuildService
 from app.schemas.fleet import WorkOrderComplete
+
+
+def test_configured_internal_operating_authority_uses_internal_pricing():
+    authority_id = uuid4()
+    tenant = Tenant(
+        id=uuid4(),
+        name="Test Garage",
+        slug=f"garage-{uuid4().hex[:8]}",
+        fleet_company_name="77 Cargo",
+        default_fleet_authority_customer_id=authority_id,
+    )
+    authority = Customer(
+        id=authority_id,
+        tenant_id=tenant.id,
+        first_name="Fleet",
+        last_name="Dispatch",
+        company_name="77 Cargo LLC",
+        email="dispatch@77cargo.example",
+        is_internal_fleet=False,
+    )
+    external = Customer(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        first_name="External",
+        last_name="Carrier",
+        company_name="Acme Logistics",
+        email="fleet@acme.example",
+        is_internal_fleet=False,
+    )
+
+    assert uses_internal_fleet_pricing(authority, tenant) is True
+    assert uses_internal_fleet_pricing(external, tenant) is False
 
 
 async def _seed(db_session, *, is_internal: bool, with_part: bool = False):

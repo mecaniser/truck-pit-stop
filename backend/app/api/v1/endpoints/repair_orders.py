@@ -40,7 +40,7 @@ from app.services.price_build_service import (
     PriceBuildService,
     PriceBuildValidationError,
 )
-from app.services.internal_fleet import fleet_labor_uses_customer_rate
+from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
 from app.core.config import settings
 from app.core.metrics import record_repair_order_created
@@ -472,6 +472,11 @@ async def create_repair_order(
             detail="Vehicle not found",
         )
 
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    uses_internal_pricing = uses_internal_fleet_pricing(customer, tenant)
+
     is_fleet_vehicle = bool((await db.execute(select(exists(select(FleetMembership.id).where(
         FleetMembership.vehicle_id == vehicle.id,
         FleetMembership.tenant_id == current_user.tenant_id,
@@ -502,11 +507,11 @@ async def create_repair_order(
             order_number=order_number,
             status=RepairOrderStatus.DRAFT,
             # Repairs on the garage's own fleet are internal-cost (no markup/invoice).
-            is_internal=customer.is_internal_fleet,
+            is_internal=uses_internal_pricing,
             is_fleet_work=is_fleet_vehicle,
             bill_labor_at_customer_rate=(
                 bool(vehicle.bill_labor_at_customer_rate)
-                if customer.is_internal_fleet else False
+                if uses_internal_pricing else False
             ),
             **order_data.model_dump(),
         )
