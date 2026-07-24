@@ -79,6 +79,7 @@ from app.core.logging import get_logger
 from app.services.internal_fleet import (
     fleet_labor_uses_customer_rate,
     project_pm_due_date,
+    uses_internal_fleet_pricing,
 )
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.services.vehicle_identity import (
@@ -1565,6 +1566,9 @@ async def truck_detail(
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
     # All ROs follow the physical truck even when owner/operator/payer changes.
     ro_result = await db.execute(
@@ -1756,7 +1760,7 @@ async def truck_detail(
         bill_to_billing_state=bill_to_account.billing_state if bill_to_account else None,
         bill_to_billing_zip=bill_to_account.billing_zip if bill_to_account else None,
         bill_to_billing_country=bill_to_account.billing_country if bill_to_account else None,
-        bill_to_is_internal=bool(bill_to_account and bill_to_account.is_internal_fleet),
+        bill_to_is_internal=uses_internal_fleet_pricing(bill_to_account, tenant),
         bill_to_relationship_type=(
             bill_to_relationship.relationship_type if bill_to_relationship else None
         ),
@@ -2118,6 +2122,10 @@ async def _spawn_internal_ro(
     ))).scalar_one_or_none()
     if not payer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill-to company not found")
+    tenant = await db.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    uses_internal_pricing = uses_internal_fleet_pricing(payer, tenant)
     await ensure_vehicle_relationship(
         db,
         tenant_id=tenant_id,
@@ -2131,11 +2139,11 @@ async def _spawn_internal_ro(
             id=uuid4(), tenant_id=tenant_id, customer_id=payer.id,
             vehicle_id=vehicle.id, order_number=order_number,
             status=RepairOrderStatus.DRAFT,
-            is_internal=payer.is_internal_fleet,
+            is_internal=uses_internal_pricing,
             is_fleet_work=True,
             is_pm=is_pm,
             bill_labor_at_customer_rate=(
-                vehicle.bill_labor_at_customer_rate if payer.is_internal_fleet else False
+                vehicle.bill_labor_at_customer_rate if uses_internal_pricing else False
             ),
             description=description,
             # Auto-capture mileage-in from the truck's current odometer (kept

@@ -32,12 +32,6 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
         </div>
         <span className="tcard-badge"><i className={'tcard-bdot' + (t.moving ? ' is-moving' : '')} />{meta.short}</span>
       </div>
-      {(t.owner_company_name || t.fleet_company_name) && (
-        <div>
-          <div className="tcard-type">Truck owner / lessor: {t.owner_company_name || t.fleet_company_name}</div>
-          <div className="tcard-type">Operating authority: {t.fleet_company_name || 'Not assigned'}</div>
-        </div>
-      )}
       {t.body_type && <div className="tcard-type">{t.body_type}</div>}
       <div className="tcard-row">
         <span className="tcard-row-ic"><MapPin size={14} /></span>

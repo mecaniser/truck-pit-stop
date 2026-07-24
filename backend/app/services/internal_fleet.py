@@ -13,11 +13,42 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.customer import Customer
+from app.db.models.tenant import Tenant
 
 
 # Assumed average daily mileage for a fleet truck, used to project the PM due
 # date from the remaining miles so the date and odometer triggers stay in sync.
 PM_AVG_MILES_PER_DAY = 600
+
+
+def _company_identity(value: Optional[str]) -> str:
+    """Normalize a company name for the configured internal-fleet match."""
+    if not value:
+        return ""
+    ignored_tokens = {"llc", "inc", "ltd", "corp", "co", "company"}
+    return " ".join(
+        token for token in "".join(char.lower() if char.isalnum() else " " for char in value).split()
+        if token not in ignored_tokens
+    )
+
+
+def uses_internal_fleet_pricing(customer: Optional[Customer], tenant: Tenant) -> bool:
+    """Whether work billed to ``customer`` should use the shop's internal rates.
+
+    The dedicated house account remains the primary source of truth. Some shops
+    instead use their configured operating authority (for example, "77 Cargo")
+    as that account, so recognize it only when it is both the configured default
+    authority and matches the tenant's internal-fleet company name.
+    """
+    if not customer:
+        return False
+    if customer.is_internal_fleet:
+        return True
+    return bool(
+        tenant.default_fleet_authority_customer_id == customer.id
+        and _company_identity(customer.company_name) == _company_identity(tenant.fleet_company_name)
+        and _company_identity(tenant.fleet_company_name)
+    )
 
 
 def project_pm_due_date(
