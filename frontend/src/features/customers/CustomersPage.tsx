@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '../../lib/api'
-import { Customer, Vehicle, Contact, RepairOrder, RepairOrderStatus, VINDecodeResult, CustomerWithVehicles } from '../../types'
+import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
@@ -546,14 +546,22 @@ export default function CustomersPage() {
   })
 
   const { data: customerRepairOrders, isLoading: isLoadingOrders } = useQuery<RepairOrder[]>({
-    queryKey: ['customerRepairOrders', selectedCustomer?.id],
+    queryKey: ['customerVehicleRepairOrders', selectedCustomer?.id, selectedVehicleInPanel?.id],
     queryFn: async () => {
-      if (!selectedCustomer?.id) return []
-      const response = await api.get('/repair-orders', { params: { customer_id: selectedCustomer.id } })
+      if (!selectedCustomer?.id || !selectedVehicleInPanel?.id) return []
+      const response = await api.get('/repair-orders', {
+        params: {
+          customer_id: selectedCustomer.id,
+          vehicle_id: selectedVehicleInPanel.id,
+        },
+      })
       return response.data
     },
-    enabled: !!selectedCustomer?.id && isDetailOpen,
-    staleTime: 0,
+    // The overview already has a dedicated History tab. Fetch orders only
+    // after a vehicle is opened, and only for that vehicle rather than every
+    // order the customer has ever created.
+    enabled: !!selectedCustomer?.id && !!selectedVehicleInPanel?.id && isDetailOpen,
+    staleTime: 30_000,
   })
 
   interface CustomerHistoryItem {
@@ -704,10 +712,7 @@ export default function CustomersPage() {
   })
 
   // Filter repair orders for the selected vehicle
-  const vehicleRepairOrders = useMemo(() => {
-    if (!selectedVehicleInPanel || !customerRepairOrders) return []
-    return customerRepairOrders.filter(order => order.vehicle_id === selectedVehicleInPanel.id)
-  }, [selectedVehicleInPanel, customerRepairOrders])
+  const vehicleRepairOrders = customerRepairOrders || []
 
   // Create mechanic lookup map
   const mechanicLookup = useMemo(() => {
@@ -715,13 +720,6 @@ export default function CustomersPage() {
     mechanics?.forEach(m => map.set(m.id, m))
     return map
   }, [mechanics])
-
-  const OPEN_ORDER_STATUSES: RepairOrderStatus[] = [
-    'draft',
-    'quoted',
-    'approved',
-    'in_progress',
-  ]
 
   const createMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
@@ -1570,13 +1568,6 @@ export default function CustomersPage() {
   const showVehicleUnitColumn = customerVehicles?.some((vehicle) => !!vehicle.unit_number?.trim()) ?? false
   const showVehicleVinColumn = customerVehicles?.some((vehicle) => !!vehicle.vin?.trim()) ?? false
   const showVehiclePlateColumn = customerVehicles?.some((vehicle) => !!vehicle.license_plate?.trim()) ?? false
-
-  const repairOrderStats = useMemo(() => {
-    const total = customerRepairOrders?.length || 0
-    const open = customerRepairOrders?.filter((ro) => OPEN_ORDER_STATUSES.includes(ro.status)).length || 0
-    const completed = customerRepairOrders?.filter((ro) => ro.status === 'completed' || ro.status === 'paid' || ro.status === 'invoiced').length || 0
-    return { total, open, completed }
-  }, [customerRepairOrders])
 
   const renderCustomerForm = (onCancel: () => void) => (
     <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -3231,9 +3222,13 @@ export default function CustomersPage() {
             {/* Repair History */}
             <div>
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                Repair History ({vehicleRepairOrders.length})
+                Repair History{isLoadingOrders ? '' : ` (${vehicleRepairOrders.length})`}
               </h3>
-              {vehicleRepairOrders.length === 0 ? (
+              {isLoadingOrders ? (
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <LoadingLine className="text-gray-400">Loading repair history…</LoadingLine>
+                </div>
+              ) : vehicleRepairOrders.length === 0 ? (
                 <div className="bg-gray-50 rounded-xl p-4 text-center">
                   <p className="text-gray-500 text-sm">No repair orders for this vehicle yet</p>
                 </div>
@@ -3865,19 +3860,16 @@ export default function CustomersPage() {
                         </p>
                         <p className="text-xs text-gray-500">Vehicles</p>
                       </div>
-                      <div className="bg-gray-50 rounded-xl p-4 text-center space-y-1">
-                        <p className="text-2xl font-bold text-gray-900">
-                          {isLoadingOrders ? '—' : repairOrderStats.total}
-                        </p>
-                        <p className="text-xs text-gray-500">Repair Orders</p>
-                        {!isLoadingOrders && (
-                          <p className="text-[11px] text-gray-500">
-                            {repairOrderStats.open} open · {repairOrderStats.completed} completed
-                          </p>
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => setDetailTab('history')}
+                        className="bg-gray-50 rounded-xl p-4 text-center transition-colors hover:bg-amber-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                      >
+                        <p className="text-sm font-semibold text-gray-900">Repair history</p>
+                        <p className="mt-1 text-xs text-amber-700">View lifetime activity</p>
+                      </button>
                       </div>
                     </div>
-                  </div>
                   </>
                   )}
                 </div>
