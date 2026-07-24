@@ -11,7 +11,7 @@ import BookingPage from '../booking/BookingPage'
 import AppointmentsPage from '../appointments/AppointmentsPage'
 import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
-import { Camera, CheckCircle, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Download } from 'lucide-react'
+import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Home, User, History, Calendar, Download } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -25,6 +25,7 @@ import { getStripeForAccount } from '../../lib/stripe'
 import { formatUSPhone } from '../../utils/phone'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import CustomerZellePaymentPanel from './ZellePaymentPanel'
+import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -70,6 +71,12 @@ interface ZelleInfoResponse {
   zelle_qr_image: string | null
   garage_name: string
   stripe_payments_available: boolean
+}
+
+interface QuickBooksPaymentAvailability {
+  available: boolean
+  token_url: string | null
+  message: string | null
 }
 
 function CustomerRepairPhotos({ photos }: { photos: RepairOrderPhoto[] }) {
@@ -685,6 +692,7 @@ function CustomerRepairs() {
   const [zelleNotes, setZelleNotes] = useState('')
   const [isZelleSenderEditing, setIsZelleSenderEditing] = useState(false)
   const [showZelleDetails, setShowZelleDetails] = useState(false)
+  const [showQuickBooksPayment, setShowQuickBooksPayment] = useState(false)
   
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
@@ -756,6 +764,12 @@ function CustomerRepairs() {
     enabled: !!invoice && selectedOrder?.status === 'invoiced',
   })
 
+  const { data: quickBooksPayment, isLoading: isQuickBooksPaymentLoading } = useQuery<QuickBooksPaymentAvailability>({
+    queryKey: ['quickbooks-payment-availability', invoice?.id],
+    queryFn: async () => (await api.get(`/quickbooks/payments/availability/${invoice!.id}`)).data,
+    enabled: !!invoice && selectedOrder?.status === 'invoiced',
+  })
+
   const zelleAmount = invoice
     ? (parseFloat(invoice.total_amount) - parseFloat(invoice.service_fee_amount || '0')).toFixed(2)
     : '0.00'
@@ -772,6 +786,13 @@ function CustomerRepairs() {
     setZelleNotes(zelleMemo)
     setIsZelleSenderEditing(false)
   }, [invoice?.id, zelleMemo])
+
+  useEffect(() => {
+    setShowPayment(false)
+    setStripeOptions(null)
+    setStripeInstance(null)
+    setShowQuickBooksPayment(false)
+  }, [invoice?.id])
 
   const handleDownloadPdf = async () => {
     if (!invoice) return
@@ -1202,7 +1223,7 @@ function CustomerRepairs() {
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mx-auto w-full max-w-2xl space-y-4">
               <CustomerZellePaymentPanel
                 garageName={zelleInfo?.garage_name}
                 serviceFeeAmount={invoice.service_fee_amount}
@@ -1226,35 +1247,83 @@ function CustomerRepairs() {
                 onSenderNotesChange={setZelleNotes}
                 onSubmit={() => submitZelleMutation.mutate()}
               />
-            </div>
 
-            {!invoice.pending_zelle_confirmation && zelleInfo?.stripe_payments_available && (
-            <div className="pt-1">
-              <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Pay instantly by card</p>
-              {!showPayment ? (
-                <button
-                  onClick={handlePayClick}
-                  className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
-                >
-                  <CreditCard className="w-5 h-5" />
-                  Pay Now
-                </button>
-              ) : stripeOptions && stripeInstance ? (
-                <Elements stripe={stripeInstance} options={stripeOptions}>
-                  <PaymentForm invoiceId={invoice.id} onSuccess={handlePaymentSuccess} />
-                </Elements>
-              ) : (
-                <div className="flex items-center justify-center py-4">
-                  <Spinner size="lg" />
+              {!invoice.pending_zelle_confirmation && zelleInfo?.stripe_payments_available && (
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Pay instantly by card</p>
+                  {!showPayment ? (
+                    <button
+                      onClick={handlePayClick}
+                      className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg flex items-center justify-center gap-2"
+                    >
+                      <CreditCard className="w-5 h-5" />
+                      Pay Now
+                    </button>
+                  ) : stripeOptions && stripeInstance ? (
+                    <Elements stripe={stripeInstance} options={stripeOptions}>
+                      <PaymentForm invoiceId={invoice.id} onSuccess={handlePaymentSuccess} />
+                    </Elements>
+                  ) : (
+                    <div className="flex items-center justify-center py-4">
+                      <Spinner size="lg" />
+                    </div>
+                  )}
                 </div>
               )}
+
+              {!invoice.pending_zelle_confirmation && isQuickBooksPaymentLoading && (
+                <div
+                  role="status"
+                  aria-label="Checking card payment availability"
+                  className="animate-pulse overflow-hidden rounded-xl border border-gray-700 bg-slate-950/40"
+                >
+                  <div className="px-4 py-3">
+                    <div className="h-4 w-40 rounded bg-gray-700/70" />
+                    <div className="mt-2 h-3 w-28 rounded bg-gray-800" />
+                  </div>
+                  <span className="sr-only">Checking card payment availability…</span>
+                </div>
+              )}
+
+              {!invoice.pending_zelle_confirmation && quickBooksPayment?.available && quickBooksPayment.token_url && (
+                <div className="overflow-hidden rounded-xl border border-emerald-500/40 bg-slate-950/40">
+                  <button
+                    type="button"
+                    aria-expanded={showQuickBooksPayment}
+                    aria-controls="history-quickbooks-payment-panel"
+                    onClick={() => setShowQuickBooksPayment(open => !open)}
+                    className="flex w-full items-center justify-between gap-3 bg-emerald-500/10 px-4 py-3 text-left hover:bg-emerald-500/15"
+                  >
+                    <span>
+                      <span className="block text-sm font-semibold text-emerald-200">Pay securely by card</span>
+                      <span className="mt-1 block text-xs text-gray-400">Powered by QuickBooks</span>
+                    </span>
+                    {showQuickBooksPayment
+                      ? <ChevronUp className="h-4 w-4 shrink-0 text-emerald-200" />
+                      : <ChevronDown className="h-4 w-4 shrink-0 text-emerald-200" />}
+                  </button>
+                  {showQuickBooksPayment && (
+                    <div id="history-quickbooks-payment-panel" className="border-t border-emerald-500/30 px-4 py-4">
+                      <QuickBooksPaymentPanel
+                        invoiceId={invoice.id}
+                        tokenUrl={quickBooksPayment.token_url}
+                        onSuccess={handlePaymentSuccess}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!invoice.pending_zelle_confirmation
+                && zelleInfo
+                && !zelleInfo.stripe_payments_available
+                && !isQuickBooksPaymentLoading
+                && !(quickBooksPayment?.available && quickBooksPayment.token_url) && (
+                <p className="rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+                  Online card payment is currently unavailable for this shop.
+                </p>
+              )}
             </div>
-            )}
-            {!invoice.pending_zelle_confirmation && zelleInfo && !zelleInfo.stripe_payments_available && (
-              <p className="rounded-lg border border-amber-700/40 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
-                Online card payment is currently unavailable for this shop.
-              </p>
-            )}
           </div>
         )}
 

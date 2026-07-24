@@ -397,7 +397,7 @@ export default function CustomerInvoicePage() {
             {invoice.paid_at ? ` on ${format(new Date(invoice.paid_at), 'MMM d, yyyy')}` : ''}.
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="mx-auto w-full max-w-2xl space-y-4">
             <ZellePaymentPanel
               garageName={zelleInfo?.garage_name}
               serviceFeeAmount={invoice.service_fee_amount}
