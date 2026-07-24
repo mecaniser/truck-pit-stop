@@ -1223,7 +1223,15 @@ function CustomerRepairs() {
               </div>
             </div>
 
-            <div className="mx-auto w-full max-w-2xl space-y-4">
+            <Link
+              to={`/portal/invoices/${invoice.id}`}
+              state={{ paymentOrigin: 'History' }}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#8b7cf7] px-4 py-3.5 text-sm font-extrabold text-[#0e1118] hover:brightness-110"
+            >
+              Review payment options
+            </Link>
+
+            <div className="hidden">
               <CustomerZellePaymentPanel
                 garageName={zelleInfo?.garage_name}
                 serviceFeeAmount={invoice.service_fee_amount}
@@ -1503,39 +1511,44 @@ export default function CustomerPortalPage() {
   const isActive = (path: string, exact?: boolean) => 
     exact ? location.pathname === path : location.pathname === path
 
-  const isOnSubPage = location.pathname !== '/portal'
-  
-  const getCurrentPageLabel = () => {
-    if (location.pathname.startsWith('/portal/book/')) return 'Book Appointment'
-    if (location.pathname.startsWith('/portal/invoices/')) return 'Invoice'
-    if (location.pathname === '/portal/settings') return 'Profile Settings'
-    const current = navLinks.find(link => location.pathname === link.to)
-    return current?.label || ''
-  }
+  const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
   const portalBrandName = tenantBranding?.name || 'Diesel Bridge Network'
 
   return (
-    <div className="fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0f172a]">
+    <div className={`fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden ${isInvoicePage ? 'bg-[#10131c]' : 'bg-[#0f172a]'}`}>
       <nav
-        className="relative z-50 shrink-0 bg-white/90 backdrop-blur shadow-sm"
+        className={`relative z-50 shrink-0 ${
+          isInvoicePage
+            ? 'border-b border-[#1e2432] bg-[#0d1018]'
+            : 'bg-white/90 shadow-sm backdrop-blur'
+        }`}
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
       >
         <div className="max-w-7xl mx-auto px-4">
-          <div className="flex justify-between h-14 sm:h-16">
+          <div className={`flex justify-between ${isInvoicePage ? 'h-[52px]' : 'h-14 sm:h-16'}`}>
             {/* Logo */}
             <div className="flex items-center">
               <Link to="/portal" className="inline-flex items-center py-1" aria-label={`${portalBrandName} customer portal`}>
-                <TenantBrandLogo
-                  tenantLogoUrl={tenantBranding?.logo_url}
-                  tenantName={tenantBranding?.name}
-                  fallbackVariant="admin"
-                  className="h-8 sm:h-10 w-auto object-contain drop-shadow-[0_1px_1px_rgba(15,23,42,0.35)]"
-                />
+                {isInvoicePage ? (
+                  <span className="flex flex-col leading-none">
+                    <span className="text-sm font-black italic tracking-[-0.04em] text-[#e23b3b]">TRUCK</span>
+                    <span className="mt-0.5 text-[9px] font-bold tracking-[0.28em] text-[#8b92a5]">PIT STOP</span>
+                  </span>
+                ) : (
+                  <TenantBrandLogo
+                    tenantLogoUrl={tenantBranding?.logo_url}
+                    tenantName={tenantBranding?.name}
+                    fallbackVariant="admin"
+                    className="h-8 sm:h-10 w-auto object-contain drop-shadow-[0_1px_1px_rgba(15,23,42,0.35)]"
+                  />
+                )}
               </Link>
             </div>
 
             {/* Desktop nav */}
-            <div className="hidden md:flex md:items-center md:space-x-6">
+            <div className={isInvoicePage ? 'flex items-center' : 'hidden md:flex md:items-center md:space-x-6'}>
+              {!isInvoicePage && (
+                <>
               {navLinks.map((link) => (
                 <Link
                   key={link.to}
@@ -1550,11 +1563,15 @@ export default function CustomerPortalPage() {
                   {link.label}
                 </Link>
               ))}
+                </>
+              )}
               <Link
                 to="/portal/settings"
                 aria-label={`Open profile settings for ${profileDisplayName}`}
                 className={`group relative flex h-11 w-11 items-center justify-center rounded-2xl border transition-all ${
-                  location.pathname === '/portal/settings'
+                  isInvoicePage
+                    ? 'border-[#8b7cf7] bg-[#241f3d] text-[#c9bfff]'
+                    : location.pathname === '/portal/settings'
                     ? 'bg-white text-gray-800'
                     : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:bg-white hover:text-gray-700'
                 }`}
@@ -1586,11 +1603,13 @@ export default function CustomerPortalPage() {
 
       <main
         ref={portalScrollRef}
-        className="mx-auto min-h-0 w-full max-w-7xl flex-1 overflow-x-hidden overflow-y-auto overscroll-none px-4 py-4 pb-4 sm:py-6 md:pb-6"
+        className={`min-h-0 w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-none ${
+          isInvoicePage ? 'max-w-none p-0' : 'mx-auto max-w-7xl px-4 py-4 pb-4 sm:py-6 md:pb-6'
+        }`}
         style={{
           WebkitOverflowScrolling: 'touch',
-          paddingLeft: 'max(1rem, env(safe-area-inset-left))',
-          paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          paddingLeft: isInvoicePage ? undefined : 'max(1rem, env(safe-area-inset-left))',
+          paddingRight: isInvoicePage ? undefined : 'max(1rem, env(safe-area-inset-right))',
         }}
       >
         {/* Real-time notification banners */}
@@ -1601,22 +1620,6 @@ export default function CustomerPortalPage() {
           autoDismissMs={10000}
         />
 
-        {/* Breadcrumb - only show on sub-pages */}
-        {isOnSubPage && (
-          <div className="mb-4 flex items-center gap-2 text-sm">
-            <Link 
-              to="/portal" 
-              className="text-gray-400 hover:opacity-80 transition-colors flex items-center gap-1"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Dashboard
-            </Link>
-            <span className="text-gray-600">/</span>
-            <span className="font-medium" style={{ color: accentColors[500] }}>{getCurrentPageLabel()}</span>
-          </div>
-        )}
         <Routes>
           <Route path="" element={<CustomerDashboard />} />
           <Route path="services" element={<ServicesPage />} />
@@ -1630,7 +1633,7 @@ export default function CustomerPortalPage() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <div className="relative z-50 shrink-0 md:hidden">
+      <div className={`relative z-50 shrink-0 md:hidden ${isInvoicePage ? 'hidden' : ''}`}>
         <div
           className="flex justify-around border-t border-gray-200 bg-white/95 px-2 pt-2 backdrop-blur"
           style={{
