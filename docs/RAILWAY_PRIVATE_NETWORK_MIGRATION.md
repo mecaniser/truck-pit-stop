@@ -41,23 +41,46 @@ Co-locating data services with the existing app services is the lower-risk path.
 6. Confirm `alembic heads` has exactly one result before deploying. The startup
    command intentionally runs `alembic upgrade head`, so a multiple-head graph
    blocks the service before it can serve traffic.
+7. Perform an initial PostgreSQL copy and compare critical table counts before
+   the maintenance window. This validates the source credentials, target
+   database version, restore flags, and expected restore duration.
+8. Redis is not cache-only in this application. It carries Celery work,
+   authentication revocations, one-time links, idempotency responses, and rate
+   limits. Rehearse the Redis state copy with
+   `backend/scripts/copy_redis_dataset.py`; do not treat a blank Redis target
+   as an acceptable cutover state.
 
 ## Cutover
 
-1. Put the application into maintenance mode or pause write-heavy work.
+1. Put the application into maintenance mode, stop the worker, and pause API
+   writers. Wait for any in-flight Celery work to finish before the final copy.
 2. Take the final PostgreSQL dump and restore it to the new Railway PostgreSQL
    service.
-3. Validate table counts for the critical tables: tenants, users, customers,
+3. Copy the complete Redis dataset into the new Redis service after writers are
+   stopped. Use the new Redis service's public URL only for this one-time
+   transfer; the running application must use its private `REDIS_URL`.
+
+   ```bash
+   REDIS_COPY_CONFIRM=copy-redis-cutover-state \
+   SOURCE_REDIS_URL="$SOURCE_REDIS_URL" \
+   TARGET_REDIS_URL="$TARGET_REDIS_PUBLIC_URL" \
+   python backend/scripts/copy_redis_dataset.py --apply --flush-target
+   ```
+
+   The utility copies every Redis key with its current type and remaining TTL.
+   It intentionally requires both `--apply` and the confirmation environment
+   variable to avoid an accidental production transfer.
+4. Validate table counts for the critical tables: tenants, users, customers,
    vehicles, repair orders, invoices, payments, and inventory.
-4. Set API and worker `DATABASE_URL` and `REDIS_URL` to the private variables
+5. Set API and worker `DATABASE_URL` and `REDIS_URL` to the private variables
    supplied by the new Railway services. Apply the same environment values to
    every replica.
-5. Deploy the worker first and confirm it completes startup and migration
+6. Deploy the worker first and confirm it completes startup and migration
    preflight. Deploy the API next.
-6. Run a smoke test: sign in, load dashboard action queue, open a repair order,
+7. Run a smoke test: sign in, load dashboard action queue, open a repair order,
    create a draft, add a part, complete a test workflow, and confirm a worker
    task and WebSocket notification.
-7. Watch Grafana for 30 minutes: API P95, database query P95, error rate,
+8. Watch Grafana for 30 minutes: API P95, database query P95, error rate,
    request rate, and database connection errors. Keep the alert channel open.
 
 ## Rollback
