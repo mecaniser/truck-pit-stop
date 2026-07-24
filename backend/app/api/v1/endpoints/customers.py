@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -39,6 +40,7 @@ from app.schemas.vehicle import VehicleBase, VehicleUpdate, VehicleResponse
 from app.schemas.contact import ContactCreate, ContactUpdate, ContactResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vehicle_identity import (
+    duplicate_vin_detail,
     ensure_fleet_membership,
     find_vehicle_by_vin,
     normalize_vin,
@@ -49,69 +51,6 @@ from app.services.vin_decoder_service import decode_vin, VINDecodeResult
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-
-async def _duplicate_vin_detail(
-    db: AsyncSession,
-    vehicle: Vehicle,
-    *,
-    include_vehicle: bool = True,
-) -> dict:
-    """Return a human-usable truck summary instead of only an internal UUID."""
-    detail = {
-        "code": "duplicate_vin",
-        "message": "This VIN is already assigned to an existing truck.",
-    }
-    if not include_vehicle:
-        return detail
-
-    customer = (await db.execute(
-        select(Customer).where(Customer.id == vehicle.customer_id)
-    )).scalar_one_or_none()
-    customer_name = None
-    if customer:
-        customer_name = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
-
-    relationship_rows = (await db.execute(
-        select(VehicleCustomerRelationship, Customer)
-        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
-        .where(
-            VehicleCustomerRelationship.vehicle_id == vehicle.id,
-            VehicleCustomerRelationship.tenant_id == vehicle.tenant_id,
-            VehicleCustomerRelationship.effective_to.is_(None),
-            VehicleCustomerRelationship.deleted_at.is_(None),
-            Customer.deleted_at.is_(None),
-        )
-        .order_by(
-            VehicleCustomerRelationship.is_primary.desc(),
-            VehicleCustomerRelationship.effective_from.desc(),
-        )
-    )).all()
-    role_names: dict[str, str] = {}
-    for relationship, relationship_customer in relationship_rows:
-        role_names.setdefault(
-            relationship.relationship_type,
-            relationship_customer.company_name
-            or f"{relationship_customer.first_name} {relationship_customer.last_name}".strip(),
-        )
-
-    detail["vehicle"] = {
-        "id": str(vehicle.id),
-        "vin": vehicle.vin,
-        "unit_number": vehicle.unit_number,
-        "year": vehicle.year,
-        "make": vehicle.make,
-        "model": vehicle.model,
-        "license_plate": vehicle.license_plate,
-        "customer_id": str(vehicle.customer_id),
-        "customer_name": customer_name,
-        # Explicit live roles make it clear that the owner/lessor, operating
-        # authority, and invoice recipient can be three different companies.
-        "owner_lessor_name": role_names.get("owner") or customer_name,
-        "operating_authority_name": role_names.get("operator"),
-        "default_invoice_recipient_name": role_names.get("default_payer"),
-    }
-    return detail
 
 
 def require_role(*allowed_roles: UserRole):
@@ -294,7 +233,7 @@ async def create_customer(
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+                detail=await duplicate_vin_detail(db, duplicate),
             )
         vehicle = Vehicle(
             tenant_id=current_user.tenant_id,
@@ -1023,14 +962,17 @@ async def merge_customers(
 # ============================================================================
 
 def _vehicle_linked_to_customer(customer_id: UUID):
-    return or_(
-        Vehicle.customer_id == customer_id,
-        exists(select(VehicleCustomerRelationship.id).where(
-            VehicleCustomerRelationship.vehicle_id == Vehicle.id,
-            VehicleCustomerRelationship.customer_id == customer_id,
-            VehicleCustomerRelationship.effective_to.is_(None),
-            VehicleCustomerRelationship.deleted_at.is_(None),
-        )),
+    return and_(
+        Vehicle.deleted_at.is_(None),
+        or_(
+            Vehicle.customer_id == customer_id,
+            exists(select(VehicleCustomerRelationship.id).where(
+                VehicleCustomerRelationship.vehicle_id == Vehicle.id,
+                VehicleCustomerRelationship.customer_id == customer_id,
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+            )),
+        ),
     )
 
 @router.get("/{customer_id}/vehicles", response_model=List[VehicleResponse])
@@ -1119,7 +1061,7 @@ async def create_customer_vehicle(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=await _duplicate_vin_detail(
+            detail=await duplicate_vin_detail(
                 db,
                 duplicate,
                 include_vehicle=(
@@ -1239,7 +1181,7 @@ async def update_customer_vehicle(
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=await _duplicate_vin_detail(
+                detail=await duplicate_vin_detail(
                     db,
                     duplicate,
                     include_vehicle=(
@@ -1275,8 +1217,9 @@ async def delete_customer_vehicle(
     result = await db.execute(
         select(Vehicle).where(
             and_(
-                Vehicle.id == vehicle_id,
-                Vehicle.customer_id == customer_id,
+            Vehicle.id == vehicle_id,
+            Vehicle.customer_id == customer_id,
+            Vehicle.deleted_at.is_(None),
             )
         )
     )
@@ -1294,7 +1237,35 @@ async def delete_customer_vehicle(
             detail="Access denied",
         )
     
-    await db.delete(vehicle)
+    # Vehicles may be referenced by completed repair orders, fleet inspections,
+    # incidents, appointments, and projection rows. A hard delete violates those
+    # foreign keys and loses the history that should remain with the physical
+    # truck. Archive the duplicate instead, and close its active assignments so
+    # it immediately disappears from both customer and Fleet Board lists.
+    archived_at = datetime.now(timezone.utc)
+    vehicle.deleted_at = archived_at
+    active_relationships = (await db.execute(
+        select(VehicleCustomerRelationship).where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.tenant_id == vehicle.tenant_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+        )
+    )).scalars().all()
+    for relationship in active_relationships:
+        relationship.effective_to = archived_at
+
+    active_memberships = (await db.execute(
+        select(FleetMembership).where(
+            FleetMembership.vehicle_id == vehicle.id,
+            FleetMembership.tenant_id == vehicle.tenant_id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        )
+    )).scalars().all()
+    for membership in active_memberships:
+        membership.effective_to = archived_at
+
     await db.commit()
 
     return None

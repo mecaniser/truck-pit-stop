@@ -24,6 +24,7 @@ from app.schemas.vehicle import (
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vehicle_identity import (
+    duplicate_vin_detail,
     end_fleet_membership,
     ensure_fleet_membership,
     ensure_vehicle_relationship,
@@ -90,7 +91,7 @@ async def create_vehicle(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+            detail=await duplicate_vin_detail(db, duplicate),
         )
     if "driver_phone" in create_data:
         create_data["driver_phone"] = normalize_phone(create_data["driver_phone"])
@@ -671,7 +672,7 @@ async def update_vehicle(
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This VIN already belongs to truck {duplicate.id}.",
+                detail=await duplicate_vin_detail(db, duplicate),
             )
     if "driver_phone" in update_data:
         update_data["driver_phone"] = normalize_phone(update_data["driver_phone"])
