@@ -82,6 +82,7 @@ from app.services.internal_fleet import (
 )
 from app.services.cloudinary_service import create_direct_image_upload_signature, is_cloudinary_configured, upload_work_photo
 from app.services.vehicle_identity import (
+    duplicate_vin_detail,
     end_fleet_membership,
     ensure_fleet_membership,
     ensure_vehicle_relationship,
@@ -373,7 +374,7 @@ async def create_fleet_truck(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+            detail=await duplicate_vin_detail(db, duplicate),
         )
     payload = body.model_dump(exclude={"customer_id"})
     payload["vin"] = normalized_vin
@@ -1797,7 +1798,7 @@ async def update_truck(
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This VIN already belongs to truck {duplicate.id}.",
+                detail=await duplicate_vin_detail(db, duplicate),
             )
         vin_changed = new_vin != vehicle.vin
         vehicle.vin = new_vin

@@ -16,6 +16,67 @@ from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerR
 VEHICLE_RELATIONSHIP_TYPES = {"owner", "operator", "default_payer"}
 
 
+async def duplicate_vin_detail(
+    db: AsyncSession,
+    vehicle: Vehicle,
+    *,
+    include_vehicle: bool = True,
+) -> dict:
+    """Describe an existing VIN match without exposing the internal vehicle ID."""
+    detail = {
+        "code": "duplicate_vin",
+        "message": "This VIN is already assigned to an existing truck.",
+    }
+    if not include_vehicle:
+        return detail
+
+    customer = (await db.execute(
+        select(Customer).where(Customer.id == vehicle.customer_id)
+    )).scalar_one_or_none()
+    customer_name = None
+    if customer:
+        customer_name = customer.company_name or f"{customer.first_name} {customer.last_name}".strip()
+
+    relationship_rows = (await db.execute(
+        select(VehicleCustomerRelationship, Customer)
+        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+        .where(
+            VehicleCustomerRelationship.vehicle_id == vehicle.id,
+            VehicleCustomerRelationship.tenant_id == vehicle.tenant_id,
+            VehicleCustomerRelationship.effective_to.is_(None),
+            VehicleCustomerRelationship.deleted_at.is_(None),
+            Customer.deleted_at.is_(None),
+        )
+        .order_by(
+            VehicleCustomerRelationship.is_primary.desc(),
+            VehicleCustomerRelationship.effective_from.desc(),
+        )
+    )).all()
+    role_names: dict[str, str] = {}
+    for relationship, relationship_customer in relationship_rows:
+        role_names.setdefault(
+            relationship.relationship_type,
+            relationship_customer.company_name
+            or f"{relationship_customer.first_name} {relationship_customer.last_name}".strip(),
+        )
+
+    detail["vehicle"] = {
+        "id": str(vehicle.id),
+        "vin": vehicle.vin,
+        "unit_number": vehicle.unit_number,
+        "year": vehicle.year,
+        "make": vehicle.make,
+        "model": vehicle.model,
+        "license_plate": vehicle.license_plate,
+        "customer_id": str(vehicle.customer_id),
+        "customer_name": customer_name,
+        "owner_lessor_name": role_names.get("owner") or customer_name,
+        "operating_authority_name": role_names.get("operator"),
+        "default_invoice_recipient_name": role_names.get("default_payer"),
+    }
+    return detail
+
+
 def normalize_vin(value: Optional[str]) -> Optional[str]:
     normalized = (value or "").strip().upper()
     return normalized or None

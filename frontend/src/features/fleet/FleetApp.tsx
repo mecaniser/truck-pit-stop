@@ -14,6 +14,7 @@ import { getPasswordValidationError } from '../../lib/passwordPolicy'
 import type { BoardTruck, FleetBoard as FleetBoardData } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
+import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
@@ -389,6 +390,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
   const [vehicleSearch, setVehicleSearch] = useState('')
   const debouncedVehicleSearch = useDebouncedValue(vehicleSearch, 250)
   const [existingVehicleId, setExistingVehicleId] = useState('')
+  const [vinConflict, setVinConflict] = useState<DuplicateVinConflict | null>(null)
   const [form, setForm] = useState({ make: '', model: '', year: '', unit_number: '', vin: '', license_plate: '', mileage: '', driver_name: '', driver_phone: '' })
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }))
   const [decoding, setDecoding] = useState(false)
@@ -464,7 +466,15 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
       qc.invalidateQueries({ queryKey: ['fleet-companies'] })
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || e.message || 'Failed to add truck'),
+    onError: (e: any) => {
+      const conflict = duplicateVinConflict(e)
+      if (conflict) {
+        setVinConflict(conflict)
+        toast.error('This VIN is already assigned to an existing truck.')
+        return
+      }
+      toast.error(e.response?.data?.detail || e.message || 'Failed to add truck')
+    },
   })
   const inp = 'w-full'
   return (
@@ -475,7 +485,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <button className="person-call" onClick={onClose}><X size={15} /></button>
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('new')}>New truck</button>
+          <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setVinConflict(null) }}>New truck</button>
           <button type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</button>
         </div>
         <Field label="Operating authority / Fleet Board *">
@@ -515,6 +525,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => {
                   const v = e.target.value.toUpperCase()
                   setForm((f) => ({ ...f, vin: v }))
+                  setVinConflict(null)
                   if (v.trim().length === 17) decodeVin(v)
                 }}
                 placeholder="17-character VIN"
@@ -534,6 +545,21 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           <Field label="Driver"><input className={inp} value={form.driver_name} onChange={set('driver_name')} placeholder="Driver name (optional)" /></Field>
           <Field label="Driver phone"><input className={inp} value={form.driver_phone} onChange={(e) => setForm((f) => ({ ...f, driver_phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" /></Field>
         </div>
+        )}
+        {mode === 'new' && vinConflict?.vehicle && (
+          <div style={{ marginTop: 14, border: '1px solid rgba(239, 68, 68, .55)', borderRadius: 8, padding: '10px 11px', background: 'rgba(127, 29, 29, .18)', display: 'grid', gap: 5 }}>
+            <strong style={{ color: '#fecaca', fontSize: 13 }}>VIN already assigned to {duplicateVinTruckLabel(vinConflict.vehicle)}</strong>
+            <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{vinConflict.vehicle.owner_lessor_name ? `Owner / lessor: ${vinConflict.vehicle.owner_lessor_name}` : 'Owner / lessor not assigned'}</span>
+            {vinConflict.vehicle.operating_authority_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>Operating authority: {vinConflict.vehicle.operating_authority_name}</span>}
+            <button type="button" className="dbtn dbtn-ghost" style={{ justifySelf: 'start', marginTop: 2 }} onClick={() => {
+              setMode('existing')
+              setExistingVehicleId(vinConflict.vehicle!.id)
+              setVehicleSearch(vinConflict.vehicle!.vin || '')
+              setVinConflict(null)
+            }}>
+              Link this existing truck
+            </button>
+          </div>
         )}
         <button className="dbtn dbtn-yellow" style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
           disabled={!customerId || (mode === 'new' ? (!form.make.trim() || !form.model.trim()) : !existingVehicleId) || create.isPending} onClick={() => create.mutate()}>

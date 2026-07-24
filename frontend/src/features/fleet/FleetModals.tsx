@@ -21,6 +21,7 @@ import { fleetUnitLabel, fmtDate, money, fmt } from './helpers'
 import { formatHoursMinutes } from '@/lib/durationFormat'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
 import { formatUSPhone } from '@/utils/phone'
+import { duplicateVinConflict, duplicateVinTruckLabel, type DuplicateVinConflict } from './duplicateVin'
 import type { QueryClient } from '@tanstack/react-query'
 
 /**
@@ -189,6 +190,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
     setEditingBilling(false)
   }
   const [decodingVin, setDecodingVin] = useState(false)
+  const [vinConflict, setVinConflict] = useState<DuplicateVinConflict | null>(null)
   const lastDecodedVin = useRef((truck.vin || '').trim().toUpperCase())
   const numOrUndef = (v: string) => (v.trim() === '' ? undefined : Number(v))
 
@@ -241,6 +243,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   const handleVinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const vin = e.target.value.toUpperCase()
     setF((p) => ({ ...p, vin }))
+    setVinConflict(null)
     const trimmedVin = vin.trim()
     if (trimmedVin.length === 17 && trimmedVin !== lastDecodedVin.current) {
       void decodeVin(trimmedVin, { quiet: true })
@@ -291,7 +294,15 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       invalidateFleetAndCockpit(qc)
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
+    onError: (e: any) => {
+      const conflict = duplicateVinConflict(e)
+      if (conflict) {
+        setVinConflict(conflict)
+        toast.error('This VIN is already assigned to another truck.')
+        return
+      }
+      toast.error(e.response?.data?.detail || 'Failed to update')
+    },
   })
 
   return (
@@ -310,6 +321,14 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
               {decodingVin ? <Spinner size="xs" /> : 'Decode'}
             </button>
           </div>
+          {vinConflict?.vehicle && (
+            <div style={{ marginTop: 8, border: '1px solid rgba(239, 68, 68, .55)', borderRadius: 8, padding: '9px 10px', background: 'rgba(127, 29, 29, .18)', display: 'grid', gap: 3 }}>
+              <strong style={{ color: '#fecaca', fontSize: 12 }}>VIN already assigned to {duplicateVinTruckLabel(vinConflict.vehicle)}</strong>
+              <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>{vinConflict.vehicle.owner_lessor_name ? `Owner / lessor: ${vinConflict.vehicle.owner_lessor_name}` : 'Owner / lessor not assigned'}</span>
+              {vinConflict.vehicle.operating_authority_name && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>Operating authority: {vinConflict.vehicle.operating_authority_name}</span>}
+              {vinConflict.vehicle.license_plate && <span style={{ color: 'var(--muted-2)', fontSize: 12 }}>Plate: {vinConflict.vehicle.license_plate}</span>}
+            </div>
+          )}
         </Field>
       </div>
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Operations & location</div>

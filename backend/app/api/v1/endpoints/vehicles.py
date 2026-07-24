@@ -24,6 +24,7 @@ from app.schemas.vehicle import (
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
 from app.services.vehicle_identity import (
+    duplicate_vin_detail,
     end_fleet_membership,
     ensure_fleet_membership,
     ensure_vehicle_relationship,
@@ -90,7 +91,7 @@ async def create_vehicle(
     if duplicate:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This VIN already belongs to truck {duplicate.id}. Link the existing truck instead of creating a duplicate.",
+            detail=await duplicate_vin_detail(db, duplicate),
         )
     if "driver_phone" in create_data:
         create_data["driver_phone"] = normalize_phone(create_data["driver_phone"])
@@ -370,23 +371,58 @@ async def sync_vehicle_relationships(
             is_primary=True,
         )
 
-    if "operator" in desired:
-        customer.fleet_enabled = True
-        await ensure_fleet_membership(
+    # Authority is a truck relationship; Fleet Board participation is a
+    # customer-level decision made only through the customer's fleet_enabled
+    # checkbox. An authority may therefore be recorded before it is enrolled
+    # on Fleet Board. If it is already enrolled, keep its board membership in
+    # sync with the selected authority.
+    selected_authority = operating_authority or (customer if "operator" in desired else None)
+    if selected_authority:
+        for relationship in active:
+            if relationship.relationship_type == "operator" and relationship.customer_id != selected_authority.id:
+                relationship.effective_to = now
+                relationship.is_primary = False
+        await ensure_vehicle_relationship(
             db,
             tenant_id=current_user.tenant_id,
             vehicle_id=vehicle.id,
-            fleet_customer_id=customer.id,
+            customer_id=selected_authority.id,
+            relationship_type="operator",
+            is_primary=True,
         )
 
-    if operating_authority:
-        operating_authority.fleet_enabled = True
-        await ensure_fleet_membership(
-            db,
-            tenant_id=current_user.tenant_id,
-            vehicle_id=vehicle.id,
-            fleet_customer_id=operating_authority.id,
-        )
+        active_memberships = list((await db.execute(select(FleetMembership).where(
+            FleetMembership.tenant_id == current_user.tenant_id,
+            FleetMembership.vehicle_id == vehicle.id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))).scalars().all())
+        for membership in active_memberships:
+            if membership.fleet_customer_id != selected_authority.id:
+                membership.effective_to = now
+
+        if selected_authority.fleet_enabled:
+            await ensure_fleet_membership(
+                db,
+                tenant_id=current_user.tenant_id,
+                vehicle_id=vehicle.id,
+                fleet_customer_id=selected_authority.id,
+            )
+    elif "operating_authority_customer_id" in body.model_fields_set:
+        # Clearing the selector is an explicit unlink. It must not leave an
+        # older authority/Fleet Board membership active in the background.
+        for relationship in active:
+            if relationship.relationship_type == "operator":
+                relationship.effective_to = now
+                relationship.is_primary = False
+        active_memberships = list((await db.execute(select(FleetMembership).where(
+            FleetMembership.tenant_id == current_user.tenant_id,
+            FleetMembership.vehicle_id == vehicle.id,
+            FleetMembership.effective_to.is_(None),
+            FleetMembership.deleted_at.is_(None),
+        ))).scalars().all())
+        for membership in active_memberships:
+            membership.effective_to = now
 
     if "unit_number" in body.model_fields_set:
         vehicle.unit_number = (body.unit_number or "").strip() or None
@@ -671,7 +707,7 @@ async def update_vehicle(
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"This VIN already belongs to truck {duplicate.id}.",
+                detail=await duplicate_vin_detail(db, duplicate),
             )
     if "driver_phone" in update_data:
         update_data["driver_phone"] = normalize_phone(update_data["driver_phone"])

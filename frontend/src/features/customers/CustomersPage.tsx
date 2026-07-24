@@ -2316,13 +2316,13 @@ export default function CustomersPage() {
                 className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
               >
                 <option value="">Select operating authority…</option>
-                {fleetCompanies.filter((company) => company.fleet_enabled).map((company) => (
+                {fleetCompanies.map((company) => (
                   <option key={company.id} value={company.id}>
-                    {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
+                    {company.company_name}{company.fleet_enabled ? ' · Fleet Board' : ''}{company.is_internal_fleet ? ' (internal)' : ''}
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-xs text-gray-500">New links start with your Fleet Board default authority when one is configured. This changes only Fleet Board membership; it does not change the owner/lessor or invoice recipient.</p>
+              <p className="mt-2 text-xs text-gray-500">Choose the authority this truck runs under. This records only the truck’s authority; the customer’s “Add this customer to Fleet Board” checkbox is the only control that places trucks on Fleet Board. Owner/lessor and invoice recipient stay independent.</p>
             </div>
             <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
           </div>

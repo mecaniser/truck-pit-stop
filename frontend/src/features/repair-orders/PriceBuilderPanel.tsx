@@ -173,7 +173,10 @@ type Props = {
   showInvoiceCreateOptions?: boolean
   onToggleInvoiceCreateOptions?: () => void
   onInvoiceDueDateChange?: (value: string) => void
-  onCreateInvoice?: (dueDate?: string | null) => void
+  invoiceRecipientOptions?: Array<{ id: string; company_name: string; relationship_label: string }>
+  invoiceRecipientId?: string
+  onInvoiceRecipientChange?: (value: string) => void
+  onCreateInvoice?: (dueDate?: string | null, billToCustomerId?: string) => void
   invoice?: Invoice | null
   invoiceActionPending?: boolean
   onResendInvoice?: () => void
@@ -906,6 +909,9 @@ export default function PriceBuilderPanel({
   showInvoiceCreateOptions = false,
   onToggleInvoiceCreateOptions,
   onInvoiceDueDateChange,
+  invoiceRecipientOptions = [],
+  invoiceRecipientId = '',
+  onInvoiceRecipientChange,
   onCreateInvoice,
   invoice,
   invoiceActionPending = false,
@@ -4140,8 +4146,8 @@ export default function PriceBuilderPanel({
                     <div className="absolute bottom-full right-0 z-30 mb-2 w-[min(340px,calc(100vw-40px))] rounded-[14px] border border-gray-200 bg-white p-4 text-left shadow-[0_10px_30px_rgba(20,25,35,.14)]">
                       <div className="mb-3 flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-semibold text-gray-950">Invoice due date</p>
-                          <p className="text-xs text-gray-500">Create the invoice now, with the due date customers should see.</p>
+                          <p className="font-semibold text-gray-950">Invoice recipient and due date</p>
+                          <p className="text-xs text-gray-500">Choose which connected company receives this invoice.</p>
                         </div>
                         <button
                           type="button"
@@ -4153,9 +4159,23 @@ export default function PriceBuilderPanel({
                         </button>
                       </div>
                       <div className="space-y-2">
+                        {invoiceRecipientOptions.length > 0 && (
+                          <label className="block rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm">
+                            <span className="mb-1 block font-semibold text-gray-700">Invoice this visit to</span>
+                            <select
+                              value={invoiceRecipientId}
+                              onChange={(e) => onInvoiceRecipientChange?.(e.target.value)}
+                              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                            >
+                              {invoiceRecipientOptions.map((recipient) => (
+                                <option key={recipient.id} value={recipient.id}>{recipient.company_name} · {recipient.relationship_label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
                         <button
                           type="button"
-                          onClick={() => onCreateInvoice?.(null)}
+                          onClick={() => onCreateInvoice?.(null, invoiceRecipientId || undefined)}
                           disabled={invoiceCreatePending}
                           className="flex w-full items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 text-left hover:border-indigo-200 hover:bg-indigo-100 disabled:opacity-60"
                         >
@@ -4178,7 +4198,7 @@ export default function PriceBuilderPanel({
                           </label>
                           <button
                             type="button"
-                            onClick={() => onCreateInvoice?.(invoiceDueDateValue || null)}
+                            onClick={() => onCreateInvoice?.(invoiceDueDateValue || null, invoiceRecipientId || undefined)}
                             disabled={invoiceCreatePending || !invoiceDueDateValue}
                             className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-bold text-white hover:bg-indigo-700 disabled:bg-gray-300"
                           >
