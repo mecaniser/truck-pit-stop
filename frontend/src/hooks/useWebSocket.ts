@@ -151,9 +151,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           queryClient.invalidateQueries({ queryKey: ['repair-order-detail'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-jobs'] })
           queryClient.invalidateQueries({ queryKey: ['mechanic-history'] })
-          // The home screen is unmounted while the workspace is open. Refresh its
-          // focused action queue even while inactive so navigation back is honest.
-          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'], refetchType: 'all' })
+          // Keep an unmounted dashboard stale without making its queue request
+          // from the repair-order workspace. DashboardHome refetches on mount.
+          queryClient.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
           queryClient.invalidateQueries({ queryKey: ['activity-feed'] })
 
           // Route to notification manager

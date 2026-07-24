@@ -441,7 +441,10 @@ export default function DashboardHome() {
     // retrying immediately just extends the block. Let the limiter's
     // window clear instead of hammering it.
     retry: (failureCount, err) => !(isAxiosError(err) && err.response?.status === 429) && failureCount < 1,
-    refetchOnMount: false,
+    // Mutations mark this queue stale while the dashboard is unmounted. Fetch
+    // then, when the user returns, instead of making background requests from
+    // the repair-order workspace.
+    refetchOnMount: true,
     staleTime: 60 * 1000,
   })
 

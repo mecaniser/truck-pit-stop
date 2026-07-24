@@ -29,14 +29,13 @@ import type { QueryClient } from '@tanstack/react-query'
  * the owner's Shop Cockpit work queue too, not just the fleet board. Invalidate
  * both.
  *
- * refetchType 'all' matters: the cockpit is unmounted while the user is over in
- * Fleet, so its ['dashboard-action-queue'] query is *inactive* — a default invalidate
- * only refetches active queries, and that query sets refetchOnMount:false, so it
- * would serve stale data on the way back (missing the WO we just created).
+ * The cockpit refetches when it is revisited, so Fleet does not make a
+ * background action-queue request for an unmounted dashboard.
  */
 export function invalidateFleetAndCockpit(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['fleet-board'] })
-  for (const key of ['dashboard-action-queue', 'repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
+  qc.invalidateQueries({ queryKey: ['dashboard-action-queue'] })
+  for (const key of ['repair-orders', 'mechanic-board-team', 'mechanic-board-detail']) {
     qc.invalidateQueries({ queryKey: [key], refetchType: 'all' })
   }
 }
