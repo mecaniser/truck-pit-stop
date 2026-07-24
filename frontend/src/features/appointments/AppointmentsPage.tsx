@@ -1,197 +1,178 @@
-import { useState } from 'react'
-import { Spinner } from '@/components/ui'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CalendarDays, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
-import api from '../../lib/api'
-import { Appointment, AppointmentStatus } from '../../types'
-import { ArrowRight, Calendar, Clock3, Plus } from 'lucide-react'
 
-const STATUS_COLORS: Record<AppointmentStatus, { bg: string; text: string }> = {
-  pending: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
-  confirmed: { bg: 'bg-green-100', text: 'text-green-700' },
-  in_progress: { bg: 'bg-blue-100', text: 'text-blue-700' },
-  completed: { bg: 'bg-purple-100', text: 'text-purple-700' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700' },
-  no_show: { bg: 'bg-gray-100', text: 'text-gray-700' },
+import { Spinner } from '@/components/ui'
+import api from '@/lib/api'
+import type { Appointment, Service, Vehicle } from '@/types'
+import { DateBlock, formatMoney, Pill, vehicleName } from '@/features/customer-portal/portal-ui'
+
+const statusStyles: Record<string, string> = {
+  pending: 'border-[#8b7cf7]/35 bg-[#8b7cf7]/10 text-[#c9bfff]',
+  confirmed: 'border-[#8b7cf7]/35 bg-[#8b7cf7]/10 text-[#c9bfff]',
+  in_progress: 'border-[#f0b959]/35 bg-[#f0b959]/10 text-[#f0b959]',
+  completed: 'border-[#3ecf6f]/30 bg-[#3ecf6f]/10 text-[#3ecf6f]',
+  cancelled: 'border-[#ff6b6e]/30 bg-[#ff6b6e]/10 text-[#ff8b8d]',
+  no_show: 'border-[#272d3d] bg-[#191d2a] text-[#8b92a5]',
 }
 
 export default function AppointmentsPage() {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming')
 
-  const { data: appointments, isLoading } = useQuery<Appointment[]>({
+  const { data: appointments = [], isLoading } = useQuery<Appointment[]>({
     queryKey: ['appointments'],
     queryFn: async () => {
-      const pageSize = 100
-      let skip = 0
-      const all: Appointment[] = []
-      while (true) {
-        const response = await api.get('/appointments', { params: { paginated: true, skip, limit: pageSize } })
-        const data = response.data
-        all.push(...data.items)
-        if (!data.has_more || data.items.length === 0) break
-        skip = data.skip + data.limit
-      }
-      return all
+      const response = await api.get('/appointments', { params: { paginated: true, skip: 0, limit: 100 } })
+      return Array.isArray(response.data) ? response.data : response.data.items
+    },
+  })
+  const { data: services = [] } = useQuery<Service[]>({
+    queryKey: ['services', 'portal-quick-book'],
+    queryFn: async () => (await api.get('/services')).data,
+  })
+  const { data: vehicles = [] } = useQuery<Vehicle[]>({
+    queryKey: ['vehicles'],
+    queryFn: async () => {
+      const response = await api.get('/vehicles', { params: { paginated: true, skip: 0, limit: 100 } })
+      return Array.isArray(response.data) ? response.data : response.data.items
     },
   })
 
   const cancelMutation = useMutation({
-    mutationFn: async (appointmentId: string) => {
-      const response = await api.post(`/appointments/${appointmentId}/cancel`)
-      return response.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['appointments'] })
-    },
+    mutationFn: async (appointmentId: string) => api.post(`/appointments/${appointmentId}/cancel`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointments'] }),
   })
 
-  const filteredAppointments = appointments?.filter((apt) => {
-    const aptDate = new Date(apt.scheduled_at)
-    const now = new Date()
-    
-    if (filter === 'upcoming') {
-      return aptDate >= now && !['cancelled', 'completed', 'no_show'].includes(apt.status)
-    } else if (filter === 'past') {
-      return aptDate < now || ['cancelled', 'completed', 'no_show'].includes(apt.status)
-    }
-    return true
-  })
+  const filtered = useMemo(() => appointments
+    .filter(appointment => {
+      const past = new Date(appointment.scheduled_at) < new Date()
+        || ['cancelled', 'completed', 'no_show'].includes(appointment.status)
+      if (filter === 'upcoming') return !past
+      if (filter === 'past') return past
+      return true
+    })
+    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()), [appointments, filter])
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Spinner size="xl" />
-      </div>
-    )
-  }
+  const quickBook = useMemo(() => {
+    const sorted = [...services].sort((a, b) => {
+      const aPm = /pm|prevent/i.test(a.name) ? 0 : 1
+      const bPm = /pm|prevent/i.test(b.name) ? 0 : 1
+      return aPm - bPm || Number(a.computed_total_price) - Number(b.computed_total_price)
+    })
+    return sorted.slice(0, 3).map((service, index) => ({
+      service,
+      tag: index === 0 ? 'DUE SOON' : index === 1 ? 'COMPLIANCE' : 'POPULAR',
+      tagClass: index === 0
+        ? 'border-[#f0b959]/30 bg-[#f0b959]/10 text-[#f0b959]'
+        : index === 1
+          ? 'border-[#3ecf6f]/30 bg-[#3ecf6f]/10 text-[#3ecf6f]'
+          : 'border-[#8b7cf7]/35 bg-[#8b7cf7]/10 text-[#c9bfff]',
+    }))
+  }, [services])
+
+  if (isLoading) return <div className="flex min-h-[420px] items-center justify-center"><Spinner size="xl" /></div>
+
+  const primaryVehicle = vehicles[0]
+  const mileage = primaryVehicle?.mileage || 0
+  const nextPm = mileage ? Math.ceil((mileage + 1) / 5000) * 5000 : 0
+  const pmRemaining = nextPm ? nextPm - mileage : 0
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-4">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">My Appointments</h1>
-          <p className="text-gray-400 mt-1">Manage your scheduled appointments</p>
+          <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Appointments</h1>
+          <p className="mt-1 text-[13px] text-[#8b92a5]">
+            {primaryVehicle ? `Scheduled visits for ${primaryVehicle.unit_number ? `Unit #${primaryVehicle.unit_number}` : vehicleName(primaryVehicle)}` : 'Your scheduled service visits'}
+          </p>
         </div>
-        <Link
-          to="/portal/services"
-          className="inline-flex items-center justify-center px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Book New
-        </Link>
-      </div>
+        <div className="flex gap-2 overflow-x-auto">
+          {(['upcoming', 'past', 'all'] as const).map(value => (
+            <Pill key={value} active={filter === value} onClick={() => setFilter(value)}>
+              {value.charAt(0).toUpperCase() + value.slice(1)}
+            </Pill>
+          ))}
+        </div>
+      </header>
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2">
-        {(['upcoming', 'past', 'all'] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize ${
-              filter === f
-                ? 'bg-amber-500 text-white'
-                : 'bg-white/10 text-white hover:bg-white/20'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-
-      {/* Appointments List */}
-      <div className="space-y-3">
-        {filteredAppointments?.length === 0 ? (
-          <div className="text-center py-12 bg-white/5 rounded-xl border border-white/10">
-            <div className="flex justify-center mb-3">
-              <Calendar className="w-10 h-10 text-gray-400" />
-            </div>
-            <p className="text-gray-400">No {filter} appointments</p>
-            <Link
-              to="/portal/services"
-              className="inline-flex items-center gap-1 mt-4 text-amber-500 hover:text-amber-400"
-            >
-              Book a service
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+      {filtered.length === 0 ? (
+        <section className="rounded-2xl border border-[#232939] bg-[#161a26] px-5 py-9 text-center sm:px-6">
+          <div className="mx-auto flex h-[46px] w-[46px] items-center justify-center rounded-xl border border-[#272d3d] bg-[#12161f] text-[#5c6375]">
+            <CalendarDays className="h-5 w-5" />
           </div>
-        ) : (
-          filteredAppointments?.map((apt) => {
-            const statusStyle = STATUS_COLORS[apt.status]
-            const isPast = new Date(apt.scheduled_at) < new Date()
-            const canCancel = ['pending', 'confirmed'].includes(apt.status) && !isPast
-
+          <h2 className="mt-3.5 text-base font-extrabold">No {filter === 'all' ? '' : filter} visits</h2>
+          <p className="mx-auto mt-1.5 max-w-[420px] text-[13px] leading-5 text-[#8b92a5]">
+            {filter === 'upcoming' && pmRemaining
+              ? `Your next PM is due in about ${pmRemaining.toLocaleString()} miles. Book it now and keep the truck earning.`
+              : 'Your appointments will appear here as soon as a service is booked.'}
+          </p>
+        </section>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(appointment => {
+            const canCancel = ['pending', 'confirmed'].includes(appointment.status)
+              && new Date(appointment.scheduled_at) >= new Date()
             return (
-              <div
-                key={apt.id}
-                className="bg-white/5 rounded-xl p-4 sm:p-5 border border-white/10"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h3 className="font-semibold text-white">{apt.service_name}</h3>
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text}`}
-                      >
-                        {apt.status.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-400">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4" />
-                        {format(new Date(apt.scheduled_at), 'EEEE, MMM d, yyyy')}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock3 className="w-4 h-4" />
-                        {format(new Date(apt.scheduled_at), 'h:mm a')}
-                      </span>
-                      <span>~{apt.duration_minutes} min</span>
-                    </div>
-
-                    <div className="mt-2 text-xs text-gray-500">
-                      Confirmation: <span className="font-mono">{apt.confirmation_number}</span>
-                    </div>
+              <article key={appointment.id} className="flex items-center gap-3 rounded-xl border border-[#232939] bg-[#161a26] p-3 hover:border-[#343b52] sm:gap-4 sm:px-4">
+                <DateBlock value={appointment.scheduled_at} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate text-[13px] font-bold sm:text-sm">{appointment.service_name}</h2>
+                    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.05em] ${statusStyles[appointment.status] || statusStyles.pending}`}>
+                      {appointment.status.replace('_', ' ')}
+                    </span>
                   </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-white">
-                        ${parseFloat(apt.price).toFixed(2)}
-                      </div>
-                      {apt.paid_at && (
-                        <div className="text-xs text-green-400">Paid</div>
-                      )}
-                    </div>
-
-                    {canCancel && (
-                      <button
-                        onClick={() => {
-                          if (confirm('Are you sure you want to cancel this appointment?')) {
-                            cancelMutation.mutate(apt.id)
-                          }
-                        }}
-                        disabled={cancelMutation.isPending}
-                        className="px-3 py-1.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
+                  <p className="mt-1 text-xs text-[#8b92a5]">{format(new Date(appointment.scheduled_at), 'h:mm a')} · {appointment.duration_minutes} min</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[#5c6375]">Confirmation {appointment.confirmation_number}</p>
                 </div>
-
-                {apt.customer_notes && (
-                  <div className="mt-3 pt-3 border-t border-white/5 text-sm text-gray-400">
-                    <span className="text-gray-500">Notes:</span> {apt.customer_notes}
-                  </div>
-                )}
-              </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-extrabold tabular-nums">{formatMoney(appointment.price)}</p>
+                  {canCancel && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('Cancel this appointment?')) cancelMutation.mutate(appointment.id)
+                      }}
+                      disabled={cancelMutation.isPending}
+                      className="mt-2 text-xs font-bold text-[#ff8b8d] hover:text-white disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </article>
             )
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
+
+      {quickBook.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.1em] text-[#8b92a5]">Book in one click</h2>
+          <div className="grid gap-2.5 md:grid-cols-3">
+            {quickBook.map(({ service, tag, tagClass }) => (
+              <article key={service.id} className="flex flex-col rounded-[14px] border border-[#232939] bg-[#161a26] p-4 hover:border-[#343b52]">
+                <span className={`w-fit rounded-md border px-2 py-0.5 text-[10px] font-extrabold tracking-[0.05em] ${tagClass}`}>{tag}</span>
+                <h3 className="mt-2 text-sm font-extrabold">{service.name}</h3>
+                <p className="mt-1 text-xs text-[#8b92a5]">{formatMoney(service.computed_total_price)} · {service.duration_minutes} min</p>
+                <Link
+                  to={`/portal/book/${service.id}`}
+                  className="mt-4 flex h-[42px] items-center justify-center rounded-[10px] bg-[#8b7cf7] px-3 text-[13px] font-extrabold text-[#0e1118] md:h-[38px]"
+                >
+                  Book {service.name}
+                </Link>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <Link to="/portal/services" className="inline-flex items-center text-[13px] font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
+        Browse all {services.length} services <ChevronRight className="h-4 w-4" />
+      </Link>
     </div>
   )
 }
