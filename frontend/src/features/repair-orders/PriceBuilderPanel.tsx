@@ -1317,6 +1317,10 @@ export default function PriceBuilderPanel({
   // Sending a quote/creating a draft only makes sense once there's something to
   // bill. Block the action (and explain why) while the order is empty.
   const quoteActionBlocked = quoteActionDisabled || isEmptyOrder
+  // A completed draft estimate is ready for the customer-facing send action.
+  // Give that one actionable state a clear, calm success treatment without
+  // implying that create, resend, or disabled states are equally ready.
+  const quoteActionReadyToSend = quoteActionLabel === 'Send estimate' && !quoteActionBlocked
   const quoteButtonDisabledReason = quoteDisabledReason || (
     isEmptyOrder
       ? 'Add at least one operation, labor line, or part before creating an estimate.'
@@ -2216,7 +2220,11 @@ export default function PriceBuilderPanel({
                 onClick={onQuoteAction}
                 disabled={quoteActionBlocked || quoteActionPending}
                 title={quoteButtonDisabledReason}
-                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                className={`ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 font-semibold transition-colors disabled:opacity-50 ${
+                  quoteActionReadyToSend
+                    ? 'border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700'
+                    : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-50'
+                }`}
               >
                 {quoteActionPending ? <Spinner size="xs" /> : <FileText className="h-3.5 w-3.5" />}
                 {quoteActionPending ? 'Working…' : quoteActionLabel}
