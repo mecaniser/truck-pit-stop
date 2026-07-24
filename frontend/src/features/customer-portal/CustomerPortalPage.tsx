@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent, type TouchEvent } from 'react'
 import { Spinner } from '@/components/ui'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
@@ -13,7 +13,7 @@ import ProfileSettingsPage from './ProfileSettingsPage'
 import CustomerInvoicePage from './CustomerInvoicePage'
 import PortalDashboardPage from './PortalDashboardPage'
 import PortalVehiclesPage from './PortalVehiclesPage'
-import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Menu, X } from 'lucide-react'
+import { Camera, CheckCircle, ChevronDown, ChevronUp, ClipboardList, Truck, Wrench, CreditCard, FileText, ArrowLeft, Calendar, Download, Home, User, History, MoreHorizontal, ChevronLeft } from 'lucide-react'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import toast from 'react-hot-toast'
@@ -1530,7 +1530,9 @@ export default function CustomerPortalPage() {
   const portalScrollRef = useRef<HTMLElement>(null)
   const { user } = useAuthStore()
   const { data: tenantBranding } = useTenantBranding()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [mobileNavPage, setMobileNavPage] = useState<'primary' | 'secondary'>('primary')
+  const mobileNavTouchStart = useRef<{ x: number; y: number } | null>(null)
+  const suppressMobileNavClick = useRef(false)
   const profileNameParts = [user?.first_name, user?.last_name].filter(
     (part): part is string => Boolean(part?.trim()),
   )
@@ -1564,15 +1566,19 @@ export default function CustomerPortalPage() {
 
   useEffect(() => {
     portalScrollRef.current?.scrollTo({ top: 0 })
-    setMobileMenuOpen(false)
+    const isOverflowRoute =
+      location.pathname === '/portal/repairs' ||
+      location.pathname.startsWith('/portal/invoices/') ||
+      location.pathname === '/portal/settings'
+    setMobileNavPage(isOverflowRoute ? 'secondary' : 'primary')
   }, [location.pathname])
 
   const navLinks = [
-    { to: '/portal', label: 'Dashboard', exact: true },
-    { to: '/portal/services', label: 'Services' },
-    { to: '/portal/appointments', label: 'Appointments' },
-    { to: '/portal/vehicles', label: 'Vehicles' },
-    { to: '/portal/repairs', label: 'History' },
+    { to: '/portal', label: 'Dashboard', mobileLabel: 'Home', exact: true, icon: Home },
+    { to: '/portal/services', label: 'Services', mobileLabel: 'Services', icon: Wrench },
+    { to: '/portal/appointments', label: 'Appointments', mobileLabel: 'Appts', icon: Calendar },
+    { to: '/portal/vehicles', label: 'Vehicles', mobileLabel: 'Vehicles', icon: Truck },
+    { to: '/portal/repairs', label: 'History', mobileLabel: 'History', icon: History },
   ]
 
   const isActive = (path: string, exact?: boolean) =>
@@ -1581,9 +1587,45 @@ export default function CustomerPortalPage() {
       : location.pathname === path || (path === '/portal/services' && location.pathname.startsWith('/portal/book/'))
 
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
+  const mobilePrimaryLinks = navLinks.slice(0, 4)
+  const mobileOverflowLinks = navLinks.slice(4)
+  const isMobileMoreActive =
+    location.pathname === '/portal/settings' ||
+    location.pathname === '/portal/repairs' ||
+    isInvoicePage
+
+  const handleMobileNavTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0]
+    if (touch) mobileNavTouchStart.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const handleMobileNavTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = mobileNavTouchStart.current
+    const touch = event.changedTouches[0]
+    mobileNavTouchStart.current = null
+    if (!start || !touch) return
+
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < 36 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return
+
+    suppressMobileNavClick.current = true
+    window.setTimeout(() => {
+      suppressMobileNavClick.current = false
+    }, 350)
+    if (deltaX < 0 && mobileNavPage === 'primary') setMobileNavPage('secondary')
+    if (deltaX > 0 && mobileNavPage === 'secondary') setMobileNavPage('primary')
+  }
+
+  const handleMobileNavClickCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!suppressMobileNavClick.current) return
+    suppressMobileNavClick.current = false
+    event.preventDefault()
+    event.stopPropagation()
+  }
 
   return (
-    <div className="fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
+    <div className="fixed inset-0 grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden bg-[#0d1018] font-['Helvetica_Neue',Helvetica,Arial,sans-serif] text-[#eceef4]">
       <nav
         className="relative z-50 shrink-0 border-b border-[#1e2432] bg-[#0a0d14]"
         style={{ paddingTop: 'env(safe-area-inset-top)' }}
@@ -1630,49 +1672,8 @@ export default function CustomerPortalPage() {
               </Link>
             </div>
 
-            <div className="flex items-center gap-2 md:hidden">
-              <Link
-                to="/portal/settings"
-                aria-label={`Open account for ${profileDisplayName}`}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-[#8b7cf7] bg-[#241f3d] text-[10px] font-extrabold text-[#c9bfff]"
-              >
-                {profileMonogram}
-              </Link>
-              {!isInvoicePage && (
-                <button
-                  type="button"
-                  aria-expanded={mobileMenuOpen}
-                  aria-controls="portal-mobile-menu"
-                  aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
-                  onClick={() => setMobileMenuOpen(current => !current)}
-                  className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#161a26] text-[#c9cdd8]"
-                >
-                  {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-                </button>
-              )}
-            </div>
           </div>
         </div>
-
-        {mobileMenuOpen && !isInvoicePage && (
-          <div id="portal-mobile-menu" className="border-t border-[#1e2432] bg-[#0a0d14] px-4 py-3 md:hidden">
-            <div className="grid grid-cols-2 gap-2">
-              {navLinks.map(link => (
-                <Link
-                  key={link.to}
-                  to={link.to}
-                  className={`flex h-11 items-center rounded-[10px] px-3 text-[13px] font-bold ${
-                    isActive(link.to, link.exact)
-                      ? 'border border-[#8b7cf7]/40 bg-[#8b7cf7]/10 text-[#c9bfff]'
-                      : 'border border-[#232939] bg-[#161a26] text-[#9aa1b3]'
-                  }`}
-                >
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
       </nav>
 
       <main
@@ -1705,6 +1706,114 @@ export default function CustomerPortalPage() {
           <Route path="settings" element={<ProfileSettingsPage />} />
         </Routes>
       </main>
+
+      <div className={`relative z-50 shrink-0 md:hidden ${isInvoicePage ? 'hidden' : ''}`}>
+        <div
+          className="overflow-hidden border-t border-[#232939] bg-[#0a0d14]/95 pt-1.5 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl"
+          style={{
+            paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+            paddingLeft: 'max(0.25rem, env(safe-area-inset-left))',
+            paddingRight: 'max(0.25rem, env(safe-area-inset-right))',
+          }}
+          onTouchStart={handleMobileNavTouchStart}
+          onTouchEnd={handleMobileNavTouchEnd}
+          onClickCapture={handleMobileNavClickCapture}
+          aria-label="Customer portal mobile navigation"
+        >
+          <div
+            className={`flex w-[200%] transform-gpu transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              mobileNavPage === 'secondary' ? '-translate-x-1/2' : 'translate-x-0'
+            }`}
+          >
+            <div className="flex w-1/2 shrink-0 px-1" aria-hidden={mobileNavPage !== 'primary'}>
+              {mobilePrimaryLinks.map(link => {
+                const Icon = link.icon
+                const isLinkActive = isActive(link.to, link.exact)
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    tabIndex={mobileNavPage === 'primary' ? 0 : -1}
+                    className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                      isLinkActive
+                        ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                        : 'text-[#737b8f] hover:text-[#c9cdd8]'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span>{link.mobileLabel}</span>
+                  </Link>
+                )
+              })}
+              <button
+                type="button"
+                onClick={() => setMobileNavPage('secondary')}
+                tabIndex={mobileNavPage === 'primary' ? 0 : -1}
+                aria-expanded={mobileNavPage === 'secondary'}
+                aria-controls="portal-mobile-secondary-navigation"
+                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                  isMobileMoreActive
+                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
+                }`}
+              >
+                <MoreHorizontal className="h-5 w-5" />
+                <span>More</span>
+              </button>
+            </div>
+
+            <div
+              id="portal-mobile-secondary-navigation"
+              className="flex w-1/2 shrink-0 px-1"
+              aria-hidden={mobileNavPage !== 'secondary'}
+            >
+              <button
+                type="button"
+                onClick={() => setMobileNavPage('primary')}
+                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                className="flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold text-[#737b8f] transition-colors hover:text-[#c9cdd8]"
+                aria-label="Back to primary navigation"
+              >
+                <ChevronLeft className="h-5 w-5" />
+                <span>Back</span>
+              </button>
+              {mobileOverflowLinks.map(link => {
+                const Icon = link.icon
+                const isLinkActive = isActive(link.to, link.exact)
+                return (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                    className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                      isLinkActive
+                        ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                        : 'text-[#737b8f] hover:text-[#c9cdd8]'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span>{link.mobileLabel}</span>
+                  </Link>
+                )
+              })}
+              <Link
+                to="/portal/settings"
+                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                  location.pathname === '/portal/settings'
+                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
+                }`}
+              >
+                <User className="h-5 w-5" />
+                <span>Account</span>
+              </Link>
+              <span className="flex-1" aria-hidden="true" />
+              <span className="flex-1" aria-hidden="true" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
