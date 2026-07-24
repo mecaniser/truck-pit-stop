@@ -1257,7 +1257,6 @@ async def _fleet_board_vehicle_ids(db: AsyncSession, tenant_id: UUID) -> list[UU
             Customer.deleted_at.is_(None),
         )
         .distinct()
-        .order_by(Vehicle.unit_number, Vehicle.make)
     )
     return list(result.scalars().all())
 

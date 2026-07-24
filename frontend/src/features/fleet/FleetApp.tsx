@@ -52,7 +52,7 @@ export default function FleetApp() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, selId, filter, sort }))
   }, [view, selId, filter, sort])
 
-  const { data, isLoading } = useQuery<FleetBoardData>({
+  const { data, isLoading, isError, refetch } = useQuery<FleetBoardData>({
     queryKey: ['fleet-board'],
     queryFn: async () => (await api.get('/fleet/board')).data,
     refetchInterval: 60000,
@@ -147,8 +147,15 @@ export default function FleetApp() {
 
           <div className="scroll">
             <div className="page-pad">
-              {isLoading || !data ? (
+              {isLoading ? (
                 <div className="loader"><Spinner size="md" /></div>
+              ) : isError || !data ? (
+                <div className="loader flex-col gap-3 text-center text-sm text-slate-500">
+                  <span>Fleet Board could not be loaded.</span>
+                  <button type="button" className="dbtn dbtn-yellow" onClick={() => refetch()}>
+                    Retry
+                  </button>
+                </div>
               ) : view === 'detail' && selId ? (
                 <TruckDetail truckId={selId} trucks={trucks} onBack={() => goView('board')} onOpen={openTruck} />
               ) : view === 'board' ? (
