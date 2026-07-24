@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, exists, or_, func, literal_column, case
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 from pydantic import BaseModel
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.pagination import paginated_or_list
@@ -1113,6 +1113,91 @@ async def _list_repair_orders_legacy(
                 item.labor_discount_amount = Decimal("0.00")
                 item.order_discount_amount = Decimal("0.00")
     return paginated_or_list(items, total, skip, limit, paginated)
+
+
+@router.get("/{order_id}/workspace", response_model=RepairOrderResponse)
+async def get_repair_order_workspace(
+    order_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the compact contract needed to open the repair workspace.
+
+    The full detail route intentionally includes every line item, history event,
+    PM service, and invoice state. That is right for the History and legacy
+    detail views, but it is needlessly expensive when a dashboard link opens an
+    order that is outside the current paginated list. Prefer the same
+    transactionally maintained projection that powers the list; retain a
+    one-query fallback while a projection is being backfilled.
+    """
+    projection = await db.scalar(
+        select(RepairOrderReadModel)
+        .where(RepairOrderReadModel.repair_order_id == order_id)
+    )
+    if projection:
+        item = RepairOrderResponse.model_validate(projection.payload)
+        if projection.is_deleted and current_user.role not in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+        if current_user.role == UserRole.CUSTOMER:
+            if not current_user.customer_id or current_user.customer_id != projection.customer_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            if not _customer_financials_are_published(item):
+                item.internal_notes = None
+                item.total_parts_cost = Decimal("0.00")
+                item.total_labor_cost = Decimal("0.00")
+                item.total_cost = Decimal("0.00")
+                item.labor_discount_amount = Decimal("0.00")
+                item.order_discount_amount = Decimal("0.00")
+        elif current_user.tenant_id != projection.tenant_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        elif current_user.role == UserRole.FLEET_MANAGER and not (item.is_fleet_work or item.is_internal):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        return item
+
+    # A new repair order can be opened before the read-model maintainer has
+    # written its row. Do not turn that short window into a 404; load only the
+    # workspace shell instead of falling through to the heavyweight detail API.
+    can_see_deleted = current_user.role in (UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)
+    deleted_filter = () if can_see_deleted else (RepairOrder.deleted_at.is_(None),)
+    result = await db.execute(
+        select(RepairOrder)
+        .where(RepairOrder.id == order_id, *deleted_filter)
+        .options(joinedload(RepairOrder.customer), joinedload(RepairOrder.vehicle))
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found")
+    _check_ro_access(current_user, order)
+
+    exclude = {
+        "quote_sent", "quote_approved", "quote_sent_at", "invoice_created_at", "invoice_due_date",
+        "pending_zelle_confirmation", "vehicle_make", "vehicle_model", "vehicle_year",
+        "vehicle_unit_number", "vehicle_vin", "cancelled_by_name", "deleted_by_name",
+        "customer_first_name", "customer_last_name", "customer_company_name", "customer_email", "customer_phone",
+    }
+    vehicle = order.vehicle
+    customer = order.customer
+    item = RepairOrderResponse(
+        **RepairOrderResponse.model_validate(order).model_dump(exclude=exclude),
+        vehicle_make=vehicle.make or "" if vehicle else "",
+        vehicle_model=vehicle.model or "" if vehicle else "",
+        vehicle_year=vehicle.year if vehicle else None,
+        vehicle_unit_number=vehicle.unit_number if vehicle else None,
+        vehicle_vin=vehicle.vin if vehicle else None,
+        customer_first_name=customer.first_name or "" if customer else "",
+        customer_last_name=customer.last_name or "" if customer else "",
+        customer_company_name=customer.company_name if customer else None,
+        customer_email=customer.email if customer else None,
+        customer_phone=customer.phone if customer else None,
+    )
+    if current_user.role == UserRole.CUSTOMER and not _customer_financials_are_published(order):
+        item.internal_notes = None
+        item.total_parts_cost = Decimal("0.00")
+        item.total_labor_cost = Decimal("0.00")
+        item.total_cost = Decimal("0.00")
+        item.labor_discount_amount = Decimal("0.00")
+        item.order_discount_amount = Decimal("0.00")
+    return item
 
 
 @router.get("/{order_id}/detail", response_model=RepairOrderDetailResponse)

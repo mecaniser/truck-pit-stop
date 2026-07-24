@@ -474,6 +474,7 @@ export default function RepairOrdersPage() {
 
   const cancelOrderQueries = (orderId: string) => {
     queryClient.cancelQueries({ queryKey: ['repair-order-detail', orderId] })
+    queryClient.cancelQueries({ queryKey: ['repair-order-workspace', orderId] })
     queryClient.cancelQueries({ queryKey: ['price-build', orderId] })
     queryClient.cancelQueries({ queryKey: ['repair-order-photos', orderId] })
     queryClient.cancelQueries({ queryKey: ['price-build-parts', orderId] })
@@ -555,10 +556,13 @@ export default function RepairOrdersPage() {
     }
     const controller = new AbortController()
     let cancelled = false
-    api.get(`/repair-orders/${selectedId}/detail`, { signal: controller.signal })
+    // A selected order can come from the dashboard work queue and therefore be
+    // outside this page of the list. Resolve its compact workspace projection
+    // first; the full detail route stays reserved for History intent below.
+    api.get(`/repair-orders/${selectedId}/workspace`, { signal: controller.signal })
       .then((response) => {
         if (cancelled) return
-        queryClient.setQueryData(['repair-order-detail', selectedId], response.data)
+        queryClient.setQueryData(['repair-order-workspace', selectedId], response.data)
         applyDetailState(response.data as RepairOrder)
       })
       .catch(() => {
