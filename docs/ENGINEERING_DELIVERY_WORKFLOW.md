@@ -23,8 +23,9 @@ worktrees for overlap. If two changes need the same file or API contract, work
 sequentially or agree on the shared contract first.
 
 `main` is the integration branch. No one pushes directly to it. The release
-manager merges a PR only after the required GitHub checks are green, the PR
-template is complete, and any dependent migration PR has landed first.
+manager merges a PR after reviewing its scope, the CI results, and any dependent
+migration work. CI starts as advisory rather than blocking delivery while the
+test and lint baselines are being repaired.
 
 ## Required pull-request contract
 
@@ -109,19 +110,32 @@ and the affected metrics. For migrations, prefer an additive, backwards
 compatible migration so the application can be reverted safely; do not delete
 or rewrite an already deployed revision.
 
-## One-time GitHub configuration
+## GitHub protection rollout
 
-Configure a branch protection rule for `main` after the quality workflow has
-merged once:
+Adopt these controls in stages. This keeps delivery fast while making quality
+signals increasingly trustworthy.
+
+### Phase 1: advisory CI, immediate
 
 1. Require a pull request before merging; disable direct pushes.
-2. Require branches to be up to date before merging.
-3. Require these status checks: `Migration graph`, `Backend tests`, and
-   `Frontend checks`.
-4. Require resolved conversations and block force pushes/deletion.
-5. Keep the release manager able to merge after reviewing the PR. Do not
-   require a second GitHub approval until there is a real second reviewer;
-   coding agents do not have independent GitHub identities.
+2. Keep all CI jobs advisory. Read their results in the PR, but do not require
+   them in GitHub branch protection yet.
+3. Do not merge a migration PR when `Migration graph` is red. This remains a
+   manual release-manager decision until the team has established the rhythm.
+4. Block force pushes/deletion and require resolved conversations.
+
+### Phase 2: migration safety, after one stable week
+
+Require only `Migration graph` and require branches to be up to date before a
+migration-bearing PR merges. This is the smallest automated guard that prevents
+another multiple-head production outage without slowing ordinary UI work.
+
+### Phase 3: mature required checks
+
+After the full backend/frontend suites and lint baseline are green, require
+`Backend tests` and `Frontend checks` for every PR. Do not require a second
+GitHub approval until there is a real second reviewer; coding agents do not
+have independent GitHub identities.
 
 ## Agent handoff format
 
