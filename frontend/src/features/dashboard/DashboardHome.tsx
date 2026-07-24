@@ -107,8 +107,11 @@ interface DashboardStats {
   overdue_approvals: number
   declined_quotes: number
   orders_needing_action: RecentOrder[]
+  orders_needing_action_has_more: boolean
   orders_on_floor: RecentOrder[]
+  orders_on_floor_has_more: boolean
   orders_ready_to_close: RecentOrder[]
+  orders_ready_to_close_has_more: boolean
 }
 
 function timeAgo(dateStr: string): string {
@@ -507,6 +510,7 @@ export default function DashboardHome() {
   const needsActionCount = stats?.orders_needing_action?.length || 0
   const onFloorCount = stats?.orders_on_floor?.length || 0
   const readyToCloseCount = stats?.orders_ready_to_close?.length || 0
+  const laneCountLabel = (count: number, hasMore?: boolean) => hasMore ? `${count}+` : count
   const highestPriorityMobileLane: 0 | 1 | 2 = needsActionCount > 0 ? 0 : onFloorCount > 0 ? 1 : 2
   const displayedMobileLane =
     (activeMobileLane === 0 && needsActionCount === 0) ||
@@ -952,7 +956,7 @@ export default function DashboardHome() {
                     <SectionInfoTooltip text="Orders blocked by approvals, missing info, or other manager actions that should be handled first." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full">
-                    {needsActionCount}
+                    {laneCountLabel(needsActionCount, stats?.orders_needing_action_has_more)}
                   </span>
                 </div>
                 <div className={getLaneBodyClass(0)}>
@@ -984,7 +988,7 @@ export default function DashboardHome() {
                     <SectionInfoTooltip text="Orders currently in production with technicians assigned or actively working." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium px-2 py-0.5 rounded-full" style={{ color: accentColors[400], backgroundColor: `${accentColors[500]}1a` }}>
-                    {onFloorCount}
+                    {laneCountLabel(onFloorCount, stats?.orders_on_floor_has_more)}
                   </span>
                 </div>
                 <div className={getLaneBodyClass(1)}>
@@ -1016,7 +1020,7 @@ export default function DashboardHome() {
                     <SectionInfoTooltip text="Completed work waiting for invoice to be sent, plus invoiced orders awaiting payment." />
                   </div>
                   <span className="text-xs 2xl:text-sm font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                    {readyToCloseCount}
+                    {laneCountLabel(readyToCloseCount, stats?.orders_ready_to_close_has_more)}
                   </span>
                 </div>
                 <div className={getLaneBodyClass(2)}>

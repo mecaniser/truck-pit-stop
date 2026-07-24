@@ -8,7 +8,7 @@ from decimal import Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, load_only
 from app.core.dependencies import get_db, get_current_active_user
 from app.core.vehicle_display import vehicle_display_label
 from app.core.websocket import (
@@ -47,6 +47,11 @@ from app.services.mechanic_time_service import (
 )
 
 router = APIRouter()
+
+# The operational dashboard is a triage surface, not a historical repair-order
+# browser. Keeping each lane bounded prevents a long-lived tenant from sending
+# and rendering its entire work history on every refresh.
+ACTION_QUEUE_LANE_LIMIT = 50
 
 
 def get_effective_total(order: RepairOrder) -> Decimal:
@@ -153,8 +158,11 @@ class DashboardStats(BaseModel):
 
 class DashboardActionQueue(BaseModel):
     orders_needing_action: List[RecentOrder] = []
+    orders_needing_action_has_more: bool = False
     orders_on_floor: List[RecentOrder] = []
+    orders_on_floor_has_more: bool = False
     orders_ready_to_close: List[RecentOrder] = []
+    orders_ready_to_close_has_more: bool = False
 
 
 class MechanicOption(BaseModel):
@@ -194,6 +202,33 @@ def _dashboard_order(
     )
 
 
+def _action_queue_load_options(mechanic):
+    """Load only the columns rendered by an action-queue card."""
+    return (
+        load_only(
+            RepairOrder.id,
+            RepairOrder.order_number,
+            RepairOrder.status,
+            RepairOrder.description,
+            RepairOrder.total_parts_cost,
+            RepairOrder.total_labor_cost,
+            RepairOrder.created_at,
+            RepairOrder.updated_at,
+            RepairOrder.work_started_at,
+            RepairOrder.hold_reason,
+            RepairOrder.held_at,
+        ),
+        load_only(
+            Customer.id,
+            Customer.first_name,
+            Customer.last_name,
+            Customer.is_internal_fleet,
+        ),
+        load_only(Vehicle.id, Vehicle.year, Vehicle.make, Vehicle.model, Vehicle.unit_number),
+        load_only(mechanic.id, mechanic.first_name, mechanic.last_name),
+    )
+
+
 async def _load_dashboard_action_queue(
     db: AsyncSession,
     tenant_id: UUID,
@@ -229,6 +264,7 @@ async def _load_dashboard_action_queue(
         .join(Customer, RepairOrder.customer_id == Customer.id)
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
         .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .options(*_action_queue_load_options(mechanic))
         .where(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
@@ -244,6 +280,7 @@ async def _load_dashboard_action_queue(
             RepairOrder.created_at.desc(),
             RepairOrder.updated_at.desc(),
         )
+        .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     standard_needs_action = [
         _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, quote_sent=sent)
@@ -256,6 +293,7 @@ async def _load_dashboard_action_queue(
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
         .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .options(*_action_queue_load_options(mechanic))
         .where(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
@@ -264,6 +302,7 @@ async def _load_dashboard_action_queue(
             Invoice.status.not_in([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
         )
         .order_by(Invoice.zelle_pending_submitted_at.desc())
+        .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     pending_zelle_orders = [
         _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic, pending_zelle_confirmation=True)
@@ -276,6 +315,7 @@ async def _load_dashboard_action_queue(
         .join(Customer, RepairOrder.customer_id == Customer.id)
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
         .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .options(*_action_queue_load_options(mechanic))
         .where(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
@@ -287,6 +327,7 @@ async def _load_dashboard_action_queue(
             ]),
         )
         .order_by(RepairOrder.updated_at.desc())
+        .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     orders_on_floor = [
         _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic)
@@ -309,10 +350,11 @@ async def _load_dashboard_action_queue(
         else_=2,
     )
     ready_result = await db.execute(
-        select(RepairOrder, Customer, Vehicle, mechanic, pending_zelle.label("pending_zelle"))
+        select(RepairOrder, Customer, Vehicle, mechanic)
         .join(Customer, RepairOrder.customer_id == Customer.id)
         .join(Vehicle, RepairOrder.vehicle_id == Vehicle.id)
         .outerjoin(mechanic, RepairOrder.assigned_mechanic_id == mechanic.id)
+        .options(*_action_queue_load_options(mechanic))
         .where(
             RepairOrder.tenant_id == tenant_id,
             RepairOrder.deleted_at.is_(None),
@@ -323,21 +365,27 @@ async def _load_dashboard_action_queue(
                 RepairOrder.status != RepairOrderStatus.COMPLETED,
                 RepairOrder.total_cost > 0,
             ),
+            ~pending_zelle,
         )
         .order_by(ready_priority.asc(), RepairOrder.updated_at.desc())
+        .limit(ACTION_QUEUE_LANE_LIMIT + 1)
     )
     orders_ready_to_close = [
         _dashboard_order(order, customer, vehicle, fleet_company_name, assigned_mechanic)
-        for order, customer, vehicle, assigned_mechanic, is_pending_zelle in ready_result.all()
-        if not is_pending_zelle
+        for order, customer, vehicle, assigned_mechanic in ready_result.all()
+    ]
+
+    needs_action_orders = pending_zelle_orders + [
+        order for order in standard_needs_action if order.id not in pending_zelle_order_ids
     ]
 
     return DashboardActionQueue(
-        orders_needing_action=pending_zelle_orders + [
-            order for order in standard_needs_action if order.id not in pending_zelle_order_ids
-        ],
-        orders_on_floor=orders_on_floor,
-        orders_ready_to_close=orders_ready_to_close,
+        orders_needing_action=needs_action_orders[:ACTION_QUEUE_LANE_LIMIT],
+        orders_needing_action_has_more=len(needs_action_orders) > ACTION_QUEUE_LANE_LIMIT,
+        orders_on_floor=orders_on_floor[:ACTION_QUEUE_LANE_LIMIT],
+        orders_on_floor_has_more=len(orders_on_floor) > ACTION_QUEUE_LANE_LIMIT,
+        orders_ready_to_close=orders_ready_to_close[:ACTION_QUEUE_LANE_LIMIT],
+        orders_ready_to_close_has_more=len(orders_ready_to_close) > ACTION_QUEUE_LANE_LIMIT,
     )
 
 
