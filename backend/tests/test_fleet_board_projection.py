@@ -19,7 +19,8 @@ async def test_board_reads_backfilled_projection_without_live_repair_order_scan(
         vehicle_data={
             "unit_number": "P-1", "year": 2022, "make": "Volvo", "model": "VNL",
             "brand_short": "VO", "body_type": None, "vin": None, "plate": None,
-            "driver_name": None, "mileage": 100_000, "pm_interval_miles": 25_000,
+            "driver_name": None, "driver_phone": "+17045551234", "mileage": 100_000,
+            "pm_interval_miles": 25_000,
             "next_pm_miles": 130_000, "pm_remaining": 30_000, "pm_interval_days": 70,
             "pm_due_date": None, "pm_days_remaining": None, "location_label": None,
             "location_city": None, "lat": None, "lng": None, "speed_mph": 0,
@@ -37,3 +38,4 @@ async def test_board_reads_backfilled_projection_without_live_repair_order_scan(
     assert len(board.trucks) == 1
     assert board.trucks[0].id == vehicle_id
     assert board.trucks[0].status == "active"
+    assert board.trucks[0].driver_phone == "+17045551234"
