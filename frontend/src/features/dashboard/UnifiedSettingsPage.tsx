@@ -1633,7 +1633,7 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
   const disconnectMutation = useMutation({
     mutationFn: async () => (await api.post('/quickbooks/disconnect')).data,
     onSuccess: () => {
-      toast.success('QuickBooks disconnected. Local authorization tokens were removed.')
+      toast.success('QuickBooks disconnected.')
       queryClient.invalidateQueries({ queryKey: ['quickbooks-status'] })
     },
     onError: (error: unknown) => {
@@ -1641,29 +1641,18 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
     },
   })
 
-  const healthMutation = useMutation({
-    mutationFn: async () => (await api.post('/quickbooks/health/check')).data as QuickBooksConnectionStatus,
-    onSuccess: (data) => {
-      queryClient.setQueryData(['quickbooks-status'], data)
-      if (data.token_health === 'healthy' || (data.token_health === 'refresh_required' && !data.last_token_refresh_error)) {
-        toast.success('QuickBooks connection is ready. Token renewal is automatic.')
-      }
-      else toast.error('QuickBooks needs attention before it can sync or take payments')
-    },
-    onError: (error: unknown) => toast.error(apiErrorDetail(error, 'Unable to check QuickBooks connection')),
-  })
-
   const connectionNeedsAttention = Boolean(
     status?.is_connected
     && (status.token_health === 'reconnect_required' || status.last_token_refresh_error),
   )
-  const lastTokenUpdate = status?.last_token_refresh_at || status?.connected_at
 
   const statusConfig = !status?.configured
     ? { led: 'warning' as const, title: 'NOT AVAILABLE YET', desc: 'DieselBridge is still enabling QuickBooks for its garage network.' }
     : status.is_connected
-      ? { led: 'active' as const, title: 'AUTHORIZATION COMPLETE', desc: 'Finalized customers and invoices are queued for QuickBooks sync; Intuit payment settlement is available in the configured environment.' }
-      : { led: 'inactive' as const, title: 'CONNECT YOUR COMPANY', desc: 'Sign in to your QuickBooks Online company to authorize this garage.' }
+      ? connectionNeedsAttention
+        ? { led: 'warning' as const, title: 'ACTION REQUIRED', desc: 'Reconnect QuickBooks to continue using accounting and payments.' }
+        : { led: 'active' as const, title: 'ACTIVE', desc: 'Accounting and payments are authorized.' }
+      : { led: 'inactive' as const, title: 'NOT CONNECTED', desc: 'Connect QuickBooks to use accounting and payments.' }
 
   return (
     <PaymentIntegrationPanel
@@ -1685,108 +1674,59 @@ function QuickBooksIntegrationCard({ open, onOpenChange }: { open: boolean; onOp
         </div>
       ) : (
         <>
-          <div className="flex items-start gap-4 mb-6">
-            <div className="p-3 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
-              <StatusLED status={statusConfig.led} />
-            </div>
-            <div>
-              <h4 className="font-semibold text-zinc-100">{statusConfig.title}</h4>
-              <p className="text-sm text-zinc-400 mt-1">{statusConfig.desc}</p>
-            </div>
-          </div>
-
-          <div className="mb-6 rounded-xl border border-sky-800/40 bg-sky-950/20 p-4 text-sm text-sky-100/80">
-            DieselBridge keeps this garage’s TruckPitStop bookings as the source of truth. QuickBooks receives the accounting mirror and reconciled payments; raw customer card details never reach the DieselBridge server.
-          </div>
-
           {!status?.configured && (
-            <div className="mb-6 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
-              <h5 className="text-sm font-semibold text-amber-200">No action needed from your garage</h5>
-              <p className="mt-2 text-sm leading-6 text-zinc-300">
-                DieselBridge has not enabled QuickBooks connections yet. You do not need developer credentials or a QuickBooks app. When it is available, return here to connect your company by signing in to Intuit.
-              </p>
+            <p className="text-sm text-amber-300">QuickBooks is not available for this account yet.</p>
+          )}
+
+          {status?.is_connected && connectionNeedsAttention && (
+            <div className="mb-5 rounded-xl border border-amber-700/40 bg-amber-950/20 p-4 text-sm text-amber-100">
+              QuickBooks needs to be reconnected to continue.
             </div>
           )}
 
-          {status?.configured && !status.is_connected && (
-            <div className="mb-6 rounded-xl border border-zinc-700/60 bg-zinc-950/30 p-4">
-              <h5 className="text-sm font-semibold text-zinc-100">How to connect your QuickBooks company</h5>
-              <ol className="mt-3 space-y-2 text-sm text-zinc-400">
-                <li><span className="mr-2 font-semibold text-[var(--accent-400)]">1.</span>Select <span className="text-zinc-200">Connect My QuickBooks</span>.</li>
-                <li><span className="mr-2 font-semibold text-[var(--accent-400)]">2.</span>Sign in to Intuit with an administrator account for your QuickBooks company.</li>
-                <li><span className="mr-2 font-semibold text-[var(--accent-400)]">3.</span>Choose this garage’s company, approve access, and return to DieselBridge automatically.</li>
-              </ol>
-            </div>
-          )}
-
-          {status?.is_connected && (
-            <div className={`mb-6 rounded-xl border p-4 text-sm ${
-              !connectionNeedsAttention
-                ? 'border-emerald-700/35 bg-emerald-950/15 text-emerald-100/85'
-                : 'border-amber-700/40 bg-amber-950/20 text-amber-100/85'
-            }`}>
-              <p className="font-medium">
-                {!connectionNeedsAttention ? 'Connection health: ready' : 'Connection health: attention needed'}
-              </p>
-              <p className="mt-1 text-zinc-300">
-                {!connectionNeedsAttention
-                  ? status.token_health === 'refresh_required'
-                    ? 'Connected. The access token will renew automatically before the next QuickBooks request.'
-                    : 'Authorization tokens are current. Finalized invoices sync in the background, and captured Intuit payments are linked back to their QuickBooks invoices.'
-                  : status.last_token_refresh_error || 'Check the connection to refresh Intuit authorization before enabling sync or payments.'}
-              </p>
-              <p className="mt-2 text-xs text-zinc-400">
-                Last token update: {lastTokenUpdate ? new Date(lastTokenUpdate).toLocaleString() : 'Not recorded yet'}
-              </p>
-              {status.last_webhook_at && (
-                <p className="mt-2 text-xs text-zinc-400">Last Intuit event: {status.last_webhook_event || 'received'} at {new Date(status.last_webhook_at).toLocaleString()}</p>
+          {status?.configured && (
+            <div className="flex flex-wrap items-center gap-3">
+              {status.is_connected ? (
+                <>
+                  <IndustrialBadge variant="success">
+                    <StatusLED status="active" />
+                    Accounting + Payments Authorized
+                  </IndustrialBadge>
+                  {connectionNeedsAttention && (
+                    <button
+                      onClick={() => connectMutation.mutate()}
+                      disabled={connectMutation.isPending || isRedirecting}
+                      className={industrialStyles.btnPrimary}
+                    >
+                      {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Reconnect QuickBooks'}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Disconnect QuickBooks? Accounting and payments will stop until you reconnect.')) {
+                        disconnectMutation.mutate()
+                      }
+                    }}
+                    disabled={disconnectMutation.isPending}
+                    className={industrialStyles.btnSecondary}
+                  >
+                    {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect QuickBooks'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => connectMutation.mutate()}
+                  disabled={connectMutation.isPending || isRedirecting}
+                  className={industrialStyles.btnPrimary}
+                >
+                  <span className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4" />
+                    {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Connect My QuickBooks'}
+                  </span>
+                </button>
               )}
             </div>
           )}
-
-          <div className="pt-4 border-t border-zinc-800/50 flex flex-wrap items-center gap-3">
-            {!status?.configured ? (
-              <p className="text-sm text-amber-300">DieselBridge will let you know when QuickBooks is ready to connect.</p>
-            ) : status.is_connected ? (
-              <>
-                <IndustrialBadge variant="success">
-                  <StatusLED status="active" />
-                  Accounting + Payments Authorized
-                </IndustrialBadge>
-                {connectionNeedsAttention && (
-                  <button
-                    onClick={() => healthMutation.mutate()}
-                    disabled={healthMutation.isPending}
-                    className={industrialStyles.btnSecondary}
-                  >
-                    {healthMutation.isPending ? 'Checking...' : 'Retry Connection Check'}
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    if (window.confirm('Disconnect QuickBooks? This removes local authorization tokens and stops future sync.')) {
-                      disconnectMutation.mutate()
-                    }
-                  }}
-                  disabled={disconnectMutation.isPending}
-                  className={industrialStyles.btnSecondary}
-                >
-                  {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect QuickBooks'}
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => connectMutation.mutate()}
-                disabled={connectMutation.isPending || isRedirecting}
-                className={industrialStyles.btnPrimary}
-              >
-                <span className="flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
-                  {connectMutation.isPending || isRedirecting ? 'Redirecting...' : 'Connect My QuickBooks'}
-                </span>
-              </button>
-            )}
-          </div>
         </>
       )}
     </PaymentIntegrationPanel>
