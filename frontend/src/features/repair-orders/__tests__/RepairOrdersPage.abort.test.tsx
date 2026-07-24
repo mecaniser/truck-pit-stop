@@ -21,6 +21,10 @@ vi.mock('@/contexts/ThemeContext', () => ({
   useTheme: () => ({ accentColors: { primary: '#2563eb' } }),
 }))
 
+vi.mock('../PriceBuilderPanel', () => ({
+  default: () => null,
+}))
+
 import type { PartsUsage, RepairOrderHistoryEvent } from '../../../types'
 import RepairOrdersPage from '../RepairOrdersPage'
 import { buildPartHistoryEvents } from '../repairOrderHistory'
@@ -92,6 +96,63 @@ describe('RepairOrdersPage request cancellation', () => {
     expect(apiMocks.get).not.toHaveBeenCalledWith('/admin/tax-fee-settings', expect.anything())
     expect(apiMocks.get).not.toHaveBeenCalledWith('/fleet/settings', expect.anything())
     expect(apiMocks.get).not.toHaveBeenCalledWith('/vehicles/undefined/relationships')
+  })
+
+  it('uses the compact workspace projection for a deep-linked repair order', async () => {
+    const order = {
+      id: 'order-1',
+      tenant_id: 'tenant-1',
+      customer_id: 'customer-1',
+      vehicle_id: 'vehicle-1',
+      vehicle_make: 'Freightliner',
+      vehicle_model: 'Cascadia',
+      vehicle_year: 2024,
+      vehicle_unit_number: '204',
+      vehicle_vin: 'VIN204',
+      customer_company_name: 'Northline Freight',
+      order_number: 'RO-000001',
+      status: 'draft',
+      description: 'Deep-linked order',
+      customer_notes: null,
+      internal_notes: null,
+      assigned_mechanic_id: null,
+      total_parts_cost: '0.00',
+      total_labor_cost: '0.00',
+      total_cost: '0.00',
+      created_at: '2026-07-24T12:00:00Z',
+      updated_at: '2026-07-24T12:00:00Z',
+    }
+
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders') {
+        return Promise.resolve({ data: { items: [], total: 0, has_more: false } })
+      }
+      if (url === '/repair-orders/order-1/workspace') return Promise.resolve({ data: order })
+      if (url === '/repair-orders/order-1/price-build') {
+        return Promise.resolve({
+          data: {
+            order_id: 'order-1', labor_total: '0.00', parts_total: '0.00', total_cost: '0.00',
+            pricing_locked: false, lines: [], parts: [], warnings: [],
+          },
+        })
+      }
+      if (url === '/quotes?repair_order_id=order-1') return Promise.resolve({ data: null })
+      return Promise.resolve({ data: {} })
+    })
+
+    renderPage(['/?selected=order-1'])
+
+    await waitFor(() => {
+      expect(apiMocks.get).toHaveBeenCalledWith(
+        '/repair-orders/order-1/workspace',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+    })
+
+    expect(apiMocks.get).not.toHaveBeenCalledWith(
+      '/repair-orders/order-1/detail',
+      expect.anything(),
+    )
   })
 
   it('shows the selected company trucks as model-and-unit cards', async () => {
