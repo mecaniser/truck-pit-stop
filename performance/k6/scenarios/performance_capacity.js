@@ -1,8 +1,9 @@
 import { fail, sleep } from 'k6'
-import { loadConfig } from '../lib/config.js'
+import { loadConfig, requireLoadTestPassword } from '../lib/config.js'
 import {
   dashboardActionQueue,
   fleetBoard,
+  loginPerformanceUser,
   repairOrderList,
   repairOrderWorkspace,
 } from '../lib/requests.js'
@@ -15,6 +16,7 @@ if (config.target !== 'performance') {
 if (!config.orderId) {
   fail('performance_capacity.js requires REPAIR_ORDER_ID')
 }
+requireLoadTestPassword(config)
 
 const flows = [
   dashboardActionQueue,
@@ -42,6 +44,7 @@ export const options = {
   thresholds: {
     http_req_failed: [{ threshold: 'rate<0.01', abortOnFail: true, delayAbortEval: '1m' }],
     checks: ['rate>0.99'],
+    'http_req_duration{name:performance_login}': ['p(95)<1000', 'p(99)<2000'],
     'http_req_duration{name:dashboard_action_queue}': ['p(95)<1200', 'p(99)<2500'],
     'http_req_duration{name:repair_order_list}': ['p(95)<1200', 'p(99)<2500'],
     'http_req_duration{name:fleet_board}': ['p(95)<1500', 'p(99)<3000'],
@@ -50,8 +53,18 @@ export const options = {
   },
 }
 
+let accessToken = null
+
 export default function () {
+  if (!accessToken) {
+    accessToken = loginPerformanceUser(config, __VU)
+    if (!accessToken) {
+      fail(`Unable to authenticate performance load user for VU ${__VU}`)
+    }
+  }
+
+  const staffConfig = { ...config, accessToken }
   const flow = flows[(__VU + __ITER) % flows.length]
-  flow(config)
+  flow(staffConfig)
   sleep(1)
 }

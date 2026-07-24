@@ -7,11 +7,20 @@ phrase before it writes any data.
 import argparse
 import asyncio
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
+from pydantic import EmailStr, TypeAdapter
 from sqlalchemy import select
+
+# Railway's console runs this file as a script, which otherwise puts only the
+# scripts directory on sys.path instead of the backend package root.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.core.security import get_password_hash
 from app.db.models.customer import Customer
@@ -25,6 +34,7 @@ from app.db.session import AsyncSessionLocal
 
 CONFIRMATION = "seed-performance-data"
 ALLOWED_ENVIRONMENTS = {"performance", "development", "test"}
+EMAIL_VALIDATOR = TypeAdapter(EmailStr)
 
 
 def _validate_environment() -> None:
@@ -54,7 +64,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--fleet-vehicles", type=int, default=120)
     parser.add_argument("--repair-orders", type=int, default=2500)
     parser.add_argument("--inventory-items", type=int, default=600)
-    return parser.parse_args()
+    args = parser.parse_args()
+    try:
+        args.owner_email = str(EMAIL_VALIDATOR.validate_python(args.owner_email)).lower()
+    except ValueError as exc:
+        parser.error(f"--owner-email must be login-valid: {exc}")
+    return args
 
 
 def _positive(name: str, value: int) -> int:

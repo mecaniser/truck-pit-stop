@@ -7,17 +7,24 @@ from starlette.requests import Request
 import app.core.rate_limit as rate_limit_module
 
 
-def _build_request(token: str | None = None) -> Request:
+def _build_request(
+    token: str | None = None,
+    *,
+    path: str = "/api/v1/test",
+    extra_headers: dict[str, str] | None = None,
+) -> Request:
     headers: list[tuple[bytes, bytes]] = []
     if token:
         headers.append((b"authorization", f"Bearer {token}".encode("latin1")))
+    for name, value in (extra_headers or {}).items():
+        headers.append((name.lower().encode("latin1"), value.encode("latin1")))
 
     scope = {
         "type": "http",
         "http_version": "1.1",
         "method": "GET",
         "scheme": "http",
-        "path": "/api/v1/test",
+        "path": path,
         "query_string": b"",
         "headers": headers,
         "client": ("127.0.0.1", 12345),
@@ -66,6 +73,29 @@ def test_rate_limit_key_caches_invalid_token_result(monkeypatch):
     assert calls["decode"] == 1
 
     rate_limit_module.clear_rate_limit_token_cache()
+
+
+def test_rate_limit_key_uses_synthetic_actor_only_for_performance_logins(monkeypatch):
+    monkeypatch.setattr(rate_limit_module.settings, "ENVIRONMENT", "performance")
+
+    request = _build_request(
+        path="/api/v1/auth/login",
+        extra_headers={"X-DieselBridge-Load-Actor": "k6-vu-7"},
+    )
+    assert rate_limit_module.rate_limit_key(request) == "performance-load:k6-vu-7"
+
+    non_login_request = _build_request(
+        path="/api/v1/dashboard/action-queue",
+        extra_headers={"X-DieselBridge-Load-Actor": "k6-vu-7"},
+    )
+    assert rate_limit_module.rate_limit_key(non_login_request) == "ip:127.0.0.1"
+
+    monkeypatch.setattr(rate_limit_module.settings, "ENVIRONMENT", "production")
+    production_request = _build_request(
+        path="/api/v1/auth/login",
+        extra_headers={"X-DieselBridge-Load-Actor": "k6-vu-7"},
+    )
+    assert rate_limit_module.rate_limit_key(production_request) == "ip:127.0.0.1"
 
 
 def test_rate_limit_key_concurrent_access_is_stable(monkeypatch):

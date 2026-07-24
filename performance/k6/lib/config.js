@@ -8,6 +8,10 @@ function required(name) {
   return value
 }
 
+function optional(name) {
+  return __ENV[name] || null
+}
+
 function asPositiveNumber(name, fallback) {
   const rawValue = __ENV[name]
   if (!rawValue) {
@@ -48,10 +52,27 @@ export function loadConfig({ allowProduction }) {
   }
 
   return {
-    accessToken: required('K6_ACCESS_TOKEN'),
+    accessToken: optional('K6_ACCESS_TOKEN'),
     baseUrl,
     target,
     orderId: __ENV.REPAIR_ORDER_ID || null,
     canaryRate: asPositiveNumber('CANARY_RATE_PER_MINUTE', 2),
+    loadTestPassword: optional('K6_LOAD_TEST_PASSWORD'),
+    loadTestUserPrefix: __ENV.K6_LOAD_TEST_USER_PREFIX || 'performance-load',
+    loadTestEmailDomain: __ENV.K6_LOAD_TEST_EMAIL_DOMAIN || 'dieselbridge.com',
   }
+}
+
+export function requireAccessToken(config) {
+  if (!config.accessToken) {
+    fail('K6_ACCESS_TOKEN is required')
+  }
+  return config.accessToken
+}
+
+export function requireLoadTestPassword(config) {
+  if (!config.loadTestPassword) {
+    fail('K6_LOAD_TEST_PASSWORD is required for the multi-user performance capacity test')
+  }
+  return config.loadTestPassword
 }

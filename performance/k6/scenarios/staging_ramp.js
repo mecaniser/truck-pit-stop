@@ -1,5 +1,5 @@
 import { sleep } from 'k6'
-import { loadConfig } from '../lib/config.js'
+import { loadConfig, requireAccessToken } from '../lib/config.js'
 import {
   dashboardActionQueue,
   fleetBoard,
@@ -8,6 +8,7 @@ import {
 } from '../lib/requests.js'
 
 const config = loadConfig({ allowProduction: false })
+requireAccessToken(config)
 
 const flows = [
   dashboardActionQueue,
