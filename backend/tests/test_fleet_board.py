@@ -113,8 +113,15 @@ async def test_truck_detail_history_and_spend(db_session):
     detail = await fleet.truck_detail(vehicle_id=v.id, db=db_session, current_user=user)
     assert detail.driver_phone == "+17045551234"
     assert detail.lifetime_spend == 1700.0
-    kinds = sorted(h.kind for h in detail.history)
+    # The initial truck response is now a compact operational summary. Archive
+    # records load on demand rather than holding up the detail shell.
+    assert detail.history == []
+    history = await fleet.truck_history(vehicle_id=v.id, db=db_session, current_user=user)
+    kinds = sorted(h.kind for h in history)
     assert kinds == ["PM", "Repair"]
+    assert len(await fleet.truck_history(
+        vehicle_id=v.id, limit=1, db=db_session, current_user=user,
+    )) == 1
     assert detail.truck.work_order is not None  # the open one
 
 
