@@ -1239,10 +1239,10 @@ async def _fleet_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
     return list(result.scalars().all())
 
 
-async def _fleet_board_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehicle]:
-    """Read active fleet membership without treating ownership as membership."""
+async def _fleet_board_vehicle_ids(db: AsyncSession, tenant_id: UUID) -> list[UUID]:
+    """Read active fleet membership without loading full vehicle records."""
     result = await db.execute(
-        select(Vehicle)
+        select(Vehicle.id)
         .join(Customer, Customer.id == Vehicle.customer_id)
         .outerjoin(FleetMembership, and_(
             FleetMembership.vehicle_id == Vehicle.id,
@@ -1259,6 +1259,14 @@ async def _fleet_board_vehicles(db: AsyncSession, tenant_id: UUID) -> list[Vehic
         .distinct()
         .order_by(Vehicle.unit_number, Vehicle.make)
     )
+    return list(result.scalars().all())
+
+
+async def _fleet_board_vehicles_by_id(db: AsyncSession, vehicle_ids: list[UUID]) -> list[Vehicle]:
+    """Load full vehicle rows only for projection rows that are missing."""
+    if not vehicle_ids:
+        return []
+    result = await db.execute(select(Vehicle).where(Vehicle.id.in_(vehicle_ids)))
     return list(result.scalars().all())
 
 
@@ -1312,9 +1320,10 @@ async def _attach_account_context(
     vehicle_ids = [truck.id for truck in trucks]
     if not vehicle_ids:
         return
-    operator_rows = (await db.execute(
+    relationship_rows = (await db.execute(
         select(
             VehicleCustomerRelationship.vehicle_id,
+            VehicleCustomerRelationship.relationship_type,
             Customer.id,
             Customer.company_name,
             Customer.first_name,
@@ -1324,34 +1333,14 @@ async def _attach_account_context(
         .where(
             VehicleCustomerRelationship.tenant_id == tenant_id,
             VehicleCustomerRelationship.vehicle_id.in_(vehicle_ids),
-            VehicleCustomerRelationship.relationship_type == "operator",
+            VehicleCustomerRelationship.relationship_type.in_(["operator", "owner"]),
             VehicleCustomerRelationship.effective_to.is_(None),
             VehicleCustomerRelationship.deleted_at.is_(None),
             Customer.deleted_at.is_(None),
         )
         .order_by(
-            VehicleCustomerRelationship.is_primary.desc(),
-            VehicleCustomerRelationship.effective_from.desc(),
-        )
-    )).all()
-    owner_rows = (await db.execute(
-        select(
+            VehicleCustomerRelationship.relationship_type,
             VehicleCustomerRelationship.vehicle_id,
-            Customer.id,
-            Customer.company_name,
-            Customer.first_name,
-            Customer.last_name,
-        )
-        .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
-        .where(
-            VehicleCustomerRelationship.tenant_id == tenant_id,
-            VehicleCustomerRelationship.vehicle_id.in_(vehicle_ids),
-            VehicleCustomerRelationship.relationship_type == "owner",
-            VehicleCustomerRelationship.effective_to.is_(None),
-            VehicleCustomerRelationship.deleted_at.is_(None),
-            Customer.deleted_at.is_(None),
-        )
-        .order_by(
             VehicleCustomerRelationship.is_primary.desc(),
             VehicleCustomerRelationship.effective_from.desc(),
         )
@@ -1382,11 +1371,10 @@ async def _attach_account_context(
         return f"{company} {unit}"
 
     owners = {}
-    for row in owner_rows:
-        owners.setdefault(row.vehicle_id, row)
     operators = {}
-    for row in operator_rows:
-        operators.setdefault(row.vehicle_id, row)
+    for row in relationship_rows:
+        target = operators if row.relationship_type == "operator" else owners
+        target.setdefault(row.vehicle_id, row)
     for truck in trucks:
         # An authority is an explicit operator relationship. A legacy House
         # Account FleetMembership is operational bookkeeping, never a company
@@ -1414,8 +1402,7 @@ async def _fleet_board_from_projection(
 
     Missing rows are intentionally returned to the legacy builder during a
     migration restore/backfill. Once backfilled this path is bounded reads:
-    card rows, live driver phones, mechanics referenced by open work orders,
-    and PM services.
+    card rows, mechanics referenced by open work orders, and PM services.
     """
     rows = list((await db.execute(
         select(FleetBoardReadModel)
@@ -1472,11 +1459,6 @@ async def _fleet_board_from_projection(
             for user in mechanic_rows.scalars().all()
         }
 
-    phone_rows = await db.execute(
-        select(Vehicle.id, Vehicle.driver_phone).where(Vehicle.id.in_([row.vehicle_id for row in rows]))
-    )
-    driver_phones = {vehicle_id: driver_phone for vehicle_id, driver_phone in phone_rows.all()}
-
     pm_services = await _pm_services_by_vehicle(db, tenant_id, [row.vehicle_id for row in rows])
     trucks: list[BoardTruck] = []
     for row in rows:
@@ -1499,7 +1481,6 @@ async def _fleet_board_from_projection(
         urgent = work_order(row.urgent_work_order)
         data.update({
             "id": row.vehicle_id,
-            "driver_phone": driver_phones.get(row.vehicle_id) or data.get("driver_phone"),
             "status": _derive_projected_status(data, row.urgent_work_order),
             "moving": bool(data.get("speed_mph") and data["speed_mph"] > 0),
             "assigned_mechanic": urgent.mechanic if urgent else None,
@@ -1546,10 +1527,11 @@ async def fleet_board(
     trucks, projected_ids = await _fleet_board_from_projection(db, current_user.tenant_id)
     # Projection rows are backfilled by the migration. Retain the old builder
     # only for missing rows so restores and rolling deployments stay correct.
-    vehicles = await _fleet_board_vehicles(db, current_user.tenant_id)
-    missing_vehicles = [vehicle for vehicle in vehicles if vehicle.id not in projected_ids]
-    if missing_vehicles:
-        ids = [v.id for v in missing_vehicles]
+    fleet_vehicle_ids = await _fleet_board_vehicle_ids(db, current_user.tenant_id)
+    missing_vehicle_ids = [vehicle_id for vehicle_id in fleet_vehicle_ids if vehicle_id not in projected_ids]
+    if missing_vehicle_ids:
+        missing_vehicles = await _fleet_board_vehicles_by_id(db, missing_vehicle_ids)
+        ids = [vehicle.id for vehicle in missing_vehicles]
         open_ros = await _open_ros_by_vehicle(db, ids)
         incidents = await _open_incident_counts(db, ids)
         pm_svcs = await _pm_services_by_vehicle(db, current_user.tenant_id, ids)
