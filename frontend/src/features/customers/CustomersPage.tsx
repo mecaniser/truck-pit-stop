@@ -384,6 +384,7 @@ export default function CustomersPage() {
   const [vehicleRelationshipTypes, setVehicleRelationshipTypes] = useState<VehicleRelationshipType[]>([])
   const [vehicleLinkUnitNumber, setVehicleLinkUnitNumber] = useState('')
   const [operatingAuthorityCustomerId, setOperatingAuthorityCustomerId] = useState('')
+  const authoritySeededForVehicleId = useRef<string | null>(null)
   const [pendingFleetRemovalId, setPendingFleetRemovalId] = useState<string | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
 
@@ -513,6 +514,24 @@ export default function CustomersPage() {
     enabled: isVehicleModalOpen && vehicleModalMode === 'existing',
   })
 
+  // The customer whose profile is open is always a valid operating-authority
+  // option. Selecting it enrolls that customer on the Fleet Board on save, so
+  // a regular customer such as 116 Carriers does not need prior fleet setup.
+  const operatingAuthorityOptions = useMemo(() => {
+    const currentCustomerOption = selectedCustomer ? {
+      id: selectedCustomer.id,
+      company_name: customerDisplayName(selectedCustomer),
+      fleet_enabled: Boolean(selectedCustomer.fleet_enabled),
+      is_internal_fleet: false,
+    } : null
+    const byId = new Map<string, FleetCompanyOption>()
+    if (currentCustomerOption) byId.set(currentCustomerOption.id, currentCustomerOption)
+    for (const company of fleetCompanies.filter((item) => item.fleet_enabled)) {
+      byId.set(company.id, company)
+    }
+    return [...byId.values()]
+  }, [fleetCompanies, selectedCustomer])
+
   useEffect(() => {
     if (!selectedLinkVehicle || !selectedCustomer) {
       setVehicleRelationshipTypes([])
@@ -527,13 +546,22 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (!selectedLinkVehicle) {
+      authoritySeededForVehicleId.current = null
       setOperatingAuthorityCustomerId('')
       return
     }
     const activeOperators = vehicleRelationships.filter((relationship) => !relationship.effective_to && relationship.relationship_type === 'operator')
     const operator = activeOperators.find((relationship) => relationship.is_primary) || activeOperators[0]
-    setOperatingAuthorityCustomerId((current) => operator?.customer_id || current || fleetSettings?.default_fleet_authority_customer_id || '')
-  }, [selectedLinkVehicle, vehicleRelationships, fleetSettings?.default_fleet_authority_customer_id])
+    if (operator) {
+      authoritySeededForVehicleId.current = selectedLinkVehicle.id
+      setOperatingAuthorityCustomerId(operator.customer_id)
+      return
+    }
+    if (authoritySeededForVehicleId.current !== selectedLinkVehicle.id) {
+      authoritySeededForVehicleId.current = selectedLinkVehicle.id
+      setOperatingAuthorityCustomerId(selectedCustomer?.id || fleetSettings?.default_fleet_authority_customer_id || '')
+    }
+  }, [selectedCustomer?.id, selectedLinkVehicle, vehicleRelationships, fleetSettings?.default_fleet_authority_customer_id])
 
   const { data: customerContacts, isLoading: isLoadingContacts } = useQuery<Contact[]>({
     queryKey: ['customerContacts', selectedCustomer?.id],
@@ -2316,13 +2344,13 @@ export default function CustomersPage() {
                 className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
               >
                 <option value="">Select operating authority…</option>
-                {fleetCompanies.filter((company) => company.fleet_enabled).map((company) => (
+                {operatingAuthorityOptions.map((company) => (
                   <option key={company.id} value={company.id}>
-                    {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
+                    {company.company_name}{company.id === selectedCustomer?.id ? ' (this customer)' : company.is_internal_fleet ? ' (internal)' : ''}
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-xs text-gray-500">New links start with your Fleet Board default authority when one is configured. This changes only Fleet Board membership; it does not change the owner/lessor or invoice recipient.</p>
+              <p className="mt-2 text-xs text-gray-500">This customer is preselected as authority for its own trucks and joins Fleet Board when saved. To connect a different owner or billing company, open that company’s profile, link this same truck, and assign Owner / lessor or Default invoice recipient there.</p>
             </div>
             <p className="mt-2 text-xs text-gray-500">Assigning a replacement owner, authority, or payer safely closes the previous period. Completed work orders and the truck’s full service history remain unchanged.</p>
           </div>
