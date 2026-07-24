@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status, Query
 from pydantic import BaseModel
-from sqlalchemy import select, and_, func, or_
+from sqlalchemy import select, and_, case, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -106,6 +106,11 @@ TERMINAL_RO_STATUSES = {
     RepairOrderStatus.CANCELLED,
     RepairOrderStatus.DECLINED,
 }
+FLEET_HISTORY_RO_STATUSES = (
+    RepairOrderStatus.COMPLETED,
+    RepairOrderStatus.INVOICED,
+    RepairOrderStatus.PAID,
+)
 PM_DUE_SOON_MILES = 2500  # matches the design's PM "due soon" threshold
 PM_DUE_SOON_DAYS = 14      # date-based PM "due soon" window
 # Operator-set idle statuses (no open work order). "active" = on the road.
@@ -1571,19 +1576,21 @@ async def truck_detail(
     if not tenant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
 
-    # All ROs follow the physical truck even when owner/operator/payer changes.
+    # The initial detail is deliberately an operational summary. Historical
+    # work, parts, and incident records have dedicated, bounded endpoints below
+    # so one old truck cannot delay opening the current work view.
     ro_result = await db.execute(
         select(RepairOrder)
         .where(and_(
             RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
             RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.notin_(list(TERMINAL_RO_STATUSES)),
         ))
         .options(joinedload(RepairOrder.assigned_mechanic))
         .order_by(RepairOrder.created_at.desc())
     )
-    ros = list(ro_result.scalars().all())
-    open_ros = [r for r in ros if r.status not in TERMINAL_RO_STATUSES]
-    completed = [r for r in ros if r.status in (RepairOrderStatus.COMPLETED, RepairOrderStatus.INVOICED, RepairOrderStatus.PAID)]
+    open_ros = list(ro_result.scalars().all())
 
     account_rows = list((await db.execute(
         select(VehicleCustomerRelationship, Customer)
@@ -1652,90 +1659,40 @@ async def truck_detail(
             address_parts.append(customer.billing_country)
         return ", ".join(part for part in address_parts if part)
 
-    # History: completed internal ROs (PM/Repair) + completed inspections.
-    history: list[HistoryEntry] = []
-    crew: set[str] = set()
-    lifetime = 0.0
-    for r in completed:
-        mech = _mechanic_name(r.assigned_mechanic)
-        if mech:
-            crew.add(mech)
-        cost = float(r.total_cost or 0)
-        lifetime += cost
-        history.append(HistoryEntry(
-            id=r.id,
-            date=r.work_completed_at or r.updated_at,
-            kind="PM" if r.is_pm else "Repair",
-            odometer=r.mileage_out or r.mileage_in,
-            summary=r.description,
-            mechanic=mech,
-            cost=cost,
-        ))
-    insp_result = await db.execute(
-        select(FleetInspection)
-        .where(and_(FleetInspection.vehicle_id == vehicle_id, FleetInspection.status == InspectionStatus.COMPLETED))
-        .options(joinedload(FleetInspection.inspector))
-    )
-    for insp in insp_result.scalars().all():
-        mech = _mechanic_name(insp.inspector)
-        history.append(HistoryEntry(
-            id=insp.id,
-            date=insp.performed_at,
-            kind="Inspection",
-            odometer=insp.odometer,
-            summary=f"Weekly inspection — {insp.result.value if insp.result else 'completed'}",
-            mechanic=mech,
-            cost=None,
-        ))
-    history.sort(key=lambda h: (h.date or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
-
-    # Parts & warranty across this truck's ROs.
-    ro_ids = [r.id for r in ros]
-    parts: list[PartEntry] = []
-    if ro_ids:
-        pu_result = await db.execute(
-            select(PartsUsage)
-            .where(PartsUsage.repair_order_id.in_(ro_ids))
-            .options(joinedload(PartsUsage.inventory_item))
-            .order_by(PartsUsage.created_at.desc())
+    lifetime = await db.scalar(
+        select(func.coalesce(func.sum(RepairOrder.total_cost), 0)).where(
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.in_(FLEET_HISTORY_RO_STATUSES),
         )
-        today = datetime.now(timezone.utc).date()
-        for pu in pu_result.scalars().all():
-            parts.append(PartEntry(
-                id=pu.id,
-                name=pu.inventory_item.name if pu.inventory_item else "Part",
-                date=pu.created_at,
-                odometer=vehicle.mileage,
-                mechanic=None,
-                warranty_until=pu.warranty_until,
-                warranty_miles=pu.warranty_miles,
-                active=bool(pu.warranty_until and pu.warranty_until >= today),
-            ))
-
-    # Incidents for this truck.
-    inc_result = await db.execute(
-        select(FleetIncident)
-        .where(FleetIncident.vehicle_id == vehicle_id)
-        .options(joinedload(FleetIncident.photos).joinedload(FleetIncidentPhoto.uploaded_by))
-        .order_by(FleetIncident.occurred_at.desc())
     )
-    incident_rows = list(inc_result.unique().scalars().all())
-    incidents = [
-        IncidentEntry(
-            id=i.id,
-            date=i.occurred_at,
-            type=(i.description.split("\n")[0][:60] if i.description else "Incident"),
-            severity=i.severity,
-            status=i.status,
-            location=i.location,
-            note=i.description,
-            repair_order_id=i.repair_order_id,
-            photos=[_incident_photo_response(photo) for photo in sorted(i.photos or [], key=lambda p: p.uploaded_at, reverse=True)],
+    crew_rows = await db.execute(
+        select(User)
+        .join(RepairOrder, RepairOrder.assigned_mechanic_id == User.id)
+        .where(
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.in_(FLEET_HISTORY_RO_STATUSES),
         )
-        for i in incident_rows
-    ]
-    open_incident_count = sum(1 for i in incident_rows if i.status != IncidentStatus.RESOLVED)
-    board.open_incident_count = open_incident_count
+        .distinct()
+    )
+    crew = sorted(filter(None, (_mechanic_name(member) for member in crew_rows.scalars())))
+    incident_totals = await db.execute(
+        select(
+            func.count(FleetIncident.id),
+            func.coalesce(
+                func.sum(case((FleetIncident.status != IncidentStatus.RESOLVED, 1), else_=0)),
+                0,
+            ),
+        ).where(
+            FleetIncident.tenant_id == current_user.tenant_id,
+            FleetIncident.vehicle_id == vehicle_id,
+        )
+    )
+    incident_count, open_incident_count = incident_totals.one()
+    board.open_incident_count = int(open_incident_count or 0)
 
     return TruckDetailResponse(
         truck=board,
@@ -1769,17 +1726,153 @@ async def truck_detail(
         billing_contact_email=vehicle.billing_contact_email,
         billing_contact_phone=vehicle.billing_contact_phone,
         bill_labor_at_customer_rate=vehicle.bill_labor_at_customer_rate,
-        lifetime_spend=round(lifetime, 2),
-        incidents_count=len(incident_rows),
-        crew=sorted(crew),
-        history=history,
-        parts=parts,
-        incidents=incidents,
+        lifetime_spend=round(float(lifetime or 0), 2),
+        incidents_count=int(incident_count or 0),
+        crew=crew,
         # The board payload already has every truck's current location and
         # status. The client derives nearby units from that cached data rather
         # than issuing a full-fleet + open-work-order scan on every truck click.
         nearest=[],
     )
+
+
+@router.get("/trucks/{vehicle_id}/history", response_model=List[HistoryEntry])
+async def truck_history(
+    vehicle_id: UUID,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Return a bounded recent service timeline for one fleet truck."""
+    limit = max(1, min(limit, 100))
+    await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    ro_result = await db.execute(
+        select(RepairOrder)
+        .where(
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+            RepairOrder.status.in_(FLEET_HISTORY_RO_STATUSES),
+        )
+        .options(joinedload(RepairOrder.assigned_mechanic))
+        .order_by(RepairOrder.work_completed_at.desc(), RepairOrder.updated_at.desc())
+        .limit(limit)
+    )
+    history = [
+        HistoryEntry(
+            id=repair_order.id,
+            date=repair_order.work_completed_at or repair_order.updated_at,
+            kind="PM" if repair_order.is_pm else "Repair",
+            odometer=repair_order.mileage_out or repair_order.mileage_in,
+            summary=repair_order.description,
+            mechanic=_mechanic_name(repair_order.assigned_mechanic),
+            cost=float(repair_order.total_cost or 0),
+        )
+        for repair_order in ro_result.scalars().all()
+    ]
+    inspection_result = await db.execute(
+        select(FleetInspection)
+        .where(
+            FleetInspection.tenant_id == current_user.tenant_id,
+            FleetInspection.vehicle_id == vehicle_id,
+            FleetInspection.status == InspectionStatus.COMPLETED,
+        )
+        .options(joinedload(FleetInspection.inspector))
+        .order_by(FleetInspection.performed_at.desc())
+        .limit(limit)
+    )
+    history.extend(
+        HistoryEntry(
+            id=inspection.id,
+            date=inspection.performed_at,
+            kind="Inspection",
+            odometer=inspection.odometer,
+            summary=f"Weekly inspection — {inspection.result.value if inspection.result else 'completed'}",
+            mechanic=_mechanic_name(inspection.inspector),
+            cost=None,
+        )
+        for inspection in inspection_result.scalars().all()
+    )
+    history.sort(key=lambda entry: (entry.date or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+    return history[:limit]
+
+
+@router.get("/trucks/{vehicle_id}/parts", response_model=List[PartEntry])
+async def truck_parts(
+    vehicle_id: UUID,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Return recent parts and warranty records without hydrating all truck work."""
+    limit = max(1, min(limit, 100))
+    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    result = await db.execute(
+        select(PartsUsage)
+        .join(RepairOrder, RepairOrder.id == PartsUsage.repair_order_id)
+        .where(
+            PartsUsage.tenant_id == current_user.tenant_id,
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
+        .options(joinedload(PartsUsage.inventory_item))
+        .order_by(PartsUsage.created_at.desc())
+        .limit(limit)
+    )
+    today = datetime.now(timezone.utc).date()
+    return [
+        PartEntry(
+            id=usage.id,
+            name=usage.inventory_item.name if usage.inventory_item else "Part",
+            date=usage.created_at,
+            odometer=vehicle.mileage,
+            mechanic=None,
+            warranty_until=usage.warranty_until,
+            warranty_miles=usage.warranty_miles,
+            active=bool(usage.warranty_until and usage.warranty_until >= today),
+        )
+        for usage in result.scalars().all()
+    ]
+
+
+@router.get("/trucks/{vehicle_id}/incidents", response_model=List[IncidentEntry])
+async def truck_incidents(
+    vehicle_id: UUID,
+    limit: int = 25,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Return the most recent road incidents after the truck shell is visible."""
+    limit = max(1, min(limit, 50))
+    await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    result = await db.execute(
+        select(FleetIncident)
+        .where(
+            FleetIncident.tenant_id == current_user.tenant_id,
+            FleetIncident.vehicle_id == vehicle_id,
+        )
+        .options(selectinload(FleetIncident.photos).selectinload(FleetIncidentPhoto.uploaded_by))
+        .order_by(FleetIncident.occurred_at.desc())
+        .limit(limit)
+    )
+    return [
+        IncidentEntry(
+            id=incident.id,
+            date=incident.occurred_at,
+            type=(incident.description.split("\n")[0][:60] if incident.description else "Incident"),
+            severity=incident.severity,
+            status=incident.status,
+            location=incident.location,
+            note=incident.description,
+            repair_order_id=incident.repair_order_id,
+            photos=[
+                _incident_photo_response(photo)
+                for photo in sorted(incident.photos or [], key=lambda photo: photo.uploaded_at, reverse=True)
+            ],
+        )
+        for incident in result.scalars().all()
+    ]
 
 
 @router.patch("/trucks/{vehicle_id}", response_model=BoardTruck)

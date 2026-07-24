@@ -312,6 +312,9 @@ class TruckDetailResponse(BaseModel):
     lifetime_spend: float = 0.0
     incidents_count: int = 0
     crew: List[str] = []
+    # Archive records are requested from their focused endpoints after the
+    # operational truck detail has rendered. Keep these fields for clients
+    # that still deserialize the original response shape.
     history: List[HistoryEntry] = []
     parts: List[PartEntry] = []
     incidents: List[IncidentEntry] = []

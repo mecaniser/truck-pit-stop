@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
-import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto } from './types'
+import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto, HistoryEntry, PartEntry } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetMap from './FleetMap'
@@ -104,10 +104,36 @@ export default function TruckDetail({
   truckId, trucks, onBack, onOpen,
 }: { truckId: string; trucks: BoardTruck[]; onBack: () => void; onOpen: (id: string) => void }) {
   const qc = useQueryClient()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [partsOpen, setPartsOpen] = useState(false)
   const { data } = useQuery<TruckDetailData>({
     queryKey: ['fleet-truck', truckId],
     queryFn: async () => (await api.get(`/fleet/trucks/${truckId}`)).data,
   })
+  const incidentsQuery = useQuery<IncidentEntry[]>({
+    queryKey: ['fleet-truck-incidents', truckId],
+    queryFn: async () => (await api.get(`/fleet/trucks/${truckId}/incidents`)).data,
+    enabled: Boolean(data),
+  })
+  const historyQuery = useQuery<HistoryEntry[]>({
+    queryKey: ['fleet-truck-history', truckId],
+    queryFn: async () => (await api.get(`/fleet/trucks/${truckId}/history`)).data,
+    enabled: Boolean(data && historyOpen),
+  })
+  const partsQuery = useQuery<PartEntry[]>({
+    queryKey: ['fleet-truck-parts', truckId],
+    queryFn: async () => (await api.get(`/fleet/trucks/${truckId}/parts`)).data,
+    enabled: Boolean(data && partsOpen),
+  })
+  const incidents = incidentsQuery.data || []
+  const history = historyQuery.data || []
+  const parts = partsQuery.data || []
+
+  useEffect(() => {
+    setHistoryOpen(false)
+    setPartsOpen(false)
+  }, [truckId])
+
   const nearestUnits = useMemo(() => {
     const truck = data?.truck
     if (!truck || truck.lat == null || truck.lng == null) return []
@@ -127,6 +153,9 @@ export default function TruckDetail({
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
+    qc.invalidateQueries({ queryKey: ['fleet-truck-incidents', truckId] })
+    qc.invalidateQueries({ queryKey: ['fleet-truck-history', truckId] })
+    qc.invalidateQueries({ queryKey: ['fleet-truck-parts', truckId] })
     // Fleet WOs are repair orders — keep the owner's cockpit queue in sync too.
     invalidateFleetAndCockpit(qc)
   }
@@ -152,15 +181,13 @@ export default function TruckDetail({
     },
     onSuccess: ({ incidentId, photoId }) => {
       toast.success('Photo removed')
-      qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => {
+      qc.setQueryData<IncidentEntry[]>(['fleet-truck-incidents', truckId], (current) => {
         if (!current) return current
-        return {
-          ...current,
-          incidents: current.incidents.map((inc) => {
-            if (inc.id !== incidentId) return inc
-            return { ...inc, photos: (inc.photos || []).filter((photo) => photo.id !== photoId) }
-          }),
-        }
+        return current.map((inc) => (
+          inc.id === incidentId
+            ? { ...inc, photos: (inc.photos || []).filter((photo) => photo.id !== photoId) }
+            : inc
+        ))
       })
       refresh()
     },
@@ -211,15 +238,13 @@ export default function TruckDetail({
           onProgress: (progress) => updatePendingIncidentPhoto(item.id, progress),
         })
         uploadedCount += 1
-        qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => {
+        qc.setQueryData<IncidentEntry[]>(['fleet-truck-incidents', truckId], (current) => {
           if (!current) return current
-          return {
-            ...current,
-            incidents: current.incidents.map((inc) => {
-              if (inc.id !== item.incidentId) return inc
-              return { ...inc, photos: [photo, ...(inc.photos || [])] }
-            }),
-          }
+          return current.map((inc) => (
+            inc.id === item.incidentId
+              ? { ...inc, photos: [photo, ...(inc.photos || [])] }
+              : inc
+          ))
         })
         setPendingIncidentPhotos((photos) => photos.filter((photo) => photo.id !== item.id))
         URL.revokeObjectURL(item.previewUrl)
@@ -356,16 +381,18 @@ export default function TruckDetail({
           <Section
             title="Incidents on the road"
             icon={<AlertTriangle size={17} />}
-            count={data.incidents.length}
+            count={data.incidents_count}
             right={
               <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setLogging(true)} title="Log incident">
                 <Plus size={14} /> <span className="dbtn-label">Log incident</span>
               </button>
             }
           >
-            {data.incidents.length ? (
+            {incidentsQuery.isLoading ? (
+              <div className="empty-note"><Spinner size="xs" /> Loading recent incidents...</div>
+            ) : incidents.length ? (
               <div className="inc-list">
-                {data.incidents.map((inc) => {
+                {incidents.map((inc) => {
                   const pendingPhotos = pendingIncidentPhotos.filter((photo) => photo.incidentId === inc.id)
                   const visiblePhotos = (inc.photos || []).slice(0, Math.max(0, 4 - pendingPhotos.length))
                   const hiddenPhotoCount = Math.max(0, (inc.photos?.length || 0) - visiblePhotos.length)
@@ -546,6 +573,8 @@ export default function TruckDetail({
                   )
                 })}
               </div>
+            ) : incidentsQuery.isError ? (
+              <div className="empty-note"><AlertTriangle size={16} /> Incident records could not be loaded.</div>
             ) : (
               <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
             )}
@@ -570,12 +599,26 @@ export default function TruckDetail({
             )}
           </Section>
 
-          <Section title="Service history" icon={<History size={17} />} count={data.history.length}>
-            {data.history.length === 0 ? (
+          <Section
+            title="Service history"
+            icon={<History size={17} />}
+            count={historyQuery.data?.length}
+            right={
+              <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setHistoryOpen((open) => !open)}>
+                <ChevronDown size={15} style={{ transform: historyOpen ? 'rotate(180deg)' : undefined }} />
+                <span className="dbtn-label">{historyOpen ? 'Hide' : 'View history'}</span>
+              </button>
+            }
+          >
+            {!historyOpen ? (
+              <div className="empty-note"><History size={16} /> Recent service history</div>
+            ) : historyQuery.isLoading ? (
+              <div className="empty-note"><Spinner size="xs" /> Loading recent service history...</div>
+            ) : history.length === 0 ? (
               <div className="empty-note"><History size={16} /> No service history yet.</div>
             ) : (
               <div className="timeline">
-                {data.history.map((h) => (
+                {history.map((h) => (
                   <div key={h.id} className={'tl-item tl-' + h.kind.toLowerCase()}>
                     <div className="tl-marker" />
                     <div className="tl-body">
@@ -596,12 +639,26 @@ export default function TruckDetail({
             )}
           </Section>
 
-          <Section title="Parts & warranty" icon={<Box size={17} />} count={data.parts.length}>
-            {data.parts.length === 0 ? (
+          <Section
+            title="Parts & warranty"
+            icon={<Box size={17} />}
+            count={partsQuery.data?.length}
+            right={
+              <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setPartsOpen((open) => !open)}>
+                <ChevronDown size={15} style={{ transform: partsOpen ? 'rotate(180deg)' : undefined }} />
+                <span className="dbtn-label">{partsOpen ? 'Hide' : 'View parts'}</span>
+              </button>
+            }
+          >
+            {!partsOpen ? (
+              <div className="empty-note"><Box size={16} /> Recent parts and warranty records</div>
+            ) : partsQuery.isLoading ? (
+              <div className="empty-note"><Spinner size="xs" /> Loading recent parts and warranty records...</div>
+            ) : parts.length === 0 ? (
               <div className="empty-note"><Box size={16} /> No parts on record.</div>
             ) : (
               <div className="parts">
-                {data.parts.map((p) => (
+                {parts.map((p) => (
                   <div key={p.id} className="part">
                     <div>
                       <div className="part-name">{p.name}</div>
