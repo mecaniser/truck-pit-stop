@@ -8,7 +8,7 @@ import toast from 'react-hot-toast'
 import api from '../../lib/api'
 import { Customer, RepairOrder, RepairOrderDetail, RepairOrderStatus, Vehicle, PartsUsage, Labor, InventoryItem, Quote, Invoice, RecommendedService, RecommendedServicePriority, VINDecodeResult, PriceBuildWarning } from '../../types'
 import { format } from 'date-fns'
-import { ArrowRight, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
+import { ArrowRight, FileText, Plus, TriangleAlert, Trash2, Wrench, ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Search, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import YearPicker from '../../components/YearPicker'
 import VehicleMakePicker from '../../components/VehicleMakePicker'
@@ -780,6 +780,7 @@ export default function RepairOrdersPage() {
       await api.post(`/repair-orders/${selectedOrder!.id}/recommended-services`, data)
     },
     onSuccess: () => {
+      setQuoteToConfirm(null)
       refetchRecServices()
       setShowAddRecService(false)
       setRecServiceForm({ description: '', priority: 'soon', estimated_cost: '', notes: '' })
@@ -1627,13 +1628,18 @@ export default function RepairOrdersPage() {
       return response.data as Quote
     },
     onSuccess: (quote, orderId) => {
+      setQuoteSent(false)
       queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
       queryClient.invalidateQueries({ queryKey: ['quote', orderId] })
       queryClient.invalidateQueries({ queryKey: ['repair-order-detail', orderId] })
       queryClient.invalidateQueries({ queryKey: ['customerRepairOrders'] })
       refetchQuote()
       refetchOrderDetail()
-      toast.success(`Estimate ${quote.quote_number} draft ready`)
+      toast.success(
+        quote.authorization_type === 'additional_work'
+          ? `Additional-work authorization ${quote.quote_number} draft ready`
+          : `Estimate ${quote.quote_number} draft ready`
+      )
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to create estimate'))
@@ -1674,7 +1680,11 @@ export default function RepairOrdersPage() {
         refetchQuote()
       }
       setQuoteSent(true)
-      toast.success('Estimate sent — awaiting customer authorization')
+      toast.success(
+        selectedOrder && quoteForOrder?.authorization_type === 'additional_work'
+          ? 'Additional work sent — awaiting customer authorization'
+          : 'Estimate sent — awaiting customer authorization'
+      )
     },
     onError: (error: unknown) => {
       toast.error(getErrorDetail(error, 'Failed to send estimate'))
@@ -1682,6 +1692,7 @@ export default function RepairOrdersPage() {
   })
 
   const [quoteSent, setQuoteSent] = useState(false)
+  const [quoteToConfirm, setQuoteToConfirm] = useState<Quote | null>(null)
 
   // Status filter and search are applied server-side now, so the rendered list
   // is simply the current page returned by the API.
@@ -1873,19 +1884,29 @@ export default function RepairOrdersPage() {
   const quoteIsApproved = !!quoteForOrder?.is_approved
   const quoteIsSent = !!(quoteForOrder?.sent_to_customer || quoteSent)
   const quoteCanChange = !!quoteOrderStatus && !['completed', 'invoiced', 'paid', 'cancelled'].includes(quoteOrderStatus)
+  const quoteTotalDelta = quoteForOrder && quoteOrder
+    ? (parseFloat(quoteOrder.total_cost || '0') || 0) - (parseFloat(quoteForOrder.total_amount || '0') || 0)
+    : 0
   const quoteTotalMismatch = !!quoteForOrder && !!quoteOrder && !quoteIsApproved && (
     Math.abs((parseFloat(quoteForOrder.total_amount || '0') || 0) - (parseFloat(quoteOrder.total_cost || '0') || 0)) > 0.005
   )
   const effectiveQuoteNeedsUpdate = !!quoteForOrder && !quoteIsApproved && quoteTotalMismatch
-  const quoteActionLabel = quoteIsApproved
-    ? 'Estimate authorized'
+  const additionalAuthorizationRequired = quoteIsApproved && quoteTotalDelta > 0.005
+  const quoteActionLabel = additionalAuthorizationRequired
+    ? `Authorize +$${quoteTotalDelta.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : quoteIsApproved
+    ? (quoteForOrder?.authorization_type === 'additional_work' ? 'Additional work authorized' : 'Estimate authorized')
     : quoteForOrder
       ? quoteIsSent
-        ? (effectiveQuoteNeedsUpdate ? 'Resend estimate' : 'Awaiting authorization')
-        : 'Send estimate'
+        ? (
+          effectiveQuoteNeedsUpdate
+            ? (quoteForOrder.authorization_type === 'additional_work' ? 'Revise additional work' : 'Revise estimate')
+            : 'Awaiting authorization'
+        )
+        : (quoteForOrder.authorization_type === 'additional_work' ? 'Send additional work' : 'Send estimate')
         : 'Create estimate'
-  const quoteActionDisabled = quoteIsApproved || !quoteCanChange || (quoteIsSent && !effectiveQuoteNeedsUpdate)
-  const quoteDisabledReason = quoteIsApproved
+  const quoteActionDisabled = (quoteIsApproved && !additionalAuthorizationRequired) || !quoteCanChange || (quoteIsSent && !effectiveQuoteNeedsUpdate && !quoteIsApproved)
+  const quoteDisabledReason = quoteIsApproved && !additionalAuthorizationRequired
     ? 'This estimate is authorized. The live repair order remains editable until finalization.'
     : !quoteCanChange
       ? 'Estimates are unavailable after the repair order is finalized.'
@@ -2004,19 +2025,21 @@ export default function RepairOrdersPage() {
       createQuoteMutation.mutate(selectedOrder.id)
       return
     }
+    if (additionalAuthorizationRequired) {
+      createQuoteMutation.mutate(selectedOrder.id)
+      return
+    }
     try {
       if (effectiveQuoteNeedsUpdate) {
-        const updatedQuote = await updateQuoteMutation.mutateAsync(quoteForOrder.id)
         if (quoteIsSent) {
-          await sendQuoteMutation.mutateAsync(updatedQuote.id)
-        } else {
-          await sendQuoteMutation.mutateAsync(updatedQuote.id)
-          setQuoteSent(true)
+          createQuoteMutation.mutate(selectedOrder.id)
+          return
         }
+        const updatedQuote = await updateQuoteMutation.mutateAsync(quoteForOrder.id)
+        setQuoteToConfirm(updatedQuote)
         return
       }
-      sendQuoteMutation.mutate(quoteForOrder.id)
-      setQuoteSent(true)
+      setQuoteToConfirm(quoteForOrder)
     } catch {
       // Mutation handlers surface the error toast; keep the click handler from throwing.
     }
@@ -5037,6 +5060,81 @@ export default function RepairOrdersPage() {
               </div>
             )}
       </SlidePanel>
+
+      {/* Sending an authorization is a financial checkpoint. Make the
+          consequence explicit before the shop creates a customer baseline. */}
+      {quoteToConfirm && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4">
+            <button
+              type="button"
+              aria-label="Close authorization confirmation"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setQuoteToConfirm(null)}
+            />
+            <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="mb-4 flex items-start gap-3">
+                <div className="rounded-full bg-amber-100 p-3">
+                  <FileText className="h-6 w-6 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {quoteToConfirm.authorization_type === 'additional_work'
+                      ? 'Send additional work?'
+                      : 'Send estimate carefully'}
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">{quoteToConfirm.quote_number}</p>
+                </div>
+              </div>
+              {quoteToConfirm.authorization_type === 'additional_work' ? (
+                <div className="mb-6 space-y-3">
+                  <p className="text-sm text-gray-700">
+                    The customer's original approval remains valid. This request asks them to authorize only the added amount.
+                  </p>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex justify-between text-sm text-gray-600">
+                      <span>Previously authorized</span>
+                      <span>${parseFloat(quoteToConfirm.previously_authorized_amount).toFixed(2)}</span>
+                    </div>
+                    <div className="mt-2 flex justify-between font-semibold text-amber-900">
+                      <span>Additional authorization</span>
+                      <span>+${parseFloat(quoteToConfirm.delta_amount).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="mb-6 text-sm leading-6 text-gray-700">
+                  Once authorized, this estimate becomes the customer's approved baseline. Any later increase in parts, labor, or services will require a separate additional-work authorization.
+                </p>
+              )}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setQuoteToConfirm(null)}
+                  className="flex-1 rounded-lg border border-gray-300 px-4 py-3 font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Keep editing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sendQuoteMutation.mutate(quoteToConfirm.id)
+                    setQuoteSent(true)
+                  }}
+                  disabled={sendQuoteMutation.isPending}
+                  className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {sendQuoteMutation.isPending
+                    ? 'Sending…'
+                    : quoteToConfirm.authorization_type === 'additional_work'
+                      ? 'Send authorization'
+                      : 'Send estimate'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && selectedOrder && (

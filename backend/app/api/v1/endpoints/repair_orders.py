@@ -40,6 +40,7 @@ from app.services.price_build_service import (
     PriceBuildService,
     PriceBuildValidationError,
 )
+from app.services.pricing import get_order_total
 from app.services.internal_fleet import fleet_labor_uses_customer_rate, uses_internal_fleet_pricing
 from app.services.vehicle_identity import ensure_vehicle_relationship
 from app.core.config import settings
@@ -1029,6 +1030,7 @@ async def _list_repair_orders_legacy(
         quote_result = await db.execute(
             select(Quote.repair_order_id, Quote.sent_to_customer, Quote.sent_at, Quote.is_approved)
             .where(Quote.repair_order_id.in_(order_ids))
+            .order_by(Quote.revision.asc())
         )
         quote_rows = quote_result.fetchall()
         quote_sent_map = {row[0]: row[1] for row in quote_rows}
@@ -2650,6 +2652,47 @@ async def approve_completion(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot approve job in '{order.status.value}' status",
         )
+
+    # Estimates are optional in the work-first model. Once the shop chooses to
+    # send one, however, finalization must honor the customer's immutable
+    # authorization history. Added cost is approved through a later revision;
+    # the original approval is never reset.
+    if not order.is_internal:
+        sent_quote_result = await db.execute(
+            select(Quote)
+            .where(
+                Quote.repair_order_id == order.id,
+                Quote.sent_to_customer.is_(True),
+            )
+            .order_by(Quote.revision.desc())
+            .limit(1)
+        )
+        latest_sent_quote = sent_quote_result.scalar_one_or_none()
+        approved_quote_result = await db.execute(
+            select(Quote)
+            .where(
+                Quote.repair_order_id == order.id,
+                Quote.is_approved.is_(True),
+            )
+            .order_by(Quote.revision.desc())
+            .limit(1)
+        )
+        latest_approved_quote = approved_quote_result.scalar_one_or_none()
+        authorized_total = (
+            Decimal(str(latest_approved_quote.total_amount))
+            if latest_approved_quote
+            else Decimal("0.00")
+        )
+        current_total = get_order_total(order)
+        if latest_sent_quote and current_total > authorized_total + Decimal("0.005"):
+            additional_amount = current_total - authorized_total
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Customer authorization is required before finalization. "
+                    f"Request approval for the additional ${additional_amount:,.2f}."
+                ),
+            )
     
     # Record the odometer at completion when provided.
     if body and body.mileage_out is not None:

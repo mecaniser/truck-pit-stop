@@ -201,12 +201,44 @@ async def test_quote_send_does_not_lock_live_order_pricing(db_session, monkeypat
 
     assert response.sent_to_customer is True
     assert response.sent_at is not None
+    sent_quote = (await db_session.execute(select(Quote).where(Quote.id == quote.id))).scalar_one()
+    assert sent_quote.line_items_snapshot["repair_total"] == "100.00"
+    assert sent_quote.line_items_snapshot["labor_total"] == "100.00"
 
     order_id = order.id
     db_session.expire_all()
     refreshed_order = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == order_id))).scalar_one()
     assert refreshed_order.pricing_locked_at is None
     assert refreshed_order.pricing_lock_reason is None
+
+
+@pytest.mark.asyncio
+async def test_approved_estimate_creates_incremental_authorization_revision(db_session):
+    staff_user, order, _service, quote = await _seed_quote_context(db_session)
+    quote.is_approved = True
+    quote.sent_to_customer = True
+    quote.revision = 1
+    quote.authorization_type = "initial_estimate"
+    quote.previously_authorized_amount = Decimal("0.00")
+    quote.delta_amount = Decimal("120.00")
+    order.total_labor_cost = Decimal("170.00")
+    order.total_cost = Decimal("170.00")
+    await db_session.commit()
+
+    created = await quotes_endpoint.create_quote(
+        body=quotes_endpoint.QuoteCreate(repair_order_id=order.id),
+        db=db_session,
+        current_user=staff_user,
+    )
+
+    assert created.revision == 2
+    assert created.authorization_type == "additional_work"
+    assert created.previously_authorized_amount == Decimal("120.00")
+    assert created.delta_amount == Decimal("50.00")
+    assert created.total_amount == Decimal("170.00")
+
+    original = (await db_session.execute(select(Quote).where(Quote.id == quote.id))).scalar_one()
+    assert original.is_approved is True
 
 
 @pytest.mark.asyncio

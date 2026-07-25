@@ -13,6 +13,7 @@ from app.db.models.customer import Customer
 from app.db.models.invoice import Invoice
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.provider_outbox import ProviderOutboxEvent, ProviderOutboxStatus
+from app.db.models.quote import Quote
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
@@ -177,3 +178,45 @@ async def test_invoice_failure_rolls_finalization_back_to_quality_review(
     assert order.pricing_locked_at is None
     assert order.pricing_lock_reason is None
     assert invoice is None
+
+
+@pytest.mark.asyncio
+async def test_finalization_blocks_positive_work_above_customer_authorization(_db_engine):
+    factory = async_sessionmaker(_db_engine, expire_on_commit=False)
+    order_id, manager_id = await _seed_review_order(factory)
+
+    async with factory() as db:
+        order = await db.get(RepairOrder, order_id)
+        db.add(
+            Quote(
+                tenant_id=order.tenant_id,
+                repair_order_id=order.id,
+                quote_number=f"Q-{uuid4().hex[:10]}",
+                total_amount=Decimal("175.00"),
+                is_approved=True,
+                sent_to_customer=True,
+                revision=1,
+                authorization_type="initial_estimate",
+                previously_authorized_amount=Decimal("0.00"),
+                delta_amount=Decimal("175.00"),
+            )
+        )
+        await db.commit()
+
+    async with factory() as db:
+        manager = await db.get(User, manager_id)
+        with pytest.raises(repair_orders.HTTPException) as exc_info:
+            await repair_orders.approve_completion(
+                order_id=order_id,
+                body=repair_orders.ApproveCompletionRequest(),
+                db=db,
+                current_user=manager,
+            )
+
+    assert exc_info.value.status_code == 409
+    assert "additional $50.00" in exc_info.value.detail
+
+    async with factory() as db:
+        order = await db.get(RepairOrder, order_id)
+        assert order.status == RepairOrderStatus.PENDING_REVIEW
+        assert order.pricing_locked_at is None

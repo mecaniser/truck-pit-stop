@@ -1063,7 +1063,7 @@ async def get_analytics_quote_funnel(
         )
     )).scalar() or 0
     invoiced = (await db.execute(
-        select(func.count(Invoice.id))
+        select(func.count(func.distinct(Invoice.id)))
         .join(Quote, Quote.repair_order_id == Invoice.repair_order_id)
         .where(
             Invoice.tenant_id == tenant_id,

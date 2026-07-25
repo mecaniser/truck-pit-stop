@@ -7,7 +7,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, desc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
@@ -212,6 +212,10 @@ class QuoteResponse(BaseModel):
     sent_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    revision: int = 1
+    authorization_type: str = "initial_estimate"
+    previously_authorized_amount: Decimal = Decimal("0.00")
+    delta_amount: Decimal = Decimal("0.00")
 
     class Config:
         from_attributes = True
@@ -249,6 +253,11 @@ class QuoteDetailResponse(BaseModel):
     shop_email: Optional[str] = None
     has_portal_account: bool = False
     requires_password_setup: bool = True
+    revision: int = 1
+    authorization_type: str = "initial_estimate"
+    previously_authorized_amount: Decimal = Decimal("0.00")
+    additional_amount: Decimal = Decimal("0.00")
+    resulting_authorized_amount: Decimal = Decimal("0.00")
 
 
 class QuotePortalResolveResponse(BaseModel):
@@ -478,6 +487,53 @@ async def generate_quote_number(db: AsyncSession, tenant_id: UUID) -> str:
     )
 
 
+async def _latest_quote_for_order(db: AsyncSession, order_id: UUID) -> Optional[Quote]:
+    result = await db.execute(
+        select(Quote)
+        .where(Quote.repair_order_id == order_id)
+        .order_by(desc(Quote.revision), desc(Quote.created_at))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def _quote_snapshot(
+    *,
+    order: RepairOrder,
+    tenant: Optional[Tenant],
+    services: list[dict],
+) -> dict:
+    breakdown = get_order_checkout_breakdown(order, tenant) if tenant else None
+    parts = [
+        {
+            "source_id": str(pu.id),
+            "name": pu.inventory_item.name if pu.inventory_item else "Part",
+            "quantity": str(pu.quantity or 0),
+            "unit_price": str(_money(pu.unit_price)),
+            "total_price": str(_money(pu.total_price)),
+        }
+        for pu in order.parts_usage or []
+    ]
+    json_safe_services = json.loads(json.dumps(services, default=str))
+    return {
+        "version": 1,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "services": json_safe_services,
+        "parts": parts,
+        "labor_total": str(_money(get_order_labor_total(order))),
+        "parts_total": str(_money(get_order_parts_total(order))),
+        "labor_discount_amount": str(_money(order.labor_discount_amount)),
+        "order_discount_amount": str(_money(order.order_discount_amount)),
+        "shop_supplies_amount": str(_money(breakdown["shop_supplies_amount"] if breakdown else 0)),
+        "service_fee_amount": str(_money(breakdown["service_fee_amount"] if breakdown else 0)),
+        "tax_amount": str(_money(breakdown["tax_amount"] if breakdown else 0)),
+        "estimated_card_total": str(_money(breakdown["estimated_card_total"] if breakdown else 0)),
+        "estimated_zelle_total": str(_money(breakdown["estimated_zelle_total"] if breakdown else 0)),
+        "zelle_savings_amount": str(_money(breakdown["zelle_savings_amount"] if breakdown else 0)),
+        "repair_total": str(_money(get_order_total(order))),
+    }
+
+
 @router.post("", response_model=QuoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_quote(
     body: QuoteCreate,
@@ -514,18 +570,26 @@ async def create_quote(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An estimate can't be created after the repair order is finalized",
         )
-    result = await db.execute(
-        select(Quote).where(Quote.repair_order_id == body.repair_order_id)
-    )
-    existing = result.scalar_one_or_none()
-    if existing:
+    existing = await _latest_quote_for_order(db, body.repair_order_id)
+    if existing and not existing.is_approved and not existing.sent_to_customer:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A quote already exists for this repair order",
+            detail="An authorization draft or customer decision is already pending for this repair order",
         )
     
     # Quote total is the customer-facing net total after manager discounts.
     total_amount = get_order_total(order)
+    previous_authorized = (
+        _money(existing.total_amount)
+        if existing and existing.is_approved
+        else _money(existing.previously_authorized_amount) if existing else Decimal("0.00")
+    )
+    delta_amount = _money(total_amount - previous_authorized)
+    if existing and delta_amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No additional customer authorization is required unless the repair total increases",
+        )
     
     # Use retry wrapper to handle rare race conditions on quote number
     from app.core.unique_id import create_with_retry
@@ -539,8 +603,20 @@ async def create_quote(
             notes=body.notes,
             expires_at=body.expires_at,
             is_approved=False,
+            revision=(existing.revision + 1) if existing else 1,
+            authorization_type=(
+                "additional_work"
+                if existing and existing.is_approved
+                else existing.authorization_type if existing else "initial_estimate"
+            ),
+            previously_authorized_amount=previous_authorized,
+            delta_amount=delta_amount,
         )
         db.add(quote)
+        if existing and existing.sent_to_customer and not existing.is_approved:
+            existing.is_declined = True
+            existing.decline_notes = "Superseded by a revised authorization before customer decision."
+            existing.decision_at = datetime.now(timezone.utc)
         # Don't commit here - create_with_retry uses savepoints and handles commit
         return quote
     
@@ -561,12 +637,17 @@ async def get_quote_by_repair_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    # The workspace asks for the quote whenever the estimate action is visible.
-    # Load the order used for the access check and its optional quote together so
-    # a normal workspace open does not spend a second database round trip.
+    latest_quote_id = (
+        select(Quote.id)
+        .where(Quote.repair_order_id == RepairOrder.id)
+        .order_by(Quote.revision.desc(), Quote.created_at.desc())
+        .limit(1)
+        .correlate(RepairOrder)
+        .scalar_subquery()
+    )
     result = await db.execute(
         select(RepairOrder, Quote)
-        .outerjoin(Quote, Quote.repair_order_id == RepairOrder.id)
+        .outerjoin(Quote, Quote.id == latest_quote_id)
         .where(RepairOrder.id == repair_order_id)
     )
     row = result.one_or_none()
@@ -633,8 +714,14 @@ async def update_quote(
             detail="Cannot update an approved quote",
         )
     
-    # Recalculate total using the same customer-facing pricing logic as create.
+    # Recalculate only an unsent draft. Once sent, its scope is immutable.
+    if quote.sent_to_customer:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A sent authorization cannot be changed; create a new additional-work authorization instead",
+        )
     quote.total_amount = get_order_total(order)
+    quote.delta_amount = _money(quote.total_amount - quote.previously_authorized_amount)
     await db.commit()
     await db.refresh(quote)
     return QuoteResponse.model_validate(quote)
@@ -814,8 +901,9 @@ async def send_quote_to_customer(
         tenant = tenant_result.scalar_one_or_none()
         shop_name = tenant.name if tenant and tenant.name else "Your repair shop"
     latest_total = get_order_total(order)
-    if quote.total_amount != latest_total:
+    if not quote.sent_to_customer and quote.total_amount != latest_total:
         quote.total_amount = latest_total
+        quote.delta_amount = _money(latest_total - quote.previously_authorized_amount)
     
     customer = order.customer
     if not customer or not customer.email:
@@ -825,7 +913,8 @@ async def send_quote_to_customer(
         )
     
     # Generate magic link token
-    quote.approval_token = secrets.token_urlsafe(48)
+    if not quote.approval_token:
+        quote.approval_token = secrets.token_urlsafe(48)
     
     # Parse services and parts for email
     services_html = ""
@@ -843,6 +932,13 @@ async def send_quote_to_customer(
             svc_price = Decimal(str(svc.get("base_price", "0")))
             services_html += f'<li style="margin: 5px 0;">{svc_name} - ${svc_price:,.2f}</li>'
         services_html += '</ul></div>'
+
+    if not quote.sent_to_customer:
+        quote.line_items_snapshot = _quote_snapshot(
+            order=order,
+            tenant=tenant,
+            services=selected_services,
+        )
 
     parts_html = ""
     if order.parts_usage:
@@ -871,6 +967,23 @@ async def send_quote_to_customer(
     # Build magic link URL
     approval_url = f"{settings.FRONTEND_URL}/quote/{quote.approval_token}"
     
+    is_additional = quote.authorization_type == "additional_work"
+    authorization_heading = "Additional Work Ready for Your Approval" if is_additional else "Estimate Ready for Your Approval"
+    authorization_intro = (
+        f"We found additional work on repair order <strong>{order.order_number}</strong>. "
+        "Your original authorization remains valid; please review this added amount."
+        if is_additional
+        else f"Your estimate for repair order <strong>{order.order_number}</strong> is ready for review."
+    )
+    amount_summary = (
+        f"""
+            <p style="margin: 4px 0; color: #4b5563;"><strong>Previously authorized:</strong> {_format_money(quote.previously_authorized_amount)}</p>
+            <p style="margin: 4px 0; color: #9a3412;"><strong>Additional authorization:</strong> {_format_money(quote.delta_amount)}</p>
+            <p style="margin: 8px 0 0 0; font-size: 24px; color: #d97706; text-align: center;"><strong>New estimated repair total: {_format_money(quote.total_amount)}</strong></p>
+        """
+        if is_additional
+        else f'<p style="margin: 0; font-size: 28px; color: #d97706; text-align: center;"><strong>Repair total: {_format_money(quote.total_amount)}</strong></p>'
+    )
     html_body = f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -878,9 +991,9 @@ async def send_quote_to_customer(
             <h1 style="color: #d97706; margin: 0;">🔧 {shop_name}</h1>
         </div>
         
-        <h2 style="color: #333;">Quote Ready for Your Approval</h2>
+        <h2 style="color: #333;">{authorization_heading}</h2>
         <p>Hi {customer.first_name},</p>
-        <p>Your quote for repair order <strong>{order.order_number}</strong> is ready for review.</p>
+        <p>{authorization_intro}</p>
         
         <div style="background: #f9fafb; border-radius: 8px; padding: 20px; margin: 20px 0; border: 1px solid #e5e7eb;">
             <p style="margin: 0 0 10px 0;"><strong>Quote #:</strong> {quote.quote_number}</p>
@@ -893,13 +1006,13 @@ async def send_quote_to_customer(
             {savings_html}
             {checkout_html}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 15px 0;">
-            <p style="margin: 0; font-size: 28px; color: #d97706; text-align: center;"><strong>Repair total: ${quote.total_amount:,.2f}</strong></p>
+            {amount_summary}
         </div>
         
         <p style="text-align: center; margin: 30px 0;">
             <a href="{approval_url}" 
                style="background-color: #16a34a; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; margin-right: 10px;">
-                ✓ Approve Quote
+                ✓ {'Approve Additional Work' if is_additional else 'Approve Estimate'}
             </a>
         </p>
         
@@ -928,20 +1041,22 @@ async def send_quote_to_customer(
     # Auto-approval authorizes this estimate only; it never changes the shop's
     # operational repair-order state or locks the live work record.
     threshold = getattr(customer, 'auto_approval_threshold', None)
+    approval_amount = quote.delta_amount if is_additional else quote.total_amount
     auto_approved = False
-    if threshold is not None and quote.total_amount <= threshold:
+    if threshold is not None and approval_amount <= threshold:
         quote.is_approved = True
         quote.is_declined = False
+        quote.decision_at = datetime.now(timezone.utc)
         auto_approved = True
     
     if auto_approved:
-        email_subject = f"Quote {quote.quote_number} Auto-Approved - {shop_name}"
+        email_subject = f"{'Additional work' if is_additional else 'Estimate'} {quote.quote_number} Auto-Approved - {shop_name}"
         email_body = f"""
             <html><body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h1 style="color: #d97706;">{shop_name}</h1>
                 <h2 style="color: #16a34a;">Quote Auto-Approved</h2>
                 <p>Hi {customer.first_name},</p>
-                <p>Your repair quote <strong>{quote.quote_number}</strong> for <strong>${quote.total_amount:,.2f}</strong> 
+                <p>Your {'additional work' if is_additional else 'repair estimate'} <strong>{quote.quote_number}</strong> for <strong>{_format_money(approval_amount)}</strong>
                 has been <strong>automatically approved</strong> per your pre-authorization threshold of ${threshold:,.2f}.</p>
                 {f'<p><strong>Vehicle:</strong> {vehicle_info}</p>' if vehicle_info else ''}
                 <p><strong>Description:</strong> {order.description or 'General Repair'}</p>
@@ -955,7 +1070,7 @@ async def send_quote_to_customer(
             """
         email_template_name = "quote_auto_approved"
     else:
-        email_subject = f"Quote {quote.quote_number} Ready for Approval - {shop_name}"
+        email_subject = f"{'Additional work' if is_additional else 'Estimate'} {quote.quote_number} Ready for Approval - {shop_name}"
         email_body = html_body
         email_template_name = "quote_approval"
 
@@ -1073,6 +1188,7 @@ async def approve_quote(
     quote.is_approved = True
     quote.is_declined = False
     quote.decline_notes = None
+    quote.decision_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
@@ -1148,6 +1264,7 @@ async def decline_quote(
     
     quote.is_declined = True
     quote.decline_notes = body.notes
+    quote.decision_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(quote)
     await db.refresh(order)
@@ -1260,6 +1377,18 @@ async def get_quote_by_token(
         "estimated_zelle_total": quote.total_amount,
         "zelle_savings_amount": Decimal("0.00"),
     }
+    snapshot = quote.line_items_snapshot or {}
+    if snapshot:
+        services = snapshot.get("services", [])
+        parts = snapshot.get("parts", [])
+        checkout = {
+            "shop_supplies_amount": Decimal(str(snapshot.get("shop_supplies_amount", 0))),
+            "service_fee_amount": Decimal(str(snapshot.get("service_fee_amount", 0))),
+            "tax_amount": Decimal(str(snapshot.get("tax_amount", 0))),
+            "estimated_card_total": Decimal(str(snapshot.get("estimated_card_total", quote.total_amount))),
+            "estimated_zelle_total": Decimal(str(snapshot.get("estimated_zelle_total", quote.total_amount))),
+            "zelle_savings_amount": Decimal(str(snapshot.get("zelle_savings_amount", 0))),
+        }
 
     return QuoteDetailResponse(
         quote=QuoteResponse.model_validate(quote),
@@ -1272,10 +1401,10 @@ async def get_quote_by_token(
         customer_first_name=customer.first_name if customer else "Customer",
         services=services,
         parts=parts,
-        labor_total=get_order_labor_total(order),
-        parts_total=get_order_parts_total(order),
-        labor_discount_amount=Decimal(str(order.labor_discount_amount or 0)),
-        order_discount_amount=Decimal(str(order.order_discount_amount or 0)),
+        labor_total=Decimal(str(snapshot.get("labor_total", get_order_labor_total(order)))),
+        parts_total=Decimal(str(snapshot.get("parts_total", get_order_parts_total(order)))),
+        labor_discount_amount=Decimal(str(snapshot.get("labor_discount_amount", order.labor_discount_amount or 0))),
+        order_discount_amount=Decimal(str(snapshot.get("order_discount_amount", order.order_discount_amount or 0))),
         shop_supplies_amount=checkout["shop_supplies_amount"],
         service_fee_amount=checkout["service_fee_amount"],
         tax_amount=checkout["tax_amount"],
@@ -1288,6 +1417,11 @@ async def get_quote_by_token(
         shop_email=tenant.email if tenant else None,
         has_portal_account=existing_user is not None,
         requires_password_setup=existing_user is None,
+        revision=quote.revision,
+        authorization_type=quote.authorization_type,
+        previously_authorized_amount=quote.previously_authorized_amount,
+        additional_amount=quote.delta_amount,
+        resulting_authorized_amount=quote.total_amount,
     )
 
 
@@ -1312,6 +1446,7 @@ async def approve_quote_by_token(
     
     quote.is_approved = True
     quote.is_declined = False
+    quote.decision_at = datetime.now(timezone.utc)
     # Keep token valid so customer can view their approved quote status
     await db.commit()
     await db.refresh(quote)
@@ -1530,6 +1665,7 @@ async def decline_quote_by_token(
     
     quote.is_declined = True
     quote.decline_notes = body.notes
+    quote.decision_at = datetime.now(timezone.utc)
     # Keep token valid so customer can change their mind
     await db.commit()
     await db.refresh(quote)
