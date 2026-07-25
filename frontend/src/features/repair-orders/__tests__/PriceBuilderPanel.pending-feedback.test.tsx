@@ -368,6 +368,51 @@ describe('PriceBuilderPanel pending feedback', () => {
     expect(screen.queryByText('Card processing fee')).not.toBeInTheDocument()
   })
 
+  it('hides the repair photos section on a finalized order when no photos are attached', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') return Promise.resolve({ data: [] })
+      if (url === '/repair-orders/order-1/photos') return Promise.resolve({ data: [] })
+      return Promise.resolve({ data: [] })
+    })
+
+    renderPanel({ orderStatus: 'paid' })
+
+    await waitFor(() => {
+      expect(apiMocks.get).toHaveBeenCalledWith(
+        '/repair-orders/order-1/photos',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+    })
+    expect(screen.queryByText('Repair photos')).not.toBeInTheDocument()
+    expect(screen.queryByText('No photos attached')).not.toBeInTheDocument()
+  })
+
+  it('keeps attached photos visible but read-only on a finalized order', async () => {
+    apiMocks.get.mockImplementation((url: string) => {
+      if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })
+      if (url === '/repair-orders/order-1/parts') return Promise.resolve({ data: [] })
+      if (url === '/repair-orders/order-1/photos') {
+        return Promise.resolve({
+          data: [{
+            id: 'photo-1',
+            repair_order_id: 'order-1',
+            image_url: 'https://example.com/repair.jpg',
+            caption: 'Completed brake repair',
+            uploaded_at: '2026-07-24T12:00:00Z',
+            uploader_name: 'Shop Admin',
+          }],
+        })
+      }
+      return Promise.resolve({ data: [] })
+    })
+
+    renderPanel({ orderStatus: 'invoiced' })
+
+    expect(await screen.findByText('1 photo attached')).toBeInTheDocument()
+    expect(screen.queryByText('Upload photo')).not.toBeInTheDocument()
+  })
+
   it('uses one canonical finalize-and-invoice action for fleet orders in quality review', async () => {
     apiMocks.get.mockImplementation((url: string) => {
       if (url === '/repair-orders/order-1/price-build') return Promise.resolve({ data: emptySummary })

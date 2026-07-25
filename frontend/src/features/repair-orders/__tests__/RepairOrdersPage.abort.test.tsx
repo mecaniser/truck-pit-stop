@@ -183,7 +183,14 @@ describe('RepairOrdersPage request cancellation', () => {
 
     renderPage(['/?new=true'])
 
-    await screen.findByRole('heading', { name: 'New Repair Order' })
+    const heading = await screen.findByRole('heading', { name: 'New Repair Order' })
+    const dialog = heading.closest('[role="dialog"]')
+    expect(dialog).toHaveClass('h-[100dvh]', 'overflow-hidden')
+    expect(screen.getByTestId('new-repair-order-scroll-region')).toHaveClass(
+      'overflow-y-auto',
+      'overscroll-contain',
+      'pb-[max(1.5rem,env(safe-area-inset-bottom))]',
+    )
     fireEvent.click(await screen.findByRole('button', { name: /choose a customer/i }))
     fireEvent.mouseDown(await screen.findByText('ELIS LOGISTICS LLC'))
 

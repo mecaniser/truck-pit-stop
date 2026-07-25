@@ -2675,17 +2675,22 @@ export default function RepairOrdersPage() {
 
       {/* New Repair Order Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div className="flex h-full h-[100dvh] items-stretch justify-center sm:items-center sm:p-4">
             <div 
               className="fixed inset-0 bg-black/60 backdrop-blur-sm"
               onClick={closeModal}
             />
             
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="new-repair-order-title"
+              className="relative flex h-full h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-h-[90dvh] sm:rounded-2xl"
+            >
+              <div className="z-10 shrink-0 border-b border-gray-200 bg-white px-4 py-4 sm:rounded-t-2xl sm:px-6">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-gray-900">New Repair Order</h2>
+                  <h2 id="new-repair-order-title" className="text-xl font-bold text-gray-900">New Repair Order</h2>
                   <button
                     onClick={closeModal}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -2697,7 +2702,11 @@ export default function RepairOrdersPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <form
+                onSubmit={handleSubmit}
+                className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-6"
+                data-testid="new-repair-order-scroll-region"
+              >
                 {/* Customer + Vehicle */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
