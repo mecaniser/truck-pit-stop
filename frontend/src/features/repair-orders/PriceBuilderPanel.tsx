@@ -1061,15 +1061,17 @@ export default function PriceBuilderPanel({
     enabled: !!orderId && !isDeleted,
   })
 
+  const isFinalizedOrder = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
   const { data: repairPhotosData, isFetching: repairPhotosFetching } = useQuery<RepairOrderPhoto[]>({
     queryKey: ['repair-order-photos', orderId],
     queryFn: async ({ signal }) => {
       const response = await api.get(`/repair-orders/${orderId}/photos`, { signal })
       return response.data
     },
-    // The photos section starts collapsed. Do not spend a request on thumbnails
-    // and Cloudinary URLs until the operator opens that optional panel.
-    enabled: !!orderId && !isDeleted && photosOpen,
+    // Open orders defer this optional request until the panel is expanded.
+    // Finalized orders must check once up front so an empty, read-only photo
+    // section can be omitted instead of displaying a useless disclosure.
+    enabled: !!orderId && !isDeleted && (photosOpen || isFinalizedOrder),
   })
   const repairPhotos = repairPhotosData ?? []
 
@@ -1302,7 +1304,7 @@ export default function PriceBuilderPanel({
   // A finalized order is closed: the work is done and billed/settled. No more
   // photo uploads, and the quote pipeline is just clutter (the single status
   // chip already says it all).
-  const isFinalized = ['completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus)
+  const isFinalized = isFinalizedOrder
   const canManageTechnician = !isInternalOrder && (summary?.can_assign_technician ?? !['pending_review', 'completed', 'invoiced', 'paid', 'cancelled'].includes(orderStatus))
   const canOverrideTechnicianAssignment = !isInternalOrder && !hasAssignedTechnician && ['draft', 'quoted', 'declined', 'approved'].includes(orderStatus) && !!onOverrideTechnicianAssignment
   const availableTechnicians = technicianOptions
@@ -3824,7 +3826,7 @@ export default function PriceBuilderPanel({
             Order Total footer. Adding is only allowed while the order is open;
             on a finalized order with no photos there's nothing to show, so the
             whole section is hidden. */}
-        {!isDeleted && !(isFinalized && repairPhotosData !== undefined && repairPhotos.length === 0) && (
+        {!isDeleted && (!isFinalized || (repairPhotosData !== undefined && repairPhotos.length > 0)) && (
           <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
             <button
               type="button"
