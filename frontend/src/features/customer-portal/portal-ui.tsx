@@ -25,6 +25,25 @@ export function orderTotal(order: RepairOrder) {
   return Number.isFinite(value) ? value : 0
 }
 
+export function isActiveRepair(order: RepairOrder) {
+  return !['paid', 'cancelled', 'declined'].includes(order.status)
+}
+
+export function repairStatusLabel(status: RepairOrder['status']) {
+  const labels: Partial<Record<RepairOrder['status'], string>> = {
+    draft: 'Checked in',
+    quoted: 'Estimate ready',
+    approved: 'Approved',
+    assigned: 'Assigned',
+    acknowledged: 'Acknowledged',
+    in_progress: 'In the shop',
+    pending_review: 'Quality review',
+    completed: 'Work completed',
+    invoiced: 'Payment due',
+  }
+  return labels[status] || status.replace('_', ' ')
+}
+
 export function daysOverdue(dueDate: string | null | undefined) {
   if (!dueDate) return 0
   const due = new Date(dueDate)

@@ -27,7 +27,7 @@ import { formatUSPhone } from '../../utils/phone'
 import useTenantBranding from '@/hooks/useTenantBranding'
 import CustomerZellePaymentPanel from './ZellePaymentPanel'
 import QuickBooksPaymentPanel from './QuickBooksPaymentPanel'
-import { DateBlock, formatMoney, Money, PaidBadge, Pill } from './portal-ui'
+import { DateBlock, formatMoney, isActiveRepair, Money, PaidBadge, Pill, repairStatusLabel } from './portal-ui'
 
 const STATUS_BADGE_COLORS: Record<string, string> = {
   draft: 'border border-white/10 bg-white/5 text-gray-300',
@@ -66,6 +66,9 @@ const CUSTOMER_PHOTO_REPAIR_STATUSES = [
   'invoiced',
   'paid',
 ]
+
+const isActiveRepairsSearch = (search: string) =>
+  new URLSearchParams(search).get('view') === 'active'
 
 interface ZelleInfoResponse {
   zelle_email: string | null
@@ -699,6 +702,7 @@ function CustomerRepairs() {
   const [isZelleSenderEditing, setIsZelleSenderEditing] = useState(false)
   const [showZelleDetails, setShowZelleDetails] = useState(false)
   const [showQuickBooksPayment, setShowQuickBooksPayment] = useState(false)
+  const isActiveRepairsView = isActiveRepairsSearch(location.search)
   
   const { data: orders, isLoading } = useQuery<RepairOrder[]>({
     queryKey: ['repair-orders'],
@@ -983,7 +987,7 @@ function CustomerRepairs() {
             className="inline-flex h-9 items-center gap-1 rounded-full border border-[#272d3d] bg-[#191d2a] px-3.5 text-[13px] font-bold text-[#c9cdd8] hover:border-[#343b52]"
           >
             <ArrowLeft className="h-4 w-4" />
-            History
+            {isActiveRepairsView ? 'Repairs' : 'History'}
           </button>
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-white">{selectedOrder.order_number}</h1>
@@ -1374,6 +1378,100 @@ function CustomerRepairs() {
     )
   }
 
+  if (isActiveRepairsView) {
+    const activeOrders = (orders?.filter(isActiveRepair) ?? [])
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    const activeInvoiceByOrder = new Map(allInvoices.map(item => [item.repair_order_id, item]))
+    const attentionCount = activeOrders.filter(order =>
+      order.status === 'invoiced' || (order.quote_sent === true && order.quote_approved !== true),
+    ).length
+
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-[-0.01em]">Active repairs</h1>
+            <p className="mt-1 text-[13px] text-[#8b92a5]">
+              {activeOrders.length} open repair{activeOrders.length === 1 ? '' : 's'}
+              {attentionCount > 0 ? ` · ${attentionCount} need${attentionCount === 1 ? 's' : ''} your attention` : ' · Everything is moving'}
+            </p>
+          </div>
+          <Link
+            to="/portal/repairs"
+            className="inline-flex h-10 items-center justify-center rounded-[10px] border border-[#272d3d] bg-[#191d2a] px-4 text-xs font-bold text-[#c9cdd8] hover:border-[#343b52]"
+          >
+            View repair history
+          </Link>
+        </div>
+
+        {activeOrders.length > 0 ? (
+          <div className="space-y-2">
+            {activeOrders.map(order => {
+              const invoiceForOrder = activeInvoiceByOrder.get(order.id)
+              const needsEstimateApproval = order.quote_sent === true && order.quote_approved !== true
+              const needsPayment = order.status === 'invoiced' && invoiceForOrder?.status !== 'paid'
+              const actionLabel = needsPayment
+                ? 'Pay invoice'
+                : needsEstimateApproval
+                  ? 'Review estimate'
+                  : 'View details'
+
+              return (
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => setSelectedOrder(order)}
+                  className={`grid w-full grid-cols-[52px_1fr_auto] items-center gap-3 rounded-xl border bg-[#161a26] p-3 text-left transition-colors hover:bg-[#1a1f2c] sm:grid-cols-[52px_1fr_auto_auto] sm:gap-4 sm:px-4 ${
+                    needsPayment
+                      ? 'border-[#ff6b6e]/30'
+                      : needsEstimateApproval
+                        ? 'border-[#f0b959]/30'
+                        : 'border-[#232939] hover:border-[#343b52]'
+                  }`}
+                >
+                  <DateBlock value={order.updated_at} />
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[13px] font-extrabold">{order.description || 'Repair service'}</h2>
+                    <p className="mt-1 truncate text-[11px] text-[#8b92a5]">
+                      {order.order_number}{getVehicleLabel(order) ? ` · ${getVehicleLabel(order)}` : ''}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[#5c6375]">Updated {format(new Date(order.updated_at), 'MMM d · h:mm a')}</p>
+                  </div>
+                  <span className={`rounded-md border px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.04em] ${
+                    needsPayment
+                      ? 'border-[#ff6b6e]/30 bg-[#ff6b6e]/10 text-[#ff8b8d]'
+                      : needsEstimateApproval
+                        ? 'border-[#f0b959]/30 bg-[#f0b959]/10 text-[#f0b959]'
+                        : STATUS_BADGE_COLORS[order.status] || 'border border-white/10 bg-white/5 text-gray-300'
+                  }`}>
+                    {repairStatusLabel(order.status)}
+                  </span>
+                  <span className={`col-start-2 text-xs font-extrabold sm:col-start-auto ${
+                    needsPayment ? 'text-[#ff8b8d]' : needsEstimateApproval ? 'text-[#f0b959]' : 'text-[#a78bfa]'
+                  }`}>
+                    {actionLabel} →
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[#232939] bg-[#161a26] py-12 text-center">
+            <CheckCircle className="mx-auto h-9 w-9 text-[#3ecf6f]" />
+            <h2 className="mt-3 font-extrabold">No active repairs</h2>
+            <p className="mt-1 text-sm text-[#8b92a5]">New repair work will appear here as soon as it is checked in.</p>
+            <Link
+              to="/portal/services"
+              className="mt-5 inline-flex h-10 items-center justify-center rounded-[10px] bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]"
+            >
+              Book a service
+            </Link>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // List view - only finalized orders
   const finalizedStatuses = ['paid', 'completed', 'cancelled']
   const historyOrders = orders?.filter(o => finalizedStatuses.includes(o.status)) ?? []
@@ -1588,7 +1686,6 @@ export default function CustomerPortalPage() {
 
   const isInvoicePage = location.pathname.startsWith('/portal/invoices/')
   const mobilePrimaryLinks = navLinks.slice(0, 4)
-  const mobileOverflowLinks = navLinks.slice(4)
   const isMobileMoreActive =
     location.pathname === '/portal/settings' ||
     location.pathname === '/portal/repairs' ||
@@ -1777,25 +1874,30 @@ export default function CustomerPortalPage() {
                 <ChevronLeft className="h-5 w-5" />
                 <span>Back</span>
               </button>
-              {mobileOverflowLinks.map(link => {
-                const Icon = link.icon
-                const isLinkActive = isActive(link.to, link.exact)
-                return (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
-                    className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
-                      isLinkActive
-                        ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
-                        : 'text-[#737b8f] hover:text-[#c9cdd8]'
-                    }`}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span>{link.mobileLabel}</span>
-                  </Link>
-                )
-              })}
+              <Link
+                to="/portal/repairs?view=active"
+                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                  location.pathname === '/portal/repairs' && isActiveRepairsSearch(location.search)
+                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
+                }`}
+              >
+                <Wrench className="h-5 w-5" />
+                <span>Repairs</span>
+              </Link>
+              <Link
+                to="/portal/repairs"
+                tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
+                className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10px] font-bold transition-colors ${
+                  location.pathname === '/portal/repairs' && !isActiveRepairsSearch(location.search)
+                    ? 'bg-[#8b7cf7]/10 text-[#c9bfff]'
+                    : 'text-[#737b8f] hover:text-[#c9cdd8]'
+                }`}
+              >
+                <History className="h-5 w-5" />
+                <span>History</span>
+              </Link>
               <Link
                 to="/portal/settings"
                 tabIndex={mobileNavPage === 'secondary' ? 0 : -1}
@@ -1808,8 +1910,6 @@ export default function CustomerPortalPage() {
                 <User className="h-5 w-5" />
                 <span>Account</span>
               </Link>
-              <span className="flex-1" aria-hidden="true" />
-              <span className="flex-1" aria-hidden="true" />
             </div>
           </div>
         </div>

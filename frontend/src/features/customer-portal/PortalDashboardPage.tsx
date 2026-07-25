@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Check, ChevronRight, CircleDollarSign } from 'lucide-react'
+import { AlertTriangle, Check, ChevronRight, CircleDollarSign, Clock3, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
 
@@ -12,14 +12,21 @@ import type { Customer, Invoice, RepairOrder, Vehicle } from '@/types'
 import {
   Card,
   formatMoney,
+  isActiveRepair,
   Money,
   overdueLevel,
   daysOverdue,
   PaidBadge,
+  repairStatusLabel,
   SectionLabel,
   vehicleMeta,
   vehicleName,
 } from './portal-ui'
+
+function orderVehicleLabel(order: RepairOrder) {
+  const name = [order.vehicle_year, order.vehicle_make, order.vehicle_model].filter(Boolean).join(' ')
+  return order.vehicle_unit_number ? `Unit #${order.vehicle_unit_number} · ${name}` : name || 'Vehicle'
+}
 
 async function getAll<T>(url: string) {
   const all: T[] = []
@@ -91,7 +98,11 @@ export default function PortalDashboardPage() {
   const mileage = primaryVehicle?.mileage || 0
   const nextPm = mileage ? Math.ceil((mileage + 1) / 5000) * 5000 : 0
   const pmRemaining = nextPm ? Math.max(0, nextPm - mileage) : 0
-  const activeRepairs = orders.filter(order => !['paid', 'completed', 'cancelled', 'declined'].includes(order.status))
+  const activeRepairs = orders
+    .filter(isActiveRepair)
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+  const quoteActions = activeRepairs.filter(order => order.quote_sent === true && order.quote_approved !== true)
+  const actionCount = quoteActions.length + unpaid.length
   const balance = unpaid.reduce((sum, item) => sum + Number(item.invoice.total_amount || 0), 0)
   const paidYtd = paidThisYear.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0)
   const selected = unpaid.filter(item => selectedIds.includes(item.invoice.id))
@@ -195,17 +206,130 @@ export default function PortalDashboardPage() {
               valueClass: 'text-[#3ecf6f]',
               metaClass: 'text-[#8b92a5]',
             },
-          ].map(tile => (
-            <Card key={tile.label} className="flex min-h-[112px] flex-col justify-between rounded-[14px] p-3.5 sm:p-4">
-              <SectionLabel className="text-[10px]">{tile.label}</SectionLabel>
-              <div>
-                <div className={`truncate text-sm font-extrabold ${tile.valueClass}`}>{tile.value}</div>
-                <div className={`mt-1 truncate text-[11px] ${tile.metaClass}`}>{tile.meta}</div>
-              </div>
-            </Card>
-          ))}
+          ].map(tile => {
+            const card = (
+              <Card className={`flex min-h-[112px] flex-col justify-between rounded-[14px] p-3.5 sm:p-4 ${
+                tile.label === 'In the shop' ? 'transition-colors group-hover:border-[#8b7cf7]/60 group-hover:bg-[#1a1e2b]' : ''
+              }`}>
+                <SectionLabel className="text-[10px]">{tile.label}</SectionLabel>
+                <div>
+                  <div className={`truncate text-sm font-extrabold ${tile.valueClass}`}>{tile.value}</div>
+                  <div className={`mt-1 truncate text-[11px] ${tile.metaClass}`}>{tile.meta}</div>
+                </div>
+              </Card>
+            )
+
+            return tile.label === 'In the shop' ? (
+              <Link
+                key={tile.label}
+                to="/portal/repairs?view=active"
+                className="group rounded-[14px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8b7cf7]"
+                aria-label={`View ${activeRepairs.length} active repair${activeRepairs.length === 1 ? '' : 's'}`}
+              >
+                {card}
+              </Link>
+            ) : <div key={tile.label}>{card}</div>
+          })}
         </div>
       </div>
+
+      {actionCount > 0 && (
+        <Card className="overflow-hidden border-[#f0b959]/30">
+          <div className="flex items-center justify-between gap-3 border-b border-[#1e2432] px-4 py-[15px] sm:px-[18px]">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-[#f0b959]" />
+              <SectionLabel className="truncate text-[#f0b959]">Action required</SectionLabel>
+              <span className="rounded-full bg-[#f0b959]/10 px-2 py-0.5 text-[10px] font-extrabold text-[#f0b959]">
+                {actionCount}
+              </span>
+            </div>
+            <span className="hidden text-xs text-[#8b92a5] sm:inline">Review these items to keep work moving</span>
+          </div>
+          <div className="space-y-2 p-2.5">
+            {quoteActions.map(order => (
+              <Link
+                key={`quote-${order.id}`}
+                to="/portal/repairs?view=active"
+                state={{ selectedOrderId: order.id }}
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#f0b959]/20 bg-[#f0b959]/5 px-3.5 py-3 hover:border-[#f0b959]/40 sm:grid-cols-[210px_1fr_auto]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-extrabold">Estimate awaiting approval</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order.order_number} · {orderVehicleLabel(order)}</p>
+                </div>
+                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">{order.description || 'Repair estimate is ready for review'}</span>
+                <span className="inline-flex h-[34px] items-center justify-center rounded-lg bg-[#8b7cf7] px-3.5 text-xs font-extrabold text-[#0e1118]">
+                  Review estimate
+                </span>
+              </Link>
+            ))}
+            {unpaid.map(({ invoice, order, overdueDays }) => (
+              <Link
+                key={`payment-${invoice.id}`}
+                to={`/portal/invoices/${invoice.id}`}
+                state={{ paymentOrigin: 'Dashboard' }}
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#ff6b6e]/20 bg-[#ff6b6e]/5 px-3.5 py-3 hover:border-[#ff6b6e]/40 sm:grid-cols-[210px_1fr_auto_auto]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-extrabold">{overdueDays > 0 ? 'Past-due invoice' : 'Invoice ready to pay'}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order?.order_number || invoice.invoice_number} · {order ? orderVehicleLabel(order) : 'Repair service'}</p>
+                </div>
+                <span className="hidden truncate text-xs text-[#9aa1b3] sm:block">
+                  {overdueDays > 0 ? `${overdueDays} day${overdueDays === 1 ? '' : 's'} past due` : 'Payment due'}
+                </span>
+                <Money className="hidden text-sm font-extrabold sm:block">{formatMoney(invoice.total_amount)}</Money>
+                <span className="inline-flex h-[34px] items-center justify-center rounded-lg bg-[#8b7cf7] px-4 text-xs font-extrabold text-[#0e1118]">
+                  Pay
+                </span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {activeRepairs.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between gap-3 border-b border-[#1e2432] px-4 py-[15px] sm:px-[18px]">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Wrench className="h-4 w-4 shrink-0 text-[#a78bfa]" />
+              <SectionLabel className="truncate text-[#eceef4]">Active repairs</SectionLabel>
+              <span className="text-xs font-extrabold text-[#a78bfa]">{activeRepairs.length}</span>
+            </div>
+            <Link to="/portal/repairs?view=active" className="inline-flex items-center text-xs font-bold text-[#a78bfa] hover:text-[#c4b1ff]">
+              View all <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          <div className="space-y-2 p-2.5">
+            {activeRepairs.slice(0, 4).map(order => (
+              <Link
+                key={order.id}
+                to="/portal/repairs?view=active"
+                state={{ selectedOrderId: order.id }}
+                className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border border-[#1e2432] bg-[#12161f] px-3.5 py-3 hover:border-[#343b52] hover:bg-[#161b26] sm:grid-cols-[210px_1fr_auto_auto]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-extrabold">{order.description || 'Repair service'}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[#8b92a5]">{order.order_number} · {orderVehicleLabel(order)}</p>
+                </div>
+                <div className="hidden min-w-0 items-center gap-1.5 text-xs text-[#9aa1b3] sm:flex">
+                  <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Updated {format(new Date(order.updated_at), 'MMM d · h:mm a')}</span>
+                </div>
+                <span className={`rounded-md border px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.04em] ${
+                  order.status === 'invoiced'
+                    ? 'border-[#ff6b6e]/30 bg-[#ff6b6e]/10 text-[#ff8b8d]'
+                    : order.quote_sent && !order.quote_approved
+                      ? 'border-[#f0b959]/30 bg-[#f0b959]/10 text-[#f0b959]'
+                      : 'border-[#8b7cf7]/30 bg-[#8b7cf7]/10 text-[#c9bfff]'
+                }`}>
+                  {repairStatusLabel(order.status)}
+                </span>
+                <ChevronRight className="hidden h-4 w-4 text-[#5c6375] sm:block" />
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {unpaid.length > 0 && (
         <Card className="overflow-hidden">
