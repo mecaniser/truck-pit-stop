@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { daysOverdue, formatMoney, overdueLevel } from '../portal-ui'
+import { daysOverdue, formatMoney, isActiveRepair, overdueLevel, repairStatusLabel } from '../portal-ui'
 import { getPortalPreferences, savePortalPreferences } from '../portal-preferences'
 
 describe('customer portal shared behavior', () => {
@@ -27,6 +27,13 @@ describe('customer portal shared behavior', () => {
   it('formats portal money consistently', () => {
     expect(formatMoney(1127)).toBe('$1,127.00')
     expect(formatMoney('109.49')).toBe('$109.49')
+  })
+
+  it('keeps repair work active until payment or cancellation is finalized', () => {
+    expect(isActiveRepair({ status: 'completed' } as never)).toBe(true)
+    expect(isActiveRepair({ status: 'invoiced' } as never)).toBe(true)
+    expect(isActiveRepair({ status: 'paid' } as never)).toBe(false)
+    expect(repairStatusLabel('pending_review')).toBe('Quality review')
   })
 
   it('persists payment and notification preferences per customer', () => {
