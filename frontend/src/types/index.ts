@@ -411,6 +411,10 @@ export interface Quote {
   sent_at: string | null
   created_at: string
   updated_at: string
+  revision: number
+  authorization_type: 'initial_estimate' | 'additional_work'
+  previously_authorized_amount: string
+  delta_amount: string
 }
 
 export interface MechanicWorkItem {

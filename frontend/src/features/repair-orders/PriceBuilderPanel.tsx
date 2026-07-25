@@ -1320,7 +1320,7 @@ export default function PriceBuilderPanel({
   // A completed draft estimate is ready for the customer-facing send action.
   // Give that one actionable state a clear, calm success treatment without
   // implying that create, resend, or disabled states are equally ready.
-  const quoteActionReadyToSend = quoteActionLabel === 'Send estimate' && !quoteActionBlocked
+  const quoteActionReadyToSend = ['Send estimate', 'Send additional work'].includes(quoteActionLabel) && !quoteActionBlocked
   const quoteButtonDisabledReason = quoteDisabledReason || (
     isEmptyOrder
       ? 'Add at least one operation, labor line, or part before creating an estimate.'

@@ -647,6 +647,7 @@ async def get_dashboard_stats(
     quote_sent_result = await db.execute(
         select(Quote.repair_order_id, Quote.sent_to_customer)
         .where(Quote.repair_order_id.in_(needs_action_ids))
+        .order_by(Quote.revision.asc())
     ) if needs_action_ids else None
     quote_sent_map = {row[0]: row[1] for row in quote_sent_result.fetchall()} if quote_sent_result else {}
     standard_needs_action = [

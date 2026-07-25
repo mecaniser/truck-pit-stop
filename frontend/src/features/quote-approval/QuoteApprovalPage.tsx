@@ -47,6 +47,11 @@ interface QuoteDetail {
   shop_email: string | null
   has_portal_account: boolean
   requires_password_setup: boolean
+  revision: number
+  authorization_type: 'initial_estimate' | 'additional_work'
+  previously_authorized_amount: string
+  additional_amount: string
+  resulting_authorized_amount: string
 }
 
 interface QuotePortalResolveResponse {
@@ -234,6 +239,7 @@ export default function QuoteApprovalPage() {
   const contactMailtoHref = contactEmail ? `mailto:${contactEmail}` : mailtoHref
   const contactName = data.shop_name || 'the shop'
   const hasContact = !!(contactPhoneDisplay || contactEmail)
+  const isAdditionalWork = data.authorization_type === 'additional_work'
 
   const openPortalFromApprovedState = async (newPassword?: string) => {
     if (!token) return
@@ -271,9 +277,11 @@ export default function QuoteApprovalPage() {
           <div className="w-20 h-20 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-green-400" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Quote Approved!</h1>
+          <h1 className="text-2xl font-bold text-white mb-2">
+            {isAdditionalWork ? 'Additional Work Approved!' : 'Estimate Approved!'}
+          </h1>
           <p className="text-gray-400 mb-2">
-            Thank you, {customer_first_name}! Your quote <strong className="text-white">{quote.quote_number}</strong> has been approved.
+            Thank you, {customer_first_name}! Your {isAdditionalWork ? 'additional work' : 'estimate'} <strong className="text-white">{quote.quote_number}</strong> has been approved.
           </p>
           <p className="text-gray-500 text-sm mb-6">
             We'll get started on your repair soon. You'll receive updates via text.
@@ -422,7 +430,7 @@ export default function QuoteApprovalPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <QuotePageBrand shopName={data.shop_name} shopLogoUrl={data.shop_logo_url} />
-          <p className="text-gray-400">Quote Approval</p>
+          <p className="text-gray-400">{isAdditionalWork ? 'Additional Work Authorization' : 'Estimate Authorization'}</p>
         </div>
 
         {/* Quote Card */}
@@ -430,16 +438,20 @@ export default function QuoteApprovalPage() {
           {/* Greeting */}
           <div className="p-6 border-b border-white/10">
             <h2 className="text-xl font-semibold text-white">
-              Hi {customer_first_name}, your quote is ready!
+              Hi {customer_first_name}, {isAdditionalWork ? 'additional work needs your approval.' : 'your estimate is ready!'}
             </h2>
-            <p className="text-gray-400 mt-1">Please review the details below.</p>
+            <p className="text-gray-400 mt-1">
+              {isAdditionalWork
+                ? 'Your earlier approval remains valid. Review the added amount and new estimated total below.'
+                : 'Please review the details below.'}
+            </p>
           </div>
 
           {/* Quote Details */}
           <div className="p-6 space-y-4">
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-sm text-gray-500">Quote Number</p>
+                <p className="text-sm text-gray-500">{isAdditionalWork ? `Authorization Revision ${data.revision}` : 'Estimate Number'}</p>
                 <p className="text-lg font-medium text-white">{quote.quote_number}</p>
               </div>
               <div className="text-right">
@@ -547,13 +559,30 @@ export default function QuoteApprovalPage() {
               )}
             </div>
 
-            {/* Total */}
-            <div className="bg-amber-500/10 rounded-xl p-6 text-center border border-amber-500/30">
-              <p className="text-sm text-amber-400 mb-1">Repair total</p>
-              <p className="text-4xl font-bold text-white">
-                ${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </p>
-            </div>
+            {/* Authorization total */}
+            {isAdditionalWork ? (
+              <div className="bg-amber-500/10 rounded-xl p-5 border border-amber-500/30 space-y-2">
+                <div className="flex justify-between text-sm text-gray-300">
+                  <span>Previously authorized</span>
+                  <span>${parseFloat(data.previously_authorized_amount).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-lg font-semibold text-amber-300">
+                  <span>Additional work to authorize</span>
+                  <span>+${parseFloat(data.additional_amount).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between border-t border-amber-500/30 pt-3 font-bold text-white">
+                  <span>New estimated repair total</span>
+                  <span>${parseFloat(data.resulting_authorized_amount).toFixed(2)}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-amber-500/10 rounded-xl p-6 text-center border border-amber-500/30">
+                <p className="text-sm text-amber-400 mb-1">Repair total</p>
+                <p className="text-4xl font-bold text-white">
+                  ${parseFloat(quote.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            )}
 
             <div className="bg-white/5 rounded-xl p-4 border border-white/10">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -659,7 +688,7 @@ export default function QuoteApprovalPage() {
                   ) : (
                     <>
                       <CheckCircle className="w-5 h-5" />
-                      Approve Quote
+                      {isAdditionalWork ? 'Approve Additional Work' : 'Approve Estimate'}
                     </>
                   )}
                 </button>
