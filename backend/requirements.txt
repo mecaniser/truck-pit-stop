@@ -24,6 +24,7 @@ reportlab==4.0.7
 slowapi==0.1.9
 cloudinary>=1.40.0
 anthropic>=0.68.0,<1.0.0
+google-auth>=2.0.0,<3.0.0
 
 # Observability
 structlog>=24.1.0

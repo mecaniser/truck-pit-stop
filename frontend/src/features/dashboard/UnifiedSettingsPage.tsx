@@ -216,6 +216,13 @@ interface QuickBooksPlatformStatus {
   scopes: string[]
 }
 
+interface GoogleReviewsPlatformStatus {
+  platform_ready: boolean
+  callback_url: string
+  pubsub_url: string
+  pubsub_auth_ready: boolean
+}
+
 interface StripePlatformStatus {
   platform_ready: boolean
   onboarding_mode: string
@@ -1490,6 +1497,10 @@ function PlatformIntegrationsSection() {
     queryKey: ['stripe-platform-status'],
     queryFn: async () => (await api.get('/admin/platform/stripe-status')).data,
   })
+  const { data: googleReviews, isLoading: isGoogleReviewsLoading, isError: isGoogleReviewsError } = useQuery<GoogleReviewsPlatformStatus>({
+    queryKey: ['google-reviews-platform-status'],
+    queryFn: async () => (await api.get('/admin/platform/google-reviews-status')).data,
+  })
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.4s_ease-out]">
@@ -1557,6 +1568,35 @@ function PlatformIntegrationsSection() {
               </div>
             )}
           </>
+        )}
+      </IndustrialCard>
+
+      <IndustrialCard className="p-6 sm:p-8">
+        <div className={industrialStyles.sectionHeader}>
+          <Globe className="w-4 h-4 text-gold-400" />
+          <span>Google Reviews</span>
+        </div>
+        {isGoogleReviewsLoading ? (
+          <div className="flex justify-center py-8"><div className="w-6 h-6 rounded-full border-2 border-zinc-600 border-t-gold-400 animate-spin" /></div>
+        ) : isGoogleReviewsError || !googleReviews ? (
+          <div className="rounded-xl border border-red-700/40 bg-red-950/20 p-4 text-sm text-red-200">Google Reviews platform readiness could not be loaded. Refresh and try again.</div>
+        ) : googleReviews.platform_ready ? (
+          <div className="rounded-xl border border-emerald-700/35 bg-emerald-950/15 p-4 text-sm text-emerald-100/85">
+            <div className="flex items-center gap-2 font-medium text-emerald-200"><ShieldCheck className="w-4 h-4" /> Tenant connections enabled</div>
+            <p className="mt-2">Each shop can now open My Shop → Google Reviews → Google connection & settings, sign in with its own Google manager account, and select its own location.</p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-4">
+            <h5 className="text-sm font-semibold text-amber-200">DieselBridge administrator checklist</h5>
+            <ol className="mt-3 space-y-2 text-sm leading-6 text-zinc-300">
+              <li><span className="mr-2 font-semibold text-gold-400">1.</span>Request Google Business Profile API access for the DieselBridge Google Cloud project.</li>
+              <li className="break-words"><span className="mr-2 font-semibold text-gold-400">2.</span>Register callback URL: <code className="text-amber-200">{googleReviews.callback_url}</code></li>
+              <li className="break-words"><span className="mr-2 font-semibold text-gold-400">3.</span>Create a Pub/Sub push subscription to: <code className="text-amber-200">{googleReviews.pubsub_url}</code></li>
+              <li><span className="mr-2 font-semibold text-gold-400">4.</span>Store Google client ID, client secret, Pub/Sub audience, and a dedicated Fernet encryption key in managed backend secrets; then redeploy.</li>
+            </ol>
+            {!googleReviews.pubsub_auth_ready && <p className="mt-3 text-sm text-amber-200">Pub/Sub OIDC audience has not been configured yet.</p>}
+            <a href="https://developers.google.com/my-business/content/overview" target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-gold-400 hover:text-gold-300">Open Google Business Profile API guide <ExternalLink className="w-4 h-4" /></a>
+          </div>
         )}
       </IndustrialCard>
 

@@ -1267,6 +1267,7 @@ export default function InventoryPage() {
                   <th className="px-4 py-3">Location</th>
                   <th className="px-4 py-3">Cost</th>
                   <th className="px-4 py-3">Price</th>
+                  <th className="px-4 py-3">Updated</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1311,6 +1312,9 @@ export default function InventoryPage() {
                       <td className="px-4 py-3 text-gray-200">{item.location || <span className="text-gray-500">—</span>}</td>
                       <td className="px-4 py-3 text-gray-200">${item.cost}</td>
                       <td className="px-4 py-3 text-gray-200">${item.selling_price}</td>
+                      <td className="px-4 py-3 text-gray-400 whitespace-nowrap">
+                        {item.updated_at ? new Date(item.updated_at).toLocaleDateString() : <span className="text-gray-500">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         <button
                           onClick={() => openManage(item)}

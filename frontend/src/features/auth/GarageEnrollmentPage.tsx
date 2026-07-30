@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Spinner } from '@/components/ui'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -97,6 +97,7 @@ const steps = [
 ]
 
 export default function GarageEnrollmentPage() {
+  const navigate = useNavigate()
   const [currentStep, setCurrentStep] = useState(1)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -201,6 +202,7 @@ export default function GarageEnrollmentPage() {
       }
       await api.post('/auth/enroll-garage', submitData)
       setIsSuccess(true)
+      navigate('/enroll/success', { replace: true })
     } catch (err: unknown) {
       const detail =
         typeof err === 'object' &&

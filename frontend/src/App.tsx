@@ -11,6 +11,7 @@ import ForgotPasswordPage from './features/auth/ForgotPasswordPage'
 import ResetPasswordPage from './features/auth/ResetPasswordPage'
 import VerifyEmailPage from './features/auth/VerifyEmailPage'
 import GarageEnrollmentPage from './features/auth/GarageEnrollmentPage'
+import GarageEnrollmentSuccessPage from './features/auth/GarageEnrollmentSuccessPage'
 import DashboardLayout from './components/layout/DashboardLayout'
 import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
 import QuoteApprovalPage from './features/quote-approval/QuoteApprovalPage'
@@ -42,6 +43,79 @@ const ADMIN_FAVICON_PATHS = [
   /^\/reset-password$/,
   /^\/verify-email$/,
 ]
+
+const PUBLIC_ANALYTICS_PATHS = new Set([
+  '/',
+  '/enroll',
+  '/enroll/success',
+  '/privacy',
+  '/terms',
+  '/login',
+  '/forgot-password',
+  '/reset-password',
+  '/verify-email',
+])
+
+function isTokenAccessRoute(pathname: string): boolean {
+  return /^\/(quote|invoice)\/[^/]+$/.test(pathname)
+}
+
+function isProductAnalyticsRoute(pathname: string, role?: string): boolean {
+  if (PUBLIC_ANALYTICS_PATHS.has(pathname) || isTokenAccessRoute(pathname)) return true
+  if (role === 'super_admin') return false
+
+  // Protected product surfaces are tracked only after the authenticated user's
+  // role is known. This keeps platform-super-admin navigation out of GA.
+  return Boolean(role) && /^(\/dashboard|\/portal|\/mechanic|\/fleet)(\/|$)/.test(pathname)
+}
+
+function analyticsPagePath(pathname: string, search: string): string {
+  if (isTokenAccessRoute(pathname)) return pathname.startsWith('/quote/') ? '/quote/:token' : '/invoice/:token'
+
+  // Usage analytics needs page families, not tenant/customer record identifiers.
+  const redactedPath = pathname
+    .replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/:id')
+    .replace(/\/\d+(?=\/|$)/g, '/:id')
+
+  return `${redactedPath}${search}`
+}
+
+function loadGoogleAnalytics(measurementId: string) {
+  if (document.getElementById('google-analytics-tag')) return
+
+  const tag = document.createElement('script')
+  tag.id = 'google-analytics-tag'
+  tag.async = true
+  tag.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`
+  document.head.appendChild(tag)
+
+  window.dataLayer = window.dataLayer || []
+  window.gtag = window.gtag || function gtag(...args: unknown[]) { window.dataLayer?.push(args) }
+  window.gtag('js', new Date())
+  window.gtag('config', measurementId, { send_page_view: false })
+}
+
+function ProductAnalyticsTracker() {
+  const location = useLocation()
+  const { user } = useAuthStore()
+
+  useEffect(() => {
+    const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim()
+    const isProductionSite = ['dieselbridge.com', 'www.dieselbridge.com'].includes(window.location.hostname)
+    const pagePath = analyticsPagePath(location.pathname, location.search)
+
+    if (!measurementId || !isProductionSite || !isProductAnalyticsRoute(location.pathname, user?.role)) return
+
+    loadGoogleAnalytics(measurementId)
+    window.gtag?.('event', 'page_view', {
+      page_title: document.title,
+      page_location: `${window.location.origin}${pagePath}`,
+      page_path: pagePath,
+    })
+  }, [location.pathname, location.search, user?.role])
+
+  return null
+}
 
 function resolveFavicon(pathname: string): FaviconAssetSet {
   return ADMIN_FAVICON_PATHS.some((pattern) => pattern.test(pathname)) ? ADMIN_FAVICON : PUBLIC_FAVICON
@@ -216,6 +290,7 @@ function App() {
   return (
     <ThemeProvider>
     <BrowserRouter>
+      <ProductAnalyticsTracker />
       <RouteFaviconManager />
       <ToastLimiter />
       <AppToaster />
@@ -223,6 +298,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<Navigate to="/login" replace />} />
         <Route path="/enroll" element={<GarageEnrollmentPage />} />
+        <Route path="/enroll/success" element={<GarageEnrollmentSuccessPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />

@@ -34,6 +34,7 @@ from app.services.quickbooks_service import (
     QUICKBOOKS_PAYMENTS_SCOPE,
     is_quickbooks_configured,
 )
+from app.services.google_reviews_service import is_configured as is_google_reviews_configured
 from app.core.logging import get_logger
 
 router = APIRouter()
@@ -95,6 +96,14 @@ class StripePlatformStatusResponse(BaseModel):
     onboarding_mode: str
 
 
+class GoogleReviewsPlatformStatusResponse(BaseModel):
+    """Secret-free Google Reviews readiness for super-admin operations."""
+    platform_ready: bool
+    callback_url: str
+    pubsub_url: str
+    pubsub_auth_ready: bool
+
+
 def require_super_admin():
     """Dependency to ensure only SUPER_ADMIN can access these endpoints"""
     async def role_checker(current_user: User = Depends(get_current_active_user)):
@@ -122,6 +131,22 @@ async def get_quickbooks_platform_status(
         webhook_ready=bool(settings.QUICKBOOKS_WEBHOOK_VERIFIER_TOKEN),
         webhook_url=webhook_url,
         scopes=[QUICKBOOKS_ACCOUNTING_SCOPE, QUICKBOOKS_PAYMENTS_SCOPE],
+    )
+
+
+@router.get("/platform/google-reviews-status", response_model=GoogleReviewsPlatformStatusResponse)
+async def get_google_reviews_platform_status(
+    current_user: User = Depends(require_super_admin()),
+):
+    """Show Google Reviews readiness without ever returning provider secrets."""
+    callback_url = settings.GOOGLE_BUSINESS_REDIRECT_URI or (
+        f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/google-reviews/connection/callback"
+    )
+    return GoogleReviewsPlatformStatusResponse(
+        platform_ready=is_google_reviews_configured(),
+        callback_url=callback_url,
+        pubsub_url=f"{settings.PUBLIC_API_BASE_URL.rstrip('/')}/api/v1/google-reviews/webhooks/pubsub",
+        pubsub_auth_ready=bool(settings.GOOGLE_BUSINESS_PUBSUB_AUDIENCE),
     )
 
 

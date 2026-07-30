@@ -134,6 +134,16 @@ class Settings(BaseSettings):
     # Anthropic (offline description-library canonicalization)
     ANTHROPIC_API_KEY: str = ""
 
+    # Google Business Profile Reviews. Keep this encryption key separate from
+    # application sessions so credential rotation remains narrowly scoped.
+    GOOGLE_BUSINESS_CLIENT_ID: str = ""
+    GOOGLE_BUSINESS_CLIENT_SECRET: str = ""
+    GOOGLE_BUSINESS_REDIRECT_URI: str = ""
+    GOOGLE_BUSINESS_TOKEN_ENCRYPTION_KEY: str = ""
+    GOOGLE_BUSINESS_PUBSUB_AUDIENCE: str = ""
+    GOOGLE_BUSINESS_HTTP_TIMEOUT_SECONDS: float = Field(default=15.0, gt=0, le=60)
+    GOOGLE_REVIEWS_MAX_PUBLISH_ATTEMPTS: int = Field(default=5, ge=1, le=12)
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:5173"
     PUBLIC_API_BASE_URL: str = "http://localhost:8000"

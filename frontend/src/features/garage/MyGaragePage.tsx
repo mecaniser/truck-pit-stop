@@ -1,11 +1,13 @@
 import { NavLink, Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
+import { BarChart3, Boxes, ChevronRight, ClipboardList, Clock3, PackageSearch, Settings2, Star, Truck, User, Wrench, type LucideIcon } from 'lucide-react'
 import ServicesManagementPage from '@/features/dashboard/ServicesManagementPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import MechanicsPage from '@/features/mechanics/MechanicsPage'
 import SuppliersPage from '@/features/suppliers/SuppliersPage'
 import GarageAnalyticsPage from './GarageAnalyticsPage'
 import LaborBookTimePage from './LaborBookTimePage'
+import GoogleReviewsPage from '@/features/reviews/GoogleReviewsPage'
+import GoogleReviewsSettingsPage from '@/features/reviews/GoogleReviewsSettingsPage'
 import { useAuthStore } from '@/stores/authStore'
 
 type GarageSection = {
@@ -22,6 +24,7 @@ const GARAGE_SECTIONS: GarageSection[] = [
   { to: 'labor-book-time', label: 'Labor Book Time', shortLabel: 'Book Time', icon: Clock3 },
   { to: 'inventory', label: 'Inventory', shortLabel: 'Inventory', icon: Boxes },
   { to: 'suppliers', label: 'Suppliers', shortLabel: 'Suppliers', icon: PackageSearch },
+  { to: 'reviews', label: 'Google Reviews', shortLabel: 'Reviews', icon: Star },
   { to: '/fleet', label: 'Fleet', shortLabel: 'Fleet', icon: Truck, ownerOrAdminOnly: true },
   { to: 'analytics', label: 'Analytics', shortLabel: 'Analytics', icon: BarChart3 },
 ]
@@ -151,6 +154,8 @@ export default function MyGaragePage() {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="mechanics" element={<MechanicsPage />} />
           <Route path="suppliers" element={<SuppliersPage />} />
+          <Route path="reviews" element={<GoogleReviewsPage />} />
+          <Route path="reviews/settings" element={<GoogleReviewsSettingsPage />} />
           <Route path="analytics" element={<GarageAnalyticsPage />} />
         </Routes>
       </div>
