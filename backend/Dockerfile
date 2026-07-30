@@ -16,7 +16,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy frontend files and build
 ARG VITE_MAPBOX_TOKEN
+ARG VITE_GA_MEASUREMENT_ID
 ENV VITE_MAPBOX_TOKEN=${VITE_MAPBOX_TOKEN}
+ENV VITE_GA_MEASUREMENT_ID=${VITE_GA_MEASUREMENT_ID}
 COPY frontend/package*.json ./frontend/
 WORKDIR /app/frontend
 RUN npm ci
