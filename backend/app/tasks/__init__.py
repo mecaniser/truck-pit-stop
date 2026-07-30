@@ -26,6 +26,7 @@ celery_app.conf.update(
         "app.tasks.description_library_refresh",
         "app.tasks.provider_outbox",
         "app.tasks.quickbooks_sync",
+        "app.tasks.google_reviews",
     ),
     # Beat schedule for periodic tasks
     beat_schedule={
@@ -65,6 +66,8 @@ celery_app.conf.update(
             "task": "backfill_quickbooks_cdc",
             "schedule": crontab(hour=5, minute=0),
         },
+        "reconcile-google-reviews": {"task": "reconcile_google_reviews", "schedule": crontab(minute="*/15")},
+        "publish-google-review-replies": {"task": "publish_google_review_replies", "schedule": timedelta(minutes=1)},
     },
     task_acks_late=True,
     task_reject_on_worker_lost=True,

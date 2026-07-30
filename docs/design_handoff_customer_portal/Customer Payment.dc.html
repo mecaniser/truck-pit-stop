@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <meta name="design_doc_mode" content="canvas">
+  <style>
+    *{box-sizing:border-box;}
+    body{margin:0;background:#0a0c12;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;}
+    a{color:#a78bfa;text-decoration:none;}
+    a:hover{color:#c4b1ff;}
+  </style>
+</helmet>
+
+<section id="turn1" style="min-width:100%;padding:44px 40px 90px;background:#0a0c12;display:flex;flex-direction:column;gap:28px;">
+  <div>
+    <div style="font-size:23px;font-weight:800;color:#eceef4;letter-spacing:-.01em;">Customer payment page — 3 redesigns</div>
+    <div style="font-size:14px;color:#8b92a5;margin-top:7px;max-width:760px;line-height:1.5;">Single back control (breadcrumb removed — Dashboard lives in the logo). Payment methods are a real choice: picking Zelle drops the $2.57 card fee and the total updates live. Try clicking the methods.</div>
+  </div>
+
+  <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;">
+
+  <!-- ============ 1a ============ -->
+  <div id="1a" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:12px;font-weight:800;color:#0c0d0c;background:#a78bfa;padding:3px 9px;border-radius:7px;">1a</span>
+      <span style="font-size:13px;color:#8b92a5;">Split checkout · sticky pay rail</span>
+    </div>
+    <div data-screen-label="1a Split checkout" style="width:1280px;height:760px;display:flex;flex-direction:column;background:#10131c;border:1px solid #232939;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.5);">
+      <div style="height:52px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:#0d1018;border-bottom:1px solid #1e2432;">
+        <div style="display:flex;align-items:baseline;gap:6px;"><span style="font-size:14px;font-weight:900;font-style:italic;color:#e23b3b;letter-spacing:.03em;">TRUCK</span><span style="font-size:9px;font-weight:700;color:#8b92a5;letter-spacing:.28em;">PIT STOP</span></div>
+        <div style="width:30px;height:30px;border-radius:50%;background:#241f3d;border:1px solid #8b7cf7;color:#c9bfff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">DD</div>
+      </div>
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:16px;padding:18px 24px 16px;">
+        <button style="display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:99px;background:#191d2a;border:1px solid #272d3d;color:#c9cdd8;font-size:13px;font-weight:700;cursor:pointer;flex:0 0 auto;">‹ History</button>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:19px;font-weight:800;color:#eceef4;letter-spacing:-.01em;">TPSW-2B45A36A-000014</div>
+          <div style="font-size:12px;margin-top:3px;"><span style="color:#d9a521;font-weight:600;">2020 Volvo VNR · Unit #603</span><span style="color:#5c6375;"> · July 24, 2026</span></div>
+        </div>
+        <span style="flex:0 0 auto;font-size:12px;font-weight:700;color:#a78bfa;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.35);border-radius:99px;padding:5px 13px;">invoiced</span>
+      </div>
+      <div style="flex:1;display:flex;gap:20px;min-height:0;padding:4px 24px 22px;">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;">
+          <div style="background:#161a26;border:1px solid #232939;border-radius:14px;padding:18px 20px;">
+            <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:#8b92a5;">CUSTOMER CONCERN</div>
+            <div style="font-size:15px;font-weight:700;color:#eceef4;margin-top:6px;">A/C Service</div>
+          </div>
+          <div style="flex:1;background:#161a26;border:1px solid #232939;border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:#8b92a5;">CHARGES · INV-2B45A36A-000034</div>
+              <a href="#1a" style="font-size:12px;font-weight:700;">⬇ Download PDF</a>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Labor / Services</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$100.00</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Parts</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$0.00</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Shop Supplies</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$2.90</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Tax</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$6.59</span></div>
+            <sc-if value="{{ pay_a.showFee }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Card Processing Fee</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$2.57</span></div>
+            </sc-if>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0 2px;margin-top:auto;"><span style="font-size:15px;font-weight:800;color:#eceef4;">Total Due</span><span style="font-size:17px;font-weight:800;color:#eceef4;font-variant-numeric:tabular-nums;">{{ pay_a.total }}</span></div>
+          </div>
+        </div>
+        <div style="width:380px;flex:0 0 auto;background:#161a26;border:1px solid #232939;border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:14px;">
+          <div>
+            <div style="font-size:11px;font-weight:800;letter-spacing:.1em;color:#8b92a5;">TOTAL DUE</div>
+            <div style="font-size:36px;font-weight:800;color:#eceef4;margin-top:4px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;">{{ pay_a.total }}</div>
+            <sc-if value="{{ pay_a.savings }}" hint-placeholder-val="{{ true }}">
+              <div style="font-size:12px;font-weight:700;color:#2dd4bf;margin-top:3px;">You're saving $2.57 — no card fee</div>
+            </sc-if>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px;">
+            <div onClick="{{ pay_a.pickZelle }}" style="{{ pay_a.zelleCard }}">
+              <div style="{{ pay_a.zelleDot }}"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:14px;font-weight:800;color:#eceef4;">Zelle</span><span style="font-size:9px;font-weight:800;letter-spacing:.06em;color:#2dd4bf;background:rgba(45,212,191,0.1);border:1px solid rgba(45,212,191,0.35);border-radius:5px;padding:2px 6px;">NO FEE</span></div>
+                <div style="font-size:12px;color:#8b92a5;margin-top:3px;">Send from your bank app</div>
+              </div>
+              <span style="font-size:13px;font-weight:800;color:#eceef4;font-variant-numeric:tabular-nums;">$109.49</span>
+            </div>
+            <div onClick="{{ pay_a.pickCard }}" style="{{ pay_a.cardCard }}">
+              <div style="{{ pay_a.cardDot }}"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;font-weight:800;color:#eceef4;">Card</div>
+                <div style="font-size:12px;color:#8b92a5;margin-top:3px;">Powered by QuickBooks · +$2.57 fee</div>
+              </div>
+              <span style="font-size:13px;font-weight:800;color:#eceef4;font-variant-numeric:tabular-nums;">$112.06</span>
+            </div>
+          </div>
+          <button style="width:100%;height:52px;border-radius:13px;background:#8b7cf7;border:none;color:#0e1118;font-size:15px;font-weight:800;cursor:pointer;">{{ pay_a.cta }}</button>
+          <div style="text-align:center;font-size:11px;color:#5c6375;">🔒 Secure payment · Receipt emailed instantly</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 1b ============ -->
+  <div id="1b" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:12px;font-weight:800;color:#0c0d0c;background:#a78bfa;padding:3px 9px;border-radius:7px;">1b</span>
+      <span style="font-size:13px;color:#8b92a5;">Payment-first · total as hero</span>
+    </div>
+    <div data-screen-label="1b Payment first" style="width:1280px;height:760px;display:flex;flex-direction:column;background:#10131c;border:1px solid #232939;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.5);">
+      <div style="height:52px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:#0d1018;border-bottom:1px solid #1e2432;">
+        <div style="display:flex;align-items:baseline;gap:6px;"><span style="font-size:14px;font-weight:900;font-style:italic;color:#e23b3b;letter-spacing:.03em;">TRUCK</span><span style="font-size:9px;font-weight:700;color:#8b92a5;letter-spacing:.28em;">PIT STOP</span></div>
+        <div style="width:30px;height:30px;border-radius:50%;background:#241f3d;border:1px solid #8b7cf7;color:#c9bfff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">DD</div>
+      </div>
+      <div style="flex:0 0 auto;padding:16px 24px 0;">
+        <button style="display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:99px;background:#191d2a;border:1px solid #272d3d;color:#c9cdd8;font-size:13px;font-weight:700;cursor:pointer;">‹ History</button>
+      </div>
+      <div style="flex:1;overflow:hidden;display:flex;justify-content:center;">
+        <div style="width:640px;display:flex;flex-direction:column;gap:16px;padding:10px 0 24px;">
+          <div style="text-align:center;">
+            <div style="font-size:13px;color:#8b92a5;">TPSW-2B45A36A-000014 · <span style="color:#d9a521;">Unit #603</span> · <span style="font-size:11px;font-weight:700;color:#a78bfa;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.35);border-radius:99px;padding:2px 9px;">invoiced</span></div>
+            <div style="font-size:46px;font-weight:800;color:#eceef4;margin-top:10px;font-variant-numeric:tabular-nums;letter-spacing:-.02em;">{{ pay_b.total }}</div>
+            <sc-if value="{{ pay_b.savings }}" hint-placeholder-val="{{ true }}">
+              <div style="font-size:13px;font-weight:700;color:#2dd4bf;margin-top:4px;">No card fee with Zelle — you save $2.57</div>
+            </sc-if>
+            <sc-if value="{{ pay_b.showFee }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:13px;color:#8b92a5;margin-top:4px;">Includes $2.57 card processing fee</div>
+            </sc-if>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button onClick="{{ pay_b.pickZelle }}" style="{{ pay_b.zelleSeg }}"><span>Zelle · $109.49</span><span style="font-size:10px;font-weight:700;color:#2dd4bf;">NO FEE</span></button>
+            <button onClick="{{ pay_b.pickCard }}" style="{{ pay_b.cardSeg }}"><span>Card · $112.06</span><span style="font-size:10px;font-weight:700;opacity:.7;">QUICKBOOKS</span></button>
+          </div>
+          <button style="width:100%;height:54px;border-radius:13px;background:#8b7cf7;border:none;color:#0e1118;font-size:15px;font-weight:800;cursor:pointer;">{{ pay_b.cta }}</button>
+          <div style="background:#161a26;border:1px solid #232939;border-radius:14px;padding:16px 20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+              <span style="font-size:11px;font-weight:800;letter-spacing:.1em;color:#8b92a5;">A/C SERVICE · CHARGES</span>
+              <a href="#1b" style="font-size:12px;font-weight:700;">⬇ Invoice PDF</a>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Labor / Services</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$100.00</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Parts</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$0.00</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Shop Supplies</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$2.90</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;"><span style="font-size:13px;color:#9aa1b3;">Tax</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$6.59</span></div>
+            <sc-if value="{{ pay_b.showFee }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Card Processing Fee</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$2.57</span></div>
+            </sc-if>
+          </div>
+          <div style="text-align:center;font-size:11px;color:#5c6375;">🔒 Secure payment · Receipt emailed instantly</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 1c ============ -->
+  <div id="1c" style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:12px;font-weight:800;color:#0c0d0c;background:#a78bfa;padding:3px 9px;border-radius:7px;">1c</span>
+      <span style="font-size:13px;color:#8b92a5;">One document · pay bar as its footer</span>
+    </div>
+    <div data-screen-label="1c Single document" style="width:1280px;height:760px;display:flex;flex-direction:column;background:#10131c;border:1px solid #232939;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.5);">
+      <div style="height:52px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:#0d1018;border-bottom:1px solid #1e2432;">
+        <div style="display:flex;align-items:baseline;gap:6px;"><span style="font-size:14px;font-weight:900;font-style:italic;color:#e23b3b;letter-spacing:.03em;">TRUCK</span><span style="font-size:9px;font-weight:700;color:#8b92a5;letter-spacing:.28em;">PIT STOP</span></div>
+        <div style="width:30px;height:30px;border-radius:50%;background:#241f3d;border:1px solid #8b7cf7;color:#c9bfff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">DD</div>
+      </div>
+      <div style="flex:1;overflow:hidden;display:flex;justify-content:center;padding:18px 24px 24px;">
+        <div style="width:800px;display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+            <button style="display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:99px;background:#191d2a;border:1px solid #272d3d;color:#c9cdd8;font-size:13px;font-weight:700;cursor:pointer;flex:0 0 auto;">‹ History</button>
+            <div style="flex:1;font-size:16px;font-weight:800;color:#eceef4;">TPSW-2B45A36A-000014</div>
+            <span style="font-size:12px;font-weight:700;color:#a78bfa;background:rgba(167,139,250,0.12);border:1px solid rgba(167,139,250,0.35);border-radius:99px;padding:5px 13px;">invoiced</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;background:#161a26;border:1px solid #232939;border-radius:16px;overflow:hidden;">
+            <div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid #1e2432;">
+              <div>
+                <div style="font-size:15px;font-weight:800;color:#eceef4;">Invoice INV-2B45A36A-000034</div>
+                <div style="font-size:12px;margin-top:3px;"><span style="color:#d9a521;font-weight:600;">2020 Volvo VNR · Unit #603</span><span style="color:#5c6375;"> · A/C Service · July 24, 2026</span></div>
+              </div>
+              <a href="#1c" style="font-size:12px;font-weight:700;">⬇ PDF</a>
+            </div>
+            <div style="flex:1;padding:8px 22px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Labor / Services</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$100.00</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Parts</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$0.00</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Shop Supplies</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$2.90</span></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Tax</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$6.59</span></div>
+              <sc-if value="{{ pay_c.showFee }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #1e2432;"><span style="font-size:13px;color:#9aa1b3;">Card Processing Fee</span><span style="font-size:13px;color:#eceef4;font-variant-numeric:tabular-nums;">$2.57</span></div>
+              </sc-if>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 6px;">
+                <span style="font-size:15px;font-weight:800;color:#eceef4;">Total Due</span>
+                <div style="text-align:right;">
+                  <div style="font-size:22px;font-weight:800;color:#eceef4;font-variant-numeric:tabular-nums;">{{ pay_c.total }}</div>
+                  <sc-if value="{{ pay_c.savings }}" hint-placeholder-val="{{ true }}"><div style="font-size:11px;font-weight:700;color:#2dd4bf;">saving $2.57 with Zelle</div></sc-if>
+                </div>
+              </div>
+            </div>
+            <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:14px 22px;background:#12161f;border-top:1px solid #1e2432;">
+              <button onClick="{{ pay_c.pickZelle }}" style="{{ pay_c.zelleChip }}">Zelle <span style="color:#2dd4bf;">· no fee</span></button>
+              <button onClick="{{ pay_c.pickCard }}" style="{{ pay_c.cardChip }}">Card · QuickBooks</button>
+              <div style="flex:1;"></div>
+              <button style="height:46px;padding:0 26px;border-radius:12px;background:#8b7cf7;border:none;color:#0e1118;font-size:14px;font-weight:800;cursor:pointer;">{{ pay_c.cta }}</button>
+            </div>
+          </div>
+          <div style="text-align:center;font-size:11px;color:#5c6375;margin-top:12px;">🔒 Secure payment · Receipt emailed instantly</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { m:{a:'zelle', b:'zelle', c:'zelle'} };
+  pick(k,v){ this.setState(s=>({m:{...s.m,[k]:v}})); }
+  radioCard(a){ return {display:'flex',alignItems:'center',gap:'12px',padding:'14px',borderRadius:'12px',cursor:'pointer',userSelect:'none',background:a?'rgba(139,124,247,0.08)':'#12161f',border:'1px solid '+(a?'#8b7cf7':'#272d3d')}; }
+  dot(a){ return {width:'18px',height:'18px',flex:'0 0 auto',borderRadius:'50%',border:'2px solid '+(a?'#8b7cf7':'#3a4155'),background:a?'radial-gradient(circle, #8b7cf7 0 5px, transparent 5.5px)':'transparent'}; }
+  seg(a){ return {flex:'1 1 0',height:'56px',borderRadius:'12px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:'3px',fontSize:'14px',fontWeight:'800',background:a?'rgba(139,124,247,0.12)':'#161a26',color:a?'#c9bfff':'#8b92a5',border:'1px solid '+(a?'#8b7cf7':'#272d3d'),outline:'none'}; }
+  chip(a){ return {height:'40px',padding:'0 16px',borderRadius:'99px',cursor:'pointer',display:'flex',alignItems:'center',gap:'6px',fontSize:'13px',fontWeight:'800',background:a?'rgba(139,124,247,0.12)':'transparent',color:a?'#c9bfff':'#8b92a5',border:'1px solid '+(a?'#8b7cf7':'#272d3d'),outline:'none'}; }
+  pay(k){
+    const sel=this.state.m[k], card=sel==='card';
+    return {
+      total: card?'$112.06':'$109.49', showFee: card, savings: !card,
+      cta: card?'Pay $112.06 by card':'Get Zelle details — $109.49',
+      pickZelle:()=>this.pick(k,'zelle'), pickCard:()=>this.pick(k,'card'),
+      zelleCard:this.radioCard(!card), cardCard:this.radioCard(card),
+      zelleDot:this.dot(!card), cardDot:this.dot(card),
+      zelleSeg:this.seg(!card), cardSeg:this.seg(card),
+      zelleChip:this.chip(!card), cardChip:this.chip(card),
+    };
+  }
+  renderVals(){ return { pay_a:this.pay('a'), pay_b:this.pay('b'), pay_c:this.pay('c') }; }
+}
+</script>
+</body>
+</html>
