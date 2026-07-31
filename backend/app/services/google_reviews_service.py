@@ -74,8 +74,7 @@ async def list_locations(db: AsyncSession, connection: GoogleBusinessConnection)
         locations: list[dict] = []
         for account in accounts_response.json().get("accounts", []):
             page = await client.get(f"https://mybusinessbusinessinformation.googleapis.com/v1/{account['name']}/locations?readMask=name,title", headers=headers)
-            if page.is_error:
-                continue
+            page.raise_for_status()
             for location in page.json().get("locations", []):
                 locations.append({"account_id": account["name"].split("/")[-1], "location_id": location["name"].split("/")[-1], "name": location.get("title") or location["name"]})
     return locations
