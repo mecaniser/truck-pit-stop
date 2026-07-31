@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
 from typing import Optional
 from uuid import UUID
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -82,8 +83,14 @@ async def callback(code: str = Query(...), state: str = Query(...), db: AsyncSes
 async def locations(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
     _admin(current_user); c = await _connection(db, current_user.tenant_id)
     if not c: raise HTTPException(409, "Connect Google before selecting a location")
-    try: return await list_locations(db, c)
-    except Exception: raise HTTPException(409, "Could not load Google locations; reconnect and try again")
+    try:
+        return await list_locations(db, c)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            raise HTTPException(503, "Google Business Profile API access is still pending for this platform. Google has assigned this project a zero request quota, so locations cannot be loaded yet.")
+        raise HTTPException(502, "Google could not load this account's Business Profile locations. Reconnect and try again.")
+    except Exception:
+        raise HTTPException(502, "Google could not load this account's Business Profile locations. Reconnect and try again.")
 
 @router.put("/connection/location")
 async def select_location(payload: LocationSelection, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
