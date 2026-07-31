@@ -34,7 +34,10 @@ export default function GoogleReviewsSettingsPage() {
   const save = useMutation({ mutationFn: () => api.put('/google-reviews/settings', { brand_voice_prompt: voice, reply_policy: policy, auto_publish_five_star: autoPublish, alert_recipients: recipients.split(',').map(email => email.trim()).filter(Boolean) }), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['google-review-settings'] }); toast.success('Review settings saved') }, onError: () => toast.error('Could not save settings') })
 
   const reconnect = () => connect.mutate()
-  const locationLoadMessage = (locationsError as any)?.response?.data?.detail as string | undefined
+  const locationErrorStatus = (locationsError as any)?.response?.status as number | undefined
+  const locationLoadMessage = locationErrorStatus === 503
+    ? 'Google Business Profile API access is still pending for this platform. Google has assigned this project a zero request quota, so locations cannot be loaded yet.'
+    : (locationsError as any)?.response?.data?.detail as string | undefined
 
   return <div className="mx-auto max-w-4xl p-4 sm:p-6 text-white">
     <Link to="/dashboard/garage/reviews" className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Google Reviews inbox</Link>
