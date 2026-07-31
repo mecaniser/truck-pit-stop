@@ -67,7 +67,7 @@ async def authorize(db: AsyncSession = Depends(get_db), current_user: User = Dep
 async def callback(code: str = Query(...), state: str = Query(...), db: AsyncSession = Depends(get_db)):
     row = (await db.execute(select(GoogleBusinessOAuthState).where(GoogleBusinessOAuthState.state_hash == hashlib.sha256(state.encode()).hexdigest()))).scalar_one_or_none()
     if not row or row.consumed_at or row.expires_at < datetime.now(timezone.utc):
-        return RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/reviews/settings?google-reviews=error", 303)
+        return RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/garage/reviews/settings?google-reviews=error", 303)
     row.consumed_at = datetime.now(timezone.utc)
     c = await _connection(db, row.tenant_id)
     if not c: c = GoogleBusinessConnection(tenant_id=row.tenant_id); db.add(c); await db.flush()
@@ -76,7 +76,7 @@ async def callback(code: str = Query(...), state: str = Query(...), db: AsyncSes
         result = "select-location"
     except Exception:
         await db.rollback(); result = "error"
-    return RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/reviews/settings?google-reviews={result}", 303)
+    return RedirectResponse(f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/garage/reviews/settings?google-reviews={result}", 303)
 
 @router.get("/connection/locations")
 async def locations(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_active_user)):
