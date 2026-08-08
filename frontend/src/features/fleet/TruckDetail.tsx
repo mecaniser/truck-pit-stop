@@ -379,10 +379,10 @@ export default function TruckDetail({
           </div>
           <div className="dhead-r">
             <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)} title="New repair order">
-              <ClipboardList size={15} /> <span className="dbtn-label">New repair order</span>
+              <ClipboardList size={15} /> <span className="dbtn-label">New repair order</span><span className="dbtn-abbr">RO</span>
             </button>
             <button className="dbtn dbtn-yellow" onClick={() => setSchedulePMOpen(true)} title={t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}>
-              <Calendar size={15} /> <span className="dbtn-label">{t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}</span>
+              <Calendar size={15} /> <span className="dbtn-label">{t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}</span><span className="dbtn-abbr">PM</span>
             </button>
           </div>
         </div>

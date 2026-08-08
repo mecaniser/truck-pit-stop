@@ -243,6 +243,7 @@
 .fleet-root .dhead{margin-bottom:22px;}
 .fleet-root .dhead-main{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap;}
 .fleet-root .dhead-unit-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.fleet-root .dbtn-abbr{display:none;}
 .fleet-root .dhead-details{height:36px;padding:0 12px;font-size:12.5px;}
 .fleet-root .dhead-unit{font-family:var(--display);font-weight:800;font-size:46px;line-height:.9;text-transform:uppercase;letter-spacing:.5px;margin:0;white-space:nowrap;}
 .fleet-root .dbadge{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
@@ -695,11 +696,11 @@
   .fleet-root .dhead-unit-row{width:100%;}
   .fleet-root .dhead-details .dbtn-label{display:none;}
   .fleet-root .dhead-details{width:34px;height:34px;padding:0 !important;justify-content:center;}
-  /* Actions: bigger icons, and the row wraps rather than shedding its words.
-     A phone has the width to say "New repair order" on a line of its own; it
-     does not have the context to make "RO" mean anything to a driver holding
-     it. The row wraps to a second line instead. */
-  .fleet-root .dhead-r{gap:8px;flex-wrap:wrap;}
+  /* Actions: bigger icons, RO / PM abbreviations. The stale rule that squared
+     off the first button is gone with the Edit button it was written for. */
+  .fleet-root .dhead-r{gap:8px;}
+  .fleet-root .dhead-r .dbtn-label{display:none;}
+  .fleet-root .dhead-r .dbtn-abbr{display:inline;}
   .fleet-root .dhead-r .dbtn{gap:6px;padding:0 14px;font-weight:800;letter-spacing:.5px;}
   .fleet-root .dhead-r .dbtn svg{width:18px;height:18px;}
 
