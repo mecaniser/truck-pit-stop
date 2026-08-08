@@ -543,6 +543,50 @@ async def test_new_work_order_defaults_blank_description(db_session):
 
 
 @pytest.mark.asyncio
+async def test_new_work_order_creates_staged_labor_and_parts_together(db_session):
+    from decimal import Decimal
+    from app.db.models.inventory import Inventory, PartsUsage
+    from app.db.models.labor import Labor
+    from app.schemas.fleet import WorkOrderLaborLineCreate, WorkOrderPartLineCreate
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    tenant.internal_labor_rate = Decimal("40.00")
+    part = Inventory(
+        id=uuid4(), tenant_id=tenant.id, sku="TIRE-22", name="Drive tire",
+        stock_quantity=6, cost=Decimal("210.00"), selling_price=Decimal("295.00"),
+    )
+    db_session.add(part)
+    await db_session.commit()
+
+    result = await fleet.new_work_order(
+        vehicle_id=vehicle.id,
+        body=WorkOrderCreate(
+            description="Replace two damaged drive tires",
+            labor_lines=[WorkOrderLaborLineCreate(description="Mount and balance", hours=Decimal("1.5"))],
+            part_lines=[WorkOrderPartLineCreate(inventory_id=part.id, quantity=Decimal("2"))],
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+    ro_id = result.created_work_order.repair_order_id
+    labor = (await db_session.execute(select(Labor).where(Labor.repair_order_id == ro_id))).scalar_one()
+    usage = (await db_session.execute(select(PartsUsage).where(PartsUsage.repair_order_id == ro_id))).scalar_one()
+    await db_session.refresh(part)
+
+    assert labor.description == "Mount and balance"
+    assert Decimal(str(labor.total_cost)) == Decimal("60.00")
+    assert Decimal(str(usage.quantity)) == Decimal("2.00")
+    assert Decimal(str(usage.total_price)) == Decimal("420.00")
+    assert part.stock_quantity == 4
+
+    ro = (await db_session.execute(select(RepairOrder).where(RepairOrder.id == ro_id))).scalar_one()
+    assert Decimal(str(ro.total_labor_cost)) == Decimal("60.00")
+    assert Decimal(str(ro.total_parts_cost)) == Decimal("420.00")
+    assert Decimal(str(ro.total_cost)) == Decimal("480.00")
+
+
+@pytest.mark.asyncio
 async def test_internal_wo_captures_mileage_in_and_out(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     vehicle.mileage = 305000

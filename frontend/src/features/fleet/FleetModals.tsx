@@ -477,12 +477,13 @@ const COMPLAINT_CHIPS = [
   'Lights out', 'Coolant leak', 'A/C not cooling', "Won't start", 'Oil leak',
 ]
 
-/**
- * Creating a work order used to end at a toast: the modal closed, and the
- * manager had to walk back into the truck and reopen the order to assign it,
- * scope it, or start it. This drawer is one surface with two states — scope it,
- * then keep working in the same panel once it exists.
- */
+type FleetBuilderAddType = 'service' | 'labor' | 'part'
+type FleetBuilderLabor = { id: string; description: string; hours: number }
+type FleetBuilderPart = { id: string; inventoryId: string; name: string; sku: string; quantity: number; unitCost: number }
+type FleetBuilderInventory = { id: string; name: string; sku: string; cost: number | string; selling_price: number | string; stock_quantity: number }
+
+/** Yard-side price builder. The manager composes the whole Draft while standing
+ * at the truck; submission persists the complaint and every staged line once. */
 export function NewWorkOrderModal({ truck, onClose, onCreated }: {
   truck: BoardTruck; onClose: () => void; onCreated: (repairOrderId?: string) => void
 }) {
@@ -490,11 +491,15 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
   const [description, setDescription] = useState('')
   const [selectedServices, setSelectedServices] = useState<string[]>([])
   const [serviceQuery, setServiceQuery] = useState('')
+  const [addType, setAddType] = useState<FleetBuilderAddType>('service')
+  const [stagedLabor, setStagedLabor] = useState<FleetBuilderLabor[]>([])
+  const [laborDescription, setLaborDescription] = useState('')
+  const [laborHours, setLaborHours] = useState(0.5)
+  const [stagedParts, setStagedParts] = useState<FleetBuilderPart[]>([])
+  const [inventoryId, setInventoryId] = useState('')
+  const [partQuantity, setPartQuantity] = useState(1)
   const [mechanicId, setMechanicId] = useState('')
   const [billingOpen, setBillingOpen] = useState(false)
-  // Once created, the same drawer becomes the live work order — no close, no
-  // reopen, no hunting for it on the truck.
-  const [created, setCreated] = useState<{ repairOrderId: string; orderNumber: string } | null>(null)
 
   const billToOptions = useTruckBillToOptions(truck.id)
   const [billToCustomerId, setBillToCustomerId] = useState('')
@@ -515,11 +520,22 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
     queryKey: ['fleet-mechanics'],
     queryFn: async () => (await api.get('/fleet/mechanics')).data,
   })
+  const { data: inventory = [] } = useQuery<FleetBuilderInventory[]>({
+    queryKey: ['fleet-inventory'],
+    queryFn: async () => (await api.get('/inventory', { params: { limit: 100 } })).data,
+  })
+  const { data: fleetSettings } = useQuery<{ internal_labor_rate: number; labor_rate: number }>({
+    queryKey: ['fleet-settings'],
+    queryFn: async () => (await api.get('/fleet/settings')).data,
+  })
+  const { user } = useAuthStore()
+  const showPrices = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const laborRate = Number(fleetSettings?.internal_labor_rate || 0)
   const catalog = services || []
   const normalizedQuery = serviceQuery.trim().toLowerCase()
-  const visibleServices = normalizedQuery
-    ? catalog.filter((service) => service.name.toLowerCase().includes(normalizedQuery))
-    : catalog
+  const visibleServices = normalizedQuery.length >= 2
+    ? catalog.filter((service) => service.name.toLowerCase().includes(normalizedQuery)).slice(0, 8)
+    : []
   const toggleService = (id: string) =>
     setSelectedServices((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id])
 
@@ -529,50 +545,85 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
   const billToLabel = billToOptions.find((item) => item.customer_id === billToCustomerId)?.customer_company_name
     || 'Truck default'
 
+  const selectedServiceEntries = catalog.filter((service) => selectedServices.includes(service.service_id))
+  const manualLaborTotal = stagedLabor.reduce((sum, line) => sum + line.hours * laborRate, 0)
+  const serviceTotal = selectedServiceEntries.reduce((sum, service) => (
+    sum + ((service.duration_minutes || 0) / 60) * laborRate + Number(service.parts_cost || 0)
+  ), 0)
+  const partsTotal = stagedParts.reduce((sum, part) => sum + part.quantity * part.unitCost, 0)
+  const estimatedTotal = serviceTotal + manualLaborTotal + partsTotal
+  const lineCount = selectedServices.length + stagedLabor.length + stagedParts.length
+
+  const addLaborLine = () => {
+    const name = laborDescription.trim()
+    if (!name || laborHours <= 0) return
+    setStagedLabor((current) => [...current, { id: crypto.randomUUID(), description: name, hours: laborHours }])
+    setLaborDescription('')
+    setLaborHours(0.5)
+  }
+
+  const addPartLine = () => {
+    const item = inventory.find((candidate) => candidate.id === inventoryId)
+    if (!item || partQuantity <= 0) return
+    setStagedParts((current) => {
+      const existing = current.find((line) => line.inventoryId === item.id)
+      if (existing) {
+        return current.map((line) => line.inventoryId === item.id
+          ? { ...line, quantity: line.quantity + partQuantity }
+          : line)
+      }
+      return [...current, {
+        id: crypto.randomUUID(), inventoryId: item.id, name: item.name, sku: item.sku,
+        quantity: partQuantity, unitCost: Number(item.cost || 0),
+      }]
+    })
+    setInventoryId('')
+    setPartQuantity(1)
+  }
+
   const create = useMutation({
     mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/work-order`, {
       description: description.trim(),
       bill_to_customer_id: billToCustomerId || undefined,
       service_ids: selectedServices.length ? selectedServices : undefined,
+      labor_lines: stagedLabor.map((line) => ({ description: line.description, hours: line.hours })),
+      part_lines: stagedParts.map((line) => ({ inventory_id: line.inventoryId, quantity: line.quantity })),
     })).data as BoardTruck & { created_work_order?: { id: string; repair_order_id: string } },
     onSuccess: async (result) => {
       const madeOrder = result.created_work_order
       if (!madeOrder) {
-        // Older API without the created order — fall back to the old behavior
-        // rather than stranding the manager on a drawer with nothing in it.
         toast.success('Repair order created')
         invalidateFleetAndCockpit(qc)
         onCreated()
         onClose()
         return
       }
-      // Assigning uses the same endpoint the panel does, so one code path owns
-      // assignment and this drawer never drifts from it.
       if (mechanicId) {
         try {
           await api.post(`/repair-orders/${madeOrder.repair_order_id}/assign-mechanic`, { mechanic_id: mechanicId })
         } catch (error) {
           const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-          toast.error(detail || 'Repair order created, but assigning the mechanic failed')
+          toast.error(detail || 'Repair order created, but the mechanic could not be assigned.')
         }
       }
-      toast.success(`Work order ${madeOrder.id} created`)
+      toast.success(`Repair order ${madeOrder.id} created`)
       invalidateFleetAndCockpit(qc)
       onCreated(madeOrder.repair_order_id)
-      setCreated({ repairOrderId: madeOrder.repair_order_id, orderNumber: madeOrder.id })
+      onClose()
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create repair order'),
   })
 
-  const scopeFooter = (
+  const footer = (
     <div className="wo-drawer-actions">
       <button className={ghostBtn} onClick={onClose} disabled={create.isPending}>Cancel</button>
       <button
         className={yellowBtn}
-        disabled={create.isPending || !description.trim()}
+        disabled={create.isPending || (!description.trim() && lineCount === 0)}
         onClick={() => create.mutate()}
       >
-        {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />} Create repair order
+        {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />}
+        {create.isPending ? 'Creating draft…' : `Create draft${lineCount ? ` · ${lineCount} item${lineCount === 1 ? '' : 's'}` : ''}`}
       </button>
     </div>
   )
@@ -583,40 +634,29 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
       dark
       onClose={onClose}
       width={WO_DRAWER_WIDTH}
-      subtitle={created ? fleetUnitLabel(truck) : 'New repair order'}
-      title={created ? created.orderNumber : fleetUnitLabel(truck)}
+      subtitle="Build repair order"
+      title={fleetUnitLabel(truck)}
       headerIcon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
-      footer={created ? (
-        <div className="wo-drawer-actions">
-          <button className={yellowBtn} onClick={onClose}>Done</button>
-        </div>
-      ) : scopeFooter}
+      footer={footer}
     >
-      {created ? (
-        <div className="wo-drawer-body wo-state-enter" key="live">
-          <WorkOrderBody repairOrderId={created.repairOrderId} onClose={onClose} onChanged={() => onCreated()} />
+      <div className="wo-drawer-body wo-state-enter">
+        <div className="wo-truckstrip">
+          <span>{[truck.year, truck.make, truck.model].filter(Boolean).join(' ') || 'Truck'}</span>
+          {truck.odometer != null && <span>{fmt(truck.odometer)} mi</span>}
         </div>
-      ) : (
-        <div className="wo-drawer-body wo-state-enter" key="scope">
-          {/* The drawer's header already names the truck. Repeating it here put
-              the same string on screen twice, 90px apart — the strip carries
-              only what the header cannot: the vehicle and its odometer. */}
-          <div className="wo-truckstrip">
-            <span>{[truck.year, truck.make, truck.model].filter(Boolean).join(' ') || 'Truck'}</span>
-            {truck.odometer != null && <span>{fmt(truck.odometer)} mi</span>}
-          </div>
 
-          <div className="wo-scope">
-            <section className="wo-scope-main">
-              <Field label="What's the work / complaint?">
+        <div className="wo-builder-grid">
+          <main className="wo-builder-main">
+            <section>
+              <Field label="Inspection notes / complaint">
                 <SuggestingTextarea
                   value={description}
                   onChange={setDescription}
-                  rows={4}
-                  placeholder="e.g. Air leak on front brake chamber; DOT inspection due; check engine light"
+                  rows={3}
+                  placeholder="Record everything you find while walking the truck and trailer…"
                   style={{
                     width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9,
-                    color: 'var(--text)', padding: '12px 14px', font: 'inherit', resize: 'vertical', minHeight: 104,
+                    color: 'var(--text)', padding: '12px 14px', font: 'inherit', resize: 'vertical', minHeight: 90,
                   }}
                 />
                 <div className="wo-chips">
@@ -629,88 +669,158 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
               </Field>
             </section>
 
-            <section className="wo-scope-side">
-              <Field label={`Services${selectedServices.length ? ` · ${selectedServices.length} selected` : ' (optional)'}`}>
-                {catalog.length > 8 && (
+            <section className="wo-builder-add" aria-labelledby="wo-builder-add-heading">
+              <div className="wo-builder-section-head">
+                <div>
+                  <h3 id="wo-builder-add-heading">Add work</h3>
+                  <p>Build the complete Draft before you leave this truck.</p>
+                </div>
+                <div className="wo-builder-tabs" role="tablist" aria-label="Add work type">
+                  {(['service', 'labor', 'part'] as FleetBuilderAddType[]).map((type) => (
+                    <button key={type} type="button" role="tab" aria-selected={addType === type}
+                      className={addType === type ? 'is-active' : ''} onClick={() => setAddType(type)}>
+                      {type === 'service' ? 'Services' : type === 'labor' ? 'Labor' : 'Parts'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {addType === 'service' && (
+                <div role="tabpanel">
                   <div className="wo-svc-search">
                     <Search size={16} aria-hidden="true" />
-                    <input
-                      value={serviceQuery}
-                      onChange={(event) => setServiceQuery(event.target.value)}
-                      placeholder="Filter services…"
-                      aria-label="Filter services"
-                    />
+                    <input value={serviceQuery} onChange={(event) => setServiceQuery(event.target.value)}
+                      placeholder="Search service catalog by name…" aria-label="Search service catalog" />
                   </div>
-                )}
-                <div className="pm-svc-list wo-svc-list">
                   {catalog.length === 0 ? (
-                    <div className="pm-svc-empty">No services in the catalog yet — you can add labor and parts once the order is open.</div>
-                  ) : visibleServices.length === 0 ? (
-                    <div className="pm-svc-empty">No service matches “{serviceQuery.trim()}”.</div>
+                    <div className="wo-service-search-empty">No services are configured. Add manual labor or inventory parts instead.</div>
+                  ) : normalizedQuery.length < 2 ? (
+                    <div className="wo-service-search-empty">
+                      Type at least two letters. Only matching services appear here.
+                      {selectedServices.length ? ` ${selectedServices.length} already added to the Draft.` : ''}
+                    </div>
                   ) : (
-                    visibleServices.map((service) => {
-                      const on = selectedServices.includes(service.service_id)
-                      return (
-                        <button
-                          type="button"
-                          key={service.service_id}
-                          className={'pm-svc-row' + (on ? ' on' : '')}
-                          onClick={() => toggleService(service.service_id)}
-                          aria-pressed={on}
-                        >
-                          <span className="pm-svc-check">{on && <Check size={13} />}</span>
-                          <span className="pm-svc-name">{service.name}</span>
-                          {service.duration_minutes ? <span className="pm-svc-dur">{service.duration_minutes}m</span> : null}
-                        </button>
-                      )
-                    })
+                    <div className="pm-svc-list wo-svc-list">
+                      {visibleServices.length === 0 ? (
+                        <div className="pm-svc-empty">No service matches “{serviceQuery.trim()}”.</div>
+                      ) : visibleServices.map((service) => {
+                        const on = selectedServices.includes(service.service_id)
+                        return (
+                          <button type="button" key={service.service_id} className={'pm-svc-row' + (on ? ' on' : '')}
+                            onClick={() => { toggleService(service.service_id); setServiceQuery('') }} aria-pressed={on}>
+                            <span className="pm-svc-check">{on && <Check size={13} />}</span>
+                            <span className="pm-svc-name">{service.name}</span>
+                            {service.duration_minutes ? <span className="pm-svc-dur">{service.duration_minutes}m</span> : null}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-                <p className="wo-hint">Each service adds its labor time and parts to the order, so it opens costed.</p>
-              </Field>
-            </section>
+              )}
 
-            <section className="wo-scope-main-b">
-              <Field label="Assign a mechanic (optional)">
-                <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
-                  <option value="">Leave unassigned</option>
-                  {(mechanics || []).map((mechanic) => (
-                    <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>
-                  ))}
-                </select>
-                <p className="wo-hint">You can start and finish an internal order without assigning anyone.</p>
-              </Field>
+              {addType === 'labor' && (
+                <div className="wo-builder-entry" role="tabpanel">
+                  <input value={laborDescription} onChange={(event) => setLaborDescription(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addLaborLine() } }}
+                    placeholder="Labor description" aria-label="Labor description" />
+                  <DurationStepper hours={laborHours} onChange={setLaborHours} stepMinutes={15} minMinutes={15}
+                    ariaLabel="Labor duration" theme="dark" size="lg" />
+                  <button type="button" className={ghostBtn} disabled={!laborDescription.trim()} onClick={addLaborLine}>Add labor</button>
+                </div>
+              )}
 
-              {/* Billing already defaults correctly and rarely changes; asking
-                  for it every time taxes the case that never needs it. */}
-              <div className="wo-billing">
-                <button type="button" className="wo-billing-toggle" onClick={() => setBillingOpen((open) => !open)} aria-expanded={billingOpen}>
-                  <span>
-                    <span className="id-k">Invoice to</span>
-                    <strong>{billToLabel}</strong>
-                  </span>
-                  <ChevronDown size={16} className={billingOpen ? 'wo-billing-caret is-open' : 'wo-billing-caret'} />
-                </button>
-                {billingOpen && (
-                  <div className="wo-billing-body">
-                    <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)} className="wo-select">
-                      <option value="">Use truck default</option>
-                      {billToOptions.map((relationship) => (
-                        <option key={relationship.customer_id} value={relationship.customer_id}>
-                          {relationship.customer_company_name || 'Company'}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="wo-hint">
-                      The truck keeps one service history. Pricing and invoicing follow the company selected for this visit.
-                    </p>
+              {addType === 'part' && (
+                <div className="wo-builder-entry" role="tabpanel">
+                  <div className="wo-builder-part-select">
+                    <BaseSelect variant="dark" placeholder="Search inventory by part or SKU…" value={inventoryId}
+                      onChange={setInventoryId} options={inventory.map((item) => ({
+                        value: item.id, label: item.name,
+                        subLabel: `${item.sku} · ${item.stock_quantity} available${showPrices ? ` · ${money(Number(item.cost || 0))} cost` : ''}`,
+                        searchText: item.sku,
+                      }))} />
                   </div>
-                )}
-              </div>
+                  <QuantityStepper value={partQuantity} onChange={setPartQuantity} min={1} step={1} unitLabel=""
+                    ariaLabel="Part quantity" align="start" theme="dark" size="lg" disabled={!inventoryId} />
+                  <button type="button" className={ghostBtn} disabled={!inventoryId} onClick={addPartLine}>Add part</button>
+                </div>
+              )}
             </section>
-          </div>
+
+            <section className="wo-builder-scope" aria-labelledby="wo-builder-scope-heading">
+              <div className="wo-builder-section-head">
+                <div><h3 id="wo-builder-scope-heading">Draft scope</h3><p>{lineCount ? `${lineCount} item${lineCount === 1 ? '' : 's'} ready to create` : 'Nothing added yet'}</p></div>
+              </div>
+              {lineCount === 0 ? (
+                <div className="wo-builder-empty">Add services, labor, or parts as you find work around the truck.</div>
+              ) : (
+                <div className="wo-builder-lines">
+                  {selectedServiceEntries.map((service) => (
+                    <div className="wo-builder-line" key={service.service_id}>
+                      <span className="wo-builder-kind">Service</span>
+                      <div><strong>{service.name}</strong><small>{service.duration_minutes ? `${service.duration_minutes} min labor` : 'Catalog service'}</small></div>
+                      {showPrices && <b>{money(((service.duration_minutes || 0) / 60) * laborRate + Number(service.parts_cost || 0))}</b>}
+                      <button type="button" className="icon-hit" aria-label={`Remove ${service.name}`} onClick={() => toggleService(service.service_id)}><Trash2 size={16} /></button>
+                    </div>
+                  ))}
+                  {stagedLabor.map((line) => (
+                    <div className="wo-builder-line" key={line.id}>
+                      <span className="wo-builder-kind">Labor</span>
+                      <div><strong>{line.description}</strong><small>{formatHoursMinutes(line.hours)}</small></div>
+                      {showPrices && <b>{money(line.hours * laborRate)}</b>}
+                      <button type="button" className="icon-hit" aria-label={`Remove ${line.description}`} onClick={() => setStagedLabor((current) => current.filter((item) => item.id !== line.id))}><Trash2 size={16} /></button>
+                    </div>
+                  ))}
+                  {stagedParts.map((part) => (
+                    <div className="wo-builder-line" key={part.id}>
+                      <span className="wo-builder-kind">Part</span>
+                      <div><strong>{part.name}</strong><small>{part.sku} · ×{part.quantity}</small></div>
+                      {showPrices && <b>{money(part.quantity * part.unitCost)}</b>}
+                      <button type="button" className="icon-hit" aria-label={`Remove ${part.name}`} onClick={() => setStagedParts((current) => current.filter((item) => item.id !== part.id))}><Trash2 size={16} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </main>
+
+          <aside className="wo-builder-summary" aria-label="Draft summary">
+            <div className="wo-builder-total">
+              <div><span>Draft scope</span><strong>{lineCount} item{lineCount === 1 ? '' : 's'}</strong></div>
+              <dl>
+                <div><dt>Services</dt><dd>{selectedServices.length}</dd></div>
+                <div><dt>Manual labor</dt><dd>{formatHoursMinutes(stagedLabor.reduce((sum, line) => sum + line.hours, 0))}</dd></div>
+                <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
+              </dl>
+              {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
+              <p>Catalog services include their configured labor and parts. Final totals remain editable on the Draft.</p>
+            </div>
+
+            <Field label="Assign mechanic (optional)">
+              <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
+                <option value="">Leave unassigned</option>
+                {(mechanics || []).map((mechanic) => <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>)}
+              </select>
+            </Field>
+
+            <div className="wo-billing">
+              <button type="button" className="wo-billing-toggle" onClick={() => setBillingOpen((open) => !open)} aria-expanded={billingOpen}>
+                <span><span className="id-k">Invoice to</span><strong>{billToLabel}</strong></span>
+                <ChevronDown size={16} className={billingOpen ? 'wo-billing-caret is-open' : 'wo-billing-caret'} />
+              </button>
+              {billingOpen && (
+                <div className="wo-billing-body">
+                  <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)} className="wo-select">
+                    <option value="">Use truck default</option>
+                    {billToOptions.map((relationship) => <option key={relationship.customer_id} value={relationship.customer_id}>{relationship.customer_company_name || 'Company'}</option>)}
+                  </select>
+                  <p className="wo-hint">This visit stays with the truck; invoicing follows the company selected here.</p>
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
-      )}
+      </div>
     </SlidePanel>
   )
 }
@@ -797,7 +907,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   })
 
   const modalTitle = createMode
-    ? `Create PM work order · ${fleetUnitLabel(truck)}`
+    ? `Create PM repair order · ${fleetUnitLabel(truck)}`
     : `${rescheduling ? 'Reschedule' : 'Schedule'} PM · ${fleetUnitLabel(truck)}`
   return (
     <Modal title={modalTitle} icon={createMode ? <ClipboardCheck size={17} /> : <Calendar size={17} />} onClose={onClose} width={460}>
@@ -881,7 +991,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
         {!createMode && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
             <input type="checkbox" checked={createWO} onChange={(e) => setCreateWO(e.target.checked)} style={{ width: 'auto' }} />
-            Create the PM work order now
+            Create the PM repair order now
           </label>
         )}
       </div>
@@ -968,7 +1078,7 @@ function LaborAddRow({ roId, laborRate, onChanged }: { roId: string; laborRate: 
       </div>
       {laborRate <= 0 && (
         <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 5, color: '#fb923c' }}>
-          This work order's labor rate is $0 — set the applicable shop rate before billing.
+          This repair order's labor rate is $0 — set the applicable shop rate before billing.
         </p>
       )}
     </div>
@@ -1289,7 +1399,7 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
               Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
-              <span style={{ marginLeft: 8, color: 'var(--muted-3)' }}>
+              <span style={{ marginLeft: 8, color: 'var(--muted-2)', fontSize: 13 }}>
                 · fleet · {wo.bill_labor_at_customer_rate ? 'customer labor rate' : 'garage labor cost'} · parts at cost
               </span>
             </div>
@@ -1372,7 +1482,7 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
                   {(mechanics || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
                 <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
-                  Optional — you can run this internal work order start to finish without assigning a mechanic.
+                  Optional — you can run this internal repair order start to finish without assigning a mechanic.
                 </p>
               </Field>
             </section>

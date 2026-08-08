@@ -417,7 +417,7 @@ export default function SlidePanel({
               )}
               <button
                 onClick={onClose}
-                className="p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60 rounded-xl transition-colors"
                 aria-label="Close"
               >
                 <X className="w-5 h-5" />
@@ -503,7 +503,8 @@ export default function SlidePanel({
               )}
               <button
                 onClick={onClose}
-                className="p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 text-gray-500 hover:text-gray-700 rounded-full hover:bg-gray-100"
+                aria-label="Close"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -564,7 +565,7 @@ export default function SlidePanel({
                 )}
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center p-2 hover:bg-white/20 rounded-lg transition-colors"
                   aria-label="Close"
                 >
                   <X className="w-6 h-6" />

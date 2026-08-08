@@ -94,6 +94,7 @@ export interface PMServiceEntry {
   service_id: string
   name: string
   duration_minutes: number
+  parts_cost?: number
   sort_order: number
 }
 
