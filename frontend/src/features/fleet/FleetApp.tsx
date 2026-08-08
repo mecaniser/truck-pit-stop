@@ -321,7 +321,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
         {stage === 'ready' && (
           <>
             <button className="sbtn" onClick={() => setWoPanelId(t.pm_work_order!.repair_order_id)}>
-              <Wrench size={14} /> Open WO
+              <Wrench size={14} /> Open RO
             </button>
             <button className="sbtn sbtn-yellow" disabled={startPM.isPending} onClick={() => startPM.mutate()}>
               {startPM.isPending ? <Spinner size="xs" /> : <Play size={14} />} Start PM
