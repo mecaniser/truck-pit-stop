@@ -1,8 +1,9 @@
 from datetime import datetime, date
+from decimal import Decimal
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.db.models.fleet import (
     InspectionStatus,
@@ -163,6 +164,7 @@ class PMServiceEntry(BaseModel):
     service_id: UUID
     name: str
     duration_minutes: int = 0
+    parts_cost: Decimal = Decimal("0")
     sort_order: int = 0
 
     class Config:
@@ -371,6 +373,18 @@ class TruckUpdate(BaseModel):
     status_override: Optional[str] = None
 
 
+class WorkOrderLaborLineCreate(BaseModel):
+    """A manual labor item staged by the Fleet repair-order builder."""
+    description: str = Field(min_length=1, max_length=500)
+    hours: Decimal = Field(gt=0, le=Decimal("999.99"))
+
+
+class WorkOrderPartLineCreate(BaseModel):
+    """An inventory part staged before the Fleet repair order exists."""
+    inventory_id: UUID
+    quantity: Decimal = Field(gt=0, le=Decimal("9999.99"))
+
+
 class WorkOrderCreate(BaseModel):
     # Optional description of the work needed; defaults server-side when blank.
     description: Optional[str] = None
@@ -380,6 +394,11 @@ class WorkOrderCreate(BaseModel):
     # duration x in-house rate) plus its parts, so the work order opens costed
     # instead of empty.
     service_ids: Optional[List[UUID]] = None
+    # The yard workflow composes the full draft before submission. These staged
+    # lines are created with the repair order in the same request so the manager
+    # never has to create an empty draft, reopen it, and enter the rest.
+    labor_lines: List[WorkOrderLaborLineCreate] = Field(default_factory=list)
+    part_lines: List[WorkOrderPartLineCreate] = Field(default_factory=list)
 
 
 class WorkOrderCreateResponse(BoardTruck):

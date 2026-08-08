@@ -747,10 +747,10 @@
   .fleet-root .dhead-stat-div{display:none;}
 }
 
-/* ---------- Work order drawer ----------
-   One surface, two states: scope the order, then keep working in it. Sized and
-   spaced for a tablet held in one hand at the truck, so every control clears
-   the 44px touch floor. */
+/* ---------- Repair order drawer ----------
+   Fleet-side price builder: compose the complete Draft during the yard walk,
+   then create it once. Sized and spaced for a tablet held in one hand at the
+   truck, so every control clears the 44px touch floor. */
 /* The drawer lays itself out against its OWN width, not the viewport's. A
    panel is ~780px wide in portrait and ~760px in landscape, so keying columns
    to the screen made rotation change the layout while the room stayed the
@@ -759,15 +759,15 @@
   container-type:inline-size;container-name:wo-drawer;}
 .fleet-root .wo-drawer-actions{display:flex;gap:10px;justify-content:flex-end;}
 .fleet-root .wo-drawer-actions .dbtn{height:46px;padding:0 20px;font-size:14px;}
+.fleet-root .wo-drawer-body button,
+.fleet-root .wo-drawer-body select{min-height:44px;}
+.fleet-root .wo-drawer-body .icon-hit{min-width:44px;min-height:44px;}
+.fleet-root .wo-drawer-body button[aria-label^="Decrease"],
+.fleet-root .wo-drawer-body button[aria-label^="Increase"]{min-width:44px;}
 
 .fleet-root .wo-truckstrip{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;
   padding:0 0 14px;margin-bottom:16px;border-bottom:1px solid var(--line);
   font-size:13px;color:var(--muted-2);}
-
-.fleet-root .wo-scope{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;}
-.fleet-root .wo-scope-main,
-.fleet-root .wo-scope-main-b,
-.fleet-root .wo-scope-side{display:grid;gap:20px;align-content:start;}
 
 .fleet-root .wo-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
 .fleet-root .wo-chip{display:inline-flex;align-items:center;gap:5px;min-height:38px;padding:0 13px;
@@ -781,6 +781,7 @@
   background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--muted-2);}
 .fleet-root .wo-svc-search input{flex:1;min-width:0;height:100%;background:none;border:none;outline:none;
   color:var(--text);font:inherit;font-size:14px;}
+.fleet-root .wo-service-search-empty{padding:12px 2px 2px;font-size:12.5px;line-height:1.5;color:var(--muted-2);}
 .fleet-root .wo-svc-list{max-height:290px;}
 /* The catalog is a reach target on glass, not a dense desktop list. */
 .fleet-root .wo-svc-list .pm-svc-row{min-height:46px;font-size:14px;}
@@ -799,8 +800,49 @@
 .fleet-root .wo-billing-caret.is-open{transform:rotate(180deg);}
 .fleet-root .wo-billing-body{padding:0 15px 15px;}
 
-/* Create resolves the drawer into the live order. Content settles in; the
-   surface itself never moves, because it is the same surface. */
+.fleet-root .wo-builder-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start;}
+.fleet-root .wo-builder-main{display:grid;gap:24px;min-width:0;}
+.fleet-root .wo-builder-add{border-top:1px solid var(--line);padding-top:20px;}
+.fleet-root .wo-builder-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px;}
+.fleet-root .wo-builder-section-head h3{font-size:17px;line-height:1.25;color:var(--text);}
+.fleet-root .wo-builder-section-head p{margin-top:4px;font-size:12.5px;line-height:1.45;color:var(--muted-2);}
+.fleet-root .wo-builder-tabs{display:flex;align-items:center;gap:3px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--ink);}
+.fleet-root .wo-builder-tabs button{min-width:76px;padding:0 12px;border:0;border-radius:7px;background:transparent;color:var(--muted);
+  font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;}
+.fleet-root .wo-builder-tabs button.is-active{background:var(--surface-3);color:var(--yellow);}
+.fleet-root .wo-builder-entry{display:flex;align-items:center;gap:8px;min-width:0;}
+.fleet-root .wo-builder-entry>input{flex:1;min-width:0;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:9px;
+  background:var(--ink);color:var(--text);font:inherit;font-size:14px;}
+.fleet-root .wo-builder-entry>input::placeholder{color:var(--muted-2);}
+.fleet-root .wo-builder-entry .dbtn{height:44px;flex:0 0 auto;}
+.fleet-root .wo-builder-part-select{flex:1;min-width:0;}
+.fleet-root .wo-builder-scope{border-top:1px solid var(--line);padding-top:20px;}
+.fleet-root .wo-builder-empty{padding:20px;border:1px dashed var(--line-2);border-radius:11px;color:var(--muted-2);
+  font-size:13px;line-height:1.5;text-align:center;}
+.fleet-root .wo-builder-lines{display:grid;}
+.fleet-root .wo-builder-line{display:grid;grid-template-columns:58px minmax(0,1fr) auto 44px;gap:10px;align-items:center;
+  min-height:58px;padding:7px 0;border-bottom:1px solid var(--line);}
+.fleet-root .wo-builder-kind{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-2);}
+.fleet-root .wo-builder-line>div{min-width:0;}
+.fleet-root .wo-builder-line strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;color:var(--text);}
+.fleet-root .wo-builder-line small{display:block;margin-top:3px;font-size:12px;color:var(--muted-2);}
+.fleet-root .wo-builder-line>b{font-size:13.5px;color:var(--text);font-variant-numeric:tabular-nums;}
+.fleet-root .wo-builder-line .icon-hit{border:0;border-radius:9px;background:transparent;color:var(--muted-2);cursor:pointer;}
+.fleet-root .wo-builder-line .icon-hit:hover{background:rgba(248,113,113,.12);color:var(--red);}
+.fleet-root .wo-builder-summary{display:grid;gap:18px;min-width:0;}
+.fleet-root .wo-builder-total{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);}
+.fleet-root .wo-builder-total>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--line);}
+.fleet-root .wo-builder-total>div:first-child span{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-2);}
+.fleet-root .wo-builder-total>div:first-child strong{font-size:14px;color:var(--text);}
+.fleet-root .wo-builder-total dl{display:grid;gap:8px;padding:13px 0;}
+.fleet-root .wo-builder-total dl>div{display:flex;justify-content:space-between;gap:12px;font-size:13px;}
+.fleet-root .wo-builder-total dt{color:var(--muted);}.fleet-root .wo-builder-total dd{margin:0;color:var(--text);font-weight:650;}
+.fleet-root .wo-builder-estimate{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-top:12px;border-top:1px solid var(--line);}
+.fleet-root .wo-builder-estimate span{font-size:13px;font-weight:700;color:var(--text);}
+.fleet-root .wo-builder-estimate strong{font-size:20px;color:var(--yellow);font-variant-numeric:tabular-nums;}
+.fleet-root .wo-builder-total>p{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--muted-2);}
+
+/* Builder state settles inside one stable drawer. */
 @keyframes wo-state-enter{from{opacity:0;transform:translate3d(0,6px,0);}to{opacity:1;transform:none;}}
 .fleet-root .wo-state-enter{animation:wo-state-enter 160ms cubic-bezier(.16,1,.3,1);}
 
@@ -817,27 +859,29 @@
 .fleet-root .wo-live-side-a,
 .fleet-root .wo-live-side-b{display:grid;gap:16px;align-content:start;}
 
-/* ---------- Wide drawer: two columns, driven by the panel ----------
-   Both states put the work in the main column and the disposition beside it.
-   Source order is the phone order; the column assignments below are the only
-   thing that changes, so rotating a tablet never reorders the form. */
-@container wo-drawer (min-width:660px){
-  .fleet-root .wo-scope{grid-template-columns:minmax(0,1fr) minmax(300px,1fr);
-    gap:28px;align-items:start;}
-  .fleet-root .wo-scope-main{grid-column:1;grid-row:1;}
-  .fleet-root .wo-scope-side{grid-column:2;grid-row:1 / span 2;}
-  .fleet-root .wo-scope-main-b{grid-column:1;grid-row:2;}
-
-  /* The catalog is what the empty column was always for. Given a column of
-     its own it grows into the height the device actually has, instead of
-     scrolling a 290px window inside a drawer that is also scrolling. */
-  .fleet-root .wo-svc-list{max-height:max(290px,calc(100vh - 430px));}
+/* ---------- Wide drawer: two columns, driven by the panel ---------- */
+@container wo-drawer (min-width:690px){
+  .fleet-root .wo-builder-grid{grid-template-columns:minmax(0,1fr) minmax(250px,.55fr);gap:26px;}
+  .fleet-root .wo-builder-summary{position:sticky;top:0;}
 
   .fleet-root .wo-live-cols{grid-template-columns:minmax(0,1.35fr) minmax(280px,1fr);
     gap:28px;align-items:start;}
   .fleet-root .wo-live-main{grid-column:1;grid-row:1 / span 2;}
   .fleet-root .wo-live-side-a{grid-column:2;grid-row:1;}
   .fleet-root .wo-live-side-b{grid-column:2;grid-row:2;}
+}
+
+@container wo-drawer (max-width:689px){
+  .fleet-root .wo-builder-section-head{display:grid;}
+  .fleet-root .wo-builder-tabs{width:100%;}
+  .fleet-root .wo-builder-tabs button{flex:1;}
+  .fleet-root .wo-builder-entry{flex-wrap:wrap;}
+  .fleet-root .wo-builder-entry>:first-child{flex:1 1 100%;}
+  .fleet-root .wo-builder-entry>button{margin-left:auto;}
+  .fleet-root .wo-addrow{flex-wrap:wrap;}
+  .fleet-root .wo-addrow>:first-child{flex:1 1 100%;min-width:0;}
+  .fleet-root .wo-addrow>:not(:first-child){flex:0 0 auto;}
+  .fleet-root .wo-addrow>button{margin-left:auto;}
 }
 
 /* ---------- Craft pass: phone-width defects ----------
@@ -859,6 +903,7 @@
   .fleet-root .wo-addrow>:first-child{flex:1 1 100%;min-width:0;}
   .fleet-root .wo-addrow>:not(:first-child){flex:0 0 auto;}
   .fleet-root .wo-addrow>button{margin-left:auto;}
+  .fleet-root .wo-builder-line{grid-template-columns:52px minmax(0,1fr) auto 44px;}
 
   /* A nowrap title against a space-between readout drew glyphs over glyphs. */
   .fleet-root .dsec-head{flex-wrap:wrap;row-gap:6px;}

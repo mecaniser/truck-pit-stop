@@ -1,6 +1,7 @@
 """Fleet operations for trucks assigned to customer or internal fleets."""
 import json
 from datetime import datetime, timezone, timedelta, date
+from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID, uuid4
 
@@ -2204,6 +2205,7 @@ async def _spawn_internal_ro(
     is_pm: bool,
     description: str,
     bill_to_customer_id: Optional[UUID] = None,
+    commit: bool = True,
 ) -> RepairOrder:
     from app.api.v1.endpoints.repair_orders import generate_order_number
     from app.core.unique_id import create_with_retry
@@ -2252,8 +2254,10 @@ async def _spawn_internal_ro(
         db=db, create_fn=_create,
         generate_number_fn=lambda: generate_order_number(db, tenant_id),
         entity_name="repair_order",
+        commit=commit,
     )
-    await db.commit()
+    if commit:
+        await db.commit()
     record_repair_order_created(str(tenant_id))
     return ro
 
@@ -2289,7 +2293,13 @@ def _pm_service_entries(services: list[Service]) -> list[PMServiceEntry]:
     return [
         PMServiceEntry(
             service_id=s.id, name=s.name,
-            duration_minutes=s.duration_minutes or 0, sort_order=i,
+            duration_minutes=s.duration_minutes or 0,
+            parts_cost=sum(
+                (Decimal(str(sp.inventory_item.cost or 0)) * Decimal(str(sp.quantity or 1)))
+                for sp in s.service_parts
+                if sp.inventory_item is not None
+            ),
+            sort_order=i,
         )
         for i, s in enumerate(services)
     ]
@@ -2462,6 +2472,7 @@ async def pm_service_catalog(
             Service.is_active.is_(True),
             ServiceCategory.is_pm.is_(True),
         ))
+        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
         .order_by(Service.sort_order, Service.name)
     )
     return _pm_service_entries(list(result.scalars().all()))
@@ -2538,6 +2549,7 @@ async def service_catalog(
     result = await db.execute(
         select(Service)
         .where(and_(Service.tenant_id == current_user.tenant_id, Service.is_active.is_(True)))
+        .options(selectinload(Service.service_parts).selectinload(ServicePart.inventory_item))
         .order_by(Service.sort_order, Service.name)
     )
     return _pm_service_entries(list(result.scalars().all()))
@@ -2740,29 +2752,91 @@ async def new_work_order(
     current_user: User = Depends(require_fleet_access),
 ):
     vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    body = body or WorkOrderCreate()
+
+    # Resolve and validate every staged line before inserting the repair order.
+    # A bad inventory id or short stock therefore cannot leave behind the empty
+    # draft that this one-step builder is specifically designed to avoid.
+    services = await _load_pm_services(db, current_user.tenant_id, body.service_ids or [])
+    if len(services) != len(set(body.service_ids or [])):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more services were not found")
+
+    requested_part_ids = {line.inventory_id for line in body.part_lines}
+    inventory_by_id: dict[UUID, Inventory] = {}
+    if requested_part_ids:
+        inventory_result = await db.execute(
+            select(Inventory).where(and_(
+                Inventory.id.in_(requested_part_ids),
+                Inventory.tenant_id == current_user.tenant_id,
+            ))
+        )
+        inventory_by_id = {item.id: item for item in inventory_result.scalars().all()}
+        if set(inventory_by_id) != requested_part_ids:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more inventory parts were not found")
+
+        from decimal import ROUND_CEILING
+        requested_packages: dict[UUID, int] = {}
+        for line in body.part_lines:
+            packages = int(line.quantity.to_integral_value(rounding=ROUND_CEILING))
+            requested_packages[line.inventory_id] = requested_packages.get(line.inventory_id, 0) + packages
+        for inventory_id, packages in requested_packages.items():
+            item = inventory_by_id[inventory_id]
+            if (item.stock_quantity or 0) < packages:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Not enough stock for {item.name}. Available: {item.stock_quantity or 0}.",
+                )
 
     # A truck can carry several open work orders at once, so no single-open guard.
-    description = (body.description.strip() if body and body.description else "") or "Fleet work order"
+    description = (body.description.strip() if body.description else "") or "Fleet work order"
     ro = await _spawn_internal_ro(
         db,
         current_user.tenant_id,
         vehicle,
         is_pm=False,
         description=description,
-        bill_to_customer_id=(body.bill_to_customer_id if body else None),
+        bill_to_customer_id=body.bill_to_customer_id,
+        commit=False,
     )
     # Services picked while scoping the visit seed the same labor/parts lines the
     # panel would add one at a time, so the order opens ready to assign.
-    if body and body.service_ids:
-        services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
-        if services:
-            from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
-            await _apply_pm_services_to_ro(
-                db, current_user.tenant_id, ro, services, rewrite_description=False,
-            )
-            await db.commit()
-            await _recompute_repair_order_totals(db, ro.id)
-            await db.refresh(ro)
+    if services:
+        await _apply_pm_services_to_ro(
+            db, current_user.tenant_id, ro, services, rewrite_description=False,
+        )
+
+    tenant = await db.get(Tenant, current_user.tenant_id)
+    labor_rate = Decimal(str(
+        (tenant.labor_rate if fleet_labor_uses_customer_rate(ro) else tenant.internal_labor_rate) if tenant else 0
+    ))
+    for line in body.labor_lines:
+        hours = Decimal(str(line.hours))
+        db.add(Labor(
+            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
+            description=line.description.strip(), hours=hours, hourly_rate=labor_rate,
+            total_cost=(hours * labor_rate).quantize(Decimal("0.01")),
+            line_type=LaborLineType.MANUAL,
+        ))
+
+    from decimal import ROUND_CEILING
+    for line in body.part_lines:
+        item = inventory_by_id[line.inventory_id]
+        quantity = Decimal(str(line.quantity))
+        packages = int(quantity.to_integral_value(rounding=ROUND_CEILING))
+        unit_price = Decimal(str(item.cost if ro.is_internal else item.selling_price))
+        db.add(PartsUsage(
+            id=uuid4(), tenant_id=current_user.tenant_id, repair_order_id=ro.id,
+            inventory_id=item.id, quantity=quantity, unit_cost=item.cost,
+            unit_price=unit_price, list_price=unit_price,
+            total_price=(unit_price * quantity).quantize(Decimal("0.01")),
+            stock_reserved_packages=packages, stock_shortage_override=False,
+        ))
+        item.stock_quantity = (item.stock_quantity or 0) - packages
+
+    await db.commit()
+    from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+    await _recompute_repair_order_totals(db, ro.id)
+    await db.refresh(ro)
 
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
