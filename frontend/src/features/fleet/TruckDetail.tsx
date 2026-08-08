@@ -3,7 +3,7 @@ import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  ArrowLeft, Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
+  Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
 } from 'lucide-react'
 import api from '../../lib/api'
@@ -101,8 +101,8 @@ function Section({ title, icon, count, right, children, className }: {
 }
 
 export default function TruckDetail({
-  truckId, trucks, onBack, onOpen,
-}: { truckId: string; trucks: BoardTruck[]; onBack: () => void; onOpen: (id: string) => void }) {
+  truckId, trucks, onOpen,
+}: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void }) {
   const qc = useQueryClient()
   const [historyOpen, setHistoryOpen] = useState(false)
   const [partsOpen, setPartsOpen] = useState(false)
@@ -293,11 +293,9 @@ export default function TruckDetail({
   return (
     <div className="detail">
       <div className="dhead">
-        <button className="dback" onClick={onBack}><ArrowLeft size={16} /> Fleet board</button>
         <div className="dhead-main">
           <div>
             <div className="dhead-unit-row">
-              <h1 className="dhead-unit">{fleetUnitLabel(t)}</h1>
               <div style={{ position: 'relative' }}>
                 <button
                   className="dbadge"

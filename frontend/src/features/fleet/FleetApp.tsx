@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  Truck, LayoutGrid, Map as MapIcon, Calendar, Play, Flag, ClipboardCheck,
+  Truck, LayoutGrid, Map as MapIcon, Calendar, Play, Flag, ClipboardCheck, ArrowLeft,
   Bell, LogOut, Plus, X, Wrench, Warehouse, Settings, UserRound, KeyRound, Eye, EyeOff,
   ChevronsLeft, ChevronsRight, Pencil, Search, Check,
 } from 'lucide-react'
@@ -66,6 +66,8 @@ export default function FleetApp() {
     ['out_of_service', 'out of service'],
   ].map(([status, label]) => ({ status, label, count: trucks.filter((truck) => truck.status === status).length })).filter((item) => item.count > 0)
 
+  const detailTruck = selId ? trucks.find((truck) => truck.id === selId) : undefined
+
   const openTruck = (id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
   const toggleRail = () => setRailExpanded((v) => { localStorage.setItem('tps-fleet-rail', v ? '0' : '1'); return !v })
@@ -116,44 +118,55 @@ export default function FleetApp() {
           </button>
           <button
             type="button"
-            className="rail-av"
+            className="rail-user"
             onClick={() => setSettingsOpen(true)}
             title="Account settings"
-            style={{ cursor: 'pointer', border: 'none' }}
           >
-            {initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}
+            <span className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</span>
+            <span className="rail-full">{`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet manager'}</span>
+            <span className="rail-tip">Account settings</span>
           </button>
         </nav>
 
         <div className="main">
-          <header className="topbar">
+          {/* Inside a truck, the bar belongs to that truck: fleet-wide counts and
+              "Add truck" describe the board, not the unit in front of you. The
+              detail page therefore owns the bar's title, and its back link
+              lives here rather than inside the scrolling page body. */}
+          <header className={'topbar' + (view === 'detail' ? ' topbar-detail' : '')}>
             <div className="topbar-l">
-              <span className="topbar-title">{titles[view]}</span>
-              <span className="topbar-context">
-                <span className="topbar-tenant">{user?.tenant_name || 'Truck Pit Stop'}</span>
-                {data ? (
-                  <span className="topbar-fleet-state" aria-label={`${data.stats.total} total units: ${fleetStatusSummary.map((item) => `${item.count} ${item.label}`).join(', ')}`}>
-                    <span><b>{data.stats.total}</b> units</span>
-                    <span className="topbar-fleet-breakdown">
-                      {fleetStatusSummary.map((item) => <span key={item.status}><i /> <b>{item.count}</b> {item.label}</span>)}
-                    </span>
+              {view === 'detail' ? (
+                <>
+                  <button className="topbar-back" onClick={() => goView('board')}>
+                    <ArrowLeft size={17} /> <span>Fleet board</span>
+                  </button>
+                  <span className="topbar-title topbar-title-unit">{detailTruck ? fleetUnitLabel(detailTruck) : 'Truck'}</span>
+                </>
+              ) : (
+                <>
+                  <span className="topbar-title">{titles[view]}</span>
+                  <span className="topbar-context">
+                    <span className="topbar-tenant">{user?.tenant_name || 'Truck Pit Stop'}</span>
+                    {data ? (
+                      <span className="topbar-fleet-state" aria-label={`${data.stats.total} total units: ${fleetStatusSummary.map((item) => `${item.count} ${item.label}`).join(', ')}`}>
+                        <span><b>{data.stats.total}</b> units</span>
+                        <span className="topbar-fleet-breakdown">
+                          {fleetStatusSummary.map((item) => <span key={item.status}><i /> <b>{item.count}</b> {item.label}</span>)}
+                        </span>
+                      </span>
+                    ) : <span className="topbar-fleet-state">Internal fleet</span>}
                   </span>
-                ) : <span className="topbar-fleet-state">Internal fleet</span>}
-              </span>
+                </>
+              )}
             </div>
-            <div className="topbar-r">
-              <button className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></button>
-              <div className="topbar-utilities">
-                <button className="topbar-icbtn" title="Notifications" aria-label="Notifications"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</button>
-                <button type="button" className="topbar-user" onClick={() => setSettingsOpen(true)} title="Account settings" aria-label="Open account settings">
-                <div className="topbar-user-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</div>
-                <div className="topbar-user-txt">
-                  <div className="nm">{`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet Manager'}</div>
-                  <div className="rl">Fleet manager</div>
+            {view !== 'detail' && (
+              <div className="topbar-r">
+                <button className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></button>
+                <div className="topbar-utilities">
+                  <button className="topbar-icbtn" title="Notifications" aria-label="Notifications"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</button>
                 </div>
-                </button>
               </div>
-            </div>
+            )}
           </header>
 
           <div className="scroll">
@@ -168,7 +181,7 @@ export default function FleetApp() {
                   </button>
                 </div>
               ) : view === 'detail' && selId ? (
-                <TruckDetail truckId={selId} trucks={trucks} onBack={() => goView('board')} onOpen={openTruck} />
+                <TruckDetail truckId={selId} trucks={trucks} onOpen={openTruck} />
               ) : view === 'board' ? (
                 <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenWorkOrder={setWoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               ) : view === 'map' ? (
