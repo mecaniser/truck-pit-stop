@@ -269,6 +269,12 @@ export default function InventoryPage() {
     placeholderData: keepPreviousData,
   })
 
+  const { data: syncStatus } = useQuery<{ ets_last_synced_at: string | null }>({
+    queryKey: ['inventory-sync-status'],
+    queryFn: async () => (await api.get('/inventory/sync-status')).data,
+    staleTime: 60_000,
+  })
+
   const { data: suppliers } = useQuery<Supplier[]>({
     queryKey: ['suppliers'],
     queryFn: async () => {
@@ -803,6 +809,11 @@ export default function InventoryPage() {
 
   return (
     <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+      {syncStatus?.ets_last_synced_at && (
+        <div className="text-xs text-gray-400 px-1">
+          Last synced from Easy Truck Shop: {new Date(syncStatus.ets_last_synced_at).toLocaleString()}
+        </div>
+      )}
       {/* Mobile Search Bar + Catalog gear menu, inline so Settings never drops to its own row */}
       <div className="mb-1 flex flex-row items-center gap-2 lg:hidden">
         <div className="flex-1 min-w-0">

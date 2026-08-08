@@ -21,6 +21,12 @@ class Tenant(BaseModel):
     # Shop-wide switch for the customer Messages feature. Default on so existing
     # shops are unaffected; owners can turn it off while the feature is unfinished.
     messaging_enabled = Column(Boolean, default=True, nullable=False)
+
+    # Marketing-attribution webhook. The endpoint is tenant-owned; its signing
+    # secret is encrypted at rest and is never returned by the settings API.
+    paid_invoice_webhook_url = Column(String(2048), nullable=True)
+    paid_invoice_webhook_secret_encrypted = Column(Text, nullable=True)
+    paid_invoice_webhook_enabled = Column(Boolean, default=False, nullable=False)
     
     # Garage ownership
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
@@ -47,6 +53,11 @@ class Tenant(BaseModel):
     zelle_phone = Column(String(20), nullable=True)
     zelle_qr_image = Column(Text, nullable=True)  # Base64 encoded QR image
     
+    # Set only by the Easy Truck Shop resync importer (backend/scripts/easytruck_sync),
+    # never by normal record edits, so it reflects when data was last pulled from ETS
+    # rather than any row's last edit.
+    ets_last_synced_at = Column(DateTime(timezone=True), nullable=True)
+
     # Invoice reminder settings (tenant-controlled)
     invoice_reminders_enabled = Column(Boolean, default=True, nullable=False)
     reminder_frequency_days = Column(Integer, default=3, nullable=False)
