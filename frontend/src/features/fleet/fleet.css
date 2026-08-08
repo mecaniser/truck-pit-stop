@@ -621,9 +621,14 @@
   /* Detail header stacks: identity, then the odometer/PM readout on its own line */
   .fleet-root .dhead-stats{flex-basis:100%;order:3;margin:16px 0 0;align-self:auto;justify-content:flex-start;}
   .fleet-root .dhead-r{order:2;}
-  /* Topbar: collapse Add-truck to an icon, swap name text for an avatar */
+  /* Topbar: collapse Add-truck to an icon, swap name text for an avatar.
+     Scoped to the topbar deliberately: an unscoped .dbtn-label rule here also
+     stripped the labels off the truck header and section actions, which have
+     room to spare at this width — and left them as bare icons, since .dbtn-abbr
+     does not appear until 680px. Tablet portrait is where these actions are
+     used most; it is the last place to make an operator guess at a glyph. */
   .fleet-root .topbar-title{font-size:21px;}
-  .fleet-root .dbtn-label{display:none;}
+  .fleet-root .topbar .dbtn-label{display:none;}
   .fleet-root .topbar .dbtn-yellow{gap:0;padding:0;width:44px;height:44px;justify-content:center;}
   .fleet-root .topbar-user{width:44px;height:44px;justify-content:center;gap:0;padding:4px;}
   .fleet-root .topbar-user-av{width:36px;height:36px;}
