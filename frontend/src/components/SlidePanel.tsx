@@ -10,6 +10,13 @@ const headerGradients: Record<Exclude<HeaderVariant, 'minimal' | 'dark'>, string
   green: 'from-green-500 to-green-600',
 }
 
+// iPadOS reports itself as macOS when a keyboard or trackpad is attached, so
+// the touch-point check is required in addition to the legacy iPad user agent.
+function isIPadOS() {
+  return /iPad/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+}
+
 interface SlidePanelProps {
   isOpen: boolean
   onClose: () => void
@@ -306,6 +313,13 @@ export default function SlidePanel({
     const panel = panelRef.current
     if (!panel || typeof panel.animate !== 'function') return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    // WebKit can still jitter a fixed, backdrop-blurred panel while it is
+    // compositing a horizontal Web Animations API transform. The Sidekick is
+    // used repeatedly on a fleet manager's iPad, where a stable immediate open
+    // is better than a spatial cue that can visibly fail. Keep the slide for
+    // desktop browsers, whose compositor handles this animation reliably.
+    if (isIPadOS()) return
 
     const distance = panel.getBoundingClientRect().width
     if (!distance) return
