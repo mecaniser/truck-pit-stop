@@ -21,15 +21,42 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 function project(t: BoardTruck, i: number): { x: number; y: number } {
   if (t.lat == null || t.lng == null) {
-    // park near the yard with deterministic jitter
-    const jx = ((i * 37) % 9) - 4
-    const jy = ((i * 53) % 7) - 5
-    return { x: HQ.x + jx, y: HQ.y + jy }
+    // Park units without telemetry around the yard. The golden-angle pattern
+    // keeps every hit target distinct instead of stacking units on one marker.
+    const angle = i * 2.3999632297
+    const radius = 2.2 + Math.sqrt(i) * 1.35
+    return { x: clamp(HQ.x + Math.cos(angle) * radius, 5, 95), y: clamp(HQ.y + Math.sin(angle) * radius, 5, 95) }
   }
   return {
     x: clamp(HQ.x + (t.lng - YARD.lng) * SCALE, 5, 95),
     y: clamp(HQ.y - (t.lat - YARD.lat) * SCALE, 5, 95),
   }
+}
+
+function spreadCollisions(trucks: BoardTruck[]): Map<string, { x: number; y: number }> {
+  const base = trucks.map((truck, index) => project(truck, index))
+  const groups = new Map<string, number[]>()
+  base.forEach((point, index) => {
+    const key = `${Math.round(point.x * 2) / 2}:${Math.round(point.y * 2) / 2}`
+    groups.set(key, [...(groups.get(key) || []), index])
+  })
+  const positions = new Map<string, { x: number; y: number }>()
+  groups.forEach((indexes) => {
+    indexes.forEach((index, order) => {
+      const point = base[index]
+      if (indexes.length === 1) {
+        positions.set(trucks[index].id, point)
+        return
+      }
+      const angle = (Math.PI * 2 * order) / indexes.length - Math.PI / 2
+      const radius = 1.65 + Math.floor(order / 8) * 1.25
+      positions.set(trucks[index].id, {
+        x: clamp(point.x + Math.cos(angle) * radius, 5, 95),
+        y: clamp(point.y + Math.sin(angle) * radius, 5, 95),
+      })
+    })
+  })
+  return positions
 }
 
 function haversine(a: BoardTruck, b: BoardTruck): number {
@@ -44,7 +71,7 @@ export default function FleetMap({
   trucks, focusId, onSelect, compact,
 }: { trucks: BoardTruck[]; focusId?: string; onSelect?: (t: BoardTruck) => void; compact?: boolean }) {
   const [hover, setHover] = useState<string | null>(null)
-  const pos = new Map(trucks.map((t, i) => [t.id, project(t, i)]))
+  const pos = spreadCollisions(trucks)
   const focus = focusId ? trucks.find((t) => t.id === focusId) : null
   const near = focus
     ? trucks.filter((t) => t.id !== focus.id).map((t) => ({ t, miles: haversine(focus, t) }))
@@ -100,15 +127,18 @@ export default function FleetMap({
               style={{ left: p.x + '%', top: p.y + '%', ['--mk' as any]: meta.dot }}
               onMouseEnter={() => setHover(t.id)}
               onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(t.id)}
+              onBlur={() => setHover(null)}
               onClick={() => onSelect && onSelect(t)}
+              aria-label={`Open ${unitLabel}: ${meta.label}`}
               title={`${unitLabel} · ${meta.label}`}
             >
               <span className={'fmap-mk-dot' + (t.moving ? ' is-moving' : '')} />
-              {(isFocus || hover === t.id || !compact) && (
+              {(isFocus || hover === t.id) && (
                 <span className="fmap-mk-tag">{unitLabel}</span>
               )}
               {hover === t.id && (
-                <span className="fmap-tip">
+                <span className="fmap-tip" role="tooltip">
                   <b>{unitLabel}</b> · {meta.label}<br />
                   {t.location_label || '—'}
                   {focus && t.id !== focus.id && (
