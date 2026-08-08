@@ -218,7 +218,7 @@ export default function TruckDetail({
       // plainly rather than claiming a change the badge is not going to show.
       const label = STATUS_OPTIONS.find((opt) => opt.value === value)?.label
       if (updated.status_override && updated.status !== updated.status_override) {
-        toast.success(`Saved — the board shows "${STATUS_META[updated.status].label}" until the open work order closes`)
+        toast.success(`Saved — the board shows "${STATUS_META[updated.status].label}" until the open repair order closes`)
       } else {
         toast.success(value === 'auto' ? 'Manual status cleared' : `Status set to ${label}`)
       }
@@ -340,7 +340,7 @@ export default function TruckDetail({
                 <span
                   className="dbadge"
                   style={{ ['--st' as any]: suppressedOverride.dot, opacity: 0.75, fontSize: 11.5 }}
-                  title="Manual status saved — it takes over once the open work order closes"
+                  title="Manual status saved — it takes over once the open repair order closes"
                 >
                   <i />{suppressedOverride.label} after WO
                 </span>
@@ -378,8 +378,8 @@ export default function TruckDetail({
             </div>
           </div>
           <div className="dhead-r">
-            <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)} title="New work order">
-              <ClipboardList size={15} /> <span className="dbtn-label">New work order</span><span className="dbtn-abbr">WO</span>
+            <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)} title="New repair order">
+              <ClipboardList size={15} /> <span className="dbtn-label">New repair order</span><span className="dbtn-abbr">RO</span>
             </button>
             <button className="dbtn dbtn-yellow" onClick={() => setSchedulePMOpen(true)} title={t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}>
               <Calendar size={15} /> <span className="dbtn-label">{t.pm_due_date ? 'Reschedule PM' : 'Schedule PM'}</span><span className="dbtn-abbr">PM</span>
@@ -613,7 +613,7 @@ export default function TruckDetail({
             )}
           </Section>}
 
-          {data.open_work_orders.length > 0 && <Section title="Open work orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length} className="dsec-operation dsec-work-orders">
+          {data.open_work_orders.length > 0 && <Section title="Open repair orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length} className="dsec-operation dsec-work-orders">
               <div className="list-rows">
                 {data.open_work_orders.map((wo) => (
                   <button key={wo.repair_order_id} className="lrow" onClick={() => setWoPanelId(wo.repair_order_id)}>
@@ -726,7 +726,13 @@ export default function TruckDetail({
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
-      {newWOOpen && <NewWorkOrderModal truckId={t.id} unitNumber={fleetUnitLabel(t)} onClose={() => setNewWOOpen(false)} onCreated={refresh} />}
+      {newWOOpen && (
+        <NewWorkOrderModal
+          truck={t}
+          onClose={() => setNewWOOpen(false)}
+          onCreated={() => refresh()}
+        />
+      )}
       {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refresh} />}
     </div>
   )
