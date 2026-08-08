@@ -697,8 +697,11 @@
   .fleet-root .dhead-details .dbtn-label{display:none;}
   .fleet-root .dhead-details{width:34px;height:34px;padding:0 !important;justify-content:center;}
   /* Actions: bigger icons, RO / PM abbreviations. The stale rule that squared
-     off the first button is gone with the Edit button it was written for. */
-  .fleet-root .dhead-r{gap:8px;}
+     off the first button is gone with the Edit button it was written for.
+     Down to two letters the pair read as one control, so the gap is wider
+     here than on desktop: a mis-tap reschedules maintenance instead of
+     opening an order. */
+  .fleet-root .dhead-r{gap:16px;}
   .fleet-root .dhead-r .dbtn-label{display:none;}
   .fleet-root .dhead-r .dbtn-abbr{display:inline;}
   .fleet-root .dhead-r .dbtn{gap:6px;padding:0 14px;font-weight:800;letter-spacing:.5px;}
