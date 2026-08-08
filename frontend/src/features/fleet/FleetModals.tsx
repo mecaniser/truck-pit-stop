@@ -627,7 +627,9 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                   ))}
                 </div>
               </Field>
+            </section>
 
+            <section className="wo-scope-side">
               <Field label={`Services${selectedServices.length ? ` · ${selectedServices.length} selected` : ' (optional)'}`}>
                 {catalog.length > 8 && (
                   <div className="wo-svc-search">
@@ -668,7 +670,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
               </Field>
             </section>
 
-            <section className="wo-scope-side">
+            <section className="wo-scope-main-b">
               <Field label="Assign a mechanic (optional)">
                 <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
                   <option value="">Leave unassigned</option>
@@ -1283,7 +1285,7 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
       {isLoading || !wo ? (
         <div className="loader"><Spinner size="sm" /></div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 16 }}>
+        <div className="wo-live">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
               Status: <strong style={{ color: 'var(--text)' }}>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
@@ -1342,96 +1344,104 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
             </div>
           )}
 
-          <Field label="Work / complaint">
-            <SuggestingTextarea
-              value={description}
-              onChange={(v) => { setDescription(v); setDescDirty(true) }}
-              rows={3}
-              style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical' }}
-            />
-            {descDirty && (
-              <button className={ghostBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
-                disabled={saveDesc.isPending} onClick={() => saveDesc.mutate()}>
-                {saveDesc.isPending ? <Spinner size="xs" /> : null} Save description
-              </button>
-            )}
-          </Field>
+          <div className="wo-live-cols">
+            <section className="wo-live-side-a">
+              <Field label="Work / complaint">
+                <SuggestingTextarea
+                  value={description}
+                  onChange={(v) => { setDescription(v); setDescDirty(true) }}
+                  rows={3}
+                  style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical' }}
+                />
+                {descDirty && (
+                  <button className={ghostBtn} style={{ marginTop: 8, height: 34, padding: '0 12px', fontSize: 12.5 }}
+                    disabled={saveDesc.isPending} onClick={() => saveDesc.mutate()}>
+                    {saveDesc.isPending ? <Spinner size="xs" /> : null} Save description
+                  </button>
+                )}
+              </Field>
 
-          <Field label="Assigned mechanic">
-            <select
-              value={wo.assigned_mechanic_id || ''}
-              onChange={(e) => e.target.value && assign.mutate(e.target.value)}
-              disabled={assign.isPending}
-              style={{ width: '100%', height: 40, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '0 10px' }}
-            >
-              <option value="">Unassigned — choose a mechanic…</option>
-              {(mechanics || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-            <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
-              Optional — you can run this internal work order start to finish without assigning a mechanic.
-            </p>
-          </Field>
-
-          {/* PM work orders are scoped by picking services (which seed the cost
-              lines), so the manual add rows are hidden for them. The picker is
-              only editable while the PM is still a draft. */}
-          {wo.is_pm && wo.status === 'draft' && (
-            <PMServicesSection roId={repairOrderId} onChanged={refresh} />
-          )}
-
-          <div>
-            <div className="dmap-side-h" style={{ marginBottom: 8 }}>Labor ({wo.labor_items.length})</div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} showPrices={showPrices} />)}
-            </div>
-            {!wo.is_pm && (
-              <>
-                <ServiceAddRow roId={repairOrderId} onChanged={refresh} />
-                <LaborAddRow roId={repairOrderId} laborRate={laborRate} onChanged={refresh} />
-              </>
-            )}
-          </div>
-
-          <div>
-            <div className="dmap-side-h" style={{ marginBottom: 8 }}>Parts ({wo.parts_usage.length})</div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              {wo.parts_usage.map((p) => <PartRow key={p.id} roId={repairOrderId} line={p} onChanged={refresh} showPrices={showPrices} />)}
-            </div>
-            {!wo.is_pm && <PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} />}
-          </div>
-
-          {/* Cost breakdown is owner/admin only — fleet managers don't see prices. */}
-          {showPrices && (
-            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 6, fontSize: 14 }}>
-              <Row k="Labor" v={money(num(wo.total_labor_cost))} />
-              <Row k="Parts" v={money(num(wo.total_parts_cost))} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17, marginTop: 4 }}>
-                <strong style={{ color: 'var(--text)' }}>Repair order total</strong>
-                <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
-              </div>
-            </div>
-          )}
-
-          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-            <InlineConfirm
-              danger
-              message={workStarted
-                ? "Work has started — deleting discards all logged labor and parts. This can't be undone."
-                : "Delete this repair order? This can't be undone."}
-              confirmLabel="Delete"
-              pending={del.isPending}
-              onConfirm={() => del.mutate()}
-              renderTrigger={(arm) => (
-                <button
-                  className={ghostBtn}
-                  style={{ color: 'var(--red)', height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }}
-                  disabled={del.isPending}
-                  onClick={arm}
+              <Field label="Assigned mechanic">
+                <select
+                  value={wo.assigned_mechanic_id || ''}
+                  onChange={(e) => e.target.value && assign.mutate(e.target.value)}
+                  disabled={assign.isPending}
+                  style={{ width: '100%', height: 40, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '0 10px' }}
                 >
-                  <Trash2 size={16} /> Delete repair order
-                </button>
+                  <option value="">Unassigned — choose a mechanic…</option>
+                  {(mechanics || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+                <p className="id-k" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 6 }}>
+                  Optional — you can run this internal work order start to finish without assigning a mechanic.
+                </p>
+              </Field>
+            </section>
+
+            <section className="wo-live-main">
+              {/* PM work orders are scoped by picking services (which seed the cost
+                  lines), so the manual add rows are hidden for them. The picker is
+                  only editable while the PM is still a draft. */}
+              {wo.is_pm && wo.status === 'draft' && (
+                <PMServicesSection roId={repairOrderId} onChanged={refresh} />
               )}
-            />
+
+              <div>
+                <div className="dmap-side-h" style={{ marginBottom: 8 }}>Labor ({wo.labor_items.length})</div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {wo.labor_items.map((l) => <LaborRow key={l.id} roId={repairOrderId} line={l} onChanged={refresh} showPrices={showPrices} />)}
+                </div>
+                {!wo.is_pm && (
+                  <>
+                    <ServiceAddRow roId={repairOrderId} onChanged={refresh} />
+                    <LaborAddRow roId={repairOrderId} laborRate={laborRate} onChanged={refresh} />
+                  </>
+                )}
+              </div>
+
+              <div>
+                <div className="dmap-side-h" style={{ marginBottom: 8 }}>Parts ({wo.parts_usage.length})</div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {wo.parts_usage.map((p) => <PartRow key={p.id} roId={repairOrderId} line={p} onChanged={refresh} showPrices={showPrices} />)}
+                </div>
+                {!wo.is_pm && <PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} />}
+              </div>
+            </section>
+
+            <section className="wo-live-side-b">
+              {/* Cost breakdown is owner/admin only — fleet managers don't see prices. */}
+              {showPrices && (
+                <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 6, fontSize: 14 }}>
+                  <Row k="Labor" v={money(num(wo.total_labor_cost))} />
+                  <Row k="Parts" v={money(num(wo.total_parts_cost))} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17, marginTop: 4 }}>
+                    <strong style={{ color: 'var(--text)' }}>Repair order total</strong>
+                    <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+                <InlineConfirm
+                  danger
+                  message={workStarted
+                    ? "Work has started — deleting discards all logged labor and parts. This can't be undone."
+                    : "Delete this repair order? This can't be undone."}
+                  confirmLabel="Delete"
+                  pending={del.isPending}
+                  onConfirm={() => del.mutate()}
+                  renderTrigger={(arm) => (
+                    <button
+                      className={ghostBtn}
+                      style={{ color: 'var(--red)', height: 42, padding: '0 16px', fontSize: 13, fontWeight: 600 }}
+                      disabled={del.isPending}
+                      onClick={arm}
+                    >
+                      <Trash2 size={16} /> Delete repair order
+                    </button>
+                  )}
+                />
+              </div>
+            </section>
           </div>
         </div>
       )}
