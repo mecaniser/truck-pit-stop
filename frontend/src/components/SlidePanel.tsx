@@ -75,6 +75,7 @@ export default function SlidePanel({
   const panelRef = useRef<HTMLDivElement>(null)
   const swipeFrame = useRef<number | null>(null)
   const pendingSwipeOffset = useRef(0)
+  const openAnimation = useRef<Animation | null>(null)
 
   const canSwipe = onPrev !== undefined || onNext !== undefined
 
@@ -85,6 +86,9 @@ export default function SlidePanel({
       swipeFrame.current = null
       const panel = panelRef.current
       if (!panel) return
+      // A still-running open animation composites over inline styles and would
+      // swallow the drag.
+      openAnimation.current?.cancel()
       const nextOffset = pendingSwipeOffset.current
       panel.style.transition = 'none'
       panel.style.transform = `translate3d(${nextOffset}px, 0, 0)`
@@ -283,6 +287,44 @@ export default function SlidePanel({
     }
   }, [isOpen])
 
+  // The slide-in used to be a CSS animation from translateX(100%). A percentage
+  // transform re-resolves against the element's own width on every frame, so any
+  // relayout while it runs moves the animation's origin and the panel travels
+  // sideways before snapping home. The pin above removes one cause of that
+  // relayout, but not all of them: an iPad reports no scrollbar to drop, and the
+  // fleet board never scrolls the document at all, so pinning changes nothing
+  // there and the travel survives.
+  //
+  // Measure the distance once, after the pin has settled the layout, and animate
+  // in pixels — a length with nothing left to re-resolve against, whatever the
+  // viewport does mid-flight.
+  //
+  // This effect must stay below the pin: React runs layout effects in order, and
+  // measuring first would capture the pre-pin width.
+  useLayoutEffect(() => {
+    if (!isOpen) return
+    const panel = panelRef.current
+    if (!panel || typeof panel.animate !== 'function') return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const distance = panel.getBoundingClientRect().width
+    if (!distance) return
+
+    const animation = panel.animate(
+      [
+        { transform: `translate3d(${distance}px, 0, 0)` },
+        { transform: 'translate3d(0, 0, 0)' },
+      ],
+      { duration: 300, easing: 'ease-out', fill: 'backwards' }
+    )
+    openAnimation.current = animation
+
+    return () => {
+      animation.cancel()
+      openAnimation.current = null
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   const isMinimal = headerVariant === 'minimal'
@@ -305,7 +347,7 @@ export default function SlidePanel({
           aria-modal="true"
           aria-label={title}
           tabIndex={-1}
-          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y`}
+          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col border-l border-zinc-700/50 touch-pan-y`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -405,7 +447,7 @@ export default function SlidePanel({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y`}
+        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col touch-pan-y`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
