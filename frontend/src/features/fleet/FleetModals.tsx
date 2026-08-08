@@ -990,9 +990,20 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
         {formatHoursMinutes(toNum(line.hours))}
       </span>
       {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_cost))}</strong>}
-      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <Trash2 size={18} color="var(--red)" />
-      </button>
+      {/* Deleting the whole repair order asks twice; removing a costed line used
+          to ask nothing, though it edits a record that feeds invoicing. */}
+      <InlineConfirm
+        danger
+        message="Remove this labor line?"
+        confirmLabel="Remove"
+        pending={del.isPending}
+        onConfirm={() => del.mutate()}
+        renderTrigger={(arm) => (
+          <button style={iconBtn} className="icon-hit" title="Remove" disabled={del.isPending} onClick={arm}>
+            <Trash2 size={18} color="var(--muted-2)" />
+          </button>
+        )}
+      />
     </div>
   )
 }
@@ -1094,9 +1105,18 @@ function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; l
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
       <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>×{toNum(line.quantity)}</span>
       {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_price))}</strong>}
-      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <Trash2 size={18} color="var(--red)" />
-      </button>
+      <InlineConfirm
+        danger
+        message="Remove this part from the order?"
+        confirmLabel="Remove"
+        pending={del.isPending}
+        onConfirm={() => del.mutate()}
+        renderTrigger={(arm) => (
+          <button style={iconBtn} className="icon-hit" title="Remove" disabled={del.isPending} onClick={arm}>
+            <Trash2 size={18} color="var(--muted-2)" />
+          </button>
+        )}
+      />
     </div>
   )
 }

@@ -179,6 +179,7 @@ const LABOR_BREAKDOWN_STATUSES: RepairOrderStatus[] = ['pending_review', 'comple
 // Once invoiced/paid the order is a financial record — it can't be cancelled or
 // deleted. Every other status can. (Mirror of the backend rule.)
 const FINANCIALLY_PROTECTED_STATUSES: RepairOrderStatus[] = ['invoiced', 'paid']
+const EMPTY_ATTRIBUTION = { lead_source_channel: '', external_lead_id: '', callrail_call_id: '', google_click_id: '', gbraid: '', wbraid: '', landing_page_url: '', utm_source: '', utm_medium: '', utm_campaign: '', utm_term: '', utm_content: '' }
 
 interface TruckInvoiceRecipientConnection {
   customer_id: string
@@ -275,6 +276,8 @@ export default function RepairOrdersPage() {
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false)
   const [description, setDescription] = useState('')
   const [mileageIn, setMileageIn] = useState('')
+  const [attributionDraft, setAttributionDraft] = useState(EMPTY_ATTRIBUTION)
+  const [detailAttributionDraft, setDetailAttributionDraft] = useState(EMPTY_ATTRIBUTION)
   const [serviceSearch, setServiceSearch] = useState('')
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([])
   const [selectedServiceOptions, setSelectedServiceOptions] = useState<ServiceTypeaheadItem[]>([])
@@ -1085,19 +1088,41 @@ export default function RepairOrdersPage() {
       description: roDescription,
       internal_notes,
       mileage_in,
-    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null }) => {
+      attribution,
+    }: { customer_id: string; vehicle_id: string; description: string; internal_notes?: string | null; mileage_in?: number | null; attribution: typeof EMPTY_ATTRIBUTION }) => {
       const response = await api.post('/repair-orders', {
         customer_id,
         vehicle_id,
         description: roDescription || null,
         internal_notes: internal_notes || null,
         mileage_in: mileage_in ?? null,
+        ...Object.fromEntries(Object.entries(attribution).map(([key, value]) => [key, value.trim() || null])),
       })
       return response.data as RepairOrder
     },
     onError: (error: unknown) => {
       setFormErrors((current) => ({ ...current, root: getErrorDetail(error, 'Failed to create repair order') }))
     },
+  })
+
+  useEffect(() => {
+    if (!selectedOrder) return
+    setDetailAttributionDraft(Object.fromEntries(Object.keys(EMPTY_ATTRIBUTION).map((key) => [key, String(selectedOrder[key as keyof RepairOrder] ?? '')])) as typeof EMPTY_ATTRIBUTION)
+  }, [selectedOrder])
+
+  const saveAttributionMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedOrder) throw new Error('No repair order selected')
+      const payload = Object.fromEntries(Object.entries(detailAttributionDraft).map(([key, value]) => [key, value.trim() || null]))
+      const response = await api.put(`/repair-orders/${selectedOrder.id}`, payload)
+      return response.data as RepairOrder
+    },
+    onSuccess: (order) => {
+      setSelectedOrder((current) => current ? { ...current, ...order } : order)
+      queryClient.invalidateQueries({ queryKey: ['repair-orders'] })
+      toast.success('Attribution saved')
+    },
+    onError: (error: unknown) => toast.error(getErrorDetail(error, 'Failed to save attribution')),
   })
 
   const decodeNewVehicleVin = async (rawVin: string, options: { quiet?: boolean } = {}) => {
@@ -2140,6 +2165,7 @@ export default function RepairOrdersPage() {
     setShowNewVehicleForm(false)
     setDescription('')
     setMileageIn('')
+    setAttributionDraft(EMPTY_ATTRIBUTION)
     setServiceSearch('')
     setSelectedServiceIds([])
     setSelectedServiceOptions([])
@@ -2299,6 +2325,7 @@ export default function RepairOrdersPage() {
         description: combinedDescription,
         internal_notes: null,
         mileage_in: mileageIn.trim() === '' ? null : Number(mileageIn),
+        attribution: attributionDraft,
       })
 
       if (selectedServicePayload.length > 0) {
@@ -3208,6 +3235,25 @@ export default function RepairOrdersPage() {
                   />
                 </div>
 
+                <details className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-gray-700">Marketing attribution</summary>
+                  <p className="mt-2 text-xs text-gray-500">Optional IDs used to connect paid repair revenue to CallRail and advertising campaigns.</p>
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {([
+                      ['lead_source_channel', 'Lead source channel'], ['external_lead_id', 'External lead ID'],
+                      ['callrail_call_id', 'CallRail call ID'], ['google_click_id', 'Google click ID (GCLID)'],
+                      ['gbraid', 'GBRAID'], ['wbraid', 'WBRAID'], ['landing_page_url', 'Landing page URL'],
+                      ['utm_source', 'UTM source'], ['utm_medium', 'UTM medium'], ['utm_campaign', 'UTM campaign'],
+                      ['utm_term', 'UTM term'], ['utm_content', 'UTM content'],
+                    ] as [keyof typeof attributionDraft, string][]).map(([key, label]) => (
+                      <label key={key} className={key === 'landing_page_url' ? 'sm:col-span-2' : ''}>
+                        <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+                        <input value={attributionDraft[key]} onChange={(event) => setAttributionDraft((current) => ({ ...current, [key]: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500" />
+                      </label>
+                    ))}
+                  </div>
+                </details>
+
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
                   <button
                     type="button"
@@ -3371,6 +3417,28 @@ export default function RepairOrdersPage() {
         )}
         {selectedOrder && (!isOrderDetailLoading || !!orderDetail || priceBuilderOwnsShell) && (
           <div className={priceBuilderOwnsShell ? 'h-full min-h-0' : 'p-6 space-y-6'}>
+
+                {!priceBuilderOwnsShell && (
+                  <details className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700">Marketing attribution</summary>
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {([
+                        ['lead_source_channel', 'Lead source channel'], ['external_lead_id', 'External lead ID'],
+                        ['callrail_call_id', 'CallRail call ID'], ['google_click_id', 'Google click ID (GCLID)'],
+                        ['gbraid', 'GBRAID'], ['wbraid', 'WBRAID'], ['landing_page_url', 'Landing page URL'],
+                        ['utm_source', 'UTM source'], ['utm_medium', 'UTM medium'], ['utm_campaign', 'UTM campaign'],
+                        ['utm_term', 'UTM term'], ['utm_content', 'UTM content'],
+                      ] as [keyof typeof detailAttributionDraft, string][]).map(([key, label]) => (
+                        <label key={key} className={key === 'landing_page_url' ? 'sm:col-span-2' : ''}>
+                          <span className="mb-1 block text-xs font-medium text-gray-600">{label}</span>
+                          <input value={detailAttributionDraft[key]} onChange={(event) => setDetailAttributionDraft((current) => ({ ...current, [key]: event.target.value }))} disabled={['invoiced', 'paid'].includes(selectedOrder.status)} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm disabled:bg-gray-100" />
+                        </label>
+                      ))}
+                    </div>
+                    {!['invoiced', 'paid'].includes(selectedOrder.status) && <button type="button" onClick={() => saveAttributionMutation.mutate()} disabled={saveAttributionMutation.isPending} className="mt-3 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{saveAttributionMutation.isPending ? 'Saving…' : 'Save attribution'}</button>}
+                    {['invoiced', 'paid'].includes(selectedOrder.status) && <p className="mt-3 text-xs text-gray-500">Attribution is locked after invoice finalization.</p>}
+                  </details>
+                )}
 
                 {/* Quote Workflow — the customer quote/approval flow doesn't
                     apply to internal fleet ROs (the fleet manager runs them). */}
