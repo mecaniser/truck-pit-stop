@@ -198,7 +198,7 @@ export default function DashboardLayout() {
                 )}
               </Link>
               {!isSuperAdmin && tenantBranding?.state && (
-                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full border border-white/10 bg-white/5 text-[11px] font-medium tracking-wide text-gray-300">
                   {tenantBranding.state}
                 </span>
               )}
