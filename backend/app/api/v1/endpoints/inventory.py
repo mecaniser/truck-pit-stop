@@ -17,6 +17,7 @@ from app.core.image_validation import read_validated_image
 from app.db.models.user import User, UserRole
 from app.db.models.inventory import Inventory
 from app.db.models.customer import Customer
+from app.db.models.tenant import Tenant
 from app.db.models.description_library import DescriptionLibraryEntry
 from app.services.cloudinary_service import (
     is_cloudinary_configured,
@@ -304,6 +305,27 @@ async def list_inventory(
 
     serialized_items = [_inventory_response(item) for item in items]
     return paginated_or_list(serialized_items, total, skip, limit, paginated)
+
+
+class InventorySyncStatusResponse(BaseModel):
+    ets_last_synced_at: Optional[datetime]
+
+
+@router.get("/sync-status", response_model=InventorySyncStatusResponse)
+async def get_inventory_sync_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """When the Easy Truck Shop importer (backend/scripts/easytruck_sync) last
+    committed data for this tenant. Set only by that script, never by normal
+    record edits."""
+    if not current_user.tenant_id:
+        return InventorySyncStatusResponse(ets_last_synced_at=None)
+    tenant_result = await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    tenant = tenant_result.scalar_one_or_none()
+    return InventorySyncStatusResponse(
+        ets_last_synced_at=tenant.ets_last_synced_at if tenant else None
+    )
 
 
 @router.get("/typeahead", response_model=List[InventoryTypeaheadResponse])

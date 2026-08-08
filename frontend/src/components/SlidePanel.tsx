@@ -194,6 +194,51 @@ export default function SlidePanel({
     }
   }, [])
 
+  // A drawer that traps neither focus nor Escape is a drawer only a mouse can
+  // use: focus stayed on the page behind it, and every background control
+  // remained tabbable underneath.
+  useEffect(() => {
+    if (!isOpen) return
+    const panel = panelRef.current
+    const restoreFocusTo = document.activeElement as HTMLElement | null
+
+    const focusables = () => Array.from(
+      panel?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) || []
+    ).filter((el) => el.offsetParent !== null)
+
+    // Move focus in without stealing the caret from an autofocused field.
+    const first = focusables()[0]
+    if (panel && !panel.contains(document.activeElement)) (first || panel).focus?.()
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !panel) return
+      const items = focusables()
+      if (!items.length) return
+      const firstItem = items[0]
+      const lastItem = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === firstItem) {
+        event.preventDefault()
+        lastItem.focus()
+      } else if (!event.shiftKey && document.activeElement === lastItem) {
+        event.preventDefault()
+        firstItem.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      restoreFocusTo?.focus?.()
+    }
+  }, [isOpen, onClose])
+
   useEffect(() => {
     if (!isOpen) return
 
@@ -251,6 +296,10 @@ export default function SlidePanel({
         {/* Panel */}
         <div
           ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          tabIndex={-1}
           className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col animate-slide-in-right border-l border-zinc-700/50 touch-pan-y`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -347,6 +396,10 @@ export default function SlidePanel({
       {/* Panel */}
       <div
         ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
         className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col animate-slide-in-right touch-pan-y`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

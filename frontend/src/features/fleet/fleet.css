@@ -58,7 +58,31 @@
 .fleet-root .rail.is-expanded .rail-div{width:100%;}
 .fleet-root .rail-btn-toggle{color:var(--muted-3);}
 .fleet-root .rail-av{width:38px;height:38px;border-radius:999px;background:var(--surface-3);display:grid;place-items:center;
-  font-family:var(--display);font-weight:800;font-size:15px;color:var(--yellow);}
+  font-family:var(--display);font-weight:800;font-size:15px;color:var(--yellow);flex-shrink:0;}
+/* The account control follows the rail's own pattern: initials while collapsed,
+   the person's name once the rail has room to say it. */
+.fleet-root .rail-user{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;
+  width:100%;min-height:44px;padding:0;border:none;background:transparent;color:var(--muted-2);cursor:pointer;
+  border-radius:11px;transition:background-color 140ms ease;}
+.fleet-root .rail-user:hover{background:var(--surface-2);}
+.fleet-root .rail-user .rail-full{display:none;}
+.fleet-root .rail-user .rail-tip{position:absolute;left:56px;top:50%;transform:translateY(-50%);background:var(--ink);
+  border:1px solid var(--line-2);border-radius:8px;padding:5px 9px;font-size:12px;color:var(--text);white-space:nowrap;
+  opacity:0;pointer-events:none;transition:opacity 120ms ease;z-index:5;}
+.fleet-root .rail-user:hover .rail-tip{opacity:1;}
+.fleet-root .rail.is-expanded .rail-user{justify-content:flex-start;padding:0 10px;}
+.fleet-root .rail.is-expanded .rail-user .rail-full{display:inline;font-size:13px;font-weight:600;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fleet-root .rail.is-expanded .rail-user .rail-tip{display:none;}
+
+/* Truck detail owns the bar: back on the left, then the unit it belongs to. */
+.fleet-root .topbar-back{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 10px 0 6px;
+  border:none;background:transparent;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;
+  border-radius:10px;cursor:pointer;flex-shrink:0;transition:color 140ms ease,background-color 140ms ease;}
+.fleet-root .topbar-back:hover{color:var(--text);background:var(--surface-2);}
+.fleet-root .topbar-back:active{transform:scale(.97);}
+.fleet-root .topbar-title-unit{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.fleet-root .topbar-detail .topbar-l{gap:10px;}
 
 .fleet-root .main{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;}
 .fleet-root .topbar{height:64px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;
@@ -734,8 +758,6 @@
 .fleet-root .wo-truckstrip{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;
   padding:0 0 14px;margin-bottom:16px;border-bottom:1px solid var(--line);
   font-size:13px;color:var(--muted-2);}
-.fleet-root .wo-truckstrip-unit{font-family:'Barlow Condensed',sans-serif;font-weight:800;
-  font-size:17px;letter-spacing:.01em;color:var(--text);text-transform:uppercase;}
 
 .fleet-root .wo-scope{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;}
 .fleet-root .wo-scope-main,
@@ -782,6 +804,75 @@
   .fleet-root .wo-scope{grid-template-columns:minmax(0,1.35fr) minmax(280px,1fr);gap:28px;}
   .fleet-root .wo-drawer-body{padding:22px 26px 28px;}
 }
+
+/* ---------- Craft pass: phone-width defects ----------
+   The surface is used on glass, in a yard, one-handed. Everything below fixes
+   a place where the desk assumption survived into that context. */
+
+/* A disabled control that renders identically to a live one is a trap: the
+   primary action sat at full opacity and full yellow while refusing taps. */
+.fleet-root .dbtn:disabled,
+.fleet-root .dbtn[disabled]{opacity:.45;cursor:not-allowed;}
+
+/* Cost-line rows: description, then the stepper and its Add button. Held to
+   one line they pushed Add past the right edge of the drawer. */
+.fleet-root .wo-addrow{display:flex;gap:6px;align-items:center;}
+
+@media(max-width:680px){
+  /* Add rows wrap: the field takes the width it needs, the controls follow. */
+  .fleet-root .wo-addrow{flex-wrap:wrap;}
+  .fleet-root .wo-addrow>:first-child{flex:1 1 100%;min-width:0;}
+  .fleet-root .wo-addrow>:not(:first-child){flex:0 0 auto;}
+  .fleet-root .wo-addrow>button{margin-left:auto;}
+
+  /* A nowrap title against a space-between readout drew glyphs over glyphs. */
+  .fleet-root .dsec-head{flex-wrap:wrap;row-gap:6px;}
+  .fleet-root .dsec-title h3{white-space:normal;}
+  .fleet-root .loc-now{flex-basis:100%;}
+
+  /* PRODUCT.md calls the 44px target a functional requirement in this context.
+     It was enforced for tablet and then overridden downward here — restored. */
+  .fleet-root .dhead-details{width:44px;height:44px;}
+  .fleet-root .dsec-action{width:44px;height:44px;min-height:44px;}
+  .fleet-root .dbadge{min-height:44px;}
+  .fleet-root .dhead-r .dbtn{height:44px;}
+  .fleet-root .dback{min-height:44px;display:inline-flex;align-items:center;}
+  .fleet-root .pm-svc-row{min-height:44px;}
+  .fleet-root .wo-chip{min-height:44px;}
+  /* Icon-sized destructive controls: the glyph stays small, the button grows
+     to the touch floor around it. Sized on the element itself rather than a
+     pseudo-element, so what a thumb hits is what the box reports. */
+  .fleet-root .icon-hit{min-width:44px;min-height:44px;display:inline-flex;
+    align-items:center;justify-content:center;}
+  .fleet-root .inc-menu-btn{width:44px;height:44px;padding:0;justify-content:center;}
+  /* A badge pinned over a photo cannot grow its box without covering the photo
+     it belongs to. Keep the badge, extend only the area that answers a thumb. */
+  .fleet-root .icon-hit-pad{position:relative;}
+  .fleet-root .icon-hit-pad::after{content:'';position:absolute;top:50%;left:50%;
+    width:44px;height:44px;transform:translate(-50%,-50%);}
+
+  /* The section heading stayed at desktop size while the board's shrank. */
+  .fleet-root .detail-group-head h2{font-size:20px;}
+
+  /* The bar now carries the unit's name, and the name is the reason the bar
+     exists here — so the back control gives up its word before the truck
+     gives up its letters. */
+  .fleet-root .topbar-back span{display:none;}
+  .fleet-root .topbar-back{width:44px;padding:0;justify-content:center;}
+  .fleet-root .topbar-title-unit{font-size:19px;}
+
+  /* A 172px rail taking layout space out of a 375px screen left ~200px for the
+     truck: section titles broke over three lines and the PM readout ran off the
+     edge. At this width the expanded rail floats over the page instead, the way
+     a phone drawer does, and the page underneath is left intact. */
+  .fleet-root .app{position:relative;}
+  .fleet-root .rail.is-expanded{position:absolute;top:0;bottom:0;left:0;z-index:60;
+    box-shadow:0 0 0 100vmax rgba(0,0,0,.5), 12px 0 32px rgba(0,0,0,.45);}
+}
+
+/* The odometer and the PM target exist to be read against each other; only the
+   PM stat has a third line, so centring pushed its value out of alignment. */
+.fleet-root .dhead-stat{align-items:start;}
 
 @media (prefers-reduced-motion: reduce){
   .fleet-root *, .fleet-root *::before, .fleet-root *::after{
