@@ -38,7 +38,7 @@ import os
 import re
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -738,6 +738,12 @@ def main():
             if args.parts or args.only_parts:
                 resync_parts(conn, args.tenant_id, commit=args.commit,
                              rehost_images=not args.no_rehost_images)
+            if args.commit:
+                cur = conn.cursor()
+                cur.execute("UPDATE tenants SET ets_last_synced_at = %s WHERE id = %s",
+                            (datetime.now(timezone.utc), args.tenant_id))
+                conn.commit()
+                cur.close()
     finally:
         conn.close()
 

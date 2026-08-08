@@ -941,8 +941,8 @@ function LaborAddRow({ roId, laborRate, onChanged }: { roId: string; laborRate: 
   const valid = hours > 0
   return (
     <div style={{ marginTop: 6 }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input style={{ ...costInput, flex: 1, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+      <div className="wo-addrow">
+        <input style={{ ...costInput, flex: 1, minWidth: 0, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
         {/* Local-only until "Add" — no per-click server write, so no debounce.
             Rate isn't shown on the row; it follows the repair order's snapshot,
             surfaced as a tooltip instead of taking a column. */}
@@ -990,9 +990,20 @@ function LaborRow({ roId, line, onChanged, showPrices = true }: { roId: string; 
         {formatHoursMinutes(toNum(line.hours))}
       </span>
       {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_cost))}</strong>}
-      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <Trash2 size={18} color="var(--red)" />
-      </button>
+      {/* Deleting the whole repair order asks twice; removing a costed line used
+          to ask nothing, though it edits a record that feeds invoicing. */}
+      <InlineConfirm
+        danger
+        message="Remove this labor line?"
+        confirmLabel="Remove"
+        pending={del.isPending}
+        onConfirm={() => del.mutate()}
+        renderTrigger={(arm) => (
+          <button style={iconBtn} className="icon-hit" title="Remove" disabled={del.isPending} onClick={arm}>
+            <Trash2 size={18} color="var(--muted-2)" />
+          </button>
+        )}
+      />
     </div>
   )
 }
@@ -1009,7 +1020,7 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add service'),
   })
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+    <div className="wo-addrow" style={{ marginTop: 6 }}>
       {/* Searchable so a long service catalog is filterable by name. */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <BaseSelect
@@ -1041,7 +1052,7 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   })
   const valid = invId !== '' && Number(qty) > 0
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+    <div className="wo-addrow" style={{ marginTop: 6 }}>
       {/* Searchable so a long inventory is findable by name or SKU. Internal fleet
           repairs are costed at the part's cost, not list price. (This BaseSelect
           replaces the earlier native <select> overflow fix — it manages its own
@@ -1094,9 +1105,18 @@ function PartRow({ roId, line, onChanged, showPrices = true }: { roId: string; l
       <span style={{ flex: 1, color: 'var(--text)' }}>{line.inventory_name}{showPrices ? ` · ${money(toNum(line.unit_price))}` : ''}</span>
       <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>×{toNum(line.quantity)}</span>
       {showPrices && <strong style={{ width: 78, textAlign: 'right', color: 'var(--text)', fontSize: 15 }}>{money(toNum(line.total_price))}</strong>}
-      <button style={iconBtn} title="Remove" disabled={del.isPending} onClick={() => del.mutate()}>
-        <Trash2 size={18} color="var(--red)" />
-      </button>
+      <InlineConfirm
+        danger
+        message="Remove this part from the order?"
+        confirmLabel="Remove"
+        pending={del.isPending}
+        onConfirm={() => del.mutate()}
+        renderTrigger={(arm) => (
+          <button style={iconBtn} className="icon-hit" title="Remove" disabled={del.isPending} onClick={arm}>
+            <Trash2 size={18} color="var(--muted-2)" />
+          </button>
+        )}
+      />
     </div>
   )
 }
@@ -1848,6 +1868,7 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer, classN
                   )}
                   {isOwner && (
                     <button
+                      className="icon-hit"
                       onClick={(e) => { e.stopPropagation(); setConfirmDelete(i) }}
                       disabled={del.isPending}
                       title="Delete inspection (owner only)"

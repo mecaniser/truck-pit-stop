@@ -296,6 +296,18 @@ export interface RepairOrder {
   description: string | null
   customer_notes: string | null
   internal_notes: string | null
+  lead_source_channel?: string | null
+  external_lead_id?: string | null
+  callrail_call_id?: string | null
+  google_click_id?: string | null
+  gbraid?: string | null
+  wbraid?: string | null
+  landing_page_url?: string | null
+  utm_source?: string | null
+  utm_medium?: string | null
+  utm_campaign?: string | null
+  utm_term?: string | null
+  utm_content?: string | null
   assigned_mechanic_id: string | null
   total_parts_cost: string
   total_labor_cost: string

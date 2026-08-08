@@ -408,7 +408,7 @@ export default function TruckDetail({
                 <h2 id="operate-now-heading">Operate now</h2>
                 <p>Resolve active work, road incidents, and required inspections.</p>
               </div>
-              <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setLogging(true)} title="Log incident">
+              <button className="dbtn dbtn-ghost dsec-action" onClick={() => setLogging(true)} title="Log incident">
                 <Plus size={14} /> <span className="dbtn-label">Log incident</span>
               </button>
             </div>
@@ -458,6 +458,7 @@ export default function TruckDetail({
                               </a>
                               <button
                                 type="button"
+                                className="icon-hit-pad"
                                 aria-label="Remove incident photo"
                                 title="Remove photo"
                                 disabled={deleteIncidentPhoto.isPending}
@@ -497,8 +498,7 @@ export default function TruckDetail({
                         )}
                         <div style={{ position: 'relative', marginLeft: 'auto' }}>
                           <button
-                            className="dbtn dbtn-ghost"
-                            style={{ height: 38, width: 46, padding: 0, justifyContent: 'center' }}
+                            className="dbtn dbtn-ghost inc-menu-btn"
                             onClick={() => {
                               setArmedDeleteIncidentId(null)
                               setIncidentMenuOpenId((openId) => openId === inc.id ? null : inc.id)
