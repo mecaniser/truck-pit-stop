@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from 'react'
+import { ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
 import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
 
 type HeaderVariant = 'amber' | 'slate' | 'blue' | 'green' | 'minimal' | 'dark'
@@ -239,7 +239,12 @@ export default function SlidePanel({
     }
   }, [isOpen, onClose])
 
-  useEffect(() => {
+  // Layout effect, not effect: pinning the body relayouts the page and drops
+  // the scrollbar. Run after paint and that lands one frame into the panel's
+  // slide-in, whose translateX(100%) is re-resolved against the element's own
+  // width every frame — so the animation's origin moves mid-flight and the
+  // panel travels sideways before snapping home. Settle the layout first.
+  useLayoutEffect(() => {
     if (!isOpen) return
 
     const body = document.body
