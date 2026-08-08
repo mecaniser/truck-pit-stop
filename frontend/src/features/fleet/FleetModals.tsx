@@ -941,8 +941,8 @@ function LaborAddRow({ roId, laborRate, onChanged }: { roId: string; laborRate: 
   const valid = hours > 0
   return (
     <div style={{ marginTop: 6 }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input style={{ ...costInput, flex: 1, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
+      <div className="wo-addrow">
+        <input style={{ ...costInput, flex: 1, minWidth: 0, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
         {/* Local-only until "Add" — no per-click server write, so no debounce.
             Rate isn't shown on the row; it follows the repair order's snapshot,
             surfaced as a tooltip instead of taking a column. */}
@@ -1009,7 +1009,7 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to add service'),
   })
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+    <div className="wo-addrow" style={{ marginTop: 6 }}>
       {/* Searchable so a long service catalog is filterable by name. */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <BaseSelect
@@ -1041,7 +1041,7 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
   })
   const valid = invId !== '' && Number(qty) > 0
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+    <div className="wo-addrow" style={{ marginTop: 6 }}>
       {/* Searchable so a long inventory is findable by name or SKU. Internal fleet
           repairs are costed at the part's cost, not list price. (This BaseSelect
           replaces the earlier native <select> overflow fix — it manages its own
@@ -1848,6 +1848,7 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer, classN
                   )}
                   {isOwner && (
                     <button
+                      className="icon-hit"
                       onClick={(e) => { e.stopPropagation(); setConfirmDelete(i) }}
                       disabled={del.isPending}
                       title="Delete inspection (owner only)"

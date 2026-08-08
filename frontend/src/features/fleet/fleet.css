@@ -783,6 +783,60 @@
   .fleet-root .wo-drawer-body{padding:22px 26px 28px;}
 }
 
+/* ---------- Craft pass: phone-width defects ----------
+   The surface is used on glass, in a yard, one-handed. Everything below fixes
+   a place where the desk assumption survived into that context. */
+
+/* A disabled control that renders identically to a live one is a trap: the
+   primary action sat at full opacity and full yellow while refusing taps. */
+.fleet-root .dbtn:disabled,
+.fleet-root .dbtn[disabled]{opacity:.45;cursor:not-allowed;}
+
+/* Cost-line rows: description, then the stepper and its Add button. Held to
+   one line they pushed Add past the right edge of the drawer. */
+.fleet-root .wo-addrow{display:flex;gap:6px;align-items:center;}
+
+@media(max-width:680px){
+  /* Add rows wrap: the field takes the width it needs, the controls follow. */
+  .fleet-root .wo-addrow{flex-wrap:wrap;}
+  .fleet-root .wo-addrow>:first-child{flex:1 1 100%;min-width:0;}
+  .fleet-root .wo-addrow>:not(:first-child){flex:0 0 auto;}
+  .fleet-root .wo-addrow>button{margin-left:auto;}
+
+  /* A nowrap title against a space-between readout drew glyphs over glyphs. */
+  .fleet-root .dsec-head{flex-wrap:wrap;row-gap:6px;}
+  .fleet-root .dsec-title h3{white-space:normal;}
+  .fleet-root .loc-now{flex-basis:100%;}
+
+  /* PRODUCT.md calls the 44px target a functional requirement in this context.
+     It was enforced for tablet and then overridden downward here — restored. */
+  .fleet-root .dhead-details{width:44px;height:44px;}
+  .fleet-root .dsec-action{width:44px;height:44px;min-height:44px;}
+  .fleet-root .dbadge{min-height:44px;}
+  .fleet-root .dhead-r .dbtn{height:44px;}
+  .fleet-root .dback{min-height:44px;display:inline-flex;align-items:center;}
+  .fleet-root .pm-svc-row{min-height:44px;}
+  .fleet-root .wo-chip{min-height:44px;}
+  /* Icon-sized destructive controls: the glyph stays small, the button grows
+     to the touch floor around it. Sized on the element itself rather than a
+     pseudo-element, so what a thumb hits is what the box reports. */
+  .fleet-root .icon-hit{min-width:44px;min-height:44px;display:inline-flex;
+    align-items:center;justify-content:center;}
+  .fleet-root .inc-menu-btn{width:44px;height:44px;padding:0;justify-content:center;}
+  /* A badge pinned over a photo cannot grow its box without covering the photo
+     it belongs to. Keep the badge, extend only the area that answers a thumb. */
+  .fleet-root .icon-hit-pad{position:relative;}
+  .fleet-root .icon-hit-pad::after{content:'';position:absolute;top:50%;left:50%;
+    width:44px;height:44px;transform:translate(-50%,-50%);}
+
+  /* The section heading stayed at desktop size while the board's shrank. */
+  .fleet-root .detail-group-head h2{font-size:20px;}
+}
+
+/* The odometer and the PM target exist to be read against each other; only the
+   PM stat has a third line, so centring pushed its value out of alignment. */
+.fleet-root .dhead-stat{align-items:start;}
+
 @media (prefers-reduced-motion: reduce){
   .fleet-root *, .fleet-root *::before, .fleet-root *::after{
     animation-duration:1ms !important;
