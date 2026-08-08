@@ -785,15 +785,21 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
           </main>
 
           <aside className="wo-builder-summary" aria-label="Draft summary">
-            <div className="wo-builder-total">
+            <div className={'wo-builder-total' + (lineCount === 0 ? ' is-empty' : '')}>
               <div><span>Draft scope</span><strong>{lineCount} item{lineCount === 1 ? '' : 's'}</strong></div>
-              <dl>
-                <div><dt>Services</dt><dd>{selectedServices.length}</dd></div>
-                <div><dt>Manual labor</dt><dd>{formatHoursMinutes(stagedLabor.reduce((sum, line) => sum + line.hours, 0))}</dd></div>
-                <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
-              </dl>
-              {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
-              <p>Catalog services include their configured labor and parts. Final totals remain editable on the Draft.</p>
+              {lineCount === 0 ? (
+                <p className="wo-builder-empty-summary">Add work to see the running estimate.</p>
+              ) : (
+                <>
+                  <dl>
+                    <div><dt>Services</dt><dd>{selectedServices.length}</dd></div>
+                    <div><dt>Manual labor</dt><dd>{formatHoursMinutes(stagedLabor.reduce((sum, line) => sum + line.hours, 0))}</dd></div>
+                    <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
+                  </dl>
+                  {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
+                  <p>Catalog services include their configured labor and parts. Final totals remain editable on the Draft.</p>
+                </>
+              )}
             </div>
 
             <Field label="Assign mechanic (optional)">
@@ -1136,7 +1142,7 @@ function ServiceAddRow({ roId, onChanged }: { roId: string; onChanged: () => voi
   return (
     <div className="wo-addrow" style={{ marginTop: 6 }}>
       {/* Searchable so a long service catalog is filterable by name. */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="wo-addrow-primary">
         <BaseSelect
           variant="dark"
           placeholder="Add service from catalog…"
@@ -1171,7 +1177,7 @@ function PartAddRow({ roId, inventory, onChanged }: { roId: string; inventory: W
           repairs are costed at the part's cost, not list price. (This BaseSelect
           replaces the earlier native <select> overflow fix — it manages its own
           width and portals the menu, so it can't grow a scrollbar either.) */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="wo-addrow-primary">
         <BaseSelect
           variant="dark"
           placeholder="Add part from inventory…"
@@ -1332,6 +1338,8 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
   const [descDirty, setDescDirty] = useState(false)
   const [mileageOut, setMileageOut] = useState('')
   const [armComplete, setArmComplete] = useState(false)
+  const [draftEditing, setDraftEditing] = useState(false)
+  const [draftAddType, setDraftAddType] = useState<FleetBuilderAddType>('service')
   // Seed the editable description once the work order loads.
   if (wo && !descDirty && description === '') {
     if (wo.description) setDescription(wo.description)
@@ -1350,8 +1358,10 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
   })
   const assign = useMutation({
-    mutationFn: async (mechanicId: string) => (await api.post(`/repair-orders/${repairOrderId}/assign-mechanic`, { mechanic_id: mechanicId })).data,
-    onSuccess: () => { toast.success('Mechanic assigned'); refresh() },
+    mutationFn: async (mechanicId: string) => mechanicId
+      ? (await api.post(`/repair-orders/${repairOrderId}/assign-mechanic`, { mechanic_id: mechanicId })).data
+      : (await api.put(`/repair-orders/${repairOrderId}`, { assigned_mechanic_id: null })).data,
+    onSuccess: (_, mechanicId) => { toast.success(mechanicId ? 'Mechanic assigned' : 'Mechanic unassigned'); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to assign'),
   })
   const del = useMutation({
@@ -1389,11 +1399,147 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
   // labor that make up the PM (names + quantities) but not the prices.
   const { user } = useAuthStore()
   const showPrices = user?.role === 'garage_owner' || user?.role === 'garage_admin'
+  const draftLineCount = (wo?.labor_items.length || 0) + (wo?.parts_usage.length || 0)
+  const assignedMechanic = mechanics?.find((mechanic) => mechanic.id === wo?.assigned_mechanic_id)
 
   return (
     <>
       {isLoading || !wo ? (
         <div className="loader"><Spinner size="sm" /></div>
+      ) : ['draft', 'quoted'].includes(wo.status) ? (
+        <div className="wo-draft wo-state-enter">
+          <div className="wo-draft-commandbar">
+            <div>
+              <strong>{WO_STATUS_LABEL[wo.status] || wo.status}</strong>
+              <span>{draftLineCount} item{draftLineCount === 1 ? '' : 's'} ready</span>
+            </div>
+            <div className="wo-draft-actions">
+              <button type="button" className={ghostBtn} aria-expanded={draftEditing}
+                onClick={() => setDraftEditing((editing) => !editing)}>
+                <Pencil size={14} /> {draftEditing ? 'Done editing' : 'Edit details'}
+              </button>
+              <button type="button" className={yellowBtn} disabled={startWO.isPending} onClick={() => startWO.mutate()}>
+                {startWO.isPending ? <Spinner size="xs" /> : <Play size={14} />} Start work
+              </button>
+            </div>
+          </div>
+
+          <div className="wo-draft-grid">
+            <main className="wo-draft-main">
+              <section className="wo-draft-complaint" aria-labelledby="wo-draft-complaint-heading">
+                <div className="wo-draft-section-head">
+                  <h3 id="wo-draft-complaint-heading">Work / complaint</h3>
+                </div>
+                {draftEditing ? (
+                  <>
+                    <SuggestingTextarea
+                      value={description}
+                      onChange={(value) => { setDescription(value); setDescDirty(true) }}
+                      rows={3}
+                      placeholder="Record the work found during inspection…"
+                      style={{ width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '12px 14px', font: 'inherit', resize: 'vertical', minHeight: 92 }}
+                    />
+                    {descDirty && (
+                      <button type="button" className={ghostBtn} disabled={saveDesc.isPending} onClick={() => saveDesc.mutate()}>
+                        {saveDesc.isPending ? <Spinner size="xs" /> : <ClipboardCheck size={14} />} Save complaint
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p>{wo.description?.trim() || 'No complaint recorded.'}</p>
+                )}
+              </section>
+
+              {draftEditing && (
+                <section className="wo-builder-add wo-draft-editor" aria-labelledby="wo-draft-add-heading">
+                  <div className="wo-builder-section-head">
+                    <div>
+                      <h3 id="wo-draft-add-heading">Add work</h3>
+                      <p>Add only what belongs on this repair order.</p>
+                    </div>
+                    <div className="wo-builder-tabs" role="tablist" aria-label="Add work type">
+                      {(['service', 'labor', 'part'] as FleetBuilderAddType[]).map((type) => (
+                        <button key={type} type="button" role="tab" aria-selected={draftAddType === type}
+                          className={draftAddType === type ? 'is-active' : ''} onClick={() => setDraftAddType(type)}>
+                          {type === 'service' ? 'Services' : type === 'labor' ? 'Labor' : 'Parts'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {draftAddType === 'service' && <div role="tabpanel"><ServiceAddRow roId={repairOrderId} onChanged={refresh} /></div>}
+                  {draftAddType === 'labor' && <div role="tabpanel"><LaborAddRow roId={repairOrderId} laborRate={laborRate} onChanged={refresh} /></div>}
+                  {draftAddType === 'part' && <div role="tabpanel"><PartAddRow roId={repairOrderId} inventory={inventory || []} onChanged={refresh} /></div>}
+                </section>
+              )}
+
+              <section className="wo-draft-scope" aria-labelledby="wo-draft-scope-heading">
+                <div className="wo-draft-section-head">
+                  <h3 id="wo-draft-scope-heading">Repair order scope</h3>
+                  <span>{draftLineCount} item{draftLineCount === 1 ? '' : 's'}</span>
+                </div>
+                {draftLineCount === 0 ? (
+                  <div className="wo-builder-empty">No services, labor, or parts have been added.</div>
+                ) : (
+                  <div className={'wo-draft-lines' + (draftEditing ? ' is-editing' : '')}>
+                    {wo.labor_items.map((line) => draftEditing ? (
+                      <LaborRow key={line.id} roId={repairOrderId} line={line} onChanged={refresh} showPrices={showPrices} />
+                    ) : (
+                      <div className="wo-draft-line" key={line.id}>
+                        <span>Labor</span><strong>{line.description || 'Labor'}</strong>
+                        <small>{formatHoursMinutes(toNum(line.hours))}</small>
+                        {showPrices && <b>{money(toNum(line.total_cost))}</b>}
+                      </div>
+                    ))}
+                    {wo.parts_usage.map((line) => draftEditing ? (
+                      <PartRow key={line.id} roId={repairOrderId} line={line} onChanged={refresh} showPrices={showPrices} />
+                    ) : (
+                      <div className="wo-draft-line" key={line.id}>
+                        <span>Part</span><strong>{line.inventory_name}</strong>
+                        <small>×{toNum(line.quantity)}</small>
+                        {showPrices && <b>{money(toNum(line.total_price))}</b>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </main>
+
+            <aside className="wo-draft-side" aria-label="Repair order summary">
+              <div className="wo-draft-total">
+                <div><span>Labor</span><strong>{showPrices ? money(num(wo.total_labor_cost)) : `${wo.labor_items.length} line${wo.labor_items.length === 1 ? '' : 's'}`}</strong></div>
+                <div><span>Parts</span><strong>{showPrices ? money(num(wo.total_parts_cost)) : `${wo.parts_usage.length} line${wo.parts_usage.length === 1 ? '' : 's'}`}</strong></div>
+                {showPrices && <div className="wo-draft-grand-total"><span>Estimated total</span><strong>{money(num(wo.total_cost))}</strong></div>}
+              </div>
+
+              <div className="wo-draft-mechanic">
+                <span>Assigned mechanic</span>
+                {draftEditing ? (
+                  <select value={wo.assigned_mechanic_id || ''}
+                    onChange={(event) => assign.mutate(event.target.value)}
+                    disabled={assign.isPending} className="wo-select">
+                    <option value="">Leave unassigned</option>
+                    {(mechanics || []).map((mechanic) => <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>)}
+                  </select>
+                ) : (
+                  <strong>{assignedMechanic?.name || 'Unassigned'}</strong>
+                )}
+              </div>
+
+              {draftEditing && (
+                <div className="wo-draft-danger">
+                  <InlineConfirm danger message="Delete this repair order? This can't be undone." confirmLabel="Delete"
+                    pending={del.isPending} onConfirm={() => del.mutate()}
+                    renderTrigger={(arm) => (
+                      <button type="button" className={ghostBtn} disabled={del.isPending} onClick={arm}>
+                        <Trash2 size={16} /> Delete repair order
+                      </button>
+                    )}
+                  />
+                </div>
+              )}
+            </aside>
+          </div>
+        </div>
       ) : (
         <div className="wo-live">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
@@ -1474,7 +1620,7 @@ function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
               <Field label="Assigned mechanic">
                 <select
                   value={wo.assigned_mechanic_id || ''}
-                  onChange={(e) => e.target.value && assign.mutate(e.target.value)}
+                  onChange={(e) => assign.mutate(e.target.value)}
                   disabled={assign.isPending}
                   style={{ width: '100%', height: 40, background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9, color: 'var(--text)', padding: '0 10px' }}
                 >
