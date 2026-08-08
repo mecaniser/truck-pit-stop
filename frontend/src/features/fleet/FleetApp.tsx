@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  Truck, LayoutGrid, Map as MapIcon, CalendarRange, ClipboardList, Users,
-  Bell, LogOut, Plus, X, Wrench, ArrowLeft, Settings, UserRound, KeyRound, Eye, EyeOff,
-  Calendar, Play, Flag, ClipboardCheck, ChevronsLeft, ChevronsRight, Pencil,
+  Truck, LayoutGrid, Map as MapIcon, Calendar, Play, Flag, ClipboardCheck,
+  Bell, LogOut, Plus, X, Wrench, Warehouse, Settings, UserRound, KeyRound, Eye, EyeOff,
+  ChevronsLeft, ChevronsRight, Pencil, Search, Check,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
@@ -22,7 +22,7 @@ import FleetMap from './FleetMap'
 import { SchedulePMModal, WorkOrderPanel, invalidateFleetAndCockpit } from './FleetModals'
 import './fleet.css'
 
-type View = 'board' | 'map' | 'schedule' | 'orders' | 'drivers' | 'detail'
+type View = 'board' | 'map' | 'detail'
 const STORAGE_KEY = 'tps-fleet-state'
 
 interface Persisted { view: View; selId: string | null; filter: any; sort: any }
@@ -40,15 +40,11 @@ export default function FleetApp() {
   const [filter, setFilter] = useState(init.filter)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState(init.sort)
+  const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [clock, setClock] = useState(() => new Date())
   const [railExpanded, setRailExpanded] = useState(() => localStorage.getItem('tps-fleet-rail') === '1')
 
-  useEffect(() => {
-    const id = setInterval(() => setClock(new Date()), 30000)
-    return () => clearInterval(id)
-  }, [])
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, selId, filter, sort }))
   }, [view, selId, filter, sort])
@@ -59,6 +55,16 @@ export default function FleetApp() {
     refetchInterval: 60000,
   })
   const trucks = data?.trucks || []
+  const fleetStatusSummary = [
+    ['active', 'on road'],
+    ['shop', 'in shop'],
+    ['pm', 'PM due'],
+    ['parts', 'awaiting parts'],
+    ['draft', 'awaiting assignment'],
+    ['yard', 'in yard'],
+    ['available', 'available'],
+    ['out_of_service', 'out of service'],
+  ].map(([status, label]) => ({ status, label, count: trucks.filter((truck) => truck.status === status).length })).filter((item) => item.count > 0)
 
   const openTruck = (id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
@@ -67,13 +73,9 @@ export default function FleetApp() {
   const railItems: [View, React.ReactNode, string, string][] = [
     ['board', <LayoutGrid size={20} />, 'Fleet board', 'FB'],
     ['map', <MapIcon size={20} />, 'Live map', 'MAP'],
-    ['schedule', <CalendarRange size={20} />, 'PM schedule', 'PM'],
-    ['orders', <ClipboardList size={20} />, 'Work orders', 'WO'],
-    ['drivers', <Users size={20} />, 'Drivers', 'DRV'],
   ]
   const titles: Record<View, string> = {
-    board: 'Fleet Board', map: 'Live Map', schedule: 'PM Schedule',
-    orders: 'Work Orders', drivers: 'Drivers', detail: 'Truck Detail',
+    board: 'Fleet Board', map: 'Live Map', detail: 'Truck Detail',
   }
 
   // Only owner/admin reach the fleet board from their garage dashboard, so only
@@ -88,8 +90,8 @@ export default function FleetApp() {
           <div className="rail-mark"><Truck /></div>
           {canReturnToDashboard && (
             <>
-              <button className="rail-btn rail-btn-back" onClick={() => navigate('/dashboard')}>
-                <ArrowLeft size={20} /><span className="rail-abbr">Back</span><span className="rail-full">Back to dashboard</span><span className="rail-tip">Back to dashboard</span>
+              <button className="rail-btn rail-btn-dashboard" onClick={() => navigate('/dashboard')}>
+                <Warehouse size={20} /><span className="rail-abbr">SHOP</span><span className="rail-full">Shop</span><span className="rail-tip">Shop dashboard</span>
               </button>
               <div className="rail-div" />
             </>
@@ -127,21 +129,29 @@ export default function FleetApp() {
           <header className="topbar">
             <div className="topbar-l">
               <span className="topbar-title">{titles[view]}</span>
-              <span className="topbar-sub">{user?.tenant_name || 'Truck Pit Stop'} · internal fleet</span>
+              <span className="topbar-context">
+                <span className="topbar-tenant">{user?.tenant_name || 'Truck Pit Stop'}</span>
+                {data ? (
+                  <span className="topbar-fleet-state" aria-label={`${data.stats.total} total units: ${fleetStatusSummary.map((item) => `${item.count} ${item.label}`).join(', ')}`}>
+                    <span><b>{data.stats.total}</b> units</span>
+                    <span className="topbar-fleet-breakdown">
+                      {fleetStatusSummary.map((item) => <span key={item.status}><i /> <b>{item.count}</b> {item.label}</span>)}
+                    </span>
+                  </span>
+                ) : <span className="topbar-fleet-state">Internal fleet</span>}
+              </span>
             </div>
             <div className="topbar-r">
-              <span className="topbar-clock" title={clock.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}>
-                <span className="topbar-clock-full">{clock.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
-                <span className="topbar-clock-short">{clock.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
-              </span>
               <button className="dbtn dbtn-yellow" onClick={() => setAdding(true)} title="Add truck"><Plus size={15} /> <span className="dbtn-label">Add truck</span></button>
-              <button className="topbar-icbtn"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</button>
-              <div className="topbar-user" title={`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet Manager'}>
+              <div className="topbar-utilities">
+                <button className="topbar-icbtn" title="Notifications" aria-label="Notifications"><Bell size={17} />{!!data?.stats.incidents_total && <span className="dot" />}</button>
+                <button type="button" className="topbar-user" onClick={() => setSettingsOpen(true)} title="Account settings" aria-label="Open account settings">
                 <div className="topbar-user-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</div>
                 <div className="topbar-user-txt">
                   <div className="nm">{`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet Manager'}</div>
                   <div className="rl">Fleet manager</div>
                 </div>
+                </button>
               </div>
             </div>
           </header>
@@ -160,15 +170,11 @@ export default function FleetApp() {
               ) : view === 'detail' && selId ? (
                 <TruckDetail truckId={selId} trucks={trucks} onBack={() => goView('board')} onOpen={openTruck} />
               ) : view === 'board' ? (
-                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
+                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenWorkOrder={setWoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               ) : view === 'map' ? (
                 <MapPage trucks={trucks} onOpen={openTruck} />
-              ) : view === 'schedule' ? (
-                <SchedulePage trucks={trucks} onOpen={openTruck} />
-              ) : view === 'orders' ? (
-                <OrdersPage trucks={trucks} onOpen={openTruck} />
               ) : (
-                <DriversPage trucks={trucks} onOpen={openTruck} />
+                <FleetBoard data={data} onOpen={(t) => openTruck(t.id)} onOpenWorkOrder={setWoPanelId} filter={filter} setFilter={setFilter} query={query} setQuery={setQuery} sort={sort} setSort={setSort} />
               )}
             </div>
           </div>
@@ -177,6 +183,7 @@ export default function FleetApp() {
 
       {adding && <AddTruckModal onClose={() => setAdding(false)} />}
       {settingsOpen && <FleetSettingsModal onClose={() => setSettingsOpen(false)} />}
+      {woPanelId && <WorkOrderPanel repairOrderId={woPanelId} onClose={() => setWoPanelId(null)} onChanged={refetch} />}
     </div>
   )
 }
@@ -381,7 +388,80 @@ function DriversPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: st
   )
 }
 
+// These internal components remain available for a future contextual panel,
+// but are no longer standalone navigation destinations.
+void SchedulePage
+void OrdersPage
+void DriversPage
+
 /* ---- add truck ---- */
+
+type FleetCompanyOption = { id: string; company_name: string; fleet_enabled: boolean; is_internal_fleet: boolean }
+
+function AuthorityPicker({ companies, value, onChange, defaultAuthorityId }: {
+  companies: FleetCompanyOption[]
+  value: string
+  onChange: (id: string) => void
+  defaultAuthorityId?: string | null
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const selected = companies.find((company) => company.id === value)
+  const normalized = query.trim().toLowerCase()
+  const showResults = open && normalized.length > 0
+  const matches = companies
+    .filter((company) => !normalized || company.company_name.toLowerCase().includes(normalized))
+    .sort((a, b) => {
+      if (a.id === defaultAuthorityId) return -1
+      if (b.id === defaultAuthorityId) return 1
+      return a.company_name.localeCompare(b.company_name)
+    })
+  const choose = (company: FleetCompanyOption) => {
+    onChange(company.id)
+    setQuery(company.company_name)
+    setOpen(false)
+  }
+
+  return (
+    <div className="authority-picker">
+      <div className={'authority-combobox' + (open ? ' is-open' : '')}>
+        <Search size={17} aria-hidden="true" />
+        <input
+          value={query || (open ? '' : selected?.company_name || '')}
+          onFocus={(event) => { setQuery(selected?.company_name || ''); setOpen(true); requestAnimationFrame(() => event.currentTarget.select()) }}
+          onChange={(event) => { setQuery(event.target.value); setOpen(true) }}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          placeholder="Search operating authority…"
+          aria-label="Search operating authorities"
+          aria-expanded={open}
+          aria-controls="authority-options"
+          role="combobox"
+          autoComplete="off"
+        />
+        {selected?.id === defaultAuthorityId && <span className="authority-picker-default">Default</span>}
+      </div>
+      {showResults && (
+        <div id="authority-options" className="authority-picker-menu" role="listbox" aria-label="Operating authorities">
+          {matches.map((company) => {
+            const isSelected = company.id === value
+            const isDefault = company.id === defaultAuthorityId
+            return (
+              <button key={company.id} type="button" className={'authority-picker-option' + (isSelected ? ' is-selected' : '')} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(company)} role="option" aria-selected={isSelected}>
+                <span className="authority-picker-option-copy">
+                  <span>{company.company_name}</span>
+                  <small>{isDefault ? 'Default operating authority' : company.is_internal_fleet ? 'Internal shop fleet' : 'Fleet Board authority'}</small>
+                </span>
+                {isDefault && !isSelected && <span className="authority-picker-default">Default</span>}
+                {isSelected && <Check className="authority-picker-check" size={17} aria-hidden="true" />}
+              </button>
+            )
+          })}
+          {!matches.length && <div className="authority-picker-empty">No operating authority matches that search.</div>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function AddTruckModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient()
@@ -420,7 +500,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
       setDecoding(false)
     }
   }
-  const { data: companies = [] } = useQuery<Array<{ id: string; company_name: string; fleet_enabled: boolean; is_internal_fleet: boolean }>>({
+  const { data: companies = [] } = useQuery<FleetCompanyOption[]>({
     queryKey: ['fleet-companies'],
     queryFn: async () => (await api.get('/fleet/companies')).data,
   })
@@ -436,7 +516,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
   const { data: vehicleCandidates = [] } = useQuery<Array<{ id: string; make: string; model: string; year?: number | null; unit_number?: string | null; vin?: string | null }>>({
     queryKey: ['fleet-vehicle-candidates', debouncedVehicleSearch],
     queryFn: async () => (await api.get('/fleet/vehicle-candidates', { params: { q: debouncedVehicleSearch || undefined, limit: 50 } })).data,
-    enabled: mode === 'existing',
+    enabled: mode === 'existing' && !!debouncedVehicleSearch.trim(),
   })
   const create = useMutation({
     mutationFn: async () => {
@@ -479,48 +559,65 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
   const inp = 'w-full'
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
-      <div className="dsec" style={{ width: 480, maxWidth: '92vw' }} onClick={(e) => e.stopPropagation()}>
-        <div className="dsec-head">
-          <div className="dsec-title"><Wrench size={17} /><h3>Add truck</h3></div>
-          <button className="person-call" onClick={onClose}><X size={15} /></button>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+      <div className="dsec add-truck-modal" style={{ width: 480, maxWidth: '92vw' }} onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="person-call add-truck-close" onClick={onClose} aria-label="Close add truck"><X size={16} /></button>
+        <div className="add-truck-mode" style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setVinConflict(null) }}>New truck</button>
           <button type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</button>
         </div>
         <Field label="Operating authority / Fleet Board *">
-          <select className="w-full" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-            <option value="">Select operating authority…</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.company_name}{company.is_internal_fleet ? ' (internal)' : ''}
-              </option>
-            ))}
-          </select>
+          <AuthorityPicker
+            companies={companies}
+            value={customerId}
+            onChange={setCustomerId}
+            defaultAuthorityId={fleetSettings?.default_fleet_authority_customer_id}
+          />
         </Field>
         {mode === 'existing' ? (
           <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
             <Field label="Find truck by VIN, unit, plate, make, or model">
-              <input className="w-full" value={vehicleSearch} onChange={(e) => setVehicleSearch(e.target.value)} placeholder="Search existing trucks…" />
+              <input className="w-full" value={vehicleSearch} onChange={(e) => { setVehicleSearch(e.target.value); setExistingVehicleId('') }} placeholder="Search existing trucks…" />
             </Field>
-            <Field label="Existing truck *">
-              <select className="w-full" value={existingVehicleId} onChange={(e) => setExistingVehicleId(e.target.value)}>
-                <option value="">Select truck…</option>
-                {vehicleCandidates.map((vehicle) => (
-                  <option key={vehicle.id} value={vehicle.id}>
-                    {[vehicle.unit_number ? `Unit ${vehicle.unit_number}` : null, vehicle.year, vehicle.make, vehicle.model, vehicle.vin ? `VIN …${vehicle.vin.slice(-6)}` : null].filter(Boolean).join(' · ')}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div className="vehicle-candidate-picker" aria-label="Existing truck">
+              <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>Existing truck *</span>
+              {!vehicleSearch.trim() ? (
+                <div className="vehicle-candidate-empty">Search to find the truck you want to link.</div>
+              ) : vehicleCandidates.length ? (
+                <div className="vehicle-candidate-list" role="listbox" aria-label="Existing truck results">
+                  {vehicleCandidates.map((vehicle) => {
+                    const selected = vehicle.id === existingVehicleId
+                    return (
+                      <button
+                        key={vehicle.id}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        className={'vehicle-candidate' + (selected ? ' is-selected' : '')}
+                        onClick={() => setExistingVehicleId(vehicle.id)}
+                      >
+                        <span className="vehicle-candidate-copy">
+                          <strong>{[vehicle.unit_number ? `Unit ${vehicle.unit_number}` : null, vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' · ')}</strong>
+                          <small>{vehicle.vin ? `VIN …${vehicle.vin.slice(-6)}` : 'VIN not recorded'}</small>
+                        </span>
+                        {selected && <Check size={18} aria-hidden="true" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="vehicle-candidate-empty">No trucks match that search.</div>
+              )}
+            </div>
           </div>
         ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>VIN — paste to auto-fill make / model / year</span>
-            <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 18 }}>
+          <div className="vin-autofill" style={{ gridColumn: '1 / -1' }}>
+            <div className="vin-autofill-label">
+              <span className="id-k">VIN</span>
+              <span>Paste a full VIN to fill vehicle details</span>
+            </div>
+            <div className="vin-autofill-control">
               <input
-                className={inp}
                 value={form.vin}
                 onChange={(e) => {
                   const v = e.target.value.toUpperCase()
@@ -530,8 +627,9 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
                 }}
                 placeholder="17-character VIN"
                 maxLength={17}
+                aria-label="Vehicle identification number"
               />
-              <button className="dbtn dbtn-ghost" type="button" onClick={() => decodeVin(form.vin)} disabled={decoding || form.vin.trim().length !== 17}>
+              <button className="vin-decode" type="button" onClick={() => decodeVin(form.vin)} disabled={decoding || form.vin.trim().length !== 17}>
                 {decoding ? <Spinner size="xs" /> : 'Decode'}
               </button>
             </div>
@@ -572,10 +670,10 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: 'block' }}>
+    <div className="fleet-form-field" role="group" aria-label={label}>
       <span className="id-k" style={{ display: 'block', marginBottom: 5 }}>{label}</span>
       {children}
-    </label>
+    </div>
   )
 }
 
@@ -588,7 +686,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
   const [profile, setProfile] = useState({
     first_name: user?.first_name || '',
     last_name: user?.last_name || '',
-    phone: user?.phone || '',
+    phone: formatUSPhone(user?.phone || ''),
     email: user?.email || '',
   })
   const setP = (k: keyof typeof profile) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -608,7 +706,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
     setProfile({
       first_name: user?.first_name || '',
       last_name: user?.last_name || '',
-      phone: user?.phone || '',
+      phone: formatUSPhone(user?.phone || ''),
       email: user?.email || '',
     })
     closePwd()
@@ -693,7 +791,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="First name"><div className="id-v">{profile.first_name || '—'}</div></Field>
               <Field label="Last name"><div className="id-v">{profile.last_name || '—'}</div></Field>
-              <Field label="Phone"><div className="id-v">{profile.phone || '—'}</div></Field>
+              <Field label="Phone"><div className="id-v">{formatUSPhone(profile.phone) || '—'}</div></Field>
               <Field label="Email"><div className="id-v">{profile.email || '—'}</div></Field>
             </div>
           ) : (
@@ -701,7 +799,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <Field label="First name"><input value={profile.first_name} onChange={setP('first_name')} /></Field>
                 <Field label="Last name"><input value={profile.last_name} onChange={setP('last_name')} /></Field>
-                <Field label="Phone"><input value={profile.phone} onChange={setP('phone')} placeholder="(704) 555-0123" /></Field>
+                <Field label="Phone"><input value={profile.phone} onChange={(e) => setProfile((p) => ({ ...p, phone: formatUSPhone(e.target.value) }))} placeholder="(704) 555-0123" inputMode="tel" autoComplete="tel" /></Field>
                 <Field label="Email"><input value={profile.email} onChange={setP('email')} type="email" /></Field>
                 {emailChanged && (
                   <div style={{ gridColumn: '1 / -1' }}>

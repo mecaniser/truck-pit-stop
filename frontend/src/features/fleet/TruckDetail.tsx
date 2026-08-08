@@ -86,11 +86,11 @@ function validFleetPhoto(file: File) {
   return true
 }
 
-function Section({ title, icon, count, right, children }: {
-  title: string; icon: React.ReactNode; count?: number; right?: React.ReactNode; children: React.ReactNode
+function Section({ title, icon, count, right, children, className }: {
+  title: string; icon: React.ReactNode; count?: number; right?: React.ReactNode; children: React.ReactNode; className?: string
 }) {
   return (
-    <section className="dsec">
+    <section className={'dsec' + (className ? ` ${className}` : '')}>
       <div className="dsec-head">
         <div className="dsec-title">{icon}<h3>{title}</h3>{count != null && <span className="dsec-count">{count}</span>}</div>
         {right}
@@ -207,8 +207,24 @@ export default function TruckDetail({
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const setStatus = useMutation({
-    mutationFn: async (value: string) => (await api.patch(`/fleet/trucks/${truckId}`, { status_override: value })).data,
-    onSuccess: () => { toast.success('Status updated'); setStatusMenuOpen(false); refresh() },
+    mutationFn: async (value: string) => (await api.patch(`/fleet/trucks/${truckId}`, { status_override: value })).data as BoardTruck,
+    onSuccess: (updated, value) => {
+      // Paint the new status straight from the response so the badge and the
+      // menu's checkmark move on click instead of waiting on the refetch.
+      qc.setQueryData<TruckDetailData>(['fleet-truck', truckId], (current) => (
+        current ? { ...current, truck: { ...current.truck, ...updated } } : current
+      ))
+      // An open work order outranks the manual status on the board, so say that
+      // plainly rather than claiming a change the badge is not going to show.
+      const label = STATUS_OPTIONS.find((opt) => opt.value === value)?.label
+      if (updated.status_override && updated.status !== updated.status_override) {
+        toast.success(`Saved — the board shows "${STATUS_META[updated.status].label}" until the open work order closes`)
+      } else {
+        toast.success(value === 'auto' ? 'Manual status cleared' : `Status set to ${label}`)
+      }
+      setStatusMenuOpen(false)
+      refresh()
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to set status'),
   })
 
@@ -265,6 +281,11 @@ export default function TruckDetail({
   if (!t) return <div className="loader"><Spinner size="md" /></div>
 
   const meta = STATUS_META[t.status]
+  // An open work order outranks the manual status, so surface the saved choice
+  // instead of leaving the badge silently contradicting the "saved" toast.
+  const suppressedOverride = t.status_override && t.status !== t.status_override
+    ? STATUS_META[t.status_override as keyof typeof STATUS_META]
+    : null
   const pm = pmState(t)
   // map trucks: ensure the focused truck (fresh coords) is represented
   const mapTrucks = trucks.some((x) => x.id === t.id) ? trucks : [...trucks, t]
@@ -315,9 +336,17 @@ export default function TruckDetail({
                   </>
                 )}
               </div>
+              {suppressedOverride && (
+                <span
+                  className="dbadge"
+                  style={{ ['--st' as any]: suppressedOverride.dot, opacity: 0.75, fontSize: 11.5 }}
+                  title="Manual status saved — it takes over once the open work order closes"
+                >
+                  <i />{suppressedOverride.label} after WO
+                </span>
+              )}
               <button
                 className="dbtn dbtn-ghost dhead-details"
-                style={{ height: 30, padding: '0 12px', fontSize: 12.5 }}
                 onClick={() => setDetailsOpen(true)}
                 title="Details"
                 disabled={!data}
@@ -349,9 +378,6 @@ export default function TruckDetail({
             </div>
           </div>
           <div className="dhead-r">
-            <button className="dbtn dbtn-ghost" onClick={() => setEditing(true)} title="Edit" disabled={!data}>
-              <Pencil size={15} /> <span className="dbtn-label">Edit</span>
-            </button>
             <button className="dbtn dbtn-ghost" onClick={() => setNewWOOpen(true)} title="New work order">
               <ClipboardList size={15} /> <span className="dbtn-label">New work order</span><span className="dbtn-abbr">WO</span>
             </button>
@@ -375,18 +401,25 @@ export default function TruckDetail({
       )}
 
       {data ? (
-      <div className="dcol">
-          <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} />
-
-          <Section
-            title="Incidents on the road"
-            icon={<AlertTriangle size={17} />}
-            count={data.incidents_count}
-            right={
+      <div className="dcol detail-flow">
+          <section className="detail-workflow" aria-labelledby="operate-now-heading">
+            <div className="detail-group-head">
+              <div>
+                <h2 id="operate-now-heading">Operate now</h2>
+                <p>Resolve active work, road incidents, and required inspections.</p>
+              </div>
               <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setLogging(true)} title="Log incident">
                 <Plus size={14} /> <span className="dbtn-label">Log incident</span>
               </button>
-            }
+            </div>
+            <div className="detail-operation-stack">
+              <InspectionsSection vehicleId={t.id} truckId={t.id} currentOdometer={t.odometer} className="dsec-operation dsec-inspections" />
+
+          {(incidentsQuery.isLoading || incidentsQuery.isError || incidents.length > 0) && <Section
+            title="Incidents on the road"
+            icon={<AlertTriangle size={17} />}
+            count={data.incidents_count}
+            className="dsec-operation dsec-incidents"
           >
             {incidentsQuery.isLoading ? (
               <div className="empty-note"><Spinner size="xs" /> Loading recent incidents...</div>
@@ -578,12 +611,9 @@ export default function TruckDetail({
             ) : (
               <div className="empty-note"><Shield size={16} /> No incidents recorded for this unit.</div>
             )}
-          </Section>
+          </Section>}
 
-          <Section title="Open work orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length}>
-            {data.open_work_orders.length === 0 ? (
-              <div className="empty-note"><ClipboardList size={16} /> No open work orders.</div>
-            ) : (
+          {data.open_work_orders.length > 0 && <Section title="Open work orders" icon={<ClipboardList size={17} />} count={data.open_work_orders.length} className="dsec-operation dsec-work-orders">
               <div className="list-rows">
                 {data.open_work_orders.map((wo) => (
                   <button key={wo.repair_order_id} className="lrow" onClick={() => setWoPanelId(wo.repair_order_id)}>
@@ -596,85 +626,67 @@ export default function TruckDetail({
                   </button>
                 ))}
               </div>
-            )}
-          </Section>
+          </Section>}
+            </div>
+          </section>
 
-          <Section
-            title="Service history"
-            icon={<History size={17} />}
-            count={historyQuery.data?.length}
-            right={
-              <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setHistoryOpen((open) => !open)}>
-                <ChevronDown size={15} style={{ transform: historyOpen ? 'rotate(180deg)' : undefined }} />
-                <span className="dbtn-label">{historyOpen ? 'Hide' : 'View history'}</span>
-              </button>
-            }
-          >
-            {!historyOpen ? (
-              <div className="empty-note"><History size={16} /> Recent service history</div>
-            ) : historyQuery.isLoading ? (
-              <div className="empty-note"><Spinner size="xs" /> Loading recent service history...</div>
-            ) : history.length === 0 ? (
-              <div className="empty-note"><History size={16} /> No service history yet.</div>
-            ) : (
-              <div className="timeline">
-                {history.map((h) => (
-                  <div key={h.id} className={'tl-item tl-' + h.kind.toLowerCase()}>
-                    <div className="tl-marker" />
-                    <div className="tl-body">
-                      <div className="tl-row1">
-                        <span className={'tl-kind tl-kind-' + h.kind.toLowerCase()}>{h.kind}</span>
-                        <span className="tl-date">{fmtDate(h.date)}</span>
-                        <span className="tl-odo">{fmt(h.odometer)} mi</span>
-                      </div>
-                      <div className="tl-summary">{h.summary || '—'}</div>
-                      <div className="tl-meta">
-                        <span><User size={12} /> {h.mechanic || 'Unassigned'}</span>
-                        {h.cost != null && <span className="tl-cost">{money(h.cost)}</span>}
-                      </div>
-                    </div>
+          <section className="dsec dsec-record" aria-labelledby="service-record-heading">
+            <div className="dsec-head">
+              <div className="dsec-title"><History size={17} /><h3 id="service-record-heading">Service record</h3></div>
+            </div>
+            <div className="record-disclosures">
+              <div className={'record-disclosure' + (historyOpen ? ' is-open' : '')}>
+                <button className="record-disclosure-trigger" onClick={() => setHistoryOpen((open) => !open)} aria-expanded={historyOpen}>
+                  <span className="record-disclosure-icon"><History size={17} /></span>
+                  <span className="record-disclosure-copy"><b>Service history</b><small>Completed maintenance and repair timeline</small></span>
+                  {historyQuery.data?.length != null && <span className="record-disclosure-count">{historyQuery.data.length}</span>}
+                  <ChevronDown size={17} />
+                </button>
+                {historyOpen && (
+                  <div className="record-disclosure-content">
+                    {historyQuery.isLoading ? <div className="empty-note"><Spinner size="xs" /> Loading service history...</div>
+                      : history.length === 0 ? <div className="empty-note"><History size={16} /> No service history yet.</div>
+                      : <div className="timeline">
+                        {history.map((h) => (
+                          <div key={h.id} className={'tl-item tl-' + h.kind.toLowerCase()}>
+                            <div className="tl-marker" />
+                            <div className="tl-body">
+                              <div className="tl-row1"><span className={'tl-kind tl-kind-' + h.kind.toLowerCase()}>{h.kind}</span><span className="tl-date">{fmtDate(h.date)}</span><span className="tl-odo">{fmt(h.odometer)} mi</span></div>
+                              <div className="tl-summary">{h.summary || '—'}</div>
+                              <div className="tl-meta"><span><User size={12} /> {h.mechanic || 'Unassigned'}</span>{h.cost != null && <span className="tl-cost">{money(h.cost)}</span>}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </Section>
-
-          <Section
-            title="Parts & warranty"
-            icon={<Box size={17} />}
-            count={partsQuery.data?.length}
-            right={
-              <button className="dbtn dbtn-ghost dsec-action" style={{ height: 34 }} onClick={() => setPartsOpen((open) => !open)}>
-                <ChevronDown size={15} style={{ transform: partsOpen ? 'rotate(180deg)' : undefined }} />
-                <span className="dbtn-label">{partsOpen ? 'Hide' : 'View parts'}</span>
-              </button>
-            }
-          >
-            {!partsOpen ? (
-              <div className="empty-note"><Box size={16} /> Recent parts and warranty records</div>
-            ) : partsQuery.isLoading ? (
-              <div className="empty-note"><Spinner size="xs" /> Loading recent parts and warranty records...</div>
-            ) : parts.length === 0 ? (
-              <div className="empty-note"><Box size={16} /> No parts on record.</div>
-            ) : (
-              <div className="parts">
-                {parts.map((p) => (
-                  <div key={p.id} className="part">
-                    <div>
-                      <div className="part-name">{p.name}</div>
-                      <div className="part-meta">{fmtDate(p.date)} · {fmt(p.odometer)} mi</div>
-                    </div>
-                    <span className={'part-w ' + (p.active ? 'w-on' : 'w-off')}>
-                      {p.active ? 'Warranty to ' + fmtDate(p.warranty_until) : (p.warranty_until ? 'Expired' : 'No warranty')}
-                    </span>
+              <div className={'record-disclosure' + (partsOpen ? ' is-open' : '')}>
+                <button className="record-disclosure-trigger" onClick={() => setPartsOpen((open) => !open)} aria-expanded={partsOpen}>
+                  <span className="record-disclosure-icon"><Box size={17} /></span>
+                  <span className="record-disclosure-copy"><b>Parts & warranty</b><small>Installed parts and active coverage</small></span>
+                  {partsQuery.data?.length != null && <span className="record-disclosure-count">{partsQuery.data.length}</span>}
+                  <ChevronDown size={17} />
+                </button>
+                {partsOpen && (
+                  <div className="record-disclosure-content">
+                    {partsQuery.isLoading ? <div className="empty-note"><Spinner size="xs" /> Loading parts and warranty...</div>
+                      : parts.length === 0 ? <div className="empty-note"><Box size={16} /> No parts on record.</div>
+                      : <div className="parts">{parts.map((p) => (
+                        <div key={p.id} className="part">
+                          <div><div className="part-name">{p.name}</div><div className="part-meta">{fmtDate(p.date)} · {fmt(p.odometer)} mi</div></div>
+                          <span className={'part-w ' + (p.active ? 'w-on' : 'w-off')}>{p.active ? 'Warranty to ' + fmtDate(p.warranty_until) : (p.warranty_until ? 'Expired' : 'No warranty')}</span>
+                        </div>
+                      ))}</div>}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </Section>
+            </div>
+          </section>
 
           <Section
             title="Current location & nearby units"
+            className="dsec-context"
         icon={<MapIcon size={17} />}
         right={
           <div className="loc-now">
@@ -708,7 +720,7 @@ export default function TruckDetail({
         </div>
       )}
 
-      {data && detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onClose={() => setDetailsOpen(false)} />}
+      {data && detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onEdit={() => { setDetailsOpen(false); setEditing(true) }} onClose={() => setDetailsOpen(false)} />}
       {data && editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {schedulePMOpen && <SchedulePMModal truck={t} onClose={() => setSchedulePMOpen(false)} onDone={refresh} />}
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
@@ -729,13 +741,19 @@ function Stat({ label, value, mono }: { label: string; value: React.ReactNode; m
   )
 }
 
-/* Combined truck identity + driver & crew, behind the "Details" button. */
-function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
-  truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void; onClose: () => void
+/* The detail view is the source of truth for the truck's relationships and
+   service context. Editing deliberately starts from here, not from the board. */
+function TruckDetailsModal({ truck, detail, onChangeDriver, onEdit, onClose }: {
+  truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void; onEdit: () => void; onClose: () => void
 }) {
   return (
     <Modal title={`Details · ${fleetUnitLabel(truck)}`} icon={<Truck size={17} />} onClose={onClose} width={520}>
-      <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+        <div className="dmap-side-h" style={{ margin: 0 }}>Identity</div>
+        <button className="dbtn dbtn-ghost" style={{ height: 34, padding: '0 12px', fontSize: 12.5 }} onClick={onEdit}>
+          <Pencil size={14} /> Edit truck
+        </button>
+      </div>
       <div className="id-grid">
         <Stat label="VIN" value={truck.vin || '—'} mono />
         <Stat label="Plate" value={truck.plate || '—'} mono />
@@ -787,11 +805,11 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onClose }: {
           </div>
         </div>
       )}
-      {detail.crew.filter((m) => m !== truck.assigned_mechanic).slice(0, 3).map((m) => (
-        <div key={m} className="person person-sm">
-          <div className="avatar avatar-sm">{initials(m)}</div>
+      {detail.crew.filter((member) => member !== truck.assigned_mechanic).slice(0, 3).map((member) => (
+        <div key={member} className="person person-sm">
+          <div className="avatar avatar-sm">{initials(member)}</div>
           <div>
-            <div className="person-name">{m}</div>
+            <div className="person-name">{member}</div>
             <div className="person-role">Worked on this truck</div>
           </div>
         </div>

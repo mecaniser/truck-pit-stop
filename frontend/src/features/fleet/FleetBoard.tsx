@@ -1,30 +1,64 @@
-import { Truck, Navigation, Wrench, Gauge, Box, ClipboardList, MapPin, User, Search, ChevronRight, Check, AlertTriangle } from 'lucide-react'
+import { Wrench, Gauge, ClipboardList, MapPin, User, Search, ChevronDown, ChevronRight, Check, AlertTriangle, X } from 'lucide-react'
 import type { BoardTruck, FleetBoard as FleetBoardData, TruckStatus } from './types'
 import { STATUS_META, fleetUnitLabel, fmt, pmState, rank } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 
-type Filter = 'all' | TruckStatus
+type QueueFilter = 'pm_planning' | 'open_work_orders'
+type Filter = 'all' | TruckStatus | QueueFilter
 type Sort = 'attention' | 'unit' | 'pm' | 'odo'
 
-function Kpi({ icon, value, label, short, accent, active, onClick }: {
-  icon: React.ReactNode; value: number; label: string; short?: string; accent: string; active: boolean; onClick: () => void
+const FILTER_COPY: Partial<Record<Filter, { title: string; detail: string }>> = {
+  pm_planning: { title: 'PM to plan', detail: 'Maintenance that is due soon or has not been scheduled.' },
+  open_work_orders: { title: 'Open work orders', detail: 'Trucks with active repair work.' },
+  shop: { title: 'In the shop', detail: 'Units currently assigned to the service bay.' },
+}
+
+function ActionQueue({ icon, value, label, detail, tone, active, onClick }: {
+  icon: React.ReactNode; value: number; label: string; detail: string; tone: string; active: boolean; onClick: () => void
 }) {
   return (
-    <button className={'kpi' + (active ? ' is-active' : '')} style={{ ['--ac' as any]: accent }} onClick={onClick} title={label}>
-      <div className="kpi-ic">{icon}</div>
-      <div className="kpi-tx">
-        <div className="kpi-val">{value}</div>
-        <div className="kpi-lbl">{short || label}</div>
-      </div>
+    <button className={'action-queue' + (active ? ' is-active' : '')} style={{ ['--queue' as any]: tone }} onClick={onClick}>
+      <span className="action-queue-icon">{icon}</span>
+      <span className="action-queue-copy">
+        <span className="action-queue-label">{label}</span>
+        <span className="action-queue-detail">{detail}</span>
+      </span>
+      <span className="action-queue-count">{value}</span>
+      <ChevronRight className="action-queue-go" size={18} />
     </button>
   )
 }
 
-function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => void }) {
+function SectionHeading({ title, count, detail }: { title: string; count?: number; detail: string }) {
+  return (
+    <div className="board-section-heading">
+      <div>
+        <h2>{title}</h2>
+        <p>{detail}</p>
+      </div>
+      {count != null && <span className="board-section-count">{count}</span>}
+    </div>
+  )
+}
+
+function TruckCard({ t, onOpen, onOpenWorkOrder }: { t: BoardTruck; onOpen: (t: BoardTruck) => void; onOpenWorkOrder: (repairOrderId: string) => void }) {
   const meta = STATUS_META[t.status]
   const pm = pmState(t)
   return (
-    <button className="tcard" style={{ ['--st' as any]: meta.dot }} onClick={() => onOpen(t)}>
+    <article
+      className="tcard"
+      style={{ ['--st' as any]: meta.dot }}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(t)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(t)
+        }
+      }}
+      aria-label={`Open ${fleetUnitLabel(t)} truck details`}
+    >
       <div className="tcard-top">
         <div className="tcard-id">
           <span className="tcard-unit">{fleetUnitLabel(t)}</span>
@@ -55,12 +89,18 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
         <div className={'tcard-pm-lbl ' + pm.cls}>{pm.label}</div>
       </div>
       {t.work_order ? (
-        <div className="tcard-wo">
+        <button
+          type="button"
+          className="tcard-wo tcard-wo--action"
+          onClick={(event) => { event.stopPropagation(); onOpenWorkOrder(t.work_order!.repair_order_id) }}
+          aria-label={`Open work order ${t.work_order.id} for ${fleetUnitLabel(t)}`}
+        >
           <Wrench size={13} />
           <span className="tcard-wo-id">{t.work_order.id}</span>
           <span className="tcard-wo-st">{t.work_order.status}</span>
           {t.open_work_order_count > 1 && <span className="tcard-wo-st">+{t.open_work_order_count - 1} more</span>}
-        </div>
+          <ChevronRight className="tcard-wo-go" size={15} aria-hidden="true" />
+        </button>
       ) : (
         <div className="tcard-wo tcard-wo--clear"><Check size={13} /><span>No open work orders</span></div>
       )}
@@ -71,22 +111,30 @@ function TruckCard({ t, onOpen }: { t: BoardTruck; onOpen: (t: BoardTruck) => vo
           <span>{t.warning_lights.length === 1 ? t.warning_lights[0] : `${t.warning_lights.length} warning lights`}</span>
         </div>
       )}
-      <span className="tcard-go"><ChevronRight size={16} /></span>
-    </button>
+    </article>
   )
 }
 
 export default function FleetBoard({
-  data, onOpen, filter, setFilter, query, setQuery, sort, setSort,
+  data, onOpen, onOpenWorkOrder, filter, setFilter, query, setQuery, sort, setSort,
 }: {
   data: FleetBoardData; onOpen: (t: BoardTruck) => void
+  onOpenWorkOrder: (repairOrderId: string) => void
   filter: Filter; setFilter: (f: Filter) => void
   query: string; setQuery: (q: string) => void
   sort: Sort; setSort: (s: Sort) => void
 }) {
   const { trucks, stats } = data
   let list = trucks
-  if (filter !== 'all') list = list.filter((t) => t.status === filter)
+  const isPmOverdue = (t: BoardTruck) => (t.pm_remaining != null && t.pm_remaining <= 0) || (t.pm_days_remaining != null && t.pm_days_remaining < 0)
+  const needsPmPlanning = (t: BoardTruck) => (t.pm_remaining == null && t.pm_days_remaining == null) || pmState(t).cls === 'pm-soon'
+  if (filter === 'pm_planning') {
+    list = list.filter(needsPmPlanning)
+  } else if (filter === 'open_work_orders') {
+    list = list.filter((t) => !!t.work_order || t.open_work_order_count > 0)
+  } else if (filter !== 'all') {
+    list = list.filter((t) => t.status === filter)
+  }
   if (query.trim()) {
     // Multi-keyword, separator-agnostic: every word must match somewhere, and
     // squashed (alphanumeric-only) comparison lets "ABC1234" find "ABC-1234"
@@ -111,41 +159,76 @@ export default function FleetBoard({
     odo: (a, b) => (b.odometer ?? 0) - (a.odometer ?? 0),
   }
   list = [...list].sort(sorters[sort])
+  const showActionLane = filter === 'all' && !query.trim()
+  const needsAction = list.filter((t) => {
+    return isPmOverdue(t) || t.status === 'shop' || t.status === 'parts' || !!t.open_incident_count || !!t.warning_lights?.length
+  })
+  const actionIds = new Set(needsAction.map((t) => t.id))
+  const planning = list.filter((t) => !actionIds.has(t.id) && needsPmPlanning(t))
+  const planningIds = new Set(planning.map((t) => t.id))
+  const remaining = list.filter((t) => !actionIds.has(t.id) && !planningIds.has(t.id))
+  const pmPlanning = trucks.filter(needsPmPlanning).length
+  const activeFilter = filter === 'all' ? null : FILTER_COPY[filter] || { title: STATUS_META[filter as TruckStatus]?.label || 'Filtered trucks', detail: 'Filtered fleet results.' }
 
   return (
-    <div>
-      <div className="kpis">
-        <Kpi icon={<Truck size={18} />} value={stats.total} label="Trucks in fleet" short="Fleet" accent="var(--yellow)" active={filter === 'all'} onClick={() => setFilter('all')} />
-        <Kpi icon={<Navigation size={18} />} value={stats.active} label="On the road" short="OTR" accent={STATUS_META.active.dot} active={filter === 'active'} onClick={() => setFilter('active')} />
-        <Kpi icon={<Wrench size={18} />} value={stats.shop} label="In the shop" short="Shop" accent={STATUS_META.shop.dot} active={filter === 'shop'} onClick={() => setFilter('shop')} />
-        <Kpi icon={<Gauge size={18} />} value={stats.pm} label="PM due soon" short="PM" accent={STATUS_META.pm.dot} active={filter === 'pm'} onClick={() => setFilter('pm')} />
-        <Kpi icon={<Box size={18} />} value={stats.parts} label="Awaiting parts" short="Parts" accent={STATUS_META.parts.dot} active={filter === 'parts'} onClick={() => setFilter('parts')} />
-        <Kpi icon={<ClipboardList size={18} />} value={stats.open_wo} label="Open work orders" short="Open WO" accent="var(--muted)" active={false} onClick={() => setFilter('all')} />
-      </div>
+    <div className="fleet-board">
+      {showActionLane && (
+        <section className="action-lane" aria-label="Action queues">
+          <SectionHeading title="Action now" detail="Work that needs a decision or follow-through." />
+          <div className="action-queues">
+            <ActionQueue icon={<Wrench size={20} />} value={stats.shop} label="In the shop" detail="Units at the service bay" tone="var(--st-shop)" active={false} onClick={() => setFilter('shop')} />
+            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Open work orders" detail="Review active repair work" tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention') }} />
+            <ActionQueue icon={<Gauge size={20} />} value={pmPlanning} label="PM to plan" detail="Due soon or not scheduled" tone="var(--yellow)" active={false} onClick={() => setFilter('pm_planning')} />
+          </div>
+        </section>
+      )}
 
       <div className="board-bar">
-        <div className="board-bar-l">
-          <div className="fld-search">
-            <Search size={16} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
-          </div>
-          {/* Status filters live in the KPI pills above; duplicate chips removed. */}
+          <div className="board-bar-l">
+            <div className="fld-search">
+              <Search size={16} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search unit, VIN, plate, driver, make…" />
+            </div>
+            {activeFilter && (
+              <button className="active-filter" onClick={() => setFilter('all')} aria-label={`Clear ${activeFilter.title} filter`}>
+                <span className="active-filter-label">{activeFilter.title}</span>
+                <span className="active-filter-clear" aria-hidden="true"><X size={13} strokeWidth={2.5} /></span>
+              </button>
+            )}
         </div>
         <div className="board-bar-r">
           <span className="board-sort-lbl">Sort</span>
-          <select className="fld-sel" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-            <option value="attention">Needs attention</option>
-            <option value="unit">Unit number</option>
-            <option value="pm">PM soonest</option>
-            <option value="odo">Highest mileage</option>
-          </select>
+          <div className="board-sort-select">
+            <select className="fld-sel" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+              <option value="attention">Needs attention</option>
+              <option value="unit">Unit number</option>
+              <option value="pm">PM soonest</option>
+              <option value="odo">Highest mileage</option>
+            </select>
+            <ChevronDown size={16} aria-hidden="true" />
+          </div>
         </div>
       </div>
 
-      <div className="tgrid">
-        {list.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} />)}
-        {list.length === 0 && <div className="tgrid-empty">No trucks match.</div>}
-      </div>
+      {showActionLane && needsAction.length > 0 && (
+        <section className="board-section">
+          <SectionHeading title="Needs attention" count={needsAction.length} detail="Prioritized by service and PM urgency." />
+          <div className="tgrid tgrid-attention">{needsAction.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}</div>
+        </section>
+      )}
+      {showActionLane && planning.length > 0 && (
+        <section className="board-section">
+          <SectionHeading title="Maintenance to plan" count={planning.length} detail="Schedule these before they become service interruptions." />
+          <div className="tgrid">{planning.map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}</div>
+        </section>
+      )}
+      <section className="board-section">
+        <SectionHeading title={showActionLane ? 'Fleet overview' : activeFilter?.title || 'Matching trucks'} count={showActionLane ? remaining.length : list.length} detail={showActionLane ? 'Units without an immediate action queue.' : activeFilter?.detail || 'Search and filter results.'} />
+        <div className="tgrid">
+          {(showActionLane ? remaining : list).map((t) => <TruckCard key={t.id} t={t} onOpen={onOpen} onOpenWorkOrder={onOpenWorkOrder} />)}
+          {list.length === 0 && <div className="tgrid-empty">No trucks match.</div>}
+        </div>
+      </section>
     </div>
   )
 }

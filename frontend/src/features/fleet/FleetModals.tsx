@@ -1567,7 +1567,7 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
 
 /* ---------- Inspections: section + checklist ---------- */
 
-export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { vehicleId: string; truckId: string; currentOdometer?: number | null }) {
+export function InspectionsSection({ vehicleId, truckId, currentOdometer, className }: { vehicleId: string; truckId: string; currentOdometer?: number | null; className?: string }) {
   const qc = useQueryClient()
   const { user } = useAuthStore()
   const isOwner = user?.role === 'garage_owner'  // only the owner may delete inspections
@@ -1602,7 +1602,7 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer }: { ve
     .sort((a, b) => (a.performed_at! < b.performed_at! ? 1 : -1))[0]
 
   return (
-    <section className="dsec">
+    <section className={'dsec' + (className ? ` ${className}` : '')}>
       <div className="dsec-head">
         <div className="dsec-title"><ClipboardCheck size={17} /><h3>Weekly inspections</h3>
           {inspections != null && <span className="dsec-count">{inspections.length}</span>}</div>
