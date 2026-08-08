@@ -59,6 +59,7 @@ from app.schemas.fleet import (
     TruckDetailResponse,
     TruckUpdate,
     WorkOrderCreate,
+    WorkOrderCreateResponse,
     WorkOrderComplete,
     SchedulePMRequest,
     PMServiceEntry,
@@ -2349,7 +2350,8 @@ async def _set_vehicle_pm_services(
 
 
 async def _apply_pm_services_to_ro(
-    db: AsyncSession, tenant_id: UUID, ro: RepairOrder, services: list[Service]
+    db: AsyncSession, tenant_id: UUID, ro: RepairOrder, services: list[Service],
+    *, rewrite_description: bool = True,
 ) -> None:
     """Attach `services` to the PM work order: record the per-PM service list,
     roll the service names into the description (manager-facing scope), and
@@ -2393,7 +2395,9 @@ async def _apply_pm_services_to_ro(
 
     # 3) Manager-facing scope: PM description lists the selected service names.
     #    When no services are selected, keep whatever description the spawn set.
-    if services:
+    #    A repair order the manager described in their own words keeps that
+    #    description — services scope the cost there, not the complaint.
+    if services and rewrite_description:
         names = ", ".join(s.name for s in services)
         ro.description = f"Preventive maintenance: {names}"
 
@@ -2728,7 +2732,7 @@ async def list_fleet_mechanics(
     ]
 
 
-@router.post("/trucks/{vehicle_id}/work-order", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)
+@router.post("/trucks/{vehicle_id}/work-order", response_model=WorkOrderCreateResponse, status_code=status.HTTP_201_CREATED)
 async def new_work_order(
     vehicle_id: UUID,
     body: Optional[WorkOrderCreate] = None,
@@ -2739,7 +2743,7 @@ async def new_work_order(
 
     # A truck can carry several open work orders at once, so no single-open guard.
     description = (body.description.strip() if body and body.description else "") or "Fleet work order"
-    await _spawn_internal_ro(
+    ro = await _spawn_internal_ro(
         db,
         current_user.tenant_id,
         vehicle,
@@ -2747,11 +2751,26 @@ async def new_work_order(
         description=description,
         bill_to_customer_id=(body.bill_to_customer_id if body else None),
     )
+    # Services picked while scoping the visit seed the same labor/parts lines the
+    # panel would add one at a time, so the order opens ready to assign.
+    if body and body.service_ids:
+        services = await _load_pm_services(db, current_user.tenant_id, body.service_ids)
+        if services:
+            from app.api.v1.endpoints.repair_orders import _recompute_repair_order_totals
+            await _apply_pm_services_to_ro(
+                db, current_user.tenant_id, ro, services, rewrite_description=False,
+            )
+            await db.commit()
+            await _recompute_repair_order_totals(db, ro.id)
+            await db.refresh(ro)
+
     open_list = (await _open_ros_by_vehicle(db, [vehicle.id])).get(vehicle.id, [])
     counts = await _open_incident_counts(db, [vehicle.id])
     truck = _build_board_truck(vehicle, _most_urgent_ro(open_list), counts.get(vehicle.id, 0), len(open_list), pm_ro=_open_pm_ro(open_list))
     await _attach_account_context(db, [truck], current_user.tenant_id)
-    return truck
+    # The card's work_order is the most urgent one, which may be an older visit —
+    # return the new order explicitly so the caller can open it without guessing.
+    return WorkOrderCreateResponse(**truck.model_dump(), created_work_order=_board_work_order(ro))
 
 
 @router.post("/trucks/{vehicle_id}/schedule-pm", response_model=BoardTruck, status_code=status.HTTP_201_CREATED)

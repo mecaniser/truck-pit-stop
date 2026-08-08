@@ -376,6 +376,21 @@ class WorkOrderCreate(BaseModel):
     description: Optional[str] = None
     # Visit-specific payer. Defaults to the truck's primary/default account.
     bill_to_customer_id: Optional[UUID] = None
+    # Catalog services to scope the visit with. Each seeds a labor line (service
+    # duration x in-house rate) plus its parts, so the work order opens costed
+    # instead of empty.
+    service_ids: Optional[List[UUID]] = None
+
+
+class WorkOrderCreateResponse(BoardTruck):
+    """The refreshed board card plus the work order that was just created.
+
+    ``work_order`` on the card is the truck's *most urgent* open order, which is
+    not necessarily this one — a truck can carry several. Callers that need to
+    open what they just made must use ``created_work_order``.
+    """
+
+    created_work_order: Optional[BoardWorkOrder] = None
 
 
 class PMServicesUpdate(BaseModel):

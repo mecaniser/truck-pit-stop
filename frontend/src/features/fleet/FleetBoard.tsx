@@ -9,7 +9,7 @@ type Sort = 'attention' | 'unit' | 'pm' | 'odo'
 
 const FILTER_COPY: Partial<Record<Filter, { title: string; detail: string }>> = {
   pm_planning: { title: 'PM to plan', detail: 'Maintenance that is due soon or has not been scheduled.' },
-  open_work_orders: { title: 'Open work orders', detail: 'Trucks with active repair work.' },
+  open_work_orders: { title: 'Open repair orders', detail: 'Trucks with active repair work.' },
   shop: { title: 'In the shop', detail: 'Units currently assigned to the service bay.' },
 }
 
@@ -102,7 +102,7 @@ function TruckCard({ t, onOpen, onOpenWorkOrder }: { t: BoardTruck; onOpen: (t: 
           <ChevronRight className="tcard-wo-go" size={15} aria-hidden="true" />
         </button>
       ) : (
-        <div className="tcard-wo tcard-wo--clear"><Check size={13} /><span>No open work orders</span></div>
+        <div className="tcard-wo tcard-wo--clear"><Check size={13} /><span>No open repair orders</span></div>
       )}
       {t.warning_lights && t.warning_lights.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, color: 'var(--red)', fontSize: 12 }}
@@ -177,7 +177,7 @@ export default function FleetBoard({
           <SectionHeading title="Action now" detail="Work that needs a decision or follow-through." />
           <div className="action-queues">
             <ActionQueue icon={<Wrench size={20} />} value={stats.shop} label="In the shop" detail="Units at the service bay" tone="var(--st-shop)" active={false} onClick={() => setFilter('shop')} />
-            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Open work orders" detail="Review active repair work" tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention') }} />
+            <ActionQueue icon={<ClipboardList size={20} />} value={stats.open_wo} label="Open repair orders" detail="Review active repair work" tone="var(--st-parts)" active={false} onClick={() => { setFilter('open_work_orders'); setSort('attention') }} />
             <ActionQueue icon={<Gauge size={20} />} value={pmPlanning} label="PM to plan" detail="Due soon or not scheduled" tone="var(--yellow)" active={false} onClick={() => setFilter('pm_planning')} />
           </div>
         </section>
