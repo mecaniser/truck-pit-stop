@@ -598,8 +598,10 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
         </div>
       ) : (
         <div className="wo-drawer-body wo-state-enter" key="scope">
+          {/* The drawer's header already names the truck. Repeating it here put
+              the same string on screen twice, 90px apart — the strip carries
+              only what the header cannot: the vehicle and its odometer. */}
           <div className="wo-truckstrip">
-            <span className="wo-truckstrip-unit">{fleetUnitLabel(truck)}</span>
             <span>{[truck.year, truck.make, truck.model].filter(Boolean).join(' ') || 'Truck'}</span>
             {truck.odometer != null && <span>{fmt(truck.odometer)} mi</span>}
           </div>

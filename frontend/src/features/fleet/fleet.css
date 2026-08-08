@@ -758,8 +758,6 @@
 .fleet-root .wo-truckstrip{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;
   padding:0 0 14px;margin-bottom:16px;border-bottom:1px solid var(--line);
   font-size:13px;color:var(--muted-2);}
-.fleet-root .wo-truckstrip-unit{font-family:'Barlow Condensed',sans-serif;font-weight:800;
-  font-size:17px;letter-spacing:.01em;color:var(--text);text-transform:uppercase;}
 
 .fleet-root .wo-scope{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;}
 .fleet-root .wo-scope-main,
