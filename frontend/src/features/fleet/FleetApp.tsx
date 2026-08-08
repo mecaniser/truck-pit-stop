@@ -252,7 +252,7 @@ function pmStage(t: BoardTruck): PmStage {
 const STAGE_META: Record<PmStage, { label: string; cls: string }> = {
   none: { label: 'Not scheduled', cls: 'stg-none' },
   scheduled: { label: 'Scheduled', cls: '' },
-  ready: { label: 'Work order ready', cls: 'stg-ready' },
+  ready: { label: 'Repair order ready', cls: 'stg-ready' },
   progress: { label: 'In progress', cls: 'stg-progress' },
 }
 
@@ -302,7 +302,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
       <div className="scard-actions">
         {/* Scheduling actions only matter when the PM is actually approaching:
             green trucks (plenty of miles/time left) show no call to action.
-            Reschedule = plan a future PM; Create work order = service it now. */}
+            Reschedule = plan a future PM; Create repair order = service it now. */}
         {stage === 'none' && pm.cls !== 'pm-ok' && (
           <button className="sbtn sbtn-yellow" onClick={() => setScheduleMode('reschedule')}>
             <Calendar size={14} /> Schedule PM
@@ -314,7 +314,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
               <Calendar size={14} /> Reschedule
             </button>
             <button className="sbtn sbtn-yellow" onClick={() => setScheduleMode('create')}>
-              <ClipboardCheck size={14} /> Create work order
+              <ClipboardCheck size={14} /> Create repair order
             </button>
           </>
         )}
@@ -351,7 +351,7 @@ function PmCard({ truck: t, onOpen }: { truck: BoardTruck; onOpen: (id: string) 
 
 function OrdersPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: string) => void }) {
   const list = trucks.filter((t) => t.work_order)
-  if (!list.length) return <div className="tgrid-empty">No open work orders.</div>
+  if (!list.length) return <div className="tgrid-empty">No open repair orders.</div>
   return (
     <div className="list-rows">
       {list.map((t) => (

@@ -4,9 +4,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   X, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
-  Check, Minus, RotateCcw, Wrench, Camera,
+  Check, Minus, RotateCcw, Wrench, Camera, Search, ChevronDown,
 } from 'lucide-react'
 import api from '../../lib/api'
+import SlidePanel from '@/components/SlidePanel'
 import BaseSelect from '@/components/BaseSelect'
 import QuantityStepper from '@/components/QuantityStepper'
 import DurationStepper from '@/components/DurationStepper'
@@ -426,7 +427,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
             />
             <span style={{ display: 'grid', gap: 3 }}>
               <span>Bill labor at customer rate</span>
-              <span style={{ color: 'var(--muted-2)' }}>Parts use garage cost. This applies to new internal work orders.</span>
+              <span style={{ color: 'var(--muted-2)' }}>Parts use garage cost. This applies to new internal repair orders.</span>
             </span>
           </label>
         </>
@@ -465,11 +466,37 @@ function useTruckBillToOptions(truckId: string) {
   return [...byCustomer.values()]
 }
 
-export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
-  truckId: string; unitNumber?: string | null; onClose: () => void; onCreated: () => void
+/* Width of the work order drawer, matched to the garage-side repair order
+   drawer so the same record reads the same on both sides of the product. */
+const WO_DRAWER_WIDTH = 'max-w-full sm:max-w-[94vw] lg:max-w-[760px] xl:max-w-[860px]'
+
+/* Complaints a fleet manager types over and over, standing at the truck. Tapping
+   one beats spelling it out on a tablet keyboard; they stay editable after. */
+const COMPLAINT_CHIPS = [
+  'Air leak', 'Brakes', 'Check engine light', 'DOT inspection due', 'Tires',
+  'Lights out', 'Coolant leak', 'A/C not cooling', "Won't start", 'Oil leak',
+]
+
+/**
+ * Creating a work order used to end at a toast: the modal closed, and the
+ * manager had to walk back into the truck and reopen the order to assign it,
+ * scope it, or start it. This drawer is one surface with two states — scope it,
+ * then keep working in the same panel once it exists.
+ */
+export function NewWorkOrderModal({ truck, onClose, onCreated }: {
+  truck: BoardTruck; onClose: () => void; onCreated: (repairOrderId?: string) => void
 }) {
+  const qc = useQueryClient()
   const [description, setDescription] = useState('')
-  const billToOptions = useTruckBillToOptions(truckId)
+  const [selectedServices, setSelectedServices] = useState<string[]>([])
+  const [serviceQuery, setServiceQuery] = useState('')
+  const [mechanicId, setMechanicId] = useState('')
+  const [billingOpen, setBillingOpen] = useState(false)
+  // Once created, the same drawer becomes the live work order — no close, no
+  // reopen, no hunting for it on the truck.
+  const [created, setCreated] = useState<{ repairOrderId: string; orderNumber: string } | null>(null)
+
+  const billToOptions = useTruckBillToOptions(truck.id)
   const [billToCustomerId, setBillToCustomerId] = useState('')
   useEffect(() => {
     if (!billToCustomerId && billToOptions.length) {
@@ -480,56 +507,207 @@ export function NewWorkOrderModal({ truckId, unitNumber, onClose, onCreated }: {
     }
   }, [billToCustomerId, billToOptions])
 
-  const qc = useQueryClient()
+  const { data: services } = useQuery<PMServiceEntry[]>({
+    queryKey: ['fleet-service-catalog'],
+    queryFn: async () => (await api.get('/fleet/service-catalog')).data,
+  })
+  const { data: mechanics } = useQuery<WOMechanic[]>({
+    queryKey: ['fleet-mechanics'],
+    queryFn: async () => (await api.get('/fleet/mechanics')).data,
+  })
+  const catalog = services || []
+  const normalizedQuery = serviceQuery.trim().toLowerCase()
+  const visibleServices = normalizedQuery
+    ? catalog.filter((service) => service.name.toLowerCase().includes(normalizedQuery))
+    : catalog
+  const toggleService = (id: string) =>
+    setSelectedServices((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id])
+
+  const appendComplaint = (chip: string) =>
+    setDescription((current) => (current.trim() ? `${current.replace(/[;\s]+$/, '')}; ${chip}` : chip))
+
+  const billToLabel = billToOptions.find((item) => item.customer_id === billToCustomerId)?.customer_company_name
+    || 'Truck default'
+
   const create = useMutation({
-    // Returns the BoardTruck; its work_order.id IS the order number.
-    mutationFn: async () => (await api.post(`/fleet/trucks/${truckId}/work-order`, {
+    mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/work-order`, {
       description: description.trim(),
       bill_to_customer_id: billToCustomerId || undefined,
-    })).data as BoardTruck,
-    onSuccess: (truck) => {
-      const num = truck?.work_order?.id
-      toast.success(num ? `Work order ${num} created` : 'Work order created')
-      // A fleet WO is a repair order — refresh the owner's cockpit queue too.
+      service_ids: selectedServices.length ? selectedServices : undefined,
+    })).data as BoardTruck & { created_work_order?: { id: string; repair_order_id: string } },
+    onSuccess: async (result) => {
+      const madeOrder = result.created_work_order
+      if (!madeOrder) {
+        // Older API without the created order — fall back to the old behavior
+        // rather than stranding the manager on a drawer with nothing in it.
+        toast.success('Repair order created')
+        invalidateFleetAndCockpit(qc)
+        onCreated()
+        onClose()
+        return
+      }
+      // Assigning uses the same endpoint the panel does, so one code path owns
+      // assignment and this drawer never drifts from it.
+      if (mechanicId) {
+        try {
+          await api.post(`/repair-orders/${madeOrder.repair_order_id}/assign-mechanic`, { mechanic_id: mechanicId })
+        } catch (error) {
+          const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+          toast.error(detail || 'Repair order created, but assigning the mechanic failed')
+        }
+      }
+      toast.success(`Work order ${madeOrder.id} created`)
       invalidateFleetAndCockpit(qc)
-      onCreated()
-      onClose()
+      onCreated(madeOrder.repair_order_id)
+      setCreated({ repairOrderId: madeOrder.repair_order_id, orderNumber: madeOrder.id })
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create work order'),
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to create repair order'),
   })
 
-  return (
-    <Modal title={`New work order${unitNumber ? ` · ${unitNumber}` : ''}`} icon={<ClipboardList size={17} />} onClose={onClose} width={460}>
-      <Field label="What's the work / complaint?">
-        <SuggestingTextarea
-          value={description}
-          onChange={setDescription}
-          rows={4}
-          placeholder="e.g. Air leak on front brake chamber; DOT inspection due; check engine light"
-          style={{
-            width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9,
-            color: 'var(--text)', padding: '10px 12px', font: 'inherit', resize: 'vertical',
-          }}
-        />
-      </Field>
-      <Field label="Invoice this visit to">
-        <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)}>
-          <option value="">Use truck default</option>
-          {billToOptions.map((relationship) => (
-            <option key={relationship.customer_id} value={relationship.customer_id}>
-              {relationship.customer_company_name || 'Company'}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 8 }}>
-        The truck keeps one service history. Pricing and invoicing follow the company selected for this visit.
-      </p>
-      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
-        disabled={create.isPending || !description.trim()} onClick={() => create.mutate()}>
-        {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />} Create work order
+  const scopeFooter = (
+    <div className="wo-drawer-actions">
+      <button className={ghostBtn} onClick={onClose} disabled={create.isPending}>Cancel</button>
+      <button
+        className={yellowBtn}
+        disabled={create.isPending || !description.trim()}
+        onClick={() => create.mutate()}
+      >
+        {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />} Create repair order
       </button>
-    </Modal>
+    </div>
+  )
+
+  return (
+    <SlidePanel
+      isOpen
+      dark
+      onClose={onClose}
+      width={WO_DRAWER_WIDTH}
+      subtitle={created ? fleetUnitLabel(truck) : 'New repair order'}
+      title={created ? created.orderNumber : fleetUnitLabel(truck)}
+      headerIcon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
+      footer={created ? (
+        <div className="wo-drawer-actions">
+          <button className={yellowBtn} onClick={onClose}>Done</button>
+        </div>
+      ) : scopeFooter}
+    >
+      {created ? (
+        <div className="wo-drawer-body wo-state-enter" key="live">
+          <WorkOrderBody repairOrderId={created.repairOrderId} onClose={onClose} onChanged={() => onCreated()} />
+        </div>
+      ) : (
+        <div className="wo-drawer-body wo-state-enter" key="scope">
+          <div className="wo-truckstrip">
+            <span className="wo-truckstrip-unit">{fleetUnitLabel(truck)}</span>
+            <span>{[truck.year, truck.make, truck.model].filter(Boolean).join(' ') || 'Truck'}</span>
+            {truck.odometer != null && <span>{fmt(truck.odometer)} mi</span>}
+          </div>
+
+          <div className="wo-scope">
+            <section className="wo-scope-main">
+              <Field label="What's the work / complaint?">
+                <SuggestingTextarea
+                  value={description}
+                  onChange={setDescription}
+                  rows={4}
+                  placeholder="e.g. Air leak on front brake chamber; DOT inspection due; check engine light"
+                  style={{
+                    width: '100%', background: 'var(--ink)', border: '1px solid var(--line)', borderRadius: 9,
+                    color: 'var(--text)', padding: '12px 14px', font: 'inherit', resize: 'vertical', minHeight: 104,
+                  }}
+                />
+                <div className="wo-chips">
+                  {COMPLAINT_CHIPS.map((chip) => (
+                    <button type="button" key={chip} className="wo-chip" onClick={() => appendComplaint(chip)}>
+                      <Plus size={13} /> {chip}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
+              <Field label={`Services${selectedServices.length ? ` · ${selectedServices.length} selected` : ' (optional)'}`}>
+                {catalog.length > 8 && (
+                  <div className="wo-svc-search">
+                    <Search size={16} aria-hidden="true" />
+                    <input
+                      value={serviceQuery}
+                      onChange={(event) => setServiceQuery(event.target.value)}
+                      placeholder="Filter services…"
+                      aria-label="Filter services"
+                    />
+                  </div>
+                )}
+                <div className="pm-svc-list wo-svc-list">
+                  {catalog.length === 0 ? (
+                    <div className="pm-svc-empty">No services in the catalog yet — you can add labor and parts once the order is open.</div>
+                  ) : visibleServices.length === 0 ? (
+                    <div className="pm-svc-empty">No service matches “{serviceQuery.trim()}”.</div>
+                  ) : (
+                    visibleServices.map((service) => {
+                      const on = selectedServices.includes(service.service_id)
+                      return (
+                        <button
+                          type="button"
+                          key={service.service_id}
+                          className={'pm-svc-row' + (on ? ' on' : '')}
+                          onClick={() => toggleService(service.service_id)}
+                          aria-pressed={on}
+                        >
+                          <span className="pm-svc-check">{on && <Check size={13} />}</span>
+                          <span className="pm-svc-name">{service.name}</span>
+                          {service.duration_minutes ? <span className="pm-svc-dur">{service.duration_minutes}m</span> : null}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+                <p className="wo-hint">Each service adds its labor time and parts to the order, so it opens costed.</p>
+              </Field>
+            </section>
+
+            <section className="wo-scope-side">
+              <Field label="Assign a mechanic (optional)">
+                <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
+                  <option value="">Leave unassigned</option>
+                  {(mechanics || []).map((mechanic) => (
+                    <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>
+                  ))}
+                </select>
+                <p className="wo-hint">You can start and finish an internal order without assigning anyone.</p>
+              </Field>
+
+              {/* Billing already defaults correctly and rarely changes; asking
+                  for it every time taxes the case that never needs it. */}
+              <div className="wo-billing">
+                <button type="button" className="wo-billing-toggle" onClick={() => setBillingOpen((open) => !open)} aria-expanded={billingOpen}>
+                  <span>
+                    <span className="id-k">Invoice to</span>
+                    <strong>{billToLabel}</strong>
+                  </span>
+                  <ChevronDown size={16} className={billingOpen ? 'wo-billing-caret is-open' : 'wo-billing-caret'} />
+                </button>
+                {billingOpen && (
+                  <div className="wo-billing-body">
+                    <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)} className="wo-select">
+                      <option value="">Use truck default</option>
+                      {billToOptions.map((relationship) => (
+                        <option key={relationship.customer_id} value={relationship.customer_id}>
+                          {relationship.customer_company_name || 'Company'}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="wo-hint">
+                      The truck keeps one service history. Pricing and invoicing follow the company selected for this visit.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
+      )}
+    </SlidePanel>
   )
 }
 
@@ -553,7 +731,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   const [dueDate, setDueDate] = useState(projectDate(initialMiles))
   const [dateEdited, setDateEdited] = useState(false)
   const [nextMiles, setNextMiles] = useState(String(initialMiles))
-  // When opened from the card's "Create work order" action, default to creating
+  // When opened from the card's "Create repair order" action, default to creating
   // the work order now so the manager picks services first, in one step.
   const [createWO, setCreateWO] = useState(createMode)
   const billToOptions = useTruckBillToOptions(truck.id)
@@ -604,7 +782,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       const num = updated?.pm_work_order?.id || updated?.work_order?.id
       toast.success(
         createMode
-          ? (num ? `PM work order ${num} created` : 'PM work order created')
+          ? (num ? `PM repair order ${num} created` : 'PM repair order created')
           : (rescheduling ? 'PM rescheduled' : 'PM scheduled')
       )
       qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
@@ -705,11 +883,11 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
       </div>
       <p style={{ fontSize: 12, color: 'var(--muted-2)', marginTop: 10 }}>
         {createMode
-          ? "Creates the maintenance work order now. The next PM rolls forward automatically when this work order is completed."
+          ? "Creates the maintenance repair order now. The next PM rolls forward automatically when this repair order is completed."
           : "PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval."}
       </p>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
-        {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create work order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create work order` : 'Save schedule')}
+        {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
       </button>
     </Modal>
   )
@@ -766,7 +944,7 @@ function LaborAddRow({ roId, laborRate, onChanged }: { roId: string; laborRate: 
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <input style={{ ...costInput, flex: 1, height: 42 }} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Labor description" />
         {/* Local-only until "Add" — no per-click server write, so no debounce.
-            Rate isn't shown on the row; it follows the work order's snapshot,
+            Rate isn't shown on the row; it follows the repair order's snapshot,
             surfaced as a tooltip instead of taking a column. */}
         <span title={`Billed at ${money(laborRate)}/h`} style={{ display: 'inline-flex' }}>
           <DurationStepper
@@ -984,7 +1162,12 @@ function PMServicesSection({ roId, onChanged }: { roId: string; onChanged: () =>
   )
 }
 
-export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
+/**
+ * The live work order, as content rather than as a window. Kept separate from
+ * its shell so the create flow can resolve into it in place — the manager never
+ * closes one surface to open the same order in another.
+ */
+function WorkOrderBody({ repairOrderId, onClose, onChanged }: {
   repairOrderId: string; onClose: () => void; onChanged: () => void
 }) {
   const qc = useQueryClient()
@@ -1029,7 +1212,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
 
   const saveDesc = useMutation({
     mutationFn: async () => (await api.put(`/repair-orders/${repairOrderId}`, { description: description.trim() })).data,
-    onSuccess: () => { toast.success('Work order updated'); setDescDirty(false); refresh() },
+    onSuccess: () => { toast.success('Repair order updated'); setDescDirty(false); refresh() },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to update'),
   })
   const assign = useMutation({
@@ -1040,34 +1223,33 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   const del = useMutation({
     mutationFn: async () => (await api.delete(`/repair-orders/${repairOrderId}`)).data,
     onSuccess: () => {
-      toast.success(wo?.order_number ? `Work order ${wo.order_number} deleted` : 'Work order deleted')
+      toast.success(wo?.order_number ? `Repair order ${wo.order_number} deleted` : 'Repair order deleted')
       invalidateFleetAndCockpit(qc)
       onChanged()
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete work order'),
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete repair order'),
   })
   const startWO = useMutation({
     mutationFn: async () => (await api.post(`/fleet/work-orders/${repairOrderId}/start`)).data,
-    onSuccess: () => { toast.success('Work order in progress'); refresh() },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to start work order'),
+    onSuccess: () => { toast.success('Repair order in progress'); refresh() },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to start repair order'),
   })
   const completeWO = useMutation({
     mutationFn: async (mileageOut?: number | null) =>
       (await api.post(`/fleet/work-orders/${repairOrderId}/complete`,
         { mileage_out: mileageOut ?? null })).data,
     onSuccess: () => {
-      toast.success(wo?.order_number ? `Work order ${wo.order_number} completed` : 'Work order completed')
+      toast.success(wo?.order_number ? `Repair order ${wo.order_number} completed` : 'Repair order completed')
       refresh()
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to complete work order'),
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to complete repair order'),
   })
 
   // Internal fleet work orders can be deleted at any status. The confirmation
   // warns when work has already started, since deleting discards that progress.
   const workStarted = wo ? !['draft', 'quoted'].includes(wo.status) : false
-  const title = wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Work order'
 
   // Internal cost is owner/admin territory. Fleet managers see the parts &
   // labor that make up the PM (names + quantities) but not the prices.
@@ -1075,7 +1257,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
   const showPrices = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   return (
-    <Modal title={title} icon={<ClipboardList size={17} />} onClose={onClose} width={560}>
+    <>
       {isLoading || !wo ? (
         <div className="loader"><Spinner size="sm" /></div>
       ) : (
@@ -1112,7 +1294,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
           {armComplete && (
             <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, display: 'grid', gap: 8 }}>
               <div className="id-k" style={{ textTransform: 'none', letterSpacing: 0 }}>
-                Enter the truck's odometer at completion, then complete the work order.
+                Enter the truck's odometer at completion, then complete the repair order.
               </div>
               <label style={{ display: 'grid', gap: 4 }}>
                 <span className="id-k">Mileage out</span>
@@ -1132,7 +1314,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
                 <button className={yellowBtn} style={{ height: 34, padding: '0 12px', fontSize: 12.5 }}
                   disabled={completeWO.isPending}
                   onClick={() => completeWO.mutate(mileageOut.trim() === '' ? null : Number(mileageOut))}>
-                  {completeWO.isPending ? <Spinner size="xs" /> : <Flag size={14} />} Complete work order
+                  {completeWO.isPending ? <Spinner size="xs" /> : <Flag size={14} />} Complete repair order
                 </button>
               </div>
             </div>
@@ -1202,7 +1384,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               <Row k="Labor" v={money(num(wo.total_labor_cost))} />
               <Row k="Parts" v={money(num(wo.total_parts_cost))} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 17, marginTop: 4 }}>
-                <strong style={{ color: 'var(--text)' }}>Work order total</strong>
+                <strong style={{ color: 'var(--text)' }}>Repair order total</strong>
                 <strong style={{ color: 'var(--yellow)' }}>{money(num(wo.total_cost))}</strong>
               </div>
             </div>
@@ -1213,7 +1395,7 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
               danger
               message={workStarted
                 ? "Work has started — deleting discards all logged labor and parts. This can't be undone."
-                : "Delete this work order? This can't be undone."}
+                : "Delete this repair order? This can't be undone."}
               confirmLabel="Delete"
               pending={del.isPending}
               onConfirm={() => del.mutate()}
@@ -1224,14 +1406,40 @@ export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
                   disabled={del.isPending}
                   onClick={arm}
                 >
-                  <Trash2 size={16} /> Delete work order
+                  <Trash2 size={16} /> Delete repair order
                 </button>
               )}
             />
           </div>
         </div>
       )}
-    </Modal>
+    </>
+  )
+}
+
+/** The live work order opened on its own, from a board card or the truck's list. */
+export function WorkOrderPanel({ repairOrderId, onClose, onChanged }: {
+  repairOrderId: string; onClose: () => void; onChanged: () => void
+}) {
+  // Shares the body's query key, so this reads the cache rather than refetching.
+  const { data: wo } = useQuery<WODetail>({
+    queryKey: ['fleet-wo', repairOrderId],
+    queryFn: async () => (await api.get(`/repair-orders/${repairOrderId}/detail`)).data,
+  })
+  return (
+    <SlidePanel
+      isOpen
+      dark
+      onClose={onClose}
+      width={WO_DRAWER_WIDTH}
+      subtitle="Repair order"
+      title={wo ? `${wo.order_number}${wo.is_pm ? ' · PM' : ''}` : 'Repair order'}
+      headerIcon={<ClipboardList size={18} className="text-[var(--yellow)]" />}
+    >
+      <div className="wo-drawer-body">
+        <WorkOrderBody repairOrderId={repairOrderId} onClose={onClose} onChanged={onChanged} />
+      </div>
+    </SlidePanel>
   )
 }
 
@@ -1634,7 +1842,7 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer, classN
                   {i.odometer != null && <span className="lrow-tx" style={{ color: 'var(--muted)' }}>{fmt(i.odometer)} mi</span>}
                   <span className="lrow-st" style={{ textTransform: 'capitalize', color: labelColor }}>{label}</span>
                   {i.repair_order_id && (
-                    <span title="Work order created to fix flagged items" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--st-active)' }}>
+                    <span title="Repair order created to fix flagged items" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--st-active)' }}>
                       <Wrench size={13} />
                     </span>
                   )}
@@ -1714,8 +1922,8 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
   })
   const createWO = useMutation({
     mutationFn: async () => (await api.post(`/fleet/inspections/${inspectionId}/create-work-order`)).data,
-    onSuccess: () => { toast.success('Work order created'); refreshLists(); qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }) },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Could not create work order'),
+    onSuccess: () => { toast.success('Repair order created'); refreshLists(); qc.invalidateQueries({ queryKey: ['fleet-inspection', inspectionId] }) },
+    onError: (e: any) => toast.error(e.response?.data?.detail || 'Could not create repair order'),
   })
 
   const items = insp?.items || []
@@ -1936,11 +2144,11 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {insp.repair_order_id ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: 'var(--st-active)' }}>
-                      <Wrench size={15} /> Work order created
+                      <Wrench size={15} /> Repair order created
                     </span>
                   ) : failCount > 0 ? (
                     <button className="ip-cta" onClick={() => createWO.mutate()} disabled={createWO.isPending}>
-                      {createWO.isPending ? <Spinner size="sm" /> : <Wrench size={15} />} Create work order · {failCount} item{failCount === 1 ? '' : 's'}
+                      {createWO.isPending ? <Spinner size="sm" /> : <Wrench size={15} />} Create repair order · {failCount} item{failCount === 1 ? '' : 's'}
                     </button>
                   ) : null}
                   <button className="ip-cta ip-cta-ghost" onClick={onClose}>Close</button>
