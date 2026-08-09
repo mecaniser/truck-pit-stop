@@ -7,7 +7,7 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Combine, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -15,6 +15,7 @@ import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuthStore } from '../../stores/authStore'
 
 interface CustomerFormData {
   first_name: string
@@ -88,6 +89,41 @@ interface DuplicateVinVehicleSummary {
 interface DuplicateVinConflict {
   message: string
   vehicle?: DuplicateVinVehicleSummary | null
+}
+
+interface VehicleMergeSummary {
+  id: string
+  customer_id: string
+  customer_name: string
+  vin: string
+  unit_number: string | null
+  make: string
+  model: string
+  year: number | null
+  license_plate: string | null
+  mileage: number | null
+  source: string | null
+  ets_external_id: string | null
+  repair_order_count: number
+  appointment_count: number
+  inspection_count: number
+  incident_count: number
+  active_relationship_count: number
+  active_fleet_membership_count: number
+  repair_orders_by_source: Record<string, number>
+}
+
+interface VehicleMergePreview {
+  canonical: VehicleMergeSummary
+  duplicate: VehicleMergeSummary
+  warnings: string[]
+}
+
+interface VehicleMergeResult {
+  canonical_vehicle: Vehicle
+  archived_vehicle_id: string
+  merge_record_id: string
+  moved: Record<string, number>
 }
 
 type VehicleRelationshipType = 'owner' | 'operator' | 'default_payer'
@@ -331,6 +367,7 @@ const MEXICO_STATES = [
 
 export default function CustomersPage() {
   const { accentColors } = useTheme()
+  const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
@@ -386,6 +423,9 @@ export default function CustomersPage() {
   const [operatingAuthorityCustomerId, setOperatingAuthorityCustomerId] = useState('')
   const [pendingFleetRemovalId, setPendingFleetRemovalId] = useState<string | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
+  const [isVehicleMergeOpen, setIsVehicleMergeOpen] = useState(false)
+  const [mergeDuplicateVehicleId, setMergeDuplicateVehicleId] = useState<string | null>(null)
+  const [mergeVinConfirmed, setMergeVinConfirmed] = useState(false)
 
   // Contact form state
   const [isContactModalOpen, setIsContactModalOpen] = useState(false)
@@ -546,12 +586,11 @@ export default function CustomersPage() {
   })
 
   const { data: customerRepairOrders, isLoading: isLoadingOrders } = useQuery<RepairOrder[]>({
-    queryKey: ['customerVehicleRepairOrders', selectedCustomer?.id, selectedVehicleInPanel?.id],
+    queryKey: ['customerVehicleRepairOrders', selectedVehicleInPanel?.id],
     queryFn: async () => {
-      if (!selectedCustomer?.id || !selectedVehicleInPanel?.id) return []
+      if (!selectedVehicleInPanel?.id) return []
       const response = await api.get('/repair-orders', {
         params: {
-          customer_id: selectedCustomer.id,
           vehicle_id: selectedVehicleInPanel.id,
         },
       })
@@ -560,7 +599,7 @@ export default function CustomersPage() {
     // The overview already has a dedicated History tab. Fetch orders only
     // after a vehicle is opened, and only for that vehicle rather than every
     // order the customer has ever created.
-    enabled: !!selectedCustomer?.id && !!selectedVehicleInPanel?.id && isDetailOpen,
+    enabled: !!selectedVehicleInPanel?.id && isDetailOpen,
     staleTime: 30_000,
   })
 
@@ -709,6 +748,38 @@ export default function CustomersPage() {
       return response.data
     },
     enabled: !!selectedVehicleInPanel,
+  })
+
+  const {
+    data: vehicleMergeCandidates = [],
+    isLoading: isLoadingVehicleMergeCandidates,
+    isError: isVehicleMergeCandidatesError,
+    refetch: refetchVehicleMergeCandidates,
+  } = useQuery<VehicleMergeSummary[]>({
+    queryKey: ['vehicle-merge-candidates', selectedVehicleInPanel?.id],
+    queryFn: async () => (
+      await api.get(`/vehicles/${selectedVehicleInPanel!.id}/duplicate-candidates`)
+    ).data,
+    enabled: isVehicleMergeOpen && !!selectedVehicleInPanel,
+  })
+
+  useEffect(() => {
+    if (!isVehicleMergeOpen) return
+    if (vehicleMergeCandidates.length === 1 && !mergeDuplicateVehicleId) {
+      setMergeDuplicateVehicleId(vehicleMergeCandidates[0].id)
+    }
+  }, [isVehicleMergeOpen, mergeDuplicateVehicleId, vehicleMergeCandidates])
+
+  const {
+    data: vehicleMergePreview,
+    isLoading: isLoadingVehicleMergePreview,
+    isError: isVehicleMergePreviewError,
+  } = useQuery<VehicleMergePreview>({
+    queryKey: ['vehicle-merge-preview', selectedVehicleInPanel?.id, mergeDuplicateVehicleId],
+    queryFn: async () => (
+      await api.get(`/vehicles/${selectedVehicleInPanel!.id}/merge-preview/${mergeDuplicateVehicleId}`)
+    ).data,
+    enabled: isVehicleMergeOpen && !!selectedVehicleInPanel && !!mergeDuplicateVehicleId,
   })
 
   // Filter repair orders for the selected vehicle
@@ -1013,6 +1084,35 @@ export default function CustomersPage() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.detail || 'Failed to delete vehicle')
+    },
+  })
+
+  const mergeVehicleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedVehicleInPanel || !mergeDuplicateVehicleId || !vehicleMergePreview) {
+        throw new Error('Select a duplicate truck before merging')
+      }
+      const response = await api.post<VehicleMergeResult>(`/vehicles/${selectedVehicleInPanel.id}/merge`, {
+        duplicate_vehicle_id: mergeDuplicateVehicleId,
+        confirm_vin: vehicleMergePreview.canonical.vin,
+      })
+      return response.data
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['customerVehicleRepairOrders'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-link-candidates'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-merge-candidates'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
+      setSelectedVehicleInPanel(result.canonical_vehicle)
+      setIsVehicleMergeOpen(false)
+      setMergeDuplicateVehicleId(null)
+      setMergeVinConfirmed(false)
+      const movedHistory = (result.moved.repair_orders || 0) + (result.moved.inspections || 0) + (result.moved.incidents || 0)
+      toast.success(`Trucks merged. ${movedHistory} history record${movedHistory === 1 ? '' : 's'} moved to the kept truck.`)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || error.message || 'Failed to merge trucks')
     },
   })
 
@@ -1327,6 +1427,19 @@ export default function CustomersPage() {
 
   const handleDeleteVehicleClick = (vehicle: Vehicle) => {
     setDeleteConfirmVehicle(vehicle)
+  }
+
+  const openVehicleMerge = () => {
+    setMergeDuplicateVehicleId(null)
+    setMergeVinConfirmed(false)
+    setIsVehicleMergeOpen(true)
+  }
+
+  const closeVehicleMerge = () => {
+    if (mergeVehicleMutation.isPending) return
+    setIsVehicleMergeOpen(false)
+    setMergeDuplicateVehicleId(null)
+    setMergeVinConfirmed(false)
   }
 
   const confirmDeleteVehicle = () => {
@@ -3296,6 +3409,17 @@ export default function CustomersPage() {
                 Delete Vehicle
               </button>
               <div className="flex items-center gap-2">
+                {(currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin') && (
+                  <button
+                    onClick={openVehicleMerge}
+                    disabled={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17}
+                    title={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17 ? 'A complete VIN is required to find safe duplicates' : undefined}
+                    className="px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-45 disabled:cursor-not-allowed font-medium rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <Combine className="w-4 h-4" />
+                    Merge duplicate
+                  </button>
+                )}
                 <button
                   onClick={() => openManageVehicleLinks(selectedVehicleInPanel)}
                   className="px-4 py-2.5 text-amber-700 bg-amber-50 hover:bg-amber-100 font-medium rounded-lg transition-colors flex items-center gap-2"
@@ -4091,6 +4215,159 @@ export default function CustomersPage() {
         </div>
       )}
 
+      {/* Safe duplicate vehicle merge */}
+      {isVehicleMergeOpen && selectedVehicleInPanel && (
+        <div className="fixed inset-0 z-[80] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="vehicle-merge-title">
+          <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={closeVehicleMerge} />
+            <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <h3 id="vehicle-merge-title" className="text-xl font-bold text-gray-900">Merge duplicate truck records</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Keep this truck as the permanent record and move matching history into it.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeVehicleMerge}
+                  disabled={mergeVehicleMutation.isPending}
+                  className="flex h-11 w-11 flex-none items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-50"
+                  aria-label="Close merge dialog"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 pb-5">
+                  <span className="font-semibold text-gray-900">Keep:</span>
+                  <span className="text-gray-800">{vehicleDisplayLabel(selectedVehicleInPanel)}</span>
+                  <span className="font-mono text-sm text-gray-500">VIN {selectedVehicleInPanel.vin}</span>
+                </div>
+
+                <div className="py-5">
+                  <h4 className="font-semibold text-gray-900">Choose the duplicate to archive</h4>
+                  <p className="mt-1 text-sm text-gray-600">Only active records with this exact 17-character VIN are eligible.</p>
+
+                  {isLoadingVehicleMergeCandidates ? (
+                    <LoadingLine className="mt-4 text-gray-500">Checking for exact VIN matches…</LoadingLine>
+                  ) : isVehicleMergeCandidatesError ? (
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 p-4 text-sm text-red-800">
+                      <span>Duplicate records could not be loaded.</span>
+                      <button type="button" onClick={() => refetchVehicleMergeCandidates()} className="font-semibold underline underline-offset-2">Try again</button>
+                    </div>
+                  ) : vehicleMergeCandidates.length === 0 ? (
+                    <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-700">
+                      No other active truck uses VIN <span className="font-mono font-semibold">{selectedVehicleInPanel.vin}</span>. Nothing can be safely merged from this record.
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-2">
+                      {vehicleMergeCandidates.map((candidate) => (
+                        <label
+                          key={candidate.id}
+                          className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
+                            mergeDuplicateVehicleId === candidate.id
+                              ? 'border-amber-500 bg-amber-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="duplicate-vehicle"
+                            value={candidate.id}
+                            checked={mergeDuplicateVehicleId === candidate.id}
+                            onChange={() => {
+                              setMergeDuplicateVehicleId(candidate.id)
+                              setMergeVinConfirmed(false)
+                            }}
+                            className="mt-1 h-5 w-5 accent-amber-500"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-semibold text-gray-900">{candidate.customer_name} · Unit {candidate.unit_number || 'not set'}</span>
+                            <span className="mt-1 block text-sm text-gray-600">
+                              {[candidate.year, candidate.make, candidate.model].filter(Boolean).join(' ')} · {candidate.mileage?.toLocaleString() || '—'} mi
+                            </span>
+                            <span className="mt-1 block text-sm text-gray-500">
+                              {candidate.repair_order_count} repair order{candidate.repair_order_count === 1 ? '' : 's'} · Source {candidate.source === 'easy_truck_shop_import' ? 'Easy Truck Shop' : 'DieselBridge'}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {mergeDuplicateVehicleId && (
+                  <div className="border-t border-gray-200 pt-5">
+                    {isLoadingVehicleMergePreview ? (
+                      <LoadingLine className="text-gray-500">Building a safe merge preview…</LoadingLine>
+                    ) : isVehicleMergePreviewError || !vehicleMergePreview ? (
+                      <div className="rounded-xl bg-red-50 p-4 text-sm text-red-800">
+                        This pair cannot be safely merged. Refresh the duplicate list and try again.
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        <div>
+                          <h4 className="font-semibold text-gray-900">What will move</h4>
+                          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                            {[
+                              ['Repair orders', vehicleMergePreview.duplicate.repair_order_count],
+                              ['Appointments', vehicleMergePreview.duplicate.appointment_count],
+                              ['Inspections', vehicleMergePreview.duplicate.inspection_count],
+                              ['Incidents', vehicleMergePreview.duplicate.incident_count],
+                            ].map(([label, count]) => (
+                              <div key={String(label)}>
+                                <p className="text-2xl font-bold text-gray-900">{count}</p>
+                                <p className="text-sm text-gray-600">{label}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-950">
+                          <p className="font-semibold">History moves; billing history does not change.</p>
+                          <p className="mt-1 leading-6">
+                            Past repair orders keep the customer and invoice recipient originally recorded on that visit. Current owner, authority, payer, and Fleet Board settings stay with the truck you keep; non-conflicting history from the duplicate is retained.
+                          </p>
+                        </div>
+
+                        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-4">
+                          <input
+                            type="checkbox"
+                            checked={mergeVinConfirmed}
+                            onChange={(event) => setMergeVinConfirmed(event.target.checked)}
+                            className="mt-0.5 h-5 w-5 flex-none accent-amber-500"
+                          />
+                          <span className="text-sm leading-6 text-gray-800">
+                            I verified both records are the same physical truck with VIN <span className="font-mono font-semibold">{vehicleMergePreview.canonical.vin}</span>. Archive the duplicate after moving its history.
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+                <button type="button" onClick={closeVehicleMerge} disabled={mergeVehicleMutation.isPending} className="min-h-11 px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => mergeVehicleMutation.mutate()}
+                  disabled={!vehicleMergePreview || !mergeVinConfirmed || mergeVehicleMutation.isPending}
+                  className="min-h-11 px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {mergeVehicleMutation.isPending ? <Spinner size="xs" className="border-white/40 border-t-white" /> : <Combine className="h-4 w-4" />}
+                  Merge and archive duplicate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Vehicle Confirmation Modal */}
       {deleteConfirmVehicle && selectedCustomer && (
         <div className="fixed inset-0 z-[70] overflow-y-auto">
@@ -4119,7 +4396,7 @@ export default function CustomersPage() {
                   {deleteConfirmVehicle.year ? `${deleteConfirmVehicle.year} ` : ''}
                   {deleteConfirmVehicle.make} {deleteConfirmVehicle.model}
                 </span>
-                ? This will also remove any associated repair order history.
+                ? Use <span className="font-semibold">Merge duplicate</span> instead when another record contains history for the same physical truck.
               </p>
 
               <div className="flex items-center justify-end gap-3">

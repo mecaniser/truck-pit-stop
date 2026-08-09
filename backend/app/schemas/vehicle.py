@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from datetime import datetime
 from uuid import UUID
 
@@ -89,3 +89,45 @@ class VehicleRelationshipResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VehicleMergeRequest(BaseModel):
+    duplicate_vehicle_id: UUID
+    # The UI repeats the normalized VIN so a stale or accidental selection
+    # cannot merge a different physical truck.
+    confirm_vin: str = Field(min_length=17, max_length=17)
+
+
+class VehicleMergeVehicleSummary(BaseModel):
+    id: UUID
+    customer_id: UUID
+    customer_name: str
+    vin: str
+    unit_number: Optional[str] = None
+    make: str
+    model: str
+    year: Optional[int] = None
+    license_plate: Optional[str] = None
+    mileage: Optional[int] = None
+    source: Optional[str] = None
+    ets_external_id: Optional[str] = None
+    repair_order_count: int = 0
+    appointment_count: int = 0
+    inspection_count: int = 0
+    incident_count: int = 0
+    active_relationship_count: int = 0
+    active_fleet_membership_count: int = 0
+    repair_orders_by_source: Dict[str, int] = Field(default_factory=dict)
+
+
+class VehicleMergePreview(BaseModel):
+    canonical: VehicleMergeVehicleSummary
+    duplicate: VehicleMergeVehicleSummary
+    warnings: List[str] = Field(default_factory=list)
+
+
+class VehicleMergeResult(BaseModel):
+    canonical_vehicle: VehicleResponse
+    archived_vehicle_id: UUID
+    merge_record_id: UUID
+    moved: Dict[str, int]
