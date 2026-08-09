@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useSuggestions, type SuggestionVariant } from './useSuggestions'
 import SuggestionDropdown from './SuggestionDropdown'
 
@@ -15,6 +16,12 @@ interface SuggestingTextareaProps extends Omit<React.TextareaHTMLAttributes<HTML
    * pages outside the fleet module.
    */
   variant?: SuggestionVariant
+  /** Search only the active fragment in a multi-value textarea. */
+  getSuggestionQuery?: (value: string) => string
+  /** Merge a selected suggestion into the current value instead of replacing it. */
+  mergeSuggestion?: (currentValue: string, suggestion: string) => string
+  suggestionLabel?: string
+  suggestionLimit?: number
 }
 
 /**
@@ -29,13 +36,21 @@ export default function SuggestingTextarea({
   onSelect,
   suggestUrl = '/repair-orders/description-suggestions',
   variant = 'dark',
+  getSuggestionQuery,
+  mergeSuggestion,
+  suggestionLabel,
+  suggestionLimit,
   style,
   ...textareaProps
 }: SuggestingTextareaProps) {
+  const suggestionListId = useId()
   const {
     isOpen, setIsOpen, highlightedIndex, setHighlightedIndex, containerRef,
     visibleSuggestions, applySuggestion, handleKeyDown, theme,
-  } = useSuggestions({ value, onChange, onSelect, suggestUrl, variant })
+  } = useSuggestions({
+    value, onChange, onSelect, suggestUrl, variant,
+    getQuery: getSuggestionQuery, mergeSuggestion, limit: suggestionLimit,
+  })
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
@@ -51,6 +66,9 @@ export default function SuggestingTextarea({
           textareaProps.onFocus?.(e)
         }}
         onKeyDown={(e) => handleKeyDown(e, textareaProps.onKeyDown)}
+        aria-autocomplete="list"
+        aria-controls={isOpen && visibleSuggestions.length > 0 ? suggestionListId : undefined}
+        aria-expanded={isOpen && visibleSuggestions.length > 0}
         style={style}
       />
       {isOpen && visibleSuggestions.length > 0 && (
@@ -60,6 +78,8 @@ export default function SuggestingTextarea({
           onHover={setHighlightedIndex}
           onSelect={applySuggestion}
           theme={theme}
+          id={suggestionListId}
+          label={suggestionLabel}
         />
       )}
     </div>
