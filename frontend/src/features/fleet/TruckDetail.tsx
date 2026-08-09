@@ -86,6 +86,10 @@ function validFleetPhoto(file: File) {
   return true
 }
 
+function looksLikePreventiveMaintenance(entry: HistoryEntry) {
+  return entry.kind === 'Repair' && /\bpm\b|preventive maintenance/i.test(entry.summary || '')
+}
+
 function Section({ title, icon, count, right, children, className }: {
   title: string; icon: React.ReactNode; count?: number; right?: React.ReactNode; children: React.ReactNode; className?: string
 }) {
@@ -105,6 +109,7 @@ export default function TruckDetail({
 }: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void }) {
   const qc = useQueryClient()
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [recognizingPm, setRecognizingPm] = useState<HistoryEntry | null>(null)
   const [partsOpen, setPartsOpen] = useState(false)
   const { data } = useQuery<TruckDetailData>({
     queryKey: ['fleet-truck', truckId],
@@ -132,6 +137,7 @@ export default function TruckDetail({
   useEffect(() => {
     setHistoryOpen(false)
     setPartsOpen(false)
+    setRecognizingPm(null)
   }, [truckId])
 
   const nearestUnits = useMemo(() => {
@@ -651,7 +657,17 @@ export default function TruckDetail({
                             <div className="tl-body">
                               <div className="tl-row1"><span className={'tl-kind tl-kind-' + h.kind.toLowerCase()}>{h.kind}</span><span className="tl-date">{fmtDate(h.date)}</span><span className="tl-odo">{fmt(h.odometer)} mi</span></div>
                               <div className="tl-summary">{h.summary || '—'}</div>
-                              <div className="tl-meta"><span><User size={12} /> {h.mechanic || 'Unassigned'}</span>{h.cost != null && <span className="tl-cost">{money(h.cost)}</span>}</div>
+                              <div className="tl-meta">
+                                <span><User size={12} /> {h.mechanic || 'Unassigned'}</span>
+                                <span className="tl-meta-actions">
+                                  {h.cost != null && <span className="tl-cost">{money(h.cost)}</span>}
+                                  {looksLikePreventiveMaintenance(h) && (
+                                    <button type="button" className="tl-pm-action" onClick={() => setRecognizingPm(h)}>
+                                      <CheckCircle2 size={13} /> Recognize as PM
+                                    </button>
+                                  )}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -721,6 +737,14 @@ export default function TruckDetail({
       {data && detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onEdit={() => { setDetailsOpen(false); setEditing(true) }} onClose={() => setDetailsOpen(false)} />}
       {data && editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {schedulePMOpen && <SchedulePMModal truck={t} onClose={() => setSchedulePMOpen(false)} onDone={refresh} />}
+      {recognizingPm && (
+        <RecognizePMModal
+          entry={recognizingPm}
+          truck={t}
+          onClose={() => setRecognizingPm(null)}
+          onDone={refresh}
+        />
+      )}
       {assigningDriver && <AssignDriverModal truck={t} driverPhone={t.driver_phone} onClose={() => setAssigningDriver(false)} />}
       {logging && <LogIncidentModal vehicleId={t.id} truckId={t.id} onClose={() => setLogging(false)} />}
       {editingIncident && <EditIncidentModal incident={editingIncident} truckId={t.id} onClose={() => setEditingIncident(null)} />}
@@ -742,6 +766,77 @@ function Stat({ label, value, mono }: { label: string; value: React.ReactNode; m
       <div className="id-k">{label}</div>
       <div className={'id-v' + (mono ? ' mono' : '')}>{value}</div>
     </div>
+  )
+}
+
+function RecognizePMModal({ entry, truck, onClose, onDone }: {
+  entry: HistoryEntry
+  truck: BoardTruck
+  onClose: () => void
+  onDone: () => void
+}) {
+  const initialDate = entry.date?.slice(0, 10) || new Date().toISOString().slice(0, 10)
+  const initialOdometer = entry.odometer ?? truck.odometer ?? 0
+  const [performedOn, setPerformedOn] = useState(initialDate)
+  const [odometer, setOdometer] = useState(String(initialOdometer || ''))
+  const parsedOdometer = Number(odometer)
+  const nextPmMiles = Number.isFinite(parsedOdometer) && parsedOdometer >= 0
+    ? parsedOdometer + (truck.pm_interval_miles || 25_000)
+    : null
+
+  const recognize = useMutation({
+    mutationFn: async () => (await api.post(`/fleet/trucks/${truck.id}/recognize-pm`, {
+      repair_order_id: entry.id,
+      performed_on: performedOn,
+      odometer: parsedOdometer,
+    })).data as { next_pm_miles?: number | null; pm_due_date?: string | null; schedule_advanced: boolean },
+    onSuccess: (result) => {
+      toast.success(
+        result.schedule_advanced && result.next_pm_miles != null
+          ? `PM recorded · next at ${fmt(result.next_pm_miles)} mi`
+          : 'PM recorded in service history'
+      )
+      onDone()
+      onClose()
+    },
+    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to recognize PM service'),
+  })
+
+  const invalid = !performedOn || !odometer.trim() || !Number.isFinite(parsedOdometer) || parsedOdometer < 0
+  return (
+    <Modal title="Recognize prior PM" icon={<CheckCircle2 size={17} />} onClose={onClose} width={480}>
+      <div className="recognize-pm-summary">
+        <span>Existing repair order</span>
+        <strong>{entry.summary || 'Completed repair'}</strong>
+        <small>{fmtDate(entry.date)} · No new repair order or invoice will be created.</small>
+      </div>
+
+      <div className="recognize-pm-fields">
+        <label>
+          <span>PM performed date</span>
+          <input type="date" value={performedOn} max={new Date().toISOString().slice(0, 10)} onChange={(event) => setPerformedOn(event.target.value)} />
+        </label>
+        <label>
+          <span>Odometer at service</span>
+          <input inputMode="numeric" value={odometer} onChange={(event) => setOdometer(event.target.value.replace(/[^0-9]/g, ''))} placeholder="Enter service mileage" />
+        </label>
+      </div>
+
+      <div className="recognize-pm-impact">
+        <Info size={15} />
+        <span>
+          This repair order will become the truck’s PM record.
+          {nextPmMiles != null && <> The next PM will be set to <strong>{fmt(nextPmMiles)} mi</strong> using the truck’s {fmt(truck.pm_interval_miles || 25_000)} mi interval.</>}
+        </span>
+      </div>
+
+      <div className="modal-actions" style={{ marginTop: 16 }}>
+        <button type="button" className="dbtn dbtn-ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="dbtn dbtn-yellow" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
+          {recognize.isPending ? <Spinner size="xs" /> : <CheckCircle2 size={15} />} Record PM completion
+        </button>
+      </div>
+    </Modal>
   )
 }
 
