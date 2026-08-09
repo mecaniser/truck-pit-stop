@@ -83,6 +83,11 @@ export default function SlidePanel({
   const swipeFrame = useRef<number | null>(null)
   const pendingSwipeOffset = useRef(0)
   const openAnimation = useRef<Animation | null>(null)
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   const canSwipe = onPrev !== undefined || onNext !== undefined
 
@@ -226,7 +231,7 @@ export default function SlidePanel({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab' || !panel) return
@@ -248,7 +253,7 @@ export default function SlidePanel({
       document.removeEventListener('keydown', onKeyDown)
       restoreFocusTo?.focus?.()
     }
-  }, [isOpen, onClose])
+  }, [isOpen])
 
   // Layout effect, not effect: pinning the body relayouts the page and drops
   // the scrollbar. Run after paint and that lands one frame into the panel's
