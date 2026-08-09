@@ -20,6 +20,10 @@ from app.schemas.vehicle import (
     VehicleRelationshipResponse,
     VehicleRelationshipSync,
     VehicleResponse,
+    VehicleMergePreview,
+    VehicleMergeRequest,
+    VehicleMergeResult,
+    VehicleMergeVehicleSummary,
 )
 from app.schemas.typeahead import VehicleTypeaheadResponse
 from app.services.vehicle_nhtsa_service import sync_vehicle_nhtsa_snapshot
@@ -31,6 +35,14 @@ from app.services.vehicle_identity import (
     find_vehicle_by_vin,
     normalize_vin,
     seed_vehicle_account_relationships,
+)
+from app.services.vehicle_merge import (
+    VehicleMergeError,
+    find_duplicate_candidates,
+    load_merge_pair,
+    merge_vehicles,
+    validate_same_physical_vehicle,
+    vehicle_merge_summary,
 )
 
 router = APIRouter()
@@ -45,6 +57,79 @@ def require_role(*allowed_roles: UserRole):
             )
         return current_user
     return role_checker
+
+
+@router.get("/{vehicle_id}/duplicate-candidates", response_model=List[VehicleMergeVehicleSummary])
+async def duplicate_vehicle_candidates(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
+):
+    vehicle = (await db.execute(select(Vehicle).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.tenant_id == current_user.tenant_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck not found")
+    candidates = await find_duplicate_candidates(db, current_user.tenant_id, vehicle)
+    return [VehicleMergeVehicleSummary(**(await vehicle_merge_summary(db, candidate))) for candidate in candidates]
+
+
+@router.get("/{vehicle_id}/merge-preview/{duplicate_vehicle_id}", response_model=VehicleMergePreview)
+async def preview_vehicle_merge(
+    vehicle_id: UUID,
+    duplicate_vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
+):
+    try:
+        canonical, duplicate = await load_merge_pair(
+            db, current_user.tenant_id, vehicle_id, duplicate_vehicle_id
+        )
+        validate_same_physical_vehicle(canonical, duplicate)
+    except VehicleMergeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    warnings = [
+        "Past repair-order customers and invoice recipients will not be changed.",
+        "The duplicate record will be archived after its truck history is moved.",
+    ]
+    if canonical.customer_id != duplicate.customer_id:
+        warnings.append("These records currently appear under different customer accounts; current ownership stays with the kept truck.")
+    return VehicleMergePreview(
+        canonical=VehicleMergeVehicleSummary(**(await vehicle_merge_summary(db, canonical))),
+        duplicate=VehicleMergeVehicleSummary(**(await vehicle_merge_summary(db, duplicate))),
+        warnings=warnings,
+    )
+
+
+@router.post("/{vehicle_id}/merge", response_model=VehicleMergeResult)
+async def merge_duplicate_vehicle(
+    vehicle_id: UUID,
+    body: VehicleMergeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
+):
+    try:
+        canonical, record, moved = await merge_vehicles(
+            db,
+            tenant_id=current_user.tenant_id,
+            canonical_id=vehicle_id,
+            duplicate_id=body.duplicate_vehicle_id,
+            merged_by_user_id=current_user.id,
+            confirm_vin=body.confirm_vin,
+        )
+        await db.commit()
+        await db.refresh(canonical)
+    except VehicleMergeError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return VehicleMergeResult(
+        canonical_vehicle=VehicleResponse.model_validate(canonical),
+        archived_vehicle_id=body.duplicate_vehicle_id,
+        merge_record_id=record.id,
+        moved=moved,
+    )
 
 
 @router.post("", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)
