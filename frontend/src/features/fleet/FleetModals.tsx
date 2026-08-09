@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   X, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
-  Check, Minus, RotateCcw, Wrench, Camera, Search, ChevronDown,
+  Check, Minus, RotateCcw, Wrench, Camera, Search,
 } from 'lucide-react'
 import api from '../../lib/api'
 import SlidePanel from '@/components/SlidePanel'
@@ -451,7 +451,7 @@ interface VehicleAccountRelationship {
 }
 
 function useTruckBillToOptions(truckId: string) {
-  const { data = [] } = useQuery<VehicleAccountRelationship[]>({
+  const { data = [], isLoading } = useQuery<VehicleAccountRelationship[]>({
     queryKey: ['vehicle-account-relationships', truckId],
     queryFn: async () => (await api.get(`/vehicles/${truckId}/relationships`)).data,
   })
@@ -463,7 +463,13 @@ function useTruckBillToOptions(truckId: string) {
       byCustomer.set(relationship.customer_id, relationship)
     }
   }
-  return [...byCustomer.values()]
+  return { options: [...byCustomer.values()], isLoading }
+}
+
+const BILL_TO_RELATIONSHIP_LABEL: Record<VehicleAccountRelationship['relationship_type'], string> = {
+  default_payer: 'Default payer',
+  owner: 'Owner / lessor',
+  operator: 'Operating authority',
 }
 
 /* Width of the work order drawer, matched to the garage-side repair order
@@ -476,6 +482,19 @@ const COMPLAINT_CHIPS = [
   'Air leak', 'Brakes', 'Check engine light', 'DOT inspection due', 'Tires',
   'Lights out', 'Coolant leak', 'A/C not cooling', "Won't start", 'Oil leak',
 ]
+const complaintTokens = (value: string) => new Set(
+  value.split(/[;,\n]+/).map((token) => token.trim().toLocaleLowerCase()).filter(Boolean),
+)
+const activeComplaintFragment = (value: string) => {
+  const separatorIndex = Math.max(value.lastIndexOf(';'), value.lastIndexOf(','), value.lastIndexOf('\n'))
+  return value.slice(separatorIndex + 1).trim()
+}
+const completeComplaintFragment = (currentValue: string, suggestion: string) => {
+  const separatorIndex = Math.max(currentValue.lastIndexOf(';'), currentValue.lastIndexOf(','), currentValue.lastIndexOf('\n'))
+  if (separatorIndex < 0) return suggestion
+  const prefix = currentValue.slice(0, separatorIndex + 1)
+  return `${prefix}${/\s$/.test(prefix) ? '' : ' '}${suggestion}`
+}
 
 type FleetBuilderAddType = 'service' | 'labor' | 'part'
 type FleetBuilderLabor = { id: string; description: string; hours: number }
@@ -499,18 +518,11 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
   const [inventoryId, setInventoryId] = useState('')
   const [partQuantity, setPartQuantity] = useState(1)
   const [mechanicId, setMechanicId] = useState('')
-  const [billingOpen, setBillingOpen] = useState(false)
 
-  const billToOptions = useTruckBillToOptions(truck.id)
-  const [billToCustomerId, setBillToCustomerId] = useState('')
-  useEffect(() => {
-    if (!billToCustomerId && billToOptions.length) {
-      const preferred = billToOptions.find((item) => item.relationship_type === 'default_payer' && item.is_primary)
-        || billToOptions.find((item) => item.relationship_type === 'operator')
-        || billToOptions[0]
-      setBillToCustomerId(preferred.customer_id)
-    }
-  }, [billToCustomerId, billToOptions])
+  const { options: billToOptions, isLoading: billToLoading } = useTruckBillToOptions(truck.id)
+  const billToRelationship = billToOptions.find((item) => item.relationship_type === 'default_payer' && item.is_primary)
+    || billToOptions.find((item) => item.relationship_type === 'default_payer')
+  const billToCustomerId = billToRelationship?.customer_id || ''
 
   const { data: services } = useQuery<PMServiceEntry[]>({
     queryKey: ['fleet-service-catalog'],
@@ -539,11 +551,11 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
   const toggleService = (id: string) =>
     setSelectedServices((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id])
 
-  const appendComplaint = (chip: string) =>
-    setDescription((current) => (current.trim() ? `${current.replace(/[;\s]+$/, '')}; ${chip}` : chip))
-
-  const billToLabel = billToOptions.find((item) => item.customer_id === billToCustomerId)?.customer_company_name
-    || 'Truck default'
+  const selectedComplaints = complaintTokens(description)
+  const appendComplaint = (chip: string) => setDescription((current) => {
+    if (complaintTokens(current).has(chip.toLocaleLowerCase())) return current
+    return current.trim() ? `${current.replace(/[;,\s]+$/, '')}; ${chip}` : chip
+  })
 
   const selectedServiceEntries = catalog.filter((service) => selectedServices.includes(service.service_id))
   const manualLaborTotal = stagedLabor.reduce((sum, line) => sum + line.hours * laborRate, 0)
@@ -619,7 +631,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
       <button className={ghostBtn} onClick={onClose} disabled={create.isPending}>Cancel</button>
       <button
         className={yellowBtn}
-        disabled={create.isPending || (!description.trim() && lineCount === 0)}
+        disabled={create.isPending || billToLoading || !billToCustomerId || (!description.trim() && lineCount === 0)}
         onClick={() => create.mutate()}
       >
         {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />}
@@ -652,6 +664,11 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                 <SuggestingTextarea
                   value={description}
                   onChange={setDescription}
+                  getSuggestionQuery={activeComplaintFragment}
+                  mergeSuggestion={completeComplaintFragment}
+                  suggestionLabel="From previous inspections"
+                  suggestionLimit={4}
+                  aria-label="Inspection notes or complaint"
                   rows={3}
                   placeholder="Record everything you find while walking the truck and trailer…"
                   style={{
@@ -659,12 +676,22 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                     color: 'var(--text)', padding: '12px 14px', font: 'inherit', resize: 'vertical', minHeight: 90,
                   }}
                 />
-                <div className="wo-chips">
-                  {COMPLAINT_CHIPS.map((chip) => (
-                    <button type="button" key={chip} className="wo-chip" onClick={() => appendComplaint(chip)}>
-                      <Plus size={13} /> {chip}
-                    </button>
-                  ))}
+                <div className="wo-complaint-shortcuts">
+                  <div className="wo-complaint-shortcuts-head">
+                    <span>Common findings</span>
+                    <small>Select to add</small>
+                  </div>
+                  <div className="wo-chips" aria-label="Common inspection findings">
+                    {COMPLAINT_CHIPS.map((chip) => {
+                      const selected = selectedComplaints.has(chip.toLocaleLowerCase())
+                      return (
+                        <button type="button" key={chip} className={'wo-chip' + (selected ? ' is-selected' : '')}
+                          disabled={selected} aria-pressed={selected} onClick={() => appendComplaint(chip)}>
+                          {selected ? <Check size={13} /> : <Plus size={13} />} {chip}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               </Field>
             </section>
@@ -745,6 +772,14 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                   <button type="button" className={ghostBtn} disabled={!inventoryId} onClick={addPartLine}>Add part</button>
                 </div>
               )}
+
+              <div className="wo-builder-running" role="status" aria-live="polite">
+                <span>
+                  <small>Running estimate</small>
+                  <strong>{lineCount ? `${lineCount} item${lineCount === 1 ? '' : 's'} added` : 'No work added yet'}</strong>
+                </span>
+                {showPrices && <b>{money(estimatedTotal)}</b>}
+              </div>
             </section>
 
             <section className="wo-builder-scope" aria-labelledby="wo-builder-scope-heading">
@@ -782,49 +817,56 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                 </div>
               )}
             </section>
-          </main>
 
-          <aside className="wo-builder-summary" aria-label="Draft summary">
-            <div className={'wo-builder-total' + (lineCount === 0 ? ' is-empty' : '')}>
-              <div><span>Draft scope</span><strong>{lineCount} item{lineCount === 1 ? '' : 's'}</strong></div>
-              {lineCount === 0 ? (
-                <p className="wo-builder-empty-summary">Add work to see the running estimate.</p>
-              ) : (
-                <>
+            <section className="wo-builder-final" aria-labelledby="wo-builder-details-heading">
+              <div className="wo-builder-section-head">
+                <div>
+                  <h3 id="wo-builder-details-heading">Order details</h3>
+                  <p>Confirm who handles the work and where the invoice will go.</p>
+                </div>
+              </div>
+
+              <div className="wo-builder-final-grid">
+                <div className="wo-builder-order-fields">
+                  <Field label="Assign mechanic (optional)">
+                    <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
+                      <option value="">Leave unassigned</option>
+                      {(mechanics || []).map((mechanic) => <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>)}
+                    </select>
+                    <p className="wo-hint">You can assign or change the mechanic later.</p>
+                  </Field>
+
+                  <div className={'wo-builder-invoice' + (!billToRelationship && !billToLoading ? ' is-missing' : '')}>
+                    <span>Invoice recipient</span>
+                    {billToLoading ? (
+                      <strong>Loading connected company…</strong>
+                    ) : billToRelationship ? (
+                      <>
+                        <strong>{billToRelationship.customer_company_name || 'Company'}</strong>
+                        <small>{BILL_TO_RELATIONSHIP_LABEL[billToRelationship.relationship_type]} · Set in truck relationships</small>
+                      </>
+                    ) : (
+                      <>
+                        <strong>No invoice recipient connected</strong>
+                        <small>Connect an owner or default payer before creating this repair order.</small>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="wo-builder-total wo-builder-review">
+                  <div><span>Draft review</span><strong>{lineCount} item{lineCount === 1 ? '' : 's'}</strong></div>
                   <dl>
                     <div><dt>Services</dt><dd>{selectedServices.length}</dd></div>
                     <div><dt>Manual labor</dt><dd>{formatHoursMinutes(stagedLabor.reduce((sum, line) => sum + line.hours, 0))}</dd></div>
                     <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
                   </dl>
                   {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
-                  <p>Catalog services include their configured labor and parts. Final totals remain editable on the Draft.</p>
-                </>
-              )}
-            </div>
-
-            <Field label="Assign mechanic (optional)">
-              <select value={mechanicId} onChange={(event) => setMechanicId(event.target.value)} className="wo-select">
-                <option value="">Leave unassigned</option>
-                {(mechanics || []).map((mechanic) => <option key={mechanic.id} value={mechanic.id}>{mechanic.name}</option>)}
-              </select>
-            </Field>
-
-            <div className="wo-billing">
-              <button type="button" className="wo-billing-toggle" onClick={() => setBillingOpen((open) => !open)} aria-expanded={billingOpen}>
-                <span><span className="id-k">Invoice to</span><strong>{billToLabel}</strong></span>
-                <ChevronDown size={16} className={billingOpen ? 'wo-billing-caret is-open' : 'wo-billing-caret'} />
-              </button>
-              {billingOpen && (
-                <div className="wo-billing-body">
-                  <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)} className="wo-select">
-                    <option value="">Use truck default</option>
-                    {billToOptions.map((relationship) => <option key={relationship.customer_id} value={relationship.customer_id}>{relationship.customer_company_name || 'Company'}</option>)}
-                  </select>
-                  <p className="wo-hint">This visit stays with the truck; invoicing follows the company selected here.</p>
+                  <p>Final labor and parts remain editable while the repair order is a Draft.</p>
                 </div>
-              )}
-            </div>
-          </aside>
+              </div>
+            </section>
+          </main>
         </div>
       </div>
     </SlidePanel>
@@ -854,7 +896,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
   // When opened from the card's "Create repair order" action, default to creating
   // the work order now so the manager picks services first, in one step.
   const [createWO, setCreateWO] = useState(createMode)
-  const billToOptions = useTruckBillToOptions(truck.id)
+  const { options: billToOptions, isLoading: billToLoading } = useTruckBillToOptions(truck.id)
   const [billToCustomerId, setBillToCustomerId] = useState('')
   useEffect(() => {
     if (!billToCustomerId && billToOptions.length) {
@@ -952,10 +994,10 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
         {createWO && (
           <Field label="Invoice this visit to">
             <select value={billToCustomerId} onChange={(event) => setBillToCustomerId(event.target.value)}>
-              <option value="">Use truck default</option>
+              <option value="" disabled>{billToLoading ? 'Loading connected companies…' : 'Select invoice recipient…'}</option>
               {billToOptions.map((relationship) => (
                 <option key={relationship.customer_id} value={relationship.customer_id}>
-                  {relationship.customer_company_name || 'Company'}
+                  {relationship.customer_company_name || 'Company'} — {BILL_TO_RELATIONSHIP_LABEL[relationship.relationship_type]}
                 </option>
               ))}
             </select>
@@ -1006,7 +1048,8 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
           ? "Creates the maintenance repair order now. The next PM rolls forward automatically when this repair order is completed."
           : "PM shows as due when either the date or the odometer is reached. Completing a PM rolls both forward by the interval."}
       </p>
-      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
+      <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
+        disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId))} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
       </button>
     </Modal>

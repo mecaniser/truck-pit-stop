@@ -62,6 +62,9 @@ export function useSuggestions({
   onSelect,
   suggestUrl,
   variant,
+  getQuery,
+  mergeSuggestion,
+  limit = 6,
 }: {
   value: string
   onChange: (value: string) => void
@@ -69,22 +72,29 @@ export function useSuggestions({
   onSelect?: (value: string) => void
   suggestUrl: string
   variant: SuggestionVariant
+  /** Lets a multi-value field search only the fragment currently being typed. */
+  getQuery?: (value: string) => string
+  /** Lets a multi-value field complete its active fragment without replacing prior text. */
+  mergeSuggestion?: (currentValue: string, suggestion: string) => string
+  limit?: number
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
-  const debouncedValue = useDebouncedValue(value, 250)
+  const query = getQuery ? getQuery(value) : value
+  const debouncedQuery = useDebouncedValue(query, 250)
 
   const { data: suggestions } = useQuery<Suggestion[]>({
-    queryKey: ['field-suggestions', suggestUrl, debouncedValue],
+    queryKey: ['field-suggestions', suggestUrl, debouncedQuery, limit],
     queryFn: async () => {
-      const response = await api.get(suggestUrl, { params: { q: debouncedValue, limit: 6 } })
+      const response = await api.get(suggestUrl, { params: { q: debouncedQuery, limit } })
       return response.data
     },
-    enabled: isOpen && debouncedValue.trim().length >= 2,
+    enabled: isOpen && debouncedQuery.trim().length >= 2,
   })
 
-  const visibleSuggestions = (suggestions || []).filter((s) => s.text !== value)
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const visibleSuggestions = (suggestions || []).filter((s) => s.text.trim().toLocaleLowerCase() !== normalizedQuery)
 
   useEffect(() => {
     setHighlightedIndex(0)
@@ -101,7 +111,7 @@ export function useSuggestions({
   }, [])
 
   const applySuggestion = (text: string) => {
-    onChange(text)
+    onChange(mergeSuggestion ? mergeSuggestion(value, text) : text)
     onSelect?.(text)
     setIsOpen(false)
   }
@@ -121,6 +131,8 @@ export function useSuggestions({
       e.preventDefault()
       applySuggestion(visibleSuggestions[highlightedIndex].text)
     } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
       setIsOpen(false)
     } else {
       fallback?.(e)
