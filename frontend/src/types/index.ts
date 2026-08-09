@@ -183,6 +183,12 @@ export interface Vehicle {
   notes: string | null
   /** Positive is due from this customer; negative is an account credit. */
   balance?: string
+  /** Active ownership/authority roles relative to the customer profile being viewed. */
+  customer_relationship_types?: Array<'owner' | 'operator'>
+  owner_customer_id?: string | null
+  owner_company_name?: string | null
+  operating_authority_customer_id?: string | null
+  operating_authority_company_name?: string | null
   created_at: string
   updated_at: string
 }
