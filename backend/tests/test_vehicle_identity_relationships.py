@@ -175,6 +175,10 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
         company_name="77 Cargo", email=f"operator-{uuid4().hex[:6]}@example.com",
         fleet_enabled=True,
     )
+    payer = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Billing", last_name="Contact",
+        company_name="Third Party Billing LLC", email=f"payer-{uuid4().hex[:6]}@example.com",
+    )
     manager = User(
         id=uuid4(), tenant_id=tenant.id, email=f"manager-{uuid4().hex[:6]}@example.com",
         hashed_password="x", first_name="Shop", last_name="Owner",
@@ -185,7 +189,7 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
         vin="1M1AW07Y1FM654321", make="Mack", model="Pinnacle", year=2020,
         unit_number="77-22",
     )
-    db_session.add_all([tenant, owner, operator, manager, truck])
+    db_session.add_all([tenant, owner, operator, payer, manager, truck])
     await db_session.flush()
     await seed_vehicle_account_relationships(db_session, truck, owner)
     await db_session.commit()
@@ -199,6 +203,15 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
         db=db_session,
         current_user=manager,
     )
+    await ensure_vehicle_relationship(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=truck.id,
+        customer_id=payer.id,
+        relationship_type="default_payer",
+        is_primary=True,
+    )
+    await db_session.commit()
 
     linked_vehicles = await customers.list_customer_vehicles(
         customer_id=operator.id,
@@ -209,6 +222,19 @@ async def test_dashboard_operator_link_enrolls_existing_truck_on_fleet_board(db_
         current_user=manager,
     )
     assert [item.id for item in linked_vehicles] == [truck.id]
+    assert linked_vehicles[0].customer_relationship_types == ["operator"]
+    assert linked_vehicles[0].owner_company_name == "Owner Trucking LLC"
+    assert linked_vehicles[0].operating_authority_company_name == "77 Cargo"
+
+    payer_vehicles = await customers.list_customer_vehicles(
+        customer_id=payer.id,
+        skip=0,
+        limit=100,
+        paginated=False,
+        db=db_session,
+        current_user=manager,
+    )
+    assert payer_vehicles == []
     membership = (await db_session.execute(select(FleetMembership).where(
         FleetMembership.vehicle_id == truck.id,
         FleetMembership.fleet_customer_id == operator.id,

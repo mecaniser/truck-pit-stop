@@ -1729,9 +1729,46 @@ export default function CustomersPage() {
   }
 
   const vehicleCount = customerVehicles?.length || 0
+  const ownedVehicles = customerVehicles?.filter((vehicle) =>
+    vehicle.customer_relationship_types?.includes('owner') || vehicle.customer_id === selectedCustomer?.id
+  ) || []
+  const authorityVehicles = customerVehicles?.filter((vehicle) =>
+    vehicle.customer_relationship_types?.includes('operator')
+    && !vehicle.customer_relationship_types?.includes('owner')
+    && vehicle.customer_id !== selectedCustomer?.id
+  ) || []
+  const customerVehicleGroups = [
+    {
+      key: 'owned',
+      title: `Owned by ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
+      description: 'Trucks this company owns or leases to another operating authority.',
+      vehicles: ownedVehicles,
+    },
+    {
+      key: 'authority',
+      title: `Operating under ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
+      description: 'Trucks owned by another company that run under this company’s authority.',
+      vehicles: authorityVehicles,
+    },
+  ].filter((group) => group.vehicles.length > 0)
   const showVehicleUnitColumn = customerVehicles?.some((vehicle) => !!vehicle.unit_number?.trim()) ?? false
   const showVehicleVinColumn = customerVehicles?.some((vehicle) => !!vehicle.vin?.trim()) ?? false
   const showVehiclePlateColumn = customerVehicles?.some((vehicle) => !!vehicle.license_plate?.trim()) ?? false
+  const vehicleTableColumnCount = 2 + Number(showVehicleUnitColumn) + Number(showVehicleVinColumn) + Number(showVehiclePlateColumn)
+
+  const vehicleRelationshipNote = (vehicle: Vehicle, groupKey: string) => {
+    if (groupKey === 'authority') {
+      return vehicle.owner_company_name ? `Owner / lessor: ${vehicle.owner_company_name}` : 'Owner / lessor not assigned'
+    }
+    if (
+      vehicle.operating_authority_company_name
+      && vehicle.operating_authority_customer_id !== selectedCustomer?.id
+    ) {
+      return `Operating authority: ${vehicle.operating_authority_company_name}`
+    }
+    if (vehicle.customer_relationship_types?.includes('operator')) return 'Operates under its own authority'
+    return 'Operating authority not assigned'
+  }
 
   const renderCustomerForm = (onCancel: () => void) => (
     <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -3888,7 +3925,7 @@ export default function CustomersPage() {
 
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Vehicles</h3>
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Truck relationships</h3>
                       <div className="flex items-center gap-2">
                         {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
                         {customerVehicles && customerVehicles.length > 1 && (
@@ -3921,7 +3958,15 @@ export default function CustomersPage() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                              {customerVehicles.map((vehicle) => (
+                              {customerVehicleGroups.map((group) => (
+                                <React.Fragment key={group.key}>
+                                  <tr className="bg-white">
+                                    <td colSpan={vehicleTableColumnCount} className="px-3 py-3">
+                                      <p className="text-xs font-semibold text-gray-900">{group.title}</p>
+                                      <p className="mt-0.5 text-xs font-normal text-gray-500">{group.description}</p>
+                                    </td>
+                                  </tr>
+                                  {group.vehicles.map((vehicle) => (
                                 <tr 
                                   key={vehicle.id} 
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
@@ -3930,6 +3975,9 @@ export default function CustomersPage() {
                                   <td className="px-3 py-2.5 text-gray-900 font-medium">
                                     {vehicleDisplayLabel(vehicle)}
                                     {vehicle.color && <span className="text-gray-500 font-normal"> · {vehicle.color}</span>}
+                                    <span className="mt-1 block text-xs font-normal text-gray-500">
+                                      {vehicleRelationshipNote(vehicle, group.key)}
+                                    </span>
                                   </td>
                                   {showVehicleUnitColumn && (
                                     <td className="px-3 py-2.5">
@@ -3972,13 +4020,24 @@ export default function CustomersPage() {
                                     )}
                                   </td>
                                 </tr>
+                                  ))}
+                                </React.Fragment>
                               ))}
                             </tbody>
                           </table>
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {customerVehicles.map((vehicle) => {
+                          {customerVehicleGroups.map((group) => (
+                            <React.Fragment key={group.key}>
+                              <div className="mt-2 sm:col-span-2 first:mt-0">
+                                <div className="flex items-baseline justify-between gap-3">
+                                  <h4 className="text-sm font-semibold text-gray-900">{group.title}</h4>
+                                  <span className="text-xs font-medium text-gray-500">{group.vehicles.length}</span>
+                                </div>
+                                <p className="mt-0.5 text-xs text-gray-500">{group.description}</p>
+                              </div>
+                              {group.vehicles.map((vehicle) => {
                             const displayLabel = vehicleDisplayLabel(vehicle)
                             const unitSuffix = vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''
                             const cardTitle = unitSuffix && displayLabel.endsWith(unitSuffix)
@@ -4003,6 +4062,9 @@ export default function CustomersPage() {
                                         {vehicle.color && <span>{vehicle.color}</span>}
                                         <span>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</span>
                                       </div>
+                                      <p className="mt-2 text-xs font-medium text-slate-600">
+                                        {vehicleRelationshipNote(vehicle, group.key)}
+                                      </p>
                                     </div>
                                     <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                                       {vehicle.unit_number && (
@@ -4058,7 +4120,9 @@ export default function CustomersPage() {
                                 </div>
                               </div>
                             )
-                          })}
+                              })}
+                            </React.Fragment>
+                          ))}
                         </div>
                       )
                     ) : (

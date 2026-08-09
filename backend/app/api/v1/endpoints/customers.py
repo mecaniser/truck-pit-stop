@@ -1033,6 +1033,7 @@ def _vehicle_linked_to_customer(customer_id: UUID):
             exists(select(VehicleCustomerRelationship.id).where(
                 VehicleCustomerRelationship.vehicle_id == Vehicle.id,
                 VehicleCustomerRelationship.customer_id == customer_id,
+                VehicleCustomerRelationship.relationship_type.in_(["owner", "operator"]),
                 VehicleCustomerRelationship.effective_to.is_(None),
                 VehicleCustomerRelationship.deleted_at.is_(None),
             )),
@@ -1085,10 +1086,59 @@ async def list_customer_vehicles(
     result = await db.execute(query)
     vehicles = result.scalars().all()
     balances = await get_customer_vehicle_balances(db, customer_id, [vehicle.id for vehicle in vehicles])
+
+    relationship_rows = []
+    if vehicles:
+        relationship_rows = list((await db.execute(
+            select(VehicleCustomerRelationship, Customer)
+            .join(Customer, Customer.id == VehicleCustomerRelationship.customer_id)
+            .where(
+                VehicleCustomerRelationship.vehicle_id.in_([vehicle.id for vehicle in vehicles]),
+                VehicleCustomerRelationship.relationship_type.in_(["owner", "operator"]),
+                VehicleCustomerRelationship.effective_to.is_(None),
+                VehicleCustomerRelationship.deleted_at.is_(None),
+                Customer.deleted_at.is_(None),
+            )
+            .order_by(
+                VehicleCustomerRelationship.vehicle_id,
+                VehicleCustomerRelationship.relationship_type,
+                VehicleCustomerRelationship.is_primary.desc(),
+                VehicleCustomerRelationship.effective_from.desc(),
+            )
+        )).all())
+
+    roles_by_vehicle: dict[UUID, dict[str, tuple[VehicleCustomerRelationship, Customer]]] = {}
+    for relationship, related_customer in relationship_rows:
+        roles_by_vehicle.setdefault(relationship.vehicle_id, {}).setdefault(
+            relationship.relationship_type,
+            (relationship, related_customer),
+        )
+
+    def company_label(related_customer: Customer) -> str:
+        return related_customer.company_name or f"{related_customer.first_name} {related_customer.last_name}".strip()
+
     items = []
     for vehicle in vehicles:
         item = VehicleResponse.model_validate(vehicle)
         item.balance = balances.get(vehicle.id, 0)
+        roles = roles_by_vehicle.get(vehicle.id, {})
+        item.customer_relationship_types = [
+            role for role in ("owner", "operator")
+            if (
+                role in roles and roles[role][1].id == customer_id
+            ) or (role == "owner" and vehicle.customer_id == customer_id)
+        ]
+        owner_row = roles.get("owner")
+        operator_row = roles.get("operator")
+        if owner_row:
+            item.owner_customer_id = owner_row[1].id
+            item.owner_company_name = company_label(owner_row[1])
+        elif vehicle.customer_id == customer.id:
+            item.owner_customer_id = customer.id
+            item.owner_company_name = company_label(customer)
+        if operator_row:
+            item.operating_authority_customer_id = operator_row[1].id
+            item.operating_authority_company_name = company_label(operator_row[1])
         items.append(item)
     return paginated_or_list(items, total, skip, limit, paginated)
 
