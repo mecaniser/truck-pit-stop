@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
   Truck, LayoutGrid, Map as MapIcon, Calendar, Play, Flag, ClipboardCheck, ArrowLeft,
-  Bell, LogOut, Plus, X, Wrench, Warehouse, Settings, UserRound, KeyRound, Eye, EyeOff,
+  Bell, LogOut, Plus, Wrench, Warehouse, Settings, UserRound, KeyRound, Eye, EyeOff,
   ChevronsLeft, ChevronsRight, Pencil, Search, Check,
 } from 'lucide-react'
 import api from '../../lib/api'
@@ -19,7 +19,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import FleetBoard from './FleetBoard'
 import TruckDetail from './TruckDetail'
 import FleetMap from './FleetMap'
-import { SchedulePMModal, WorkOrderPanel, invalidateFleetAndCockpit } from './FleetModals'
+import { SchedulePMModal, SidekickPanel, WorkOrderPanel, invalidateFleetAndCockpit } from './FleetModals'
 import './fleet.css'
 
 type View = 'board' | 'map' | 'detail'
@@ -55,7 +55,7 @@ export default function FleetApp() {
     refetchInterval: 60000,
   })
   const trucks = data?.trucks || []
-  const fleetStatusSummary = [
+  const fleetStatusSummary = useMemo(() => [
     ['active', 'on road'],
     ['shop', 'in shop'],
     ['pm', 'PM due'],
@@ -64,11 +64,11 @@ export default function FleetApp() {
     ['yard', 'in yard'],
     ['available', 'available'],
     ['out_of_service', 'out of service'],
-  ].map(([status, label]) => ({ status, label, count: trucks.filter((truck) => truck.status === status).length })).filter((item) => item.count > 0)
+  ].map(([status, label]) => ({ status, label, count: trucks.filter((truck) => truck.status === status).length })).filter((item) => item.count > 0), [trucks])
 
   const detailTruck = selId ? trucks.find((truck) => truck.id === selId) : undefined
 
-  const openTruck = (id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }
+  const openTruck = useCallback((id: string) => { setSelId(id); setView('detail'); document.querySelector('.fleet-root .scroll')?.scrollTo(0, 0) }, [])
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
   const toggleRail = () => setRailExpanded((v) => { localStorage.setItem('tps-fleet-rail', v ? '0' : '1'); return !v })
 
@@ -175,7 +175,7 @@ export default function FleetApp() {
                 <div className="loader"><Spinner size="md" /></div>
               ) : isError || !data ? (
                 <div className="loader flex-col gap-3 text-center text-sm text-slate-500">
-                  <span>Fleet Board could not be loaded.</span>
+                  <span>The Fleet Board could not be loaded.</span>
                   <button type="button" className="dbtn dbtn-yellow" onClick={() => refetch()}>
                     Retry
                   </button>
@@ -204,9 +204,10 @@ export default function FleetApp() {
 /* ---- secondary views ---- */
 
 function MapPage({ trucks, onOpen }: { trucks: BoardTruck[]; onOpen: (id: string) => void }) {
+  const handleSelect = useCallback((truck: BoardTruck) => onOpen(truck.id), [onOpen])
   return (
     <div className="mappage">
-      <FleetMap trucks={trucks} onSelect={(t) => onOpen(t.id)} />
+      <FleetMap trucks={trucks} onSelect={handleSelect} />
     </div>
   )
 }
@@ -571,14 +572,19 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
   })
   const inp = 'w-full'
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
-      <div className="dsec add-truck-modal" style={{ width: 480, maxWidth: '92vw' }} onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="person-call add-truck-close" onClick={onClose} aria-label="Close add truck"><X size={16} /></button>
+    <SidekickPanel
+      title="Add or link truck"
+      subtitle="Choose how this truck joins the Fleet Board"
+      icon={<Truck size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose}
+      width="max-w-[540px]"
+    >
+      <div className="add-truck-modal">
         <div className="add-truck-mode" style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           <button type="button" className={`dbtn ${mode === 'new' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => { setMode('new'); setVinConflict(null) }}>New truck</button>
           <button type="button" className={`dbtn ${mode === 'existing' ? 'dbtn-yellow' : 'dbtn-ghost'}`} onClick={() => setMode('existing')}>Link existing truck</button>
         </div>
-        <Field label="Operating authority / Fleet Board *">
+        <Field label="Operating authority *">
           <AuthorityPicker
             companies={companies}
             value={customerId}
@@ -677,7 +683,7 @@ function AddTruckModal({ onClose }: { onClose: () => void }) {
           {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} {mode === 'existing' ? 'Link truck' : 'Add truck'}
         </button>
       </div>
-    </div>
+    </SidekickPanel>
   )
 }
 
@@ -778,27 +784,21 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center', padding: 16 }}
-      onClick={onClose}
+    <SidekickPanel
+      title="My account"
+      subtitle="Fleet manager settings"
+      icon={<UserRound size={18} className="text-[var(--yellow)]" />}
+      onClose={onClose}
+      width="max-w-[560px]"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 520, maxWidth: '92vw', maxHeight: '90vh', overflowY: 'auto', display: 'grid', gap: 14 }}
-      >
-        {/* Account */}
-        <div className="dsec">
-          <div className="dsec-head">
-            <div className="dsec-title"><UserRound size={17} /><h3>My account</h3></div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {!profileEditing && (
-                <button className="person-call" onClick={() => setProfileEditing(true)} aria-label="Edit account">
-                  <Pencil size={15} />
-                </button>
-              )}
-              <button className="person-call" onClick={onClose}><X size={15} /></button>
-            </div>
+      <div>
+        {!profileEditing && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+            <button className="dbtn dbtn-ghost" onClick={() => setProfileEditing(true)}>
+              <Pencil size={15} /> Edit account
+            </button>
           </div>
+        )}
 
           {!profileEditing ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -874,8 +874,7 @@ function FleetSettingsModal({ onClose }: { onClose: () => void }) {
               </div>
             </>
           )}
-        </div>
       </div>
-    </div>
+    </SidekickPanel>
   )
 }

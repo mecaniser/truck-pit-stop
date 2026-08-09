@@ -5,7 +5,7 @@ export const STATUS_META: Record<TruckStatus, { label: string; short: string; do
   shop: { label: 'In the shop', short: 'In shop', dot: '#38bdf8', cssVar: 'var(--st-shop)' },
   pm: { label: 'PM due soon', short: 'PM due', dot: '#f5b301', cssVar: 'var(--st-pm)' },
   parts: { label: 'Awaiting parts', short: 'Parts', dot: '#a78bfa', cssVar: 'var(--st-parts)' },
-  draft: { label: 'Work order draft', short: 'WO draft', dot: '#94a3b8', cssVar: 'var(--st-shop)' },
+  draft: { label: 'Repair order draft', short: 'RO draft', dot: '#94a3b8', cssVar: 'var(--st-shop)' },
   yard: { label: 'In the yard', short: 'Yard', dot: '#64748b', cssVar: 'var(--st-shop)' },
   available: { label: 'Available', short: 'Available', dot: '#14b8a6', cssVar: 'var(--st-active)' },
   out_of_service: { label: 'Out of service', short: 'Out', dot: '#ef4444', cssVar: 'var(--st-parts)' },
