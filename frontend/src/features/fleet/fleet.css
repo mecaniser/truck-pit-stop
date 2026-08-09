@@ -19,6 +19,7 @@
   background:var(--bg);color:var(--text);font-family:var(--body);-webkit-font-smoothing:antialiased;
   position:fixed;inset:0;z-index:40;
 }
+.fleet-root.rail-expanded{--rail:172px;}
 .fleet-root *,.fleet-root *::before,.fleet-root *::after{box-sizing:border-box;}
 .fleet-root button{font-family:inherit;cursor:pointer;color:inherit;}
 .fleet-root ::selection{background:rgba(245,179,1,.28);}
@@ -56,24 +57,41 @@
 .fleet-root .rail.is-expanded .rail-btn .rail-tip{display:none;}
 .fleet-root .rail.is-expanded .rail-av{align-self:center;}
 .fleet-root .rail.is-expanded .rail-div{width:100%;}
-.fleet-root .rail-btn-toggle{color:var(--muted-3);}
-.fleet-root .rail-av{width:38px;height:38px;border-radius:999px;background:var(--surface-3);display:grid;place-items:center;
+.fleet-root .rail-av{width:32px;height:32px;border-radius:999px;background:var(--surface-3);display:grid;place-items:center;
   font-family:var(--display);font-weight:800;font-size:15px;color:var(--yellow);flex-shrink:0;}
-/* The account control follows the rail's own pattern: initials while collapsed,
-   the person's name once the rail has room to say it. */
+.fleet-root .rail-account{position:relative;width:100%;}
+.fleet-root .rail-account-controls{display:flex;align-items:center;width:66px;height:44px;margin:0 auto;padding:0;
+  border:0;border-radius:12px;background:var(--surface);}
+/* Account identity stays compact in both rail states. Personal details belong
+   inside account settings, not in the operational navigation. */
 .fleet-root .rail-user{position:relative;display:flex;align-items:center;justify-content:center;gap:10px;
-  width:100%;min-height:44px;padding:0;border:none;background:transparent;color:var(--muted-2);cursor:pointer;
-  border-radius:11px;transition:background-color 140ms ease;}
+  flex:0 0 40px;min-width:0;width:40px;height:40px;padding:0;border:none;background:transparent;color:var(--muted-2);cursor:pointer;
+  border-radius:10px 7px 7px 10px;transition:background-color 140ms ease,color 140ms ease;}
 .fleet-root .rail-user:hover{background:var(--surface-2);}
-.fleet-root .rail-user .rail-full{display:none;}
+.fleet-root .rail-user[aria-expanded="true"]{background:var(--surface-3);color:var(--text);}
 .fleet-root .rail-user .rail-tip{position:absolute;left:56px;top:50%;transform:translateY(-50%);background:var(--ink);
   border:1px solid var(--line-2);border-radius:8px;padding:5px 9px;font-size:12px;color:var(--text);white-space:nowrap;
   opacity:0;pointer-events:none;transition:opacity 120ms ease;z-index:5;}
 .fleet-root .rail-user:hover .rail-tip{opacity:1;}
-.fleet-root .rail.is-expanded .rail-user{justify-content:flex-start;padding:0 10px;}
-.fleet-root .rail.is-expanded .rail-user .rail-full{display:inline;font-size:13px;font-weight:600;color:var(--text);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fleet-root .rail-account-label{display:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;font-weight:650;color:var(--text);}
+.fleet-root .rail.is-expanded .rail-account-controls{width:100%;}
+.fleet-root .rail.is-expanded .rail-user{flex:1 1 auto;width:auto;justify-content:flex-start;padding:0 8px;}
+.fleet-root .rail.is-expanded .rail-account-label{display:block;}
 .fleet-root .rail.is-expanded .rail-user .rail-tip{display:none;}
+.fleet-root .rail-collapse-quick{width:26px;height:40px;display:grid;place-items:center;flex:0 0 26px;padding:0;border:0;border-left:1px solid var(--line);
+  border-radius:0 10px 10px 0;background:transparent;color:var(--muted-3);transition:transform 140ms var(--ease-out),background-color 140ms ease,color 140ms ease;}
+.fleet-root .rail.is-expanded .rail-collapse-quick{width:36px;flex-basis:36px;}
+.fleet-root .rail-collapse-quick:hover,.fleet-root .rail-collapse-quick:focus-visible{background:var(--surface-2);color:var(--text);outline:none;}
+.fleet-root .rail-collapse-quick:active{transform:scale(.96);}
+.fleet-root .rail-account-menu{position:absolute;left:3px;bottom:calc(100% + 8px);z-index:90;width:160px;padding:7px;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 16px 36px rgba(0,0,0,.42);}
+.fleet-root .rail.is-expanded .rail-account-menu{left:0;right:0;bottom:calc(100% + 8px);width:auto;}
+.fleet-root .rail-account-menu>button{display:flex;align-items:center;gap:9px;width:100%;min-height:42px;padding:0 10px;
+  border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:600;text-align:left;
+  transition:background-color 140ms ease,color 140ms ease;}
+.fleet-root .rail-account-menu>button:hover,.fleet-root .rail-account-menu>button:focus-visible{background:var(--surface-2);color:var(--text);outline:none;}
+.fleet-root .rail-account-menu>button.is-danger{color:var(--red);}
+.fleet-root .rail-account-menu>button.is-danger:hover,.fleet-root .rail-account-menu>button.is-danger:focus-visible{background:rgba(255,102,115,.1);color:var(--red);}
 
 /* Truck detail owns the bar: back on the left, then the unit it belongs to. */
 .fleet-root .topbar-back{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 10px 0 6px;
@@ -297,7 +315,8 @@
 
 .fleet-root .dgrid{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-bottom:16px;}
 .fleet-root .dcol{display:flex;flex-direction:column;gap:16px;min-width:0;}
-.fleet-root .detail-flow{gap:28px;}
+.fleet-root .detail-flow{gap:0;}
+.fleet-root .next-action{margin-bottom:28px;}
 .fleet-root .next-action{--next-accent:var(--yellow);display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 22px;border:1px solid color-mix(in srgb,var(--next-accent) 42%,var(--line));border-radius:14px;background:color-mix(in srgb,var(--next-accent) 8%,var(--surface));}
 .fleet-root .next-action--danger{--next-accent:var(--red);}
 .fleet-root .next-action--work{--next-accent:var(--st-shop);}
@@ -326,7 +345,7 @@
 .fleet-root .query-retry:active:not(:disabled){transform:scale(.98);}
 .fleet-root .query-retry:focus-visible{outline:3px solid rgba(66,200,255,.45);outline-offset:2px;}
 @media (hover:hover) and (pointer:fine){.fleet-root .query-retry:hover:not(:disabled){border-color:var(--red);background:var(--surface-3);}}
-.fleet-root .yard-tools{display:flex;align-items:center;gap:10px;padding:0 2px 24px;border-bottom:1px solid var(--line);}
+.fleet-root .yard-tools{display:flex;align-items:center;gap:10px;margin-bottom:0;padding:0 2px 24px;border-bottom:1px solid var(--line);}
 .fleet-root .yard-tool-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));align-items:stretch;gap:8px;flex:1;min-width:0;}
 .fleet-root .yard-tool{min-width:0;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 13px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:700;line-height:1.25;text-align:center;cursor:pointer;transition:transform 140ms var(--ease-out),border-color 140ms ease,background-color 140ms ease,color 140ms ease;}
 .fleet-root .yard-tool svg{color:var(--muted-2);}
@@ -342,16 +361,19 @@
 .fleet-root .yard-tools-tooltip strong{color:var(--text);font-size:13px;}
 .fleet-root .yard-tools-help[data-open] .yard-tools-tooltip,.fleet-root .yard-tools-help:focus-within .yard-tools-tooltip{opacity:1;visibility:visible;transform:translateY(0);pointer-events:auto;transition-delay:0s;}
 @media (hover:hover) and (pointer:fine){.fleet-root .yard-tools-help:hover .yard-tools-tooltip{opacity:1;visibility:visible;transform:translateY(0);transition-delay:0s;}.fleet-root .yard-tools-help-button:hover{border-color:var(--line-2);background:var(--surface-2);color:var(--yellow);}}
-.fleet-root .detail-workflow{display:flex;flex-direction:column;gap:12px;}
+.fleet-root .detail-workflow{display:flex;flex-direction:column;gap:12px;padding:28px 2px;}
 .fleet-root .detail-group-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 2px;}
 .fleet-root .detail-group-head h2{margin:0;font-family:var(--display);font-size:23px;line-height:1;text-transform:uppercase;letter-spacing:.4px;color:var(--text);}
 .fleet-root .detail-group-head p{margin:5px 0 0;font-size:12.5px;color:var(--muted-2);}
 .fleet-root .detail-operation-stack{display:flex;flex-direction:column;gap:12px;}
 .fleet-root .dsec-operation{background:#131d26;}
 .fleet-root .lrow-action-label{font-size:12.5px;font-weight:800;color:var(--yellow);white-space:nowrap;}
-.fleet-root .dsec-record{background:#121a22;padding:14px 16px 16px;}
-.fleet-root .dsec-record .dsec-head{margin-bottom:10px;}
-.fleet-root .record-disclosures{display:flex;flex-direction:column;border-top:1px solid var(--line);}
+.fleet-root .detail-station-section{border-top:1px solid var(--line);}
+.fleet-root .detail-station-section>.dsec-head .dsec-title h3{font-size:23px;}
+.fleet-root .detail-station-section>.dsec-head .dsec-title svg{width:20px;height:20px;}
+.fleet-root .dsec-record{padding:24px 2px 28px;}
+.fleet-root .dsec-record .dsec-head{margin-bottom:12px;}
+.fleet-root .record-disclosures{display:flex;flex-direction:column;padding:0 16px;border:1px solid var(--line);border-radius:14px;background:#121a22;overflow:hidden;}
 .fleet-root .record-disclosure{border-bottom:1px solid var(--line);}
 .fleet-root .record-disclosure-trigger{width:100%;min-height:58px;display:grid;grid-template-columns:32px minmax(0,1fr) auto 18px;align-items:center;gap:10px;padding:10px 2px;border:0;background:transparent;color:var(--text);text-align:left;transition:background-color 140ms ease,color 140ms ease;}
 .fleet-root .record-disclosure-icon{width:32px;height:32px;display:grid;place-items:center;color:var(--muted-2);}
@@ -364,10 +386,11 @@
 .fleet-root .record-disclosure-content{padding:2px 0 14px;animation:record-reveal 180ms var(--ease-out);}
 .fleet-root .record-disclosure-trigger:focus-visible{outline:3px solid rgba(66,200,255,.45);outline-offset:2px;border-radius:8px;}
 .fleet-root .record-disclosure-trigger:active{transform:scale(.99);}
-.fleet-root .dsec-context{background:#101820;border-color:rgba(97,115,132,.72);}
+.fleet-root .dsec-context{padding:24px 2px 0;border-width:1px 0 0;border-radius:0;background:transparent;}
 @keyframes record-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media (hover:hover) and (pointer:fine){.fleet-root .record-disclosure-trigger:hover{background:rgba(255,255,255,.025);}.fleet-root .record-disclosure-trigger:hover .record-disclosure-icon{color:var(--yellow);}}
 .fleet-root .dsec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px 20px;}
+.fleet-root .dsec.detail-station-section.dsec-context{padding:24px 2px 0;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent;}
 .fleet-root .fleet-sidekick-body{min-height:100%;padding:22px 24px 32px;border:0;border-radius:0;background:transparent;}
 .fleet-root .add-truck-modal{position:relative;}
 .fleet-root .person-call.add-truck-close{position:absolute;top:14px;right:14px;z-index:1;border:0;background:transparent;color:var(--muted-2);}
@@ -1267,6 +1290,7 @@
      edge. At this width the expanded rail floats over the page instead, the way
      a phone drawer does, and the page underneath is left intact. */
   .fleet-root .app{position:relative;}
+  .fleet-root.rail-expanded{--rail:54px;}
   .fleet-root .rail.is-expanded{position:absolute;top:0;bottom:0;left:0;z-index:60;
     box-shadow:0 0 0 100vmax rgba(0,0,0,.5), 12px 0 32px rgba(0,0,0,.45);}
 }

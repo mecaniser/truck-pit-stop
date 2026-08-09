@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -43,7 +43,10 @@ export default function FleetApp() {
   const [woPanelId, setWoPanelId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
   const [railExpanded, setRailExpanded] = useState(() => localStorage.getItem('tps-fleet-rail') === '1')
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+  const profileTriggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, selId, filter, sort }))
@@ -72,6 +75,30 @@ export default function FleetApp() {
   const goView = (v: View) => { setView(v); if (v !== 'detail') setSelId(null) }
   const toggleRail = () => setRailExpanded((v) => { localStorage.setItem('tps-fleet-rail', v ? '0' : '1'); return !v })
 
+  useEffect(() => {
+    if (!profileMenuOpen) return
+
+    const focusMenu = window.requestAnimationFrame(() => {
+      profileMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    })
+    const closeFromOutside = (event: PointerEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) setProfileMenuOpen(false)
+    }
+    const closeFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setProfileMenuOpen(false)
+      profileTriggerRef.current?.focus()
+    }
+
+    document.addEventListener('pointerdown', closeFromOutside, true)
+    document.addEventListener('keydown', closeFromKeyboard)
+    return () => {
+      window.cancelAnimationFrame(focusMenu)
+      document.removeEventListener('pointerdown', closeFromOutside, true)
+      document.removeEventListener('keydown', closeFromKeyboard)
+    }
+  }, [profileMenuOpen])
+
   const railItems: [View, React.ReactNode, string, string][] = [
     ['board', <LayoutGrid size={20} />, 'Fleet board', 'FB'],
     ['map', <MapIcon size={20} />, 'Live map', 'MAP'],
@@ -86,7 +113,7 @@ export default function FleetApp() {
   const canReturnToDashboard = user?.role === 'garage_owner' || user?.role === 'garage_admin'
 
   return (
-    <div className="fleet-root">
+    <div className={'fleet-root' + (railExpanded ? ' rail-expanded' : '')}>
       <div className="app">
         <nav className={'rail' + (railExpanded ? ' is-expanded' : '')}>
           <div className="rail-mark"><Truck /></div>
@@ -104,28 +131,69 @@ export default function FleetApp() {
             </button>
           ))}
           <div className="rail-sp" />
-          <button className="rail-btn rail-btn-toggle" onClick={toggleRail} title={railExpanded ? 'Collapse' : 'Expand'}>
-            {railExpanded ? <ChevronsLeft size={20} /> : <ChevronsRight size={20} />}
-            <span className="rail-abbr">{railExpanded ? '«' : '»'}</span>
-            <span className="rail-full">{railExpanded ? 'Collapse' : 'Expand'}</span>
-            <span className="rail-tip">{railExpanded ? 'Collapse' : 'Expand'}</span>
-          </button>
-          <button className="rail-btn" onClick={() => setSettingsOpen(true)}>
-            <Settings size={20} /><span className="rail-abbr">SET</span><span className="rail-full">Settings</span><span className="rail-tip">Settings</span>
-          </button>
-          <button className="rail-btn" onClick={async () => { try { await logout() } finally { navigate('/login', { replace: true }) } }}>
-            <LogOut size={20} /><span className="rail-abbr">OUT</span><span className="rail-full">Log out</span><span className="rail-tip">Log out</span>
-          </button>
-          <button
-            type="button"
-            className="rail-user"
-            onClick={() => setSettingsOpen(true)}
-            title="Account settings"
-          >
-            <span className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</span>
-            <span className="rail-full">{`${user?.first_name || ''} ${user?.last_name || ''}`.trim() || 'Fleet manager'}</span>
-            <span className="rail-tip">Account settings</span>
-          </button>
+          <div className="rail-account" ref={profileMenuRef}>
+            <div className="rail-account-controls">
+              <button
+                ref={profileTriggerRef}
+                type="button"
+                className="rail-user"
+                onClick={() => setProfileMenuOpen((open) => !open)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+                  event.preventDefault()
+                  setProfileMenuOpen(true)
+                }}
+                aria-haspopup="menu"
+                aria-expanded={profileMenuOpen}
+                aria-controls="fleet-profile-menu"
+                aria-label="Open profile menu"
+                title="Profile"
+              >
+                <span className="rail-av">{initials(`${user?.first_name || ''} ${user?.last_name || ''}`)}</span>
+                <span className="rail-account-label">Profile</span>
+                <span className="rail-tip">Profile</span>
+              </button>
+              <button
+                type="button"
+                className="rail-collapse-quick"
+                onClick={() => {
+                  setProfileMenuOpen(false)
+                  toggleRail()
+                }}
+                aria-label={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+                title={railExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+              >
+                {railExpanded ? <ChevronsLeft size={17} aria-hidden="true" /> : <ChevronsRight size={17} aria-hidden="true" />}
+              </button>
+            </div>
+            {profileMenuOpen && (
+              <div id="fleet-profile-menu" className="rail-account-menu" role="menu" aria-label="Profile actions">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setProfileMenuOpen(false)
+                    setSettingsOpen(true)
+                  }}
+                >
+                  <Settings size={17} aria-hidden="true" />
+                  <span>Settings</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="is-danger"
+                  onClick={async () => {
+                    setProfileMenuOpen(false)
+                    try { await logout() } finally { navigate('/login', { replace: true }) }
+                  }}
+                >
+                  <LogOut size={17} aria-hidden="true" />
+                  <span>Log out</span>
+                </button>
+              </div>
+            )}
+          </div>
         </nav>
 
         <div className="main">

@@ -913,7 +913,7 @@ export default function TruckDetail({
             </div>
           </section>
 
-          <section className="dsec dsec-record" aria-labelledby="service-record-heading">
+          <section className="detail-station-section dsec-record" aria-labelledby="service-record-heading">
             <div className="dsec-head">
               <div className="dsec-title"><History size={17} /><h3 id="service-record-heading">Service record</h3></div>
             </div>
@@ -981,7 +981,7 @@ export default function TruckDetail({
 
           <Section
             title="Current location & nearby units"
-            className={`dsec-context${locationOpen ? ' is-open' : ' is-collapsed'}`}
+            className={`detail-station-section dsec-context${locationOpen ? ' is-open' : ' is-collapsed'}`}
             icon={<MapIcon size={17} />}
             right={
               <div className="location-head-actions">
