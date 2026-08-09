@@ -1,7 +1,7 @@
 """Fleet workflows: weekly inspections, incidents, and incident-to-repair spawning."""
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from tempfile import SpooledTemporaryFile
 from uuid import uuid4
 import os
@@ -28,6 +28,7 @@ from app.db.models.fleet import (
     DEFAULT_INSPECTION_CHECKLIST,
 )
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
@@ -39,6 +40,7 @@ from app.schemas.fleet import (
     IncidentUpdate,
     WorkOrderCreate,
     WorkOrderComplete,
+    RecognizePMRequest,
 )
 from app.services.internal_fleet import ensure_internal_fleet_customer
 
@@ -937,6 +939,91 @@ async def test_completing_pm_rolls_date_and_mileage_forward(db_session):
     from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
     expected_days = math.ceil(25000 / PM_AVG_MILES_PER_DAY)
     assert vehicle.pm_due_date == date.today() + timedelta(days=expected_days)
+
+
+@pytest.mark.asyncio
+async def test_existing_closed_repair_can_be_recognized_as_pm_without_duplication(db_session):
+    from app.services.internal_fleet import PM_AVG_MILES_PER_DAY
+    import math
+
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    vehicle.mileage = 621_565
+    vehicle.pm_interval_miles = 25_000
+    performed_on = date.today() - timedelta(days=10)
+    repair_order = RepairOrder(
+        id=uuid4(),
+        tenant_id=tenant.id,
+        customer_id=vehicle.customer_id,
+        vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8]}",
+        description="PM Service - Level C",
+        status=RepairOrderStatus.PAID,
+        is_internal=True,
+        is_fleet_work=True,
+        is_pm=False,
+        work_completed_at=datetime.combine(performed_on, datetime.min.time(), tzinfo=timezone.utc),
+    )
+    db_session.add(repair_order)
+    await db_session.commit()
+
+    result = await fleet.recognize_existing_repair_as_pm(
+        vehicle_id=vehicle.id,
+        body=RecognizePMRequest(
+            repair_order_id=repair_order.id,
+            performed_on=performed_on,
+            odometer=621_565,
+        ),
+        db=db_session,
+        current_user=user,
+    )
+
+    await db_session.refresh(repair_order)
+    await db_session.refresh(vehicle)
+    assert repair_order.is_pm is True
+    assert repair_order.mileage_out == 621_565
+    assert vehicle.next_pm_miles == 646_565
+    assert vehicle.pm_due_date == performed_on + timedelta(days=math.ceil(25_000 / PM_AVG_MILES_PER_DAY))
+    assert result.schedule_advanced is True
+
+    matching_orders = list((await db_session.execute(
+        select(RepairOrder).where(RepairOrder.vehicle_id == vehicle.id)
+    )).scalars().all())
+    assert matching_orders == [repair_order]
+    audit = (await db_session.execute(
+        select(RepairOrderHistoryEvent).where(
+            RepairOrderHistoryEvent.repair_order_id == repair_order.id,
+            RepairOrderHistoryEvent.event_type == "recognized_as_pm",
+        )
+    )).scalar_one()
+    assert "621,565 mi" in audit.detail
+
+    history = await fleet.truck_history(vehicle.id, db=db_session, current_user=user)
+    assert next(item for item in history if item.id == repair_order.id).kind == "PM"
+
+
+@pytest.mark.asyncio
+async def test_open_repair_cannot_be_recognized_as_completed_pm(db_session):
+    tenant, vehicle, user = await _seed_fleet(db_session)
+    repair_order = RepairOrder(
+        id=uuid4(), tenant_id=tenant.id, customer_id=vehicle.customer_id, vehicle_id=vehicle.id,
+        order_number=f"RO-{uuid4().hex[:8]}", description="PM inspection",
+        status=RepairOrderStatus.IN_PROGRESS, is_internal=True, is_fleet_work=True, is_pm=False,
+    )
+    db_session.add(repair_order)
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await fleet.recognize_existing_repair_as_pm(
+            vehicle_id=vehicle.id,
+            body=RecognizePMRequest(
+                repair_order_id=repair_order.id,
+                performed_on=date.today(),
+                odometer=100_000,
+            ),
+            db=db_session,
+            current_user=user,
+        )
+    assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio
