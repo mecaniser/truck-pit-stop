@@ -181,6 +181,8 @@ export interface Vehicle {
   color: string | null
   mileage: number | null
   notes: string | null
+  /** Positive is due from this customer; negative is an account credit. */
+  balance?: string
   created_at: string
   updated_at: string
 }

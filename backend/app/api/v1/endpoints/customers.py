@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -23,7 +24,7 @@ from app.db.models.inventory import PartsUsage
 from app.db.models.labor import Labor
 from app.db.models.appointment import Appointment
 from app.db.models.invoice import Invoice, InvoiceStatus
-from app.db.models.payment import Payment
+from app.db.models.payment import Payment, PaymentStatus
 from app.db.models.message_thread import MessageThread
 from app.db.models.sms_message import SMSMessage
 from app.db.models.user_customer_link import UserCustomerLink
@@ -86,7 +87,11 @@ async def get_customer_balances(db: AsyncSession, customer_ids: list) -> dict:
         select(RepairOrder.customer_id, func.coalesce(func.sum(Payment.amount), 0))
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
         .join(Payment, Payment.invoice_id == Invoice.id)
-        .where(RepairOrder.customer_id.in_(customer_ids))
+        .where(
+            RepairOrder.customer_id.in_(customer_ids),
+            Invoice.status != InvoiceStatus.CANCELLED,
+            Payment.status == PaymentStatus.COMPLETED,
+        )
         .group_by(RepairOrder.customer_id)
     )
     paid_by_customer = dict(paid_result.all())
@@ -94,6 +99,52 @@ async def get_customer_balances(db: AsyncSession, customer_ids: list) -> dict:
     return {
         cid: invoiced_by_customer.get(cid, 0) - paid_by_customer.get(cid, 0)
         for cid in customer_ids
+    }
+
+
+async def get_customer_vehicle_balances(
+    db: AsyncSession,
+    customer_id: UUID,
+    vehicle_ids: list[UUID],
+) -> dict[UUID, Decimal]:
+    """Net AR by truck for one customer.
+
+    The customer constraint matters when a truck changes ownership: service
+    history stays with the VIN, while an old owner's invoices must not appear
+    as the new owner's balance.
+    """
+    if not vehicle_ids:
+        return {}
+
+    invoiced_result = await db.execute(
+        select(RepairOrder.vehicle_id, func.coalesce(func.sum(Invoice.total_amount), 0))
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .where(
+            RepairOrder.customer_id == customer_id,
+            RepairOrder.vehicle_id.in_(vehicle_ids),
+            Invoice.status != InvoiceStatus.CANCELLED,
+        )
+        .group_by(RepairOrder.vehicle_id)
+    )
+    invoiced_by_vehicle = dict(invoiced_result.all())
+
+    paid_result = await db.execute(
+        select(RepairOrder.vehicle_id, func.coalesce(func.sum(Payment.amount), 0))
+        .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
+        .join(Payment, Payment.invoice_id == Invoice.id)
+        .where(
+            RepairOrder.customer_id == customer_id,
+            RepairOrder.vehicle_id.in_(vehicle_ids),
+            Invoice.status != InvoiceStatus.CANCELLED,
+            Payment.status == PaymentStatus.COMPLETED,
+        )
+        .group_by(RepairOrder.vehicle_id)
+    )
+    paid_by_vehicle = dict(paid_result.all())
+
+    return {
+        vehicle_id: invoiced_by_vehicle.get(vehicle_id, 0) - paid_by_vehicle.get(vehicle_id, 0)
+        for vehicle_id in vehicle_ids
     }
 
 
@@ -106,7 +157,10 @@ async def get_customer_vehicle_info(db: AsyncSession, customer_ids: list) -> dic
 
     count_result = await db.execute(
         select(Vehicle.customer_id, func.count(Vehicle.id))
-        .where(Vehicle.customer_id.in_(customer_ids))
+        .where(
+            Vehicle.customer_id.in_(customer_ids),
+            Vehicle.deleted_at.is_(None),
+        )
         .group_by(Vehicle.customer_id)
     )
     counts = dict(count_result.all())
@@ -116,7 +170,10 @@ async def get_customer_vehicle_info(db: AsyncSession, customer_ids: list) -> dic
     if single_vehicle_ids:
         plate_result = await db.execute(
             select(Vehicle.customer_id, Vehicle.license_plate)
-            .where(Vehicle.customer_id.in_(single_vehicle_ids))
+            .where(
+                Vehicle.customer_id.in_(single_vehicle_ids),
+                Vehicle.deleted_at.is_(None),
+            )
         )
         plates_by_customer = dict(plate_result.all())
 
@@ -333,7 +390,10 @@ def _customer_matched_fields(customer: Customer, search: Optional[str]) -> List[
 def _vehicle_count_subquery():
     return (
         select(func.count(Vehicle.id))
-        .where(Vehicle.customer_id == Customer.id)
+        .where(
+            Vehicle.customer_id == Customer.id,
+            Vehicle.deleted_at.is_(None),
+        )
         .correlate(Customer)
         .scalar_subquery()
     )
@@ -358,7 +418,11 @@ def _balance_subquery():
         .select_from(RepairOrder)
         .join(Invoice, Invoice.repair_order_id == RepairOrder.id)
         .join(Payment, Payment.invoice_id == Invoice.id)
-        .where(RepairOrder.customer_id == Customer.id)
+        .where(
+            RepairOrder.customer_id == Customer.id,
+            Invoice.status != InvoiceStatus.CANCELLED,
+            Payment.status == PaymentStatus.COMPLETED,
+        )
         .correlate(Customer)
         .scalar_subquery()
     )
@@ -1020,7 +1084,12 @@ async def list_customer_vehicles(
     )
     result = await db.execute(query)
     vehicles = result.scalars().all()
-    items = [VehicleResponse.model_validate(v) for v in vehicles]
+    balances = await get_customer_vehicle_balances(db, customer_id, [vehicle.id for vehicle in vehicles])
+    items = []
+    for vehicle in vehicles:
+        item = VehicleResponse.model_validate(vehicle)
+        item.balance = balances.get(vehicle.id, 0)
+        items.append(item)
     return paginated_or_list(items, total, skip, limit, paginated)
 
 

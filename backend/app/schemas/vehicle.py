@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List, Literal, Optional
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 
@@ -45,6 +46,9 @@ class VehicleResponse(VehicleBase):
     id: UUID
     tenant_id: UUID
     customer_id: UUID
+    # Net accounts receivable for this truck in the customer context used by
+    # the listing endpoint. Positive means due; negative means customer credit.
+    balance: Decimal = Decimal("0.00")
     created_at: datetime
     updated_at: datetime
     

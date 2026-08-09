@@ -545,3 +545,46 @@ async def test_duplicate_vin_conflict_identifies_existing_truck(db_session):
             "default_invoice_recipient_name": "Owner Trucking LLC",
         },
     }
+
+
+@pytest.mark.asyncio
+async def test_ensure_vehicle_relationship_reuses_pending_row_when_autoflush_is_disabled(db_session):
+    tenant = Tenant(id=uuid4(), name="Pending Role Garage", slug=f"pending-role-{uuid4().hex[:8]}")
+    company = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Fleet", last_name="Authority",
+        company_name="77 Cargo", email=f"pending-role-{uuid4().hex[:6]}@example.com",
+    )
+    truck = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=company.id,
+        make="Volvo", model="VNR", vin="4V4NC9EH0MN271902",
+    )
+    db_session.add_all([tenant, company, truck])
+    await db_session.flush()
+    db_session.autoflush = False
+
+    first = await ensure_vehicle_relationship(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=truck.id,
+        customer_id=company.id,
+        relationship_type="operator",
+        is_primary=True,
+    )
+    second = await ensure_vehicle_relationship(
+        db_session,
+        tenant_id=tenant.id,
+        vehicle_id=truck.id,
+        customer_id=company.id,
+        relationship_type="operator",
+    )
+
+    assert second is first
+    await db_session.commit()
+    rows = list((await db_session.execute(select(VehicleCustomerRelationship).where(
+        VehicleCustomerRelationship.vehicle_id == truck.id,
+        VehicleCustomerRelationship.customer_id == company.id,
+        VehicleCustomerRelationship.relationship_type == "operator",
+        VehicleCustomerRelationship.effective_to.is_(None),
+    ))).scalars().all())
+    assert len(rows) == 1
+    assert rows[0].is_primary is True
