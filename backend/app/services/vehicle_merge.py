@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.appointment import Appointment
@@ -23,6 +23,11 @@ from app.services.vehicle_identity import normalize_vin
 
 class VehicleMergeError(ValueError):
     pass
+
+
+def normalize_unit_number(value: str | None) -> str:
+    """Normalize a fleet unit for deliberate duplicate matching."""
+    return "".join(character for character in (value or "").upper() if character.isalnum())
 
 
 async def _count(db: AsyncSession, model: Any, vehicle_id: UUID) -> int:
@@ -69,14 +74,91 @@ async def vehicle_merge_summary(db: AsyncSession, vehicle: Vehicle) -> dict[str,
     }
 
 
-def validate_same_physical_vehicle(canonical: Vehicle, duplicate: Vehicle, confirm_vin: str | None = None) -> str:
+def canonical_value_rank(summary: dict[str, Any]) -> tuple[int, ...]:
+    """Prefer the record carrying the strongest permanent truck identity/history."""
+    vin = normalize_vin(summary.get("vin"))
+    history_count = (
+        int(summary.get("repair_order_count") or 0)
+        + int(summary.get("appointment_count") or 0)
+        + int(summary.get("inspection_count") or 0)
+        + int(summary.get("incident_count") or 0)
+    )
+    identity_fields = sum(bool(summary.get(field)) for field in (
+        "license_plate", "year", "make", "model", "unit_number",
+    ))
+    return (
+        int(bool(vin and len(vin) == 17)),
+        int(summary.get("repair_order_count") or 0),
+        history_count,
+        int(summary.get("mileage") is not None),
+        identity_fields,
+        int(summary.get("mileage") or 0),
+    )
+
+
+def validate_same_physical_vehicle(
+    canonical: Vehicle,
+    duplicate: Vehicle,
+    confirm_vin: str | None = None,
+    confirm_unit_number: str | None = None,
+) -> tuple[str, str]:
     canonical_vin = normalize_vin(canonical.vin)
     duplicate_vin = normalize_vin(duplicate.vin)
-    if not canonical_vin or len(canonical_vin) != 17 or canonical_vin != duplicate_vin:
-        raise VehicleMergeError("Safe merge requires two active truck records with the same complete 17-character VIN")
-    if confirm_vin is not None and normalize_vin(confirm_vin) != canonical_vin:
-        raise VehicleMergeError("VIN confirmation does not match the selected trucks")
-    return canonical_vin
+    if canonical_vin and len(canonical_vin) == 17 and canonical_vin == duplicate_vin:
+        if confirm_vin is not None and normalize_vin(confirm_vin) != canonical_vin:
+            raise VehicleMergeError("VIN confirmation does not match the selected trucks")
+        return "vin", canonical_vin
+
+    if canonical_vin and duplicate_vin and canonical_vin != duplicate_vin:
+        raise VehicleMergeError("These trucks have different VINs and cannot be merged")
+
+    canonical_unit = normalize_unit_number(canonical.unit_number)
+    duplicate_unit = normalize_unit_number(duplicate.unit_number)
+    if not canonical_unit or canonical_unit != duplicate_unit:
+        raise VehicleMergeError("Safe merge requires the same complete VIN or the same unit number")
+    if confirm_unit_number is not None and normalize_unit_number(confirm_unit_number) != canonical_unit:
+        raise VehicleMergeError("Unit-number confirmation does not match the selected trucks")
+    return "unit_number", canonical_unit
+
+
+async def _shares_merge_context(db: AsyncSession, canonical: Vehicle, duplicate: Vehicle) -> bool:
+    """Unit numbers are only meaningful inside a shared company/fleet context."""
+    if canonical.customer_id == duplicate.customer_id:
+        return True
+    canonical_fleets = set((await db.execute(select(FleetMembership.fleet_customer_id).where(
+        FleetMembership.vehicle_id == canonical.id,
+        FleetMembership.effective_to.is_(None),
+        FleetMembership.deleted_at.is_(None),
+    ))).scalars().all())
+    if not canonical_fleets:
+        return False
+    duplicate_fleets = set((await db.execute(select(FleetMembership.fleet_customer_id).where(
+        FleetMembership.vehicle_id == duplicate.id,
+        FleetMembership.effective_to.is_(None),
+        FleetMembership.deleted_at.is_(None),
+    ))).scalars().all())
+    return bool(canonical_fleets.intersection(duplicate_fleets))
+
+
+async def validate_merge_pair(
+    db: AsyncSession,
+    canonical: Vehicle,
+    duplicate: Vehicle,
+    *,
+    confirm_vin: str | None = None,
+    confirm_unit_number: str | None = None,
+) -> tuple[str, str]:
+    basis, value = validate_same_physical_vehicle(
+        canonical,
+        duplicate,
+        confirm_vin=confirm_vin,
+        confirm_unit_number=confirm_unit_number,
+    )
+    if basis == "unit_number" and not await _shares_merge_context(db, canonical, duplicate):
+        raise VehicleMergeError(
+            "Matching unit numbers can only be merged when both trucks belong to the same customer or Fleet Board authority"
+        )
+    return basis, value
 
 
 async def load_merge_pair(
@@ -97,17 +179,41 @@ async def load_merge_pair(
     return rows[canonical_id], rows[duplicate_id]
 
 
-async def find_duplicate_candidates(db: AsyncSession, tenant_id: UUID, vehicle: Vehicle) -> list[Vehicle]:
+async def find_duplicate_candidates(
+    db: AsyncSession,
+    tenant_id: UUID,
+    vehicle: Vehicle,
+    *,
+    include_unit_matches: bool = False,
+) -> list[Vehicle]:
     vin = normalize_vin(vehicle.vin)
-    if not vin or len(vin) != 17:
+    unit = normalize_unit_number(vehicle.unit_number)
+    if (not vin or len(vin) != 17) and (not include_unit_matches or not unit):
         return []
-    compact = func.upper(func.replace(func.replace(Vehicle.vin, " ", ""), "-", ""))
-    return list((await db.execute(select(Vehicle).where(
+    compact_vin = func.upper(func.replace(func.replace(Vehicle.vin, " ", ""), "-", ""))
+    compact_unit = func.upper(func.replace(func.replace(Vehicle.unit_number, " ", ""), "-", ""))
+    identities = []
+    if vin and len(vin) == 17:
+        identities.append(compact_vin == vin)
+    if include_unit_matches and unit:
+        identities.append(compact_unit == unit)
+    candidates = list((await db.execute(select(Vehicle).where(
         Vehicle.tenant_id == tenant_id,
         Vehicle.id != vehicle.id,
         Vehicle.deleted_at.is_(None),
-        compact == vin,
+        # At least one exact identity must match. Unit matches receive an
+        # additional shared-account guard below.
+        or_(*identities),
     ).order_by(Vehicle.created_at))).scalars().all())
+    safe_candidates = []
+    for candidate in candidates:
+        try:
+            basis, _ = validate_same_physical_vehicle(vehicle, candidate)
+            if basis == "vin" or await _shares_merge_context(db, vehicle, candidate):
+                safe_candidates.append(candidate)
+        except VehicleMergeError:
+            continue
+    return safe_candidates
 
 
 async def _merge_relationships(db: AsyncSession, canonical_id: UUID, duplicate_id: UUID, now: datetime) -> int:
@@ -214,10 +320,21 @@ async def merge_vehicles(
     canonical_id: UUID,
     duplicate_id: UUID,
     merged_by_user_id: UUID,
-    confirm_vin: str,
+    confirm_vin: str | None = None,
+    confirm_unit_number: str | None = None,
 ) -> tuple[Vehicle, VehicleMergeRecord, dict[str, int]]:
     canonical, duplicate = await load_merge_pair(db, tenant_id, canonical_id, duplicate_id, lock=True)
-    vin = validate_same_physical_vehicle(canonical, duplicate, confirm_vin)
+    match_basis, confirmed_identity = await validate_merge_pair(
+        db,
+        canonical,
+        duplicate,
+        confirm_vin=confirm_vin,
+        confirm_unit_number=confirm_unit_number,
+    )
+    if match_basis == "vin" and confirm_vin is None:
+        raise VehicleMergeError("Confirm the matching VIN before merging")
+    if match_basis == "unit_number" and confirm_unit_number is None:
+        raise VehicleMergeError("Confirm the matching unit number before merging")
     now = datetime.now(timezone.utc)
     before = {
         "canonical": {key: str(value) if isinstance(value, UUID) else value for key, value in (await vehicle_merge_summary(db, canonical)).items()},
@@ -259,7 +376,10 @@ async def merge_vehicles(
     if not canonical.ets_external_id and duplicate.ets_external_id:
         canonical.ets_external_id = duplicate.ets_external_id
         canonical.source = duplicate.source
-    canonical.vin = vin
+    if not canonical.vin and duplicate.vin:
+        canonical.vin = normalize_vin(duplicate.vin)
+    elif canonical.vin:
+        canonical.vin = normalize_vin(canonical.vin)
 
     duplicate.deleted_at = now
     record = VehicleMergeRecord(
@@ -267,7 +387,11 @@ async def merge_vehicles(
         canonical_vehicle_id=canonical.id,
         duplicate_vehicle_id=duplicate.id,
         merged_by_user_id=merged_by_user_id,
-        snapshot={"before": before, "moved": moved, "confirmed_vin": vin},
+        snapshot={
+            "before": before,
+            "moved": moved,
+            "confirmed_identity": {"basis": match_basis, "value": confirmed_identity},
+        },
     )
     db.add(record)
     await db.flush()

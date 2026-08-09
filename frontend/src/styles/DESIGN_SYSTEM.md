@@ -200,6 +200,32 @@ className="w-2.5 h-2.5 rounded-full bg-zinc-600"
 </button>
 ```
 
+### List / Cards View Toggle
+
+Use the shared `ViewToggle` for every place where the same records can switch
+between list and card layouts. It is a single, low-noise action that names the
+destination: **Show cards** from List view and **Show list** from Cards view.
+Keep responsive behavior and saved preferences at the page level; the component
+owns consistent copy, icons, touch targets, and interaction feedback.
+
+```tsx
+import ViewToggle from '@/components/ViewToggle'
+
+<ViewToggle value={viewMode} onChange={setViewMode} />
+
+// On white or pale surfaces
+<ViewToggle
+  value={viewMode}
+  onChange={setViewMode}
+  variant="light"
+  ariaLabel="Choose truck relationship view"
+/>
+```
+
+The control always names what will happen when pressed, rather than repeating
+the already-visible current state. It maintains a 44px minimum touch target for
+yard and tablet use.
+
 ### Section Header
 ```tsx
 className={`

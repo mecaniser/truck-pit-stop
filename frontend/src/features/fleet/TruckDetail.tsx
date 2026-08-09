@@ -6,14 +6,19 @@ import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
   Shield, Phone, ClipboardList, Pencil, Plus, CheckCircle2, ChevronDown, Check, Info, Trash2, Camera, MoreHorizontal,
+  Archive, ArrowLeft, ArrowRight, Combine, RotateCcw,
 } from 'lucide-react'
 import api from '../../lib/api'
 import { isSupportedPhotoFile, runPhotoUploadQueue, uploadDirectPhoto, type PhotoUploadStatus } from '@/lib/photoUpload'
-import type { BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto, HistoryEntry, PartEntry } from './types'
+import type {
+  BoardTruck, TruckDetail as TruckDetailData, IncidentSeverity, IncidentEntry, FleetPhoto, HistoryEntry, PartEntry,
+  VehicleMergePreview, VehicleMergeResult, VehicleMergeSummary,
+} from './types'
 import { STATUS_META, fleetUnitLabel, fmt, money, fmtDate, pmState, initials } from './helpers'
 import { formatUSPhone } from '@/utils/phone'
 import FleetMap from './FleetMap'
 import { TruckEditModal, LogIncidentModal, EditIncidentModal, InspectionsSection, NewWorkOrderModal, WorkOrderPanel, AssignDriverModal, SchedulePMModal, Modal, invalidateFleetAndCockpit } from './FleetModals'
+import { useAuthStore } from '../../stores/authStore'
 
 const sevClass: Record<IncidentSeverity, string> = {
   critical: 'inc-high', high: 'inc-high', medium: 'inc-med', low: 'inc-low',
@@ -109,6 +114,7 @@ export default function TruckDetail({
   truckId, trucks, onOpen,
 }: { truckId: string; trucks: BoardTruck[]; onOpen: (id: string) => void }) {
   const qc = useQueryClient()
+  const { user } = useAuthStore()
   const [historyOpen, setHistoryOpen] = useState(false)
   const [recognizingPm, setRecognizingPm] = useState<HistoryEntry | null>(null)
   const [partsOpen, setPartsOpen] = useState(false)
@@ -212,6 +218,7 @@ export default function TruckDetail({
   const [assigningDriver, setAssigningDriver] = useState(false)
   const [schedulePMOpen, setSchedulePMOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [mergeOpen, setMergeOpen] = useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const setStatus = useMutation({
     mutationFn: async (value: string) => (await api.patch(`/fleet/trucks/${truckId}`, { status_override: value })).data as BoardTruck,
@@ -735,7 +742,25 @@ export default function TruckDetail({
         </div>
       )}
 
-      {data && detailsOpen && <TruckDetailsModal truck={t} detail={data} onChangeDriver={() => setAssigningDriver(true)} onEdit={() => { setDetailsOpen(false); setEditing(true) }} onClose={() => setDetailsOpen(false)} />}
+      {data && detailsOpen && <TruckDetailsModal
+        truck={t}
+        detail={data}
+        canMerge={user?.role === 'garage_owner' || user?.role === 'garage_admin'}
+        onChangeDriver={() => setAssigningDriver(true)}
+        onEdit={() => { setDetailsOpen(false); setEditing(true) }}
+        onMerge={() => { setDetailsOpen(false); setMergeOpen(true) }}
+        onClose={() => setDetailsOpen(false)}
+      />}
+      {mergeOpen && <MergeTruckModal
+        truck={t}
+        onClose={() => setMergeOpen(false)}
+        onMerged={(canonicalId) => {
+          setMergeOpen(false)
+          refresh()
+          qc.invalidateQueries({ queryKey: ['vehicle-merge-candidates'] })
+          if (canonicalId !== t.id) onOpen(canonicalId)
+        }}
+      />}
       {data && editing && <TruckEditModal truck={t} detail={data} onClose={() => setEditing(false)} />}
       {schedulePMOpen && <SchedulePMModal truck={t} onClose={() => setSchedulePMOpen(false)} onDone={refresh} />}
       {recognizingPm && (
@@ -843,8 +868,8 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
 
 /* The detail view is the source of truth for the truck's relationships and
    service context. Editing deliberately starts from here, not from the board. */
-function TruckDetailsModal({ truck, detail, onChangeDriver, onEdit, onClose }: {
-  truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void; onEdit: () => void; onClose: () => void
+function TruckDetailsModal({ truck, detail, canMerge, onChangeDriver, onEdit, onMerge, onClose }: {
+  truck: BoardTruck; detail: TruckDetailData; canMerge: boolean; onChangeDriver: () => void; onEdit: () => void; onMerge: () => void; onClose: () => void
 }) {
   return (
     <Modal title={`Details · ${fleetUnitLabel(truck)}`} icon={<Truck size={17} />} onClose={onClose} width={520}>
@@ -914,6 +939,274 @@ function TruckDetailsModal({ truck, detail, onChangeDriver, onEdit, onClose }: {
           </div>
         </div>
       ))}
+      {canMerge && (
+        <div className="truck-cleanup-actions">
+          <div>
+            <strong>Duplicate cleanup</strong>
+            <span>Combine repair history when another card represents this same physical truck.</span>
+          </div>
+          <button type="button" className="dbtn dbtn-ghost" onClick={onMerge}>
+            <Combine size={15} /> Merge duplicate
+          </button>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function mergeRecordLabel(record: VehicleMergeSummary) {
+  return record.unit_number ? `Unit ${record.unit_number}` : `${record.customer_name} truck`
+}
+
+function MergeRecordCard({ record, action }: { record: VehicleMergeSummary; action: 'keep' | 'archive' }) {
+  return (
+    <section className={`merge-record-card merge-record-${action}`} aria-label={`${action === 'keep' ? 'Keep' : 'Archive'} ${mergeRecordLabel(record)}`}>
+      <div className="merge-record-heading">
+        <span>{action === 'keep' ? <CheckCircle2 size={15} /> : <Archive size={15} />}{action === 'keep' ? 'Keep' : 'Archive'}</span>
+        <strong>{mergeRecordLabel(record)}</strong>
+        <small>{record.customer_name}</small>
+      </div>
+      <dl className="merge-record-facts">
+        <div><dt>VIN</dt><dd>{record.vin || 'Not recorded'}</dd></div>
+        <div><dt>Mileage</dt><dd>{record.mileage == null ? 'Not recorded' : `${record.mileage.toLocaleString()} mi`}</dd></div>
+        <div><dt>Plate</dt><dd>{record.license_plate || 'Not recorded'}</dd></div>
+        <div><dt>Repair history</dt><dd>{record.repair_order_count} repair order{record.repair_order_count === 1 ? '' : 's'}</dd></div>
+      </dl>
+    </section>
+  )
+}
+
+export function MergeTruckModal({ truck, onClose, onMerged }: {
+  truck: BoardTruck; onClose: () => void; onMerged: (canonicalId: string) => void
+}) {
+  const qc = useQueryClient()
+  const [duplicateId, setDuplicateId] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [stage, setStage] = useState<'select' | 'review'>('select')
+  const candidatesQuery = useQuery<VehicleMergeSummary[]>({
+    queryKey: ['vehicle-merge-candidates', truck.id, 'fleet-unit'],
+    queryFn: async () => (await api.get(`/vehicles/${truck.id}/duplicate-candidates`, {
+      params: { include_unit_matches: true },
+    })).data,
+  })
+  const previewQuery = useQuery<VehicleMergePreview>({
+    queryKey: ['vehicle-merge-preview', truck.id, duplicateId],
+    queryFn: async () => (await api.get(`/vehicles/${truck.id}/merge-preview/${duplicateId}`)).data,
+    enabled: Boolean(duplicateId),
+  })
+  const preview = previewQuery.data
+  useEffect(() => {
+    if (candidatesQuery.data?.length === 1 && !duplicateId) {
+      setDuplicateId(candidatesQuery.data[0].id)
+    }
+  }, [candidatesQuery.data, duplicateId])
+
+  const merge = useMutation({
+    mutationFn: async () => {
+      if (!preview || !duplicateId) throw new Error('Choose the duplicate truck first')
+      const canonicalId = preview.recommended_canonical_id
+      const archivedId = canonicalId === truck.id ? duplicateId : truck.id
+      const confirmation = preview.match_basis === 'vin'
+        ? { confirm_vin: preview.match_value }
+        : { confirm_unit_number: preview.match_value }
+      return (await api.post<VehicleMergeResult>(`/vehicles/${canonicalId}/merge`, {
+        duplicate_vehicle_id: archivedId,
+        ...confirmation,
+      })).data
+    },
+    onSuccess: (result) => {
+      const movedHistory = (result.moved.repair_orders || 0)
+        + (result.moved.inspections || 0)
+        + (result.moved.incidents || 0)
+      const keptLabel = recommended ? mergeRecordLabel(recommended) : 'Canonical truck'
+      const archivedLabel = archived ? mergeRecordLabel(archived) : 'Duplicate truck'
+      toast.success(`${keptLabel} kept; ${archivedLabel} archived. ${movedHistory} service record${movedHistory === 1 ? '' : 's'} moved.`)
+      qc.invalidateQueries({ queryKey: ['fleet-board'] })
+      qc.invalidateQueries({ queryKey: ['fleet-truck', truck.id] })
+      onMerged(result.canonical_vehicle.id)
+    },
+    onError: (error: AxiosError<{ detail?: string }>) => {
+      toast.error(error.response?.data?.detail || error.message || 'Failed to merge trucks')
+    },
+  })
+
+  const identityLabel = preview?.match_basis === 'vin' ? 'VIN' : 'unit number'
+  const recommended = preview
+    ? (preview.recommended_canonical_id === preview.canonical.id ? preview.canonical : preview.duplicate)
+    : null
+  const archived = preview
+    ? (preview.recommended_canonical_id === preview.canonical.id ? preview.duplicate : preview.canonical)
+    : null
+  const historySummary = preview ? [
+    { label: 'repair orders', count: preview.canonical.repair_order_count + preview.duplicate.repair_order_count },
+    { label: 'inspections', count: preview.canonical.inspection_count + preview.duplicate.inspection_count },
+    { label: 'incidents', count: preview.canonical.incident_count + preview.duplicate.incident_count },
+    { label: 'appointments', count: preview.canonical.appointment_count + preview.duplicate.appointment_count },
+  ].filter((item) => item.count > 0) : []
+  const selectedCandidate = candidatesQuery.data?.find((candidate) => candidate.id === duplicateId)
+  const mergeError = merge.error as AxiosError<{ detail?: string }> | null
+
+  const selectCandidate = (candidateId: string) => {
+    if (merge.isPending) return
+    setDuplicateId(candidateId)
+    setConfirmed(false)
+    setStage('select')
+    merge.reset()
+  }
+
+  const returnToSelection = () => {
+    if (merge.isPending) return
+    setStage('select')
+    setConfirmed(false)
+    merge.reset()
+  }
+
+  const reviewSelection = () => {
+    if (!preview || previewQuery.isError) return
+    setConfirmed(false)
+    setStage('review')
+  }
+
+  return (
+    <Modal title="Merge duplicate truck" icon={<Combine size={17} />} onClose={onClose} width={760} scrollable={false} dismissDisabled={merge.isPending}>
+      <div className="merge-flow">
+        <div className="merge-body">
+          {stage === 'select' ? (
+            <>
+              <div className="merge-current">
+                <div>
+                  <span>Current record</span>
+                  <strong>{fleetUnitLabel(truck)}</strong>
+                </div>
+                <small>{[truck.year, truck.make, truck.model].filter(Boolean).join(' ') || 'Truck details not recorded'} · {truck.odometer == null ? 'Mileage not recorded' : `${truck.odometer.toLocaleString()} mi`} · {truck.vin ? `VIN ${truck.vin}` : 'VIN not recorded'}</small>
+              </div>
+
+              <div className="merge-section-copy">
+                <strong>Select the duplicate record</strong>
+                <span>Choose the other database record that represents this same physical truck. Nothing changes until the review is confirmed.</span>
+              </div>
+
+              {candidatesQuery.isLoading ? (
+                <div className="merge-empty"><Spinner size="xs" /> Checking possible duplicates…</div>
+              ) : candidatesQuery.isError ? (
+                <div className="merge-empty merge-error">
+                  <span>Possible duplicates could not be loaded.</span>
+                  <button type="button" className="dbtn dbtn-ghost" onClick={() => candidatesQuery.refetch()}><RotateCcw size={14} /> Retry</button>
+                </div>
+              ) : !candidatesQuery.data?.length ? (
+                <div className="merge-empty">No safe VIN or unit-number matches were found. Add the missing identity information first, then try again.</div>
+              ) : (
+                <div className="merge-candidates" aria-label="Possible duplicate truck records">
+                  {candidatesQuery.data.map((candidate) => {
+                    const selected = duplicateId === candidate.id
+                    const exactVin = Boolean(truck.vin && candidate.vin && truck.vin.trim().toUpperCase() === candidate.vin.trim().toUpperCase())
+                    return (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        aria-pressed={selected}
+                        className={'merge-candidate' + (selected ? ' is-selected' : '')}
+                        onClick={() => selectCandidate(candidate.id)}
+                      >
+                        <span className="merge-choice-mark" aria-hidden="true">{selected && <Check size={15} />}</span>
+                        <span className="merge-candidate-copy">
+                          <span className="merge-candidate-title">
+                            <strong>{mergeRecordLabel(candidate)}</strong>
+                            <em>{exactVin ? 'Exact VIN' : 'Same unit number'}</em>
+                          </span>
+                          <small>{candidate.customer_name} · {[candidate.year, candidate.make, candidate.model].filter(Boolean).join(' ') || 'Truck details not recorded'}</small>
+                          <small>{candidate.vin ? `VIN ${candidate.vin}` : 'VIN not recorded'} · {candidate.mileage == null ? 'Mileage not recorded' : `${candidate.mileage.toLocaleString()} mi`} · {candidate.repair_order_count} repair order{candidate.repair_order_count === 1 ? '' : 's'}</small>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {duplicateId && previewQuery.isLoading && (
+                <div className="merge-preview-status"><Spinner size="xs" /> Building the Keep versus Archive comparison…</div>
+              )}
+              {duplicateId && previewQuery.isError && (
+                <div className="merge-empty merge-error">
+                  <span>The comparison could not be built. The selected records have not changed.</span>
+                  <button type="button" className="dbtn dbtn-ghost" onClick={() => previewQuery.refetch()}><RotateCcw size={14} /> Retry</button>
+                </div>
+              )}
+            </>
+          ) : recommended && archived && preview ? (
+            <>
+              <div className="merge-review-intro">
+                <strong>Review which truck stays</strong>
+                <span>The stronger record is recommended using VIN, repair history, mileage, plate, and other truck details.</span>
+              </div>
+
+              <div className="merge-comparison">
+                <MergeRecordCard record={archived} action="archive" />
+                <ArrowRight className="merge-direction" size={22} aria-hidden="true" />
+                <MergeRecordCard record={recommended} action="keep" />
+              </div>
+
+              <section className="merge-preserved" aria-label="History preserved by this merge">
+                <CheckCircle2 size={18} aria-hidden="true" />
+                <div>
+                  <strong>Service history stays with the surviving truck</strong>
+                  <span>
+                    {historySummary.length
+                      ? historySummary.map((item) => `${item.count} ${item.label}`).join(' · ')
+                      : 'No linked repair orders, inspections, incidents, or appointments were found.'}
+                  </span>
+                  <small>Completed work and past invoice recipients remain unchanged.</small>
+                </div>
+              </section>
+
+              {preview.warnings.length > 0 && (
+                <div className="merge-warnings">
+                  {preview.warnings.map((warning) => <span key={warning}><AlertTriangle size={14} />{warning}</span>)}
+                </div>
+              )}
+
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={confirmed}
+                className={'merge-confirm' + (confirmed ? ' is-confirmed' : '')}
+                onClick={() => { setConfirmed((current) => !current); merge.reset() }}
+                disabled={merge.isPending}
+              >
+                <span className="merge-confirm-box" aria-hidden="true">{confirmed && <Check size={15} />}</span>
+                <span>I verified {mergeRecordLabel(recommended)} and {mergeRecordLabel(archived)} are the same physical truck with {identityLabel} <strong>{preview.match_value}</strong>.</span>
+              </button>
+
+              {merge.isError && (
+                <div className="merge-empty merge-error" role="alert">
+                  <span>{mergeError?.response?.data?.detail || mergeError?.message || 'The trucks could not be merged. Nothing was changed.'}</span>
+                  <span>Review the records and try again.</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="merge-empty merge-error">The comparison is no longer available. Return and select the duplicate again.</div>
+          )}
+        </div>
+
+        <div className="merge-actions">
+          {stage === 'review' ? (
+            <button type="button" className="dbtn dbtn-ghost" onClick={returnToSelection} disabled={merge.isPending}><ArrowLeft size={15} /> Back</button>
+          ) : (
+            <button type="button" className="dbtn dbtn-ghost" onClick={onClose}>Cancel</button>
+          )}
+          {stage === 'review' && <button type="button" className="dbtn dbtn-ghost merge-cancel" onClick={onClose} disabled={merge.isPending}>Cancel</button>}
+          {stage === 'select' ? (
+            <button type="button" className="dbtn dbtn-yellow" onClick={reviewSelection} disabled={!selectedCandidate || !preview || previewQuery.isLoading || previewQuery.isError}>
+              {previewQuery.isLoading ? <Spinner size="xs" /> : <ArrowRight size={15} />} Review merge
+            </button>
+          ) : (
+            <button type="button" className="dbtn dbtn-danger" onClick={() => merge.mutate()} disabled={!preview || !confirmed || merge.isPending}>
+              {merge.isPending ? <Spinner size="xs" /> : <Combine size={15} />} {merge.isPending ? 'Merging records…' : `Merge into ${recommended ? mergeRecordLabel(recommended) : 'recommended truck'}`}
+            </button>
+          )}
+        </div>
+      </div>
     </Modal>
   )
 }

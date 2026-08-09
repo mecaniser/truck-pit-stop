@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useId, useState, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -42,25 +42,113 @@ export function invalidateFleetAndCockpit(qc: QueryClient) {
 }
 
 /* shared modal shell (fleet design system) */
-export function Modal({ title, icon, onClose, children, width = 480, scrollable = true }: {
-  title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number; scrollable?: boolean
+let openFleetModalCount = 0
+let bodyOverflowBeforeFleetModal = ''
+let rootOverflowBeforeFleetModal = ''
+
+export function Modal({ title, icon, onClose, children, width = 480, scrollable = true, dismissDisabled = false }: {
+  title: string
+  icon: React.ReactNode
+  onClose: () => void
+  children: React.ReactNode
+  width?: number
+  scrollable?: boolean
+  dismissDisabled?: boolean
 }) {
+  const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  const dismissDisabledRef = useRef(dismissDisabled)
+  onCloseRef.current = onClose
+  dismissDisabledRef.current = dismissDisabled
+
+  const requestClose = () => {
+    if (!dismissDisabledRef.current) onCloseRef.current()
+  }
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (openFleetModalCount === 0) {
+      bodyOverflowBeforeFleetModal = document.body.style.overflow
+      rootOverflowBeforeFleetModal = document.documentElement.style.overflow
+      document.body.style.overflow = 'hidden'
+      document.documentElement.style.overflow = 'hidden'
+    }
+    openFleetModalCount += 1
+
+    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus())
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current
+      if (!dialog) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!dismissDisabledRef.current) onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getAttribute('aria-hidden') !== 'true')
+
+      if (!focusable.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (!dialog.contains(active)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+      } else if (event.shiftKey && (active === first || active === dialog)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (active === last || active === dialog)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', handleKeyDown)
+      openFleetModalCount = Math.max(0, openFleetModalCount - 1)
+      if (openFleetModalCount === 0) {
+        document.body.style.overflow = bodyOverflowBeforeFleetModal
+        document.documentElement.style.overflow = rootOverflowBeforeFleetModal
+      }
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+    }
+  }, [])
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }}
+      onClick={(event) => { if (event.target === event.currentTarget) requestClose() }}
+    >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={dismissDisabled || undefined}
+        tabIndex={-1}
         className="dsec"
         style={{
           width,
           maxWidth: '92vw',
-          maxHeight: scrollable ? '88vh' : undefined,
-          overflowY: scrollable ? 'auto' : 'visible',
+          maxHeight: '88vh',
+          overflowY: scrollable ? 'auto' : 'hidden',
           overflowX: 'hidden',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="dsec-head">
-          <div className="dsec-title">{icon}<h3>{title}</h3></div>
-          <button className="person-call" onClick={onClose}><X size={18} /></button>
+          <div className="dsec-title">{icon}<h3 id={titleId}>{title}</h3></div>
+          <button type="button" className="person-call" aria-label={`Close ${title}`} onClick={requestClose} disabled={dismissDisabled}><X size={18} /></button>
         </div>
         {children}
       </div>

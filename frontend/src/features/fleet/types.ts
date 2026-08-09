@@ -164,6 +164,40 @@ export interface FleetBoard {
   stats: FleetStats
 }
 
+export interface VehicleMergeSummary {
+  id: string
+  customer_id: string
+  customer_name: string
+  vin: string
+  unit_number?: string | null
+  make: string
+  model: string
+  year?: number | null
+  license_plate?: string | null
+  mileage?: number | null
+  source?: string | null
+  repair_order_count: number
+  appointment_count: number
+  inspection_count: number
+  incident_count: number
+}
+
+export interface VehicleMergePreview {
+  canonical: VehicleMergeSummary
+  duplicate: VehicleMergeSummary
+  match_basis: 'vin' | 'unit_number'
+  match_value: string
+  recommended_canonical_id: string
+  warnings: string[]
+}
+
+export interface VehicleMergeResult {
+  canonical_vehicle: { id: string }
+  archived_vehicle_id: string
+  merge_record_id: string
+  moved: Record<string, number>
+}
+
 export interface HistoryEntry {
   id: string
   date?: string | null
