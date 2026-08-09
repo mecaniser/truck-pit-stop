@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
   Gauge, Calendar, Wrench, AlertTriangle, History, Truck, User, Box, Map as MapIcon,
@@ -799,7 +800,7 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
       onDone()
       onClose()
     },
-    onError: (error: any) => toast.error(error.response?.data?.detail || 'Failed to recognize PM service'),
+    onError: (error: AxiosError<{ detail?: string }>) => toast.error(error.response?.data?.detail || 'Failed to recognize PM service'),
   })
 
   const invalid = !performedOn || !odometer.trim() || !Number.isFinite(parsedOdometer) || parsedOdometer < 0
@@ -830,9 +831,9 @@ function RecognizePMModal({ entry, truck, onClose, onDone }: {
         </span>
       </div>
 
-      <div className="modal-actions" style={{ marginTop: 16 }}>
-        <button type="button" className="dbtn dbtn-ghost" onClick={onClose}>Cancel</button>
-        <button type="button" className="dbtn dbtn-yellow" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
+      <div className="recognize-pm-actions">
+        <button type="button" className="dbtn dbtn-ghost recognize-pm-cancel" onClick={onClose}>Cancel</button>
+        <button type="button" className="dbtn dbtn-yellow recognize-pm-submit" disabled={invalid || recognize.isPending} onClick={() => recognize.mutate()}>
           {recognize.isPending ? <Spinner size="xs" /> : <CheckCircle2 size={15} />} Record PM completion
         </button>
       </div>
