@@ -37,11 +37,12 @@ from app.services.vehicle_identity import (
     seed_vehicle_account_relationships,
 )
 from app.services.vehicle_merge import (
+    canonical_value_rank,
     VehicleMergeError,
     find_duplicate_candidates,
     load_merge_pair,
     merge_vehicles,
-    validate_same_physical_vehicle,
+    validate_merge_pair,
     vehicle_merge_summary,
 )
 
@@ -62,6 +63,7 @@ def require_role(*allowed_roles: UserRole):
 @router.get("/{vehicle_id}/duplicate-candidates", response_model=List[VehicleMergeVehicleSummary])
 async def duplicate_vehicle_candidates(
     vehicle_id: UUID,
+    include_unit_matches: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN)),
 ):
@@ -72,7 +74,12 @@ async def duplicate_vehicle_candidates(
     ))).scalar_one_or_none()
     if not vehicle:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Truck not found")
-    candidates = await find_duplicate_candidates(db, current_user.tenant_id, vehicle)
+    candidates = await find_duplicate_candidates(
+        db,
+        current_user.tenant_id,
+        vehicle,
+        include_unit_matches=include_unit_matches,
+    )
     return [VehicleMergeVehicleSummary(**(await vehicle_merge_summary(db, candidate))) for candidate in candidates]
 
 
@@ -87,18 +94,30 @@ async def preview_vehicle_merge(
         canonical, duplicate = await load_merge_pair(
             db, current_user.tenant_id, vehicle_id, duplicate_vehicle_id
         )
-        validate_same_physical_vehicle(canonical, duplicate)
+        match_basis, match_value = await validate_merge_pair(db, canonical, duplicate)
     except VehicleMergeError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     warnings = [
         "Past repair-order customers and invoice recipients will not be changed.",
         "The duplicate record will be archived after its truck history is moved.",
     ]
+    if match_basis == "unit_number":
+        warnings.append("This cleanup match uses the shared unit number because an exact complete VIN is not available on both records.")
     if canonical.customer_id != duplicate.customer_id:
         warnings.append("These records currently appear under different customer accounts; current ownership stays with the kept truck.")
+    canonical_summary = await vehicle_merge_summary(db, canonical)
+    duplicate_summary = await vehicle_merge_summary(db, duplicate)
+    recommended_canonical_id = (
+        duplicate.id
+        if canonical_value_rank(duplicate_summary) > canonical_value_rank(canonical_summary)
+        else canonical.id
+    )
     return VehicleMergePreview(
-        canonical=VehicleMergeVehicleSummary(**(await vehicle_merge_summary(db, canonical))),
-        duplicate=VehicleMergeVehicleSummary(**(await vehicle_merge_summary(db, duplicate))),
+        canonical=VehicleMergeVehicleSummary(**canonical_summary),
+        duplicate=VehicleMergeVehicleSummary(**duplicate_summary),
+        match_basis=match_basis,
+        match_value=match_value,
+        recommended_canonical_id=recommended_canonical_id,
         warnings=warnings,
     )
 
@@ -118,6 +137,7 @@ async def merge_duplicate_vehicle(
             duplicate_id=body.duplicate_vehicle_id,
             merged_by_user_id=current_user.id,
             confirm_vin=body.confirm_vin,
+            confirm_unit_number=body.confirm_unit_number,
         )
         await db.commit()
         await db.refresh(canonical)

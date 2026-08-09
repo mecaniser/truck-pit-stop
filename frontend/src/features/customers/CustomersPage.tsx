@@ -7,7 +7,7 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Combine, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -116,6 +116,9 @@ interface VehicleMergeSummary {
 interface VehicleMergePreview {
   canonical: VehicleMergeSummary
   duplicate: VehicleMergeSummary
+  match_basis: 'vin' | 'unit_number'
+  match_value: string
+  recommended_canonical_id: string
   warnings: string[]
 }
 
@@ -439,6 +442,8 @@ export default function CustomersPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isEditingInPanel, setIsEditingInPanel] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
+  const [vehicleRelationshipSearch, setVehicleRelationshipSearch] = useState('')
+  const [vehicleRelationshipFilter, setVehicleRelationshipFilter] = useState<'all' | 'owned' | 'authority'>('all')
   const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
@@ -1133,9 +1138,13 @@ export default function CustomersPage() {
       if (!selectedVehicleInPanel || !mergeDuplicateVehicleId || !vehicleMergePreview) {
         throw new Error('Select a duplicate truck before merging')
       }
-      const response = await api.post<VehicleMergeResult>(`/vehicles/${selectedVehicleInPanel.id}/merge`, {
-        duplicate_vehicle_id: mergeDuplicateVehicleId,
-        confirm_vin: vehicleMergePreview.canonical.vin,
+      const canonicalId = vehicleMergePreview.recommended_canonical_id
+      const archivedId = canonicalId === selectedVehicleInPanel.id
+        ? mergeDuplicateVehicleId
+        : selectedVehicleInPanel.id
+      const response = await api.post<VehicleMergeResult>(`/vehicles/${canonicalId}/merge`, {
+        duplicate_vehicle_id: archivedId,
+        confirm_vin: vehicleMergePreview.match_value,
       })
       return response.data
     },
@@ -1264,6 +1273,8 @@ export default function CustomersPage() {
     setIsDetailOpen(true)
     setIsEditingInPanel(false)
     setDetailTab('overview')
+    setVehicleRelationshipSearch('')
+    setVehicleRelationshipFilter('all')
   }
 
   const closeDetailPanel = () => {
@@ -1273,6 +1284,8 @@ export default function CustomersPage() {
     setSelectedVehicleInPanel(null)
     setDetailTab('overview')
     setExpandedHistoryId(null)
+    setVehicleRelationshipSearch('')
+    setVehicleRelationshipFilter('all')
     resetForm()
   }
 
@@ -1737,20 +1750,36 @@ export default function CustomersPage() {
     && !vehicle.customer_relationship_types?.includes('owner')
     && vehicle.customer_id !== selectedCustomer?.id
   ) || []
+  const shouldShowVehicleSearch = vehicleCount > 3
+  const normalizedVehicleSearch = shouldShowVehicleSearch ? vehicleRelationshipSearch.trim().toLowerCase() : ''
+  const matchesVehicleSearch = (vehicle: Vehicle) => {
+    if (!normalizedVehicleSearch) return true
+    const searchable = [
+      vehicleDisplayLabel(vehicle), vehicle.unit_number, vehicle.vin, vehicle.license_plate,
+      vehicle.make, vehicle.model, vehicle.owner_company_name, vehicle.operating_authority_company_name,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return normalizedVehicleSearch.split(/\s+/).every((term) => searchable.includes(term))
+  }
   const customerVehicleGroups = [
     {
       key: 'owned',
       title: `Owned by ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
       description: 'Trucks this company owns or leases to another operating authority.',
       vehicles: ownedVehicles,
+      visibleVehicles: ownedVehicles.filter(matchesVehicleSearch),
+      icon: Building2,
     },
     {
       key: 'authority',
-      title: `Operating under ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
+      title: `Runs under ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'} authority`,
       description: 'Trucks owned by another company that run under this company’s authority.',
       vehicles: authorityVehicles,
+      visibleVehicles: authorityVehicles.filter(matchesVehicleSearch),
+      icon: Route,
     },
-  ].filter((group) => group.vehicles.length > 0)
+  ].filter((group) => group.vehicles.length > 0 && (vehicleRelationshipFilter === 'all' || vehicleRelationshipFilter === group.key))
+  const visibleCustomerVehicleGroups = customerVehicleGroups.filter((group) => group.visibleVehicles.length > 0)
+  const visibleVehicleCount = visibleCustomerVehicleGroups.reduce((count, group) => count + group.visibleVehicles.length, 0)
   const showVehicleUnitColumn = customerVehicles?.some((vehicle) => !!vehicle.unit_number?.trim()) ?? false
   const showVehicleVinColumn = customerVehicles?.some((vehicle) => !!vehicle.vin?.trim()) ?? false
   const showVehiclePlateColumn = customerVehicles?.some((vehicle) => !!vehicle.license_plate?.trim()) ?? false
@@ -1758,15 +1787,15 @@ export default function CustomersPage() {
 
   const vehicleRelationshipNote = (vehicle: Vehicle, groupKey: string) => {
     if (groupKey === 'authority') {
-      return vehicle.owner_company_name ? `Owner / lessor: ${vehicle.owner_company_name}` : 'Owner / lessor not assigned'
+      return vehicle.owner_company_name ? `Owned by ${vehicle.owner_company_name}` : 'Owner / lessor not assigned'
     }
     if (
       vehicle.operating_authority_company_name
       && vehicle.operating_authority_customer_id !== selectedCustomer?.id
     ) {
-      return `Operating authority: ${vehicle.operating_authority_company_name}`
+      return `Runs under ${vehicle.operating_authority_company_name}`
     }
-    if (vehicle.customer_relationship_types?.includes('operator')) return 'Operates under its own authority'
+    if (vehicle.customer_relationship_types?.includes('operator')) return 'Owner + operating authority'
     return 'Operating authority not assigned'
   }
 
@@ -3306,7 +3335,7 @@ export default function CustomersPage() {
       <SlidePanel
         isOpen={isDetailOpen && !!selectedCustomer}
         onClose={closeDetailPanel}
-        width="max-w-[max(50vw,_400px)]"
+        width="max-w-full xl:max-w-[80vw] 2xl:max-w-[max(50vw,_960px)]"
         title={
           selectedVehicleInPanel
             ? vehicleDisplayLabel(selectedVehicleInPanel)
@@ -3924,28 +3953,117 @@ export default function CustomersPage() {
                   )}
 
                   <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Truck relationships</h3>
-                      <div className="flex items-center gap-2">
-                        {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
-                        {customerVehicles && customerVehicles.length > 1 && (
-                          <ViewToggle
-                            value={vehiclesViewMode} 
-                            onChange={setVehiclesViewMode}
-                            variant="light"
-                          />
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Truck relationships</h3>
+                        {!isLoadingVehicles && (
+                          <p className="mt-1 text-sm text-gray-600">
+                            {vehicleCount} truck{vehicleCount === 1 ? '' : 's'} connected to this company
+                          </p>
                         )}
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
                         <button
                           onClick={openAddVehicleModal}
-                          className="px-3 py-1.5 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
+                          className="flex min-h-11 items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-amber-600 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
                         >
-                          <Plus className="w-3.5 h-3.5" />
+                          <Plus className="h-4 w-4" />
                           Add / Link
                         </button>
                       </div>
                     </div>
+                    {customerVehicles && customerVehicles.length > 0 && (
+                      <div className="mb-5">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                          {shouldShowVehicleSearch && (
+                            <div className="relative min-w-0 flex-1">
+                              <label className="sr-only" htmlFor="customer-truck-search">Search connected trucks</label>
+                              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                              <input
+                                id="customer-truck-search"
+                                type="search"
+                                autoComplete="off"
+                                enterKeyHint="search"
+                                value={vehicleRelationshipSearch}
+                                onChange={(event) => setVehicleRelationshipSearch(event.target.value)}
+                                placeholder="Search unit, VIN, plate, make, model, owner..."
+                                className="min-h-11 w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-11 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 [&::-webkit-search-cancel-button]:hidden"
+                              />
+                              {vehicleRelationshipSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setVehicleRelationshipSearch('')}
+                                  aria-label="Clear truck search"
+                                  className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {ownedVehicles.length > 0 && authorityVehicles.length > 0 && (
+                            <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="Quick filters for truck relationships">
+                              {([
+                                ['all', 'All', vehicleCount],
+                                ['owned', 'Owned', ownedVehicles.length],
+                                ['authority', 'Under authority', authorityVehicles.length],
+                              ] as const).map(([value, label, count]) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() => setVehicleRelationshipFilter(value)}
+                                  aria-pressed={vehicleRelationshipFilter === value}
+                                  className={`min-h-11 rounded-full border px-3.5 py-2 text-sm font-semibold transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                                    vehicleRelationshipFilter === value
+                                      ? 'border-slate-700 bg-slate-800 text-white'
+                                      : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {label} <span className={vehicleRelationshipFilter === value ? 'text-white/75' : 'text-gray-500'}>{count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {(shouldShowVehicleSearch || (customerVehicles?.length ?? 0) > 1) && (
+                          <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
+                            {shouldShowVehicleSearch && vehicleRelationshipSearch.trim() ? (
+                              <p className="text-xs text-gray-600" role="status">
+                                Showing {visibleVehicleCount} of {vehicleCount} trucks
+                              </p>
+                            ) : (
+                              <span />
+                            )}
+                            {(customerVehicles?.length ?? 0) > 1 && (
+                              <ViewToggle
+                                value={vehiclesViewMode}
+                                onChange={setVehiclesViewMode}
+                                variant="light"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {customerVehicles && customerVehicles.length > 0 ? (
-                      vehiclesViewMode === 'list' ? (
+                      visibleCustomerVehicleGroups.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-8 text-center">
+                          <Search className="mx-auto h-7 w-7 text-gray-400" />
+                          <p className="mt-2 text-sm font-semibold text-gray-800">No connected trucks match</p>
+                          <p className="mt-1 text-sm text-gray-500">Clear the search or relationship filter to see every truck.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVehicleRelationshipSearch('')
+                              setVehicleRelationshipFilter('all')
+                            }}
+                            className="mt-4 min-h-11 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                          >
+                            Clear filters
+                          </button>
+                        </div>
+                      ) : vehiclesViewMode === 'list' ? (
                         <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-x-auto">
                           <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
@@ -3958,15 +4076,24 @@ export default function CustomersPage() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                              {customerVehicleGroups.map((group) => (
+                              {visibleCustomerVehicleGroups.map((group) => {
+                                const GroupIcon = group.icon
+                                const isAuthorityGroup = group.key === 'authority'
+                                return (
                                 <React.Fragment key={group.key}>
-                                  <tr className="bg-white">
+                                  <tr className={isAuthorityGroup ? 'bg-sky-50' : 'bg-amber-50'}>
                                     <td colSpan={vehicleTableColumnCount} className="px-3 py-3">
-                                      <p className="text-xs font-semibold text-gray-900">{group.title}</p>
-                                      <p className="mt-0.5 text-xs font-normal text-gray-500">{group.description}</p>
+                                      <div className="flex items-start gap-2.5">
+                                        <GroupIcon className={`mt-0.5 h-4 w-4 shrink-0 ${isAuthorityGroup ? 'text-sky-700' : 'text-amber-700'}`} />
+                                        <div>
+                                          <p className={`text-xs font-semibold ${isAuthorityGroup ? 'text-sky-950' : 'text-amber-950'}`}>{group.title}</p>
+                                          <p className={`mt-0.5 text-xs font-normal ${isAuthorityGroup ? 'text-sky-800' : 'text-amber-800'}`}>{group.description}</p>
+                                        </div>
+                                        <span className={`ml-auto text-xs font-semibold ${isAuthorityGroup ? 'text-sky-800' : 'text-amber-800'}`}>{group.visibleVehicles.length}</span>
+                                      </div>
                                     </td>
                                   </tr>
-                                  {group.vehicles.map((vehicle) => (
+                                  {group.visibleVehicles.map((vehicle) => (
                                 <tr 
                                   key={vehicle.id} 
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
@@ -4022,22 +4149,38 @@ export default function CustomersPage() {
                                 </tr>
                                   ))}
                                 </React.Fragment>
-                              ))}
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {customerVehicleGroups.map((group) => (
+                          {visibleCustomerVehicleGroups.map((group) => {
+                            const GroupIcon = group.icon
+                            const isAuthorityGroup = group.key === 'authority'
+                            return (
                             <React.Fragment key={group.key}>
-                              <div className="mt-2 sm:col-span-2 first:mt-0">
-                                <div className="flex items-baseline justify-between gap-3">
-                                  <h4 className="text-sm font-semibold text-gray-900">{group.title}</h4>
-                                  <span className="text-xs font-medium text-gray-500">{group.vehicles.length}</span>
+                              <div className={`mt-2 rounded-xl border p-4 sm:col-span-2 first:mt-0 ${
+                                isAuthorityGroup ? 'border-sky-200 bg-sky-50' : 'border-amber-200 bg-amber-50'
+                              }`}>
+                                <div className="flex items-start gap-3">
+                                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isAuthorityGroup ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    <GroupIcon className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className={`text-[11px] font-bold uppercase tracking-wider ${isAuthorityGroup ? 'text-sky-700' : 'text-amber-700'}`}>
+                                      {isAuthorityGroup ? 'Authority fleet' : 'Owned fleet'}
+                                    </p>
+                                    <h4 className={`mt-0.5 text-sm font-semibold ${isAuthorityGroup ? 'text-sky-950' : 'text-amber-950'}`}>{group.title}</h4>
+                                    <p className={`mt-0.5 text-xs ${isAuthorityGroup ? 'text-sky-800' : 'text-amber-800'}`}>{group.description}</p>
+                                  </div>
+                                  <span className={`ml-auto shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${isAuthorityGroup ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'}`}>
+                                    {group.visibleVehicles.length}
+                                  </span>
                                 </div>
-                                <p className="mt-0.5 text-xs text-gray-500">{group.description}</p>
                               </div>
-                              {group.vehicles.map((vehicle) => {
+                              {group.visibleVehicles.map((vehicle) => {
                             const displayLabel = vehicleDisplayLabel(vehicle)
                             const unitSuffix = vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''
                             const cardTitle = unitSuffix && displayLabel.endsWith(unitSuffix)
@@ -4047,7 +4190,7 @@ export default function CustomersPage() {
                             return (
                               <div
                                 key={vehicle.id}
-                                className="bg-gray-50 rounded-xl p-4 pr-14 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 transition-colors group relative"
+                                className="group relative rounded-xl border border-gray-200 bg-white p-4 pr-24 transition-colors hover:border-gray-300 hover:bg-gray-50"
                               >
                                 <div
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
@@ -4062,7 +4205,12 @@ export default function CustomersPage() {
                                         {vehicle.color && <span>{vehicle.color}</span>}
                                         <span>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</span>
                                       </div>
-                                      <p className="mt-2 text-xs font-medium text-slate-600">
+                                      <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${
+                                        isAuthorityGroup ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'
+                                      }`}>
+                                        {isAuthorityGroup ? 'Under authority' : 'Owned'}
+                                      </span>
+                                      <p className="mt-2 text-xs font-medium text-slate-700">
                                         {vehicleRelationshipNote(vehicle, group.key)}
                                       </p>
                                     </div>
@@ -4096,33 +4244,36 @@ export default function CustomersPage() {
                                     </div>
                                   )}
                                 </div>
-                                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="absolute right-2 top-2 flex items-center gap-1 opacity-100 xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       openEditVehicleModal(vehicle)
                                     }}
-                                    className="p-1.5 text-gray-500 hover:text-amber-600 bg-white hover:bg-amber-50 rounded shadow-sm transition-colors"
+                                    aria-label={`Edit ${cardTitle}`}
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                                     title="Edit"
                                   >
-                                    <Pencil className="w-3.5 h-3.5" />
+                                    <Pencil className="h-4 w-4" />
                                   </button>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       handleDeleteVehicleClick(vehicle)
                                     }}
-                                    className="p-1.5 text-gray-500 hover:text-red-600 bg-white hover:bg-red-50 rounded shadow-sm transition-colors"
+                                    aria-label={`Delete ${cardTitle}`}
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                                     title="Delete"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Trash2 className="h-4 w-4" />
                                   </button>
                                 </div>
                               </div>
                             )
                               })}
                             </React.Fragment>
-                          ))}
+                            )
+                          })}
                         </div>
                       )
                     ) : (
@@ -4390,7 +4541,7 @@ export default function CustomersPage() {
                 <div className="min-w-0">
                   <h3 id="vehicle-merge-title" className="text-xl font-bold text-gray-900">Merge duplicate truck records</h3>
                   <p className="mt-1 text-sm text-gray-600">
-                    Keep this truck as the permanent record and move matching history into it.
+                    Compare both records and keep the one with the strongest identity and service history.
                   </p>
                 </div>
                 <button
@@ -4406,7 +4557,7 @@ export default function CustomersPage() {
 
               <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 pb-5">
-                  <span className="font-semibold text-gray-900">Keep:</span>
+                  <span className="font-semibold text-gray-900">Opened for cleanup:</span>
                   <span className="text-gray-800">{vehicleDisplayLabel(selectedVehicleInPanel)}</span>
                   <span className="font-mono text-sm text-gray-500">VIN {selectedVehicleInPanel.vin}</span>
                 </div>
@@ -4473,6 +4624,20 @@ export default function CustomersPage() {
                       </div>
                     ) : (
                       <div className="space-y-5">
+                        {(() => {
+                          const recommended = vehicleMergePreview.recommended_canonical_id === vehicleMergePreview.canonical.id
+                            ? vehicleMergePreview.canonical
+                            : vehicleMergePreview.duplicate
+                          return (
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Recommended permanent truck</p>
+                              <p className="mt-1 font-semibold">{recommended.customer_name} · Unit {recommended.unit_number || 'not set'}</p>
+                              <p className="mt-1 text-sm text-emerald-800">
+                                VIN {recommended.vin || 'not recorded'} · {recommended.mileage?.toLocaleString() || '—'} mi · {recommended.repair_order_count} repair order{recommended.repair_order_count === 1 ? '' : 's'}
+                              </p>
+                            </div>
+                          )
+                        })()}
                         <div>
                           <h4 className="font-semibold text-gray-900">What will move</h4>
                           <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
@@ -4505,7 +4670,7 @@ export default function CustomersPage() {
                             className="mt-0.5 h-5 w-5 flex-none accent-amber-500"
                           />
                           <span className="text-sm leading-6 text-gray-800">
-                            I verified both records are the same physical truck with VIN <span className="font-mono font-semibold">{vehicleMergePreview.canonical.vin}</span>. Archive the duplicate after moving its history.
+                            I verified both records are the same physical truck with VIN <span className="font-mono font-semibold">{vehicleMergePreview.match_value}</span>. Keep the recommended record and archive the weaker duplicate after moving its history.
                           </span>
                         </label>
                       </div>

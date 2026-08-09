@@ -13,7 +13,12 @@ from app.db.models.user import User, UserRole
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_merge import VehicleMergeRecord, VehicleSourceAlias
 from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerRelationship
-from app.services.vehicle_merge import VehicleMergeError, merge_vehicles
+from app.services.vehicle_merge import (
+    VehicleMergeError,
+    canonical_value_rank,
+    merge_vehicles,
+    vehicle_merge_summary,
+)
 
 
 @pytest.mark.asyncio
@@ -148,7 +153,7 @@ async def test_vehicle_merge_rejects_different_vins(db_session):
     db_session.add_all([tenant, customer, user, one, two])
     await db_session.commit()
 
-    with pytest.raises(VehicleMergeError, match="same complete 17-character VIN"):
+    with pytest.raises(VehicleMergeError, match="different VINs"):
         await merge_vehicles(
             db_session,
             tenant_id=tenant.id,
@@ -156,4 +161,88 @@ async def test_vehicle_merge_rejects_different_vins(db_session):
             duplicate_id=two.id,
             merged_by_user_id=user.id,
             confirm_vin=one.vin,
+        )
+
+
+@pytest.mark.asyncio
+async def test_vehicle_merge_accepts_same_unit_in_same_customer_and_preserves_vin(db_session):
+    tenant = Tenant(id=uuid4(), name="Unit Merge", slug=f"unit-{uuid4().hex[:8]}", labor_rate=Decimal("125"))
+    customer = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="77", last_name="Cargo",
+        company_name="77 CARGO LLC", email=f"unit-{uuid4().hex[:6]}@example.com",
+    )
+    user = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"unit-owner-{uuid4().hex[:6]}@example.com",
+        hashed_password="x", first_name="Garage", last_name="Owner", role=UserRole.GARAGE_OWNER,
+        is_active=True, is_verified=True,
+    )
+    canonical = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=customer.id,
+        vin=None, make="Hino", model="Unknown", unit_number="101", mileage=None,
+    )
+    duplicate = Vehicle(
+        id=uuid4(), tenant_id=tenant.id, customer_id=customer.id,
+        vin="JHHRDM2H4LK001234", make="Hino", model="Unknown", unit_number="101", mileage=222_563,
+    )
+    order = RepairOrder(
+        id=uuid4(), tenant_id=tenant.id, customer_id=customer.id,
+        vehicle_id=duplicate.id, order_number=f"ETS-{uuid4().hex[:8]}",
+        status=RepairOrderStatus.COMPLETED, source="easy_truck_shop_import",
+    )
+    db_session.add_all([tenant, customer, user, canonical, duplicate, order])
+    await db_session.commit()
+
+    canonical_summary = await vehicle_merge_summary(db_session, canonical)
+    duplicate_summary = await vehicle_merge_summary(db_session, duplicate)
+    assert canonical_value_rank(duplicate_summary) > canonical_value_rank(canonical_summary)
+
+    kept, _, moved = await merge_vehicles(
+        db_session,
+        tenant_id=tenant.id,
+        canonical_id=canonical.id,
+        duplicate_id=duplicate.id,
+        merged_by_user_id=user.id,
+        confirm_unit_number="101",
+    )
+    await db_session.commit()
+
+    await db_session.refresh(order)
+    await db_session.refresh(duplicate)
+    assert kept.id == canonical.id
+    assert kept.vin == "JHHRDM2H4LK001234"
+    assert kept.mileage == 222_563
+    assert moved["repair_orders"] == 1
+    assert order.vehicle_id == canonical.id
+    assert duplicate.deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_vehicle_merge_rejects_same_unit_without_shared_customer_or_authority(db_session):
+    tenant = Tenant(id=uuid4(), name="Unit Guard", slug=f"unit-guard-{uuid4().hex[:8]}", labor_rate=Decimal("125"))
+    customer_one = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="One", last_name="Fleet",
+        company_name="One Fleet", email=f"one-{uuid4().hex[:6]}@example.com",
+    )
+    customer_two = Customer(
+        id=uuid4(), tenant_id=tenant.id, first_name="Two", last_name="Fleet",
+        company_name="Two Fleet", email=f"two-{uuid4().hex[:6]}@example.com",
+    )
+    user = User(
+        id=uuid4(), tenant_id=tenant.id, email=f"unit-guard-{uuid4().hex[:6]}@example.com",
+        hashed_password="x", first_name="Garage", last_name="Owner", role=UserRole.GARAGE_OWNER,
+        is_active=True, is_verified=True,
+    )
+    one = Vehicle(id=uuid4(), tenant_id=tenant.id, customer_id=customer_one.id, make="Hino", model="One", unit_number="101")
+    two = Vehicle(id=uuid4(), tenant_id=tenant.id, customer_id=customer_two.id, make="Hino", model="Two", unit_number="101")
+    db_session.add_all([tenant, customer_one, customer_two, user, one, two])
+    await db_session.commit()
+
+    with pytest.raises(VehicleMergeError, match="same customer or Fleet Board authority"):
+        await merge_vehicles(
+            db_session,
+            tenant_id=tenant.id,
+            canonical_id=one.id,
+            duplicate_id=two.id,
+            merged_by_user_id=user.id,
+            confirm_unit_number="101",
         )

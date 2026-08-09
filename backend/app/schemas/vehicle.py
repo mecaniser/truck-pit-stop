@@ -104,9 +104,11 @@ class VehicleRelationshipResponse(BaseModel):
 
 class VehicleMergeRequest(BaseModel):
     duplicate_vehicle_id: UUID
-    # The UI repeats the normalized VIN so a stale or accidental selection
-    # cannot merge a different physical truck.
-    confirm_vin: str = Field(min_length=17, max_length=17)
+    # The UI repeats the matched identity so a stale or accidental selection
+    # cannot merge a different physical truck. Exactly one is expected based on
+    # the server-generated preview.
+    confirm_vin: Optional[str] = Field(default=None, min_length=17, max_length=17)
+    confirm_unit_number: Optional[str] = Field(default=None, min_length=1, max_length=50)
 
 
 class VehicleMergeVehicleSummary(BaseModel):
@@ -134,6 +136,9 @@ class VehicleMergeVehicleSummary(BaseModel):
 class VehicleMergePreview(BaseModel):
     canonical: VehicleMergeVehicleSummary
     duplicate: VehicleMergeVehicleSummary
+    match_basis: str
+    match_value: str
+    recommended_canonical_id: UUID
     warnings: List[str] = Field(default_factory=list)
 
 
