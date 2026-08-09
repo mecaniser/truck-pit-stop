@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import type { BoardTruck } from './types'
 import { fleetUnitLabel, STATUS_META } from './helpers'
 
@@ -67,17 +67,20 @@ function haversine(a: BoardTruck, b: BoardTruck): number {
   return Math.round(2 * R * Math.asin(Math.sqrt(h)))
 }
 
-export default function FleetMap({
+function FleetMap({
   trucks, focusId, onSelect, compact,
 }: { trucks: BoardTruck[]; focusId?: string; onSelect?: (t: BoardTruck) => void; compact?: boolean }) {
   const [hover, setHover] = useState<string | null>(null)
-  const pos = spreadCollisions(trucks)
-  const focus = focusId ? trucks.find((t) => t.id === focusId) : null
-  const near = focus
-    ? trucks.filter((t) => t.id !== focus.id).map((t) => ({ t, miles: haversine(focus, t) }))
-        .filter((n) => Number.isFinite(n.miles)).sort((a, b) => a.miles - b.miles).slice(0, 3)
-    : []
-  const nearIds = new Set(near.map((n) => n.t.id))
+  const pos = useMemo(() => spreadCollisions(trucks), [trucks])
+  const focus = useMemo(
+    () => focusId ? trucks.find((truck) => truck.id === focusId) || null : null,
+    [focusId, trucks],
+  )
+  const near = useMemo(() => focus
+    ? trucks.filter((truck) => truck.id !== focus.id).map((truck) => ({ t: truck, miles: haversine(focus, truck) }))
+        .filter((candidate) => Number.isFinite(candidate.miles)).sort((a, b) => a.miles - b.miles).slice(0, 3)
+    : [], [focus, trucks])
+  const nearIds = useMemo(() => new Set(near.map((candidate) => candidate.t.id)), [near])
 
   return (
     <div className={'fmap' + (compact ? ' fmap--compact' : '')}>
@@ -160,3 +163,5 @@ export default function FleetMap({
     </div>
   )
 }
+
+export default memo(FleetMap)
