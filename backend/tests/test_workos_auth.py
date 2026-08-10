@@ -28,7 +28,11 @@ def workos_settings(monkeypatch, fake_redis):
         blacklisted = bool(jti and await fake_redis.get(f"token_blacklist:{jti}"))
         version = await fake_redis.get(f"token_version:{user_id}")
         return blacklisted, int(version) if version else 0
+    async def _token_version(user_id):
+        version = await fake_redis.get(f"token_version:{user_id}")
+        return int(version) if version else 0
     monkeypatch.setattr(workos_auth, "get_auth_token_state", _auth_state)
+    monkeypatch.setattr(auth, "get_token_version", _token_version)
 
 
 async def _resolved(value):

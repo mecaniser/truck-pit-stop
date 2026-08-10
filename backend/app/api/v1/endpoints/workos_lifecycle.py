@@ -92,6 +92,7 @@ def _invitation_response(invitation: TenantInvitation) -> WorkOSInvitationRespon
         email=invitation.email_snapshot,
         role_slug=invitation.intended_role_slug,
         driver_profile_id=invitation.driver_profile_id,
+        target_user_id=invitation.target_user_id,
         status=invitation.status,
         expires_at=invitation.expires_at,
     )
@@ -321,6 +322,36 @@ async def provision_organization(
     tenant = await db.get(Tenant, body.tenant_id)
     if not tenant or tenant.deleted_at or tenant.enrollment_status != "approved":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only an approved tenant can be provisioned")
+    owner = await db.get(User, body.owner_user_id)
+    if (
+        not owner
+        or owner.deleted_at
+        or not owner.is_active
+        or owner.tenant_id != tenant.id
+        or owner.role != UserRole.GARAGE_OWNER
+        or owner.email.casefold() != str(body.owner_email).casefold()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected owner account does not exactly match this tenant",
+        )
+    existing = (await db.execute(select(TenantInvitation).where(
+        TenantInvitation.tenant_id == tenant.id,
+        TenantInvitation.email_snapshot == str(body.owner_email),
+        TenantInvitation.intended_role_slug == "garage_owner",
+        TenantInvitation.target_user_id == owner.id,
+        TenantInvitation.status.in_(("creating", "pending", "accepted")),
+        TenantInvitation.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    identity = (await db.execute(select(IdentityPrincipal).where(
+        IdentityPrincipal.user_id == owner.id,
+        IdentityPrincipal.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if identity and not existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The selected owner already has an identity principal",
+        )
     try:
         organization = await workos_provider.get_or_create_organization(tenant_id=str(tenant.id), name=tenant.name)
     except WorkOSProviderError as exc:
@@ -328,13 +359,6 @@ async def provision_organization(
     if tenant.workos_organization_id and tenant.workos_organization_id != organization["id"]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant is linked to a different WorkOS organization")
     tenant.workos_organization_id = organization["id"]
-    existing = (await db.execute(select(TenantInvitation).where(
-        TenantInvitation.tenant_id == tenant.id,
-        TenantInvitation.email_snapshot == str(body.owner_email),
-        TenantInvitation.intended_role_slug == "garage_owner",
-        TenantInvitation.status.in_(("creating", "pending", "accepted")),
-        TenantInvitation.deleted_at.is_(None),
-    ))).scalar_one_or_none()
     if existing:
         await db.commit()
         return WorkOSOrganizationResponse(
@@ -342,7 +366,7 @@ async def provision_organization(
             workos_organization_id=tenant.workos_organization_id,
             owner_invitation=_invitation_response(existing),
         )
-    identity = IdentityPrincipal(status="pending")
+    identity = IdentityPrincipal(user_id=owner.id, status="pending")
     db.add(identity)
     await db.flush()
     invitation = TenantInvitation(
@@ -351,6 +375,7 @@ async def provision_organization(
         email_snapshot=str(body.owner_email),
         intended_role_slug="garage_owner",
         resource_scope={},
+        target_user_id=owner.id,
         status="creating",
         invited_by_user_id=platform_admin.id,
     )

@@ -19,6 +19,7 @@ class WorkOSInvitationResponse(BaseModel):
     email: str
     role_slug: str
     driver_profile_id: Optional[UUID]
+    target_user_id: Optional[UUID] = None
     status: str
     expires_at: Optional[datetime]
 
@@ -85,6 +86,7 @@ class WorkOSWebhookResponse(BaseModel):
 
 class WorkOSOrganizationProvision(BaseModel):
     tenant_id: UUID
+    owner_user_id: UUID
     owner_email: EmailStr
 
 

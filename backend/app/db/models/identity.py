@@ -51,6 +51,10 @@ class TenantInvitation(BaseModel):
     intended_role_slug = Column(String(64), nullable=False)
     resource_scope = Column(JSONB, nullable=False, default=dict, server_default="{}")
     driver_profile_id = Column(UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True)
+    # Explicit local identity target for an already-existing staff account.
+    # This is never inferred from email; exact provider invitation acceptance
+    # is still required before the WorkOS identity is attached.
+    target_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
     status = Column(String(24), nullable=False, default="creating", server_default="creating", index=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     accepted_at = Column(DateTime(timezone=True), nullable=True)

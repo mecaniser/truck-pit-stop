@@ -20,7 +20,7 @@ from app.db.models.identity import (
 )
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
-from app.schemas.workos_lifecycle import WorkOSInvitationCreate
+from app.schemas.workos_lifecycle import WorkOSInvitationCreate, WorkOSOrganizationProvision
 from app.services import workos_provider, workos_webhooks
 
 
@@ -294,6 +294,123 @@ async def test_create_driver_invitation_requires_explicit_unlinked_profile_and_i
             db_session,
         )
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_organization_provision_targets_exact_existing_owner(db_session, monkeypatch):
+    tenant = Tenant(
+        name="Pilot Garage",
+        slug=f"pilot-{uuid4().hex[:8]}",
+        enrollment_status="approved",
+        is_active=True,
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    owner = User(
+        email="pilot-owner@example.com",
+        hashed_password="existing-password-hash",
+        first_name="Pilot",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    platform = User(
+        email="platform@example.com",
+        hashed_password="platform-password-hash",
+        first_name="Platform",
+        last_name="Admin",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add_all([owner, platform])
+    await db_session.flush()
+
+    async def organization(**kwargs):
+        assert kwargs["tenant_id"] == str(tenant.id)
+        return {"id": "org_pilot", "external_id": str(tenant.id)}
+
+    async def invitation(**kwargs):
+        assert kwargs["email"] == owner.email
+        assert kwargs["role_slug"] == "garage_owner"
+        return {
+            "id": "inv_pilot_owner",
+            "state": "pending",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        }
+
+    monkeypatch.setattr(workos_provider, "get_or_create_organization", organization)
+    monkeypatch.setattr(workos_provider, "send_invitation", invitation)
+    result = await workos_lifecycle.provision_organization(
+        WorkOSOrganizationProvision(
+            tenant_id=tenant.id,
+            owner_user_id=owner.id,
+            owner_email=owner.email,
+        ),
+        platform,
+        db_session,
+    )
+    assert result.workos_organization_id == "org_pilot"
+    assert result.owner_invitation.target_user_id == owner.id
+    stored = (await db_session.execute(select(TenantInvitation))).scalar_one()
+    principal = await db_session.get(IdentityPrincipal, stored.principal_id)
+    assert stored.target_user_id == owner.id
+    assert principal.user_id == owner.id
+    assert owner.workos_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_organization_provision_rejects_identity_conflict_before_provider_write(db_session, monkeypatch):
+    tenant = Tenant(
+        name="Conflicting Pilot Garage",
+        slug=f"conflicting-pilot-{uuid4().hex[:8]}",
+        enrollment_status="approved",
+        is_active=True,
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    owner = User(
+        email="conflicting-owner@example.com",
+        hashed_password="existing-password-hash",
+        first_name="Conflicting",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+        is_verified=True,
+    )
+    platform = User(
+        email="platform-conflict@example.com",
+        hashed_password="platform-password-hash",
+        first_name="Platform",
+        last_name="Admin",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add_all([owner, platform])
+    await db_session.flush()
+    db_session.add(IdentityPrincipal(user_id=owner.id, status="active"))
+    await db_session.commit()
+
+    async def unexpected_provider_write(**_kwargs):
+        pytest.fail("provider organization must not be created after a local identity conflict")
+
+    monkeypatch.setattr(workos_provider, "get_or_create_organization", unexpected_provider_write)
+    with pytest.raises(HTTPException) as exc:
+        await workos_lifecycle.provision_organization(
+            WorkOSOrganizationProvision(
+                tenant_id=tenant.id,
+                owner_user_id=owner.id,
+                owner_email=owner.email,
+            ),
+            platform,
+            db_session,
+        )
+    assert exc.value.status_code == 409
+    assert tenant.workos_organization_id is None
 
 
 @pytest.mark.asyncio
