@@ -1228,6 +1228,7 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   truck: BoardTruck; detail: TruckDetailData; onChangeDriver: () => void
 }) {
   const qc = useQueryClient()
+  const tenantId = useAuthStore().user?.tenant_id
   const portalIdempotencyKeys = useRef<Record<string, string>>({})
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -1285,6 +1286,19 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
   const phone = driver?.phone || detail.driver_phone
   const capability = capabilities.data?.driver_invitation_management
   const portalState = portal.data
+  const driverPortalUrl = tenantId
+    ? `${window.location.origin}/driver/login?tenant_id=${encodeURIComponent(tenantId)}`
+    : null
+
+  const copyDriverPortalLink = async () => {
+    if (!driverPortalUrl) return
+    try {
+      await navigator.clipboard.writeText(driverPortalUrl)
+      toast.success('Tenant-bound Driver Portal link copied')
+    } catch {
+      toast.error('Driver Portal link could not be copied')
+    }
+  }
 
   return (
     <section className="fleet-reference-section">
@@ -1345,6 +1359,9 @@ function TruckDriverSection({ truck, detail, onChangeDriver }: {
               {inviteOpen && <div className="driver-portal-invite"><label><span>Invitation email</span><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="driver@company.com" autoFocus /></label><div><button type="button" className="dbtn dbtn-ghost" onClick={() => setInviteOpen(false)}>Cancel</button><button type="button" className="dbtn dbtn-yellow" disabled={!inviteEmail.trim() || mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'invite' })}>{mutatePortal.isPending ? <Spinner size="xs" /> : null} Send invitation</button></div></div>}
               {portalState?.can_resend && portalState.invitation_id && <button type="button" className="dbtn dbtn-ghost" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'resend', invitationId: portalState.invitation_id! })}>Resend invitation</button>}
               {portalState?.can_revoke && portalState.invitation_id && <button type="button" className="dbtn dbtn-danger" disabled={mutatePortal.isPending} onClick={() => mutatePortal.mutate({ action: 'revoke', invitationId: portalState.invitation_id! })}>Revoke invitation</button>}
+              {driverPortalUrl && portalState && portalState.portal_access_status !== 'not_invited' && (
+                <button type="button" className="dbtn dbtn-ghost" onClick={copyDriverPortalLink}>Copy garage-specific sign-in link</button>
+              )}
             </>
           )}
         </div>

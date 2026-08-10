@@ -93,6 +93,26 @@ def _clear_failed_workos_login(response: Response) -> None:
     response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
     response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
     response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
+    response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos")
+
+
+def _workos_state_failure_response(request: Request) -> RedirectResponse:
+    """Return a stale OAuth callback to a safe, tenant-bound login surface."""
+    return_to = _safe_return_path(request.cookies.get("workos_return_to"))
+    login_path = "/driver/login" if return_to.startswith("/driver") else "/login"
+    parts = urlsplit(_return_path_with_reason(login_path, "workos_state_expired"))
+    query = list(parse_qsl(parts.query, keep_blank_values=True))
+    raw_tenant_id = request.cookies.get("workos_tenant_id")
+    try:
+        tenant_id = str(UUID(raw_tenant_id)) if raw_tenant_id else None
+    except (TypeError, ValueError):
+        tenant_id = None
+    if tenant_id:
+        query.append(("tenant_id", tenant_id))
+    safe_path = urlunsplit(("", "", parts.path, urlencode(query), ""))
+    response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + safe_path)
+    _clear_failed_workos_login(response)
+    return response
 
 
 @router.get("/workos/login", include_in_schema=False)
@@ -103,6 +123,11 @@ async def workos_login(
 ):
     """Start AuthKit without changing any legacy login behavior."""
     _workos_enabled()
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select a garage before starting organization sign-in",
+        )
     state = secrets.token_urlsafe(32)
     # State is browser-bound and one-time: callback deletes it regardless of outcome.
     authorize_params = {
@@ -113,20 +138,20 @@ async def workos_login(
         # existing AuthKit session silently choose the wrong local identity.
         "prompt": "login",
     }
-    if tenant_id is not None:
-        tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
-        if not tenant or not tenant.is_active or not tenant.workos_organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="WorkOS organization is not available",
-            )
-        # Organization selection is a routing hint only. The callback still
-        # verifies the signed org_id and maps it independently to this tenant.
-        authorize_params["organization_id"] = tenant.workos_organization_id
+    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    if not tenant or not tenant.is_active or not tenant.workos_organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="WorkOS organization is not available",
+        )
+    # Organization selection is a routing hint only. The callback still
+    # verifies the signed org_id and maps it independently to this tenant.
+    authorize_params["organization_id"] = tenant.workos_organization_id
     query = urlencode(authorize_params)
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    response.set_cookie("workos_tenant_id", str(tenant.id), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     await (await get_redis()).setex(f"workos:oauth-state:{state}", 600, "1")
     return response
 
@@ -139,11 +164,11 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     _workos_enabled()
     expected_state = request.cookies.get("workos_oauth_state")
     if not state or not expected_state or not secrets.compare_digest(state, expected_state):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
+        return _workos_state_failure_response(request)
     # Consume only after confirming this browser owns the presented state.
     state_is_live = bool(await (await get_redis()).delete(f"workos:oauth-state:{state}"))
     if not state_is_live:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
+        return _workos_state_failure_response(request)
     try:
         payload = await workos_provider.authenticate({
             "grant_type": "authorization_code",
@@ -207,6 +232,7 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
     response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
     response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
+    response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos")
     return response
 
 

@@ -4,13 +4,15 @@ import { Navigate, useSearchParams } from 'react-router-dom'
 import BrandLogo from '../../components/brand/BrandLogo'
 import { applySeo } from '../../lib/seo'
 import { useAuthStore } from '../../stores/authStore'
-
-const workOSLoginUrl = `${String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')}/auth/workos/login?return_to=%2Fdriver`
+import { buildWorkOSLoginUrl } from '../../lib/workosAuth'
 
 export default function DriverLoginPage() {
   const { isAuthenticated, user } = useAuthStore()
   const [searchParams] = useSearchParams()
   const accessNeedsReview = searchParams.get('reason') === 'identity_review_required'
+  const stateExpired = searchParams.get('reason') === 'workos_state_expired'
+  const tenantId = searchParams.get('tenant_id')
+  const workOSLoginUrl = tenantId ? buildWorkOSLoginUrl('/driver', tenantId) : null
 
   useEffect(() => {
     const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
@@ -67,6 +69,15 @@ export default function DriverLoginPage() {
               </div>
             </div>
           )}
+          {stateExpired && (
+            <div role="alert" className="mt-7 flex gap-3 border-y border-amber-400/35 bg-amber-400/[0.07] py-4 text-amber-50">
+              <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
+              <div>
+                <h2 className="text-sm font-bold">That sign-in link has expired</h2>
+                <p className="mt-1 text-sm leading-6 text-amber-100/75">Start a new sign-in. Completed or previously opened callback links cannot be reused.</p>
+              </div>
+            </div>
+          )}
 
           <ul className="mt-9 divide-y divide-slate-700/70 border-y border-slate-700/70" aria-label="Driver portal capabilities">
             <li className="flex min-h-14 items-center gap-3 py-3 text-sm font-medium text-slate-200">
@@ -83,7 +94,7 @@ export default function DriverLoginPage() {
             </li>
           </ul>
 
-          {!accessNeedsReview && (
+          {!accessNeedsReview && workOSLoginUrl && (
             <>
               <a
                 href={workOSLoginUrl}
@@ -95,6 +106,11 @@ export default function DriverLoginPage() {
                 Access is provided by your fleet manager. Sign in with the email address that received your invitation.
               </p>
             </>
+          )}
+          {!accessNeedsReview && !workOSLoginUrl && (
+            <div className="mt-8 border-y border-slate-700/70 py-4 text-sm leading-6 text-slate-300" role="status">
+              Open the Driver Portal link provided by your fleet manager. It identifies the correct garage before sign-in.
+            </div>
           )}
         </section>
 

@@ -97,11 +97,13 @@ api.interceptors.response.use(
         processQueue(refreshError, null)
         if (authProvider === 'workos') {
           const role = useAuthStore.getState().user?.role
+          const tenantId = useAuthStore.getState().user?.tenant_id
           useAuthStore.getState().clearSession()
           const returnTo = `${window.location.pathname}${window.location.search}`
+          const tenantQuery = tenantId ? `&tenant_id=${encodeURIComponent(tenantId)}` : ''
           window.location.href = role === 'driver'
-            ? '/driver/login'
-            : `/login?reason=workos_session_expired&return_to=${encodeURIComponent(returnTo)}`
+            ? `/driver/login?reason=workos_session_expired${tenantQuery}`
+            : `/login?reason=workos_session_expired&return_to=${encodeURIComponent(returnTo)}${tenantQuery}`
         } else {
           void useAuthStore.getState().logout()
           window.location.href = '/login'

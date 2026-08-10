@@ -30,9 +30,9 @@ vi.mock('../../../stores/authStore', () => ({
   }),
 }))
 
-function renderLogin() {
+function renderLogin(path = '/login') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <LoginPage />
     </MemoryRouter>
   )
@@ -60,6 +60,13 @@ describe('LoginPage', () => {
     renderLogin()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /driver portal/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /organization sign-in/i })).not.toBeInTheDocument()
+  })
+
+  it('shows organization sign-in only for an explicitly selected garage', () => {
+    renderLogin('/login?tenant_id=tenant-1&return_to=%2Fdashboard')
+
+    expect(screen.getByRole('button', { name: /organization sign-in/i })).toBeInTheDocument()
   })
 
   it('shows validation errors on empty submit', async () => {
