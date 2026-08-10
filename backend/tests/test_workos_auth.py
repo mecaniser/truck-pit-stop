@@ -57,10 +57,11 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis, db_s
 
 
 @pytest.mark.asyncio
-async def test_login_requires_exact_garage_context(client):
+async def test_generic_login_defers_to_authoritative_organization_memberships(client):
     response = await client.get("/api/v1/auth/workos/login?return_to=%2Fdashboard", follow_redirects=False)
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Select a garage before starting organization sign-in"
+    assert response.status_code == 307
+    assert "organization_id=" not in response.headers["location"]
+    assert "prompt=login" in response.headers["location"]
 
 
 @pytest.mark.asyncio

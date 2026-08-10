@@ -18,11 +18,11 @@ describe('DriverLoginPage', () => {
     expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument()
   })
 
-  it('does not offer ambiguous organization selection without a garage link', () => {
+  it('supports generic entry for an account with authoritative organization memberships', () => {
     renderDriverLogin('/driver/login')
 
-    expect(screen.queryByRole('link', { name: 'Continue to Driver Portal' })).not.toBeInTheDocument()
-    expect(screen.getByText(/link provided by your fleet manager/i)).toBeInTheDocument()
+    const entry = screen.getByRole('link', { name: 'Continue to Driver Portal' })
+    expect(entry).toHaveAttribute('href', '/api/v1/auth/workos/login?return_to=%2Fdriver')
   })
 
   it('explains invitation-based access and driver tasks', () => {

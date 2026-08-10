@@ -123,11 +123,6 @@ async def workos_login(
 ):
     """Start AuthKit without changing any legacy login behavior."""
     _workos_enabled()
-    if tenant_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Select a garage before starting organization sign-in",
-        )
     state = secrets.token_urlsafe(32)
     # State is browser-bound and one-time: callback deletes it regardless of outcome.
     authorize_params = {
@@ -138,20 +133,23 @@ async def workos_login(
         # existing AuthKit session silently choose the wrong local identity.
         "prompt": "login",
     }
-    tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
-    if not tenant or not tenant.is_active or not tenant.workos_organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="WorkOS organization is not available",
-        )
-    # Organization selection is a routing hint only. The callback still
-    # verifies the signed org_id and maps it independently to this tenant.
-    authorize_params["organization_id"] = tenant.workos_organization_id
+    tenant = None
+    if tenant_id is not None:
+        tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+        if not tenant or not tenant.is_active or not tenant.workos_organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WorkOS organization is not available",
+            )
+        # An exact workspace link bypasses organization selection. Generic
+        # entry relies on authoritative WorkOS memberships and callback mapping.
+        authorize_params["organization_id"] = tenant.workos_organization_id
     query = urlencode(authorize_params)
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
-    response.set_cookie("workos_tenant_id", str(tenant.id), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    if tenant:
+        response.set_cookie("workos_tenant_id", str(tenant.id), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     await (await get_redis()).setex(f"workos:oauth-state:{state}", 600, "1")
     return response
 
