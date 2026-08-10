@@ -81,6 +81,12 @@ async def test_provider_access_token_signature_and_authoritative_claims(monkeypa
     }
     token = jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "test-kid"})
     assert (await workos_provider.verify_access_token(token))["permissions"] == ["driver_portal:use"]
+    wrong_issuer = dict(claims, iss="https://unexpected-issuer.example")
+    wrong_issuer_token = jwt.encode(wrong_issuer, private_pem, algorithm="RS256", headers={"kid": "test-kid"})
+    with pytest.raises(WorkOSProviderError) as issuer_error:
+        await workos_provider.verify_access_token(wrong_issuer_token)
+    assert "received='https://unexpected-issuer.example'" in str(issuer_error.value)
+    assert f"expected={settings.WORKOS_ISSUER.rstrip('/')!r}" in str(issuer_error.value)
     claims["permissions"] = "browser-controlled"
     bad = jwt.encode(claims, private_pem, algorithm="RS256", headers={"kid": "test-kid"})
     with pytest.raises(WorkOSProviderError):

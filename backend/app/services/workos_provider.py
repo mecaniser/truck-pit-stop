@@ -66,7 +66,13 @@ async def verify_access_token(access_token: str) -> Dict[str, Any]:
         raise WorkOSProviderError("WorkOS access token verification failed") from exc
     issuer = str(claims.get("iss") or "").rstrip("/")
     if issuer != settings.WORKOS_ISSUER.rstrip("/"):
-        raise WorkOSProviderError("WorkOS access token issuer is invalid")
+        # Issuer URLs are public configuration, not credentials. Include both
+        # values in the internal exception so callback logs can diagnose an
+        # environment mismatch without ever logging the JWT itself.
+        raise WorkOSProviderError(
+            f"WorkOS access token issuer is invalid "
+            f"(received={issuer!r}, expected={settings.WORKOS_ISSUER.rstrip('/')!r})"
+        )
     if claims.get("client_id") != settings.WORKOS_CLIENT_ID:
         raise WorkOSProviderError("WorkOS access token application is invalid")
     permissions = claims.get("permissions")
