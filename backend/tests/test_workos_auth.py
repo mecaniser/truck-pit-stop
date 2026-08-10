@@ -8,6 +8,9 @@ from app.core.config import settings
 from app.core.security import decode_token
 from app.db.models.user import User, UserRole
 from app.db.models.tenant import Tenant
+from app.core.workos_auth import CurrentPrincipal, get_current_principal, require_permission
+from fastapi import HTTPException
+from uuid import uuid4
 
 
 @pytest.fixture(autouse=True)
@@ -85,3 +88,36 @@ async def test_callback_issues_only_short_workos_access_token(db_session, fake_r
     assert token["auth_provider"] == "workos" and token["permissions"] == ["fleet:view"]
     assert user.tenant_id == before_tenant
     assert all("refresh_token=" not in value or "Max-Age=0" in value for value in response.headers.getlist("set-cookie"))
+
+
+def _workos_token(user_id, workos_user_id="wu_1", org_id="org_1", permissions=None):
+    from app.core.security import create_access_token
+    return create_access_token({"sub": str(user_id), "auth_provider": "workos", "workos_user_id": workos_user_id, "workos_org_id": org_id, "permissions": permissions or ["fleet:view"]})
+
+
+@pytest.mark.asyncio
+async def test_current_principal_validates_mapping_and_active_state(db_session):
+    tenant = Tenant(name="Principal", slug="principal", workos_organization_id="org_1")
+    user = User(email="principal@example.test", hashed_password="x", first_name="P", last_name="U", role=UserRole.GARAGE_ADMIN, workos_user_id="wu_1")
+    db_session.add_all([tenant, user]); await db_session.commit()
+    principal = await get_current_principal(_workos_token(user.id, permissions=["fleet:view", "fleet:assign"]), db_session)
+    assert principal == CurrentPrincipal(user.id, "wu_1", "org_1", tenant.id, frozenset({"fleet:view", "fleet:assign"}))
+    for token in [
+        _workos_token(user.id, workos_user_id="wrong"),
+        _workos_token(user.id, org_id="org_missing"),
+        _workos_token(uuid4()),
+    ]:
+        with pytest.raises(HTTPException): await get_current_principal(token, db_session)
+    user.is_active = False; await db_session.commit()
+    with pytest.raises(HTTPException): await get_current_principal(_workos_token(user.id), db_session)
+    user.is_active = True; tenant.is_active = False; await db_session.commit()
+    with pytest.raises(HTTPException): await get_current_principal(_workos_token(user.id), db_session)
+
+
+@pytest.mark.asyncio
+async def test_current_principal_rejects_legacy_and_permission_guard():
+    from app.core.security import create_access_token
+    with pytest.raises(HTTPException): await get_current_principal(create_access_token({"sub": str(uuid4())}), None)
+    principal = CurrentPrincipal(uuid4(), "wu", "org", uuid4(), frozenset({"fleet:view"}))
+    with pytest.raises(HTTPException): await require_permission("fleet:view", "fleet:assign")(principal)
+    assert await require_permission("fleet:view")(principal) == principal
