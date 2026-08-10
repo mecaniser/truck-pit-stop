@@ -231,8 +231,13 @@ def test_workos_principal_token_is_not_refreshable_shape():
     assert decode_token(token)["auth_provider"] == "workos"
 
 
-def _request(state: str, return_to: str = "/"):
-    headers = [(b"cookie", f"workos_oauth_state={state}; workos_return_to={return_to}".encode())]
+def _request(state: str, return_to: str = "/", stale_state=None):
+    state_cookies = (
+        f"workos_oauth_state={stale_state}; workos_oauth_state={state}"
+        if stale_state
+        else f"workos_oauth_state={state}"
+    )
+    headers = [(b"cookie", f"{state_cookies}; workos_return_to={return_to}".encode())]
     return Request({"type": "http", "method": "GET", "path": "/", "headers": headers, "client": ("127.0.0.1", 1)})
 
 
@@ -307,6 +312,50 @@ async def test_successful_callback_uses_server_bound_return_path_when_cookie_is_
 
     assert response.status_code == 307
     assert response.headers["location"].endswith("/dashboard")
+
+
+@pytest.mark.asyncio
+async def test_callback_accepts_new_shared_state_beside_stale_host_cookie(
+    db_session, fake_redis, monkeypatch
+):
+    tenant = Tenant(name="Cookie rollout", slug="cookie-rollout", workos_organization_id="org_1")
+    user = User(
+        email="u@example.test",
+        hashed_password="x",
+        first_name="U",
+        last_name="T",
+        role=UserRole.GARAGE_ADMIN,
+        workos_user_id="wu_1",
+    )
+    db_session.add_all([tenant, user])
+    await db_session.commit()
+    await fake_redis.setex(
+        "workos:oauth-state:shared-state",
+        600,
+        json.dumps({"return_to": "/dashboard", "tenant_id": None}),
+    )
+    monkeypatch.setattr(settings, "COOKIE_DOMAIN", ".dieselbridge.com")
+    monkeypatch.setattr(auth, "get_redis", lambda: _resolved(fake_redis))
+    monkeypatch.setattr(workos_provider, "authenticate", _authenticate)
+    monkeypatch.setattr(workos_provider, "verify_access_token", _verify)
+
+    response = await auth.workos_callback(
+        _request("shared-state", stale_state="stale-api-host-state"),
+        "code",
+        "shared-state",
+        db_session,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith("/dashboard")
+    state_deletions = [
+        value
+        for value in response.headers.getlist("set-cookie")
+        if value.startswith("workos_oauth_state=") and "Max-Age=0" in value
+    ]
+    assert len(state_deletions) == 2
+    assert any("Domain=.dieselbridge.com" in value for value in state_deletions)
+    assert any("Domain=" not in value for value in state_deletions)
 
 
 @pytest.mark.asyncio

@@ -144,15 +144,49 @@ def _return_path_with_reason(value: Optional[str], reason: str) -> str:
     return urlunsplit(("", "", parts.path or "/", urlencode(query), ""))
 
 
+def _workos_cookie_values(request: Request, name: str) -> list[str]:
+    """Return every value for a cookie, including legacy duplicate scopes."""
+    values: list[str] = []
+    for raw_name, raw_value in request.scope.get("headers", []):
+        if raw_name.lower() != b"cookie":
+            continue
+        for item in raw_value.decode("latin-1").split(";"):
+            cookie_name, separator, cookie_value = item.strip().partition("=")
+            if separator and cookie_name == name:
+                values.append(cookie_value)
+    return values
+
+
+def _set_workos_flow_cookie(response: Response, name: str, value: str) -> None:
+    response.set_cookie(
+        name,
+        value,
+        httponly=True,
+        secure=settings.COOKIE_SECURE_EFFECTIVE,
+        samesite="lax",
+        max_age=600,
+        path="/api/v1/auth/workos",
+        domain=_cookie_domain(),
+    )
+
+
+def _delete_workos_flow_cookie(response: Response, name: str) -> None:
+    """Clear shared cookies and host-only cookies from rolling deployments."""
+    domain = _cookie_domain()
+    if domain:
+        response.delete_cookie(name, path="/api/v1/auth/workos", domain=domain)
+    response.delete_cookie(name, path="/api/v1/auth/workos")
+
+
 def _clear_failed_workos_login(response: Response, *, clear_recovery: bool = True) -> None:
     response.delete_cookie("access_token", path="/", domain=_cookie_domain())
     response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
     response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
-    response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos", domain=_cookie_domain())
-    response.delete_cookie("workos_return_to", path="/api/v1/auth/workos", domain=_cookie_domain())
-    response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos", domain=_cookie_domain())
+    _delete_workos_flow_cookie(response, "workos_oauth_state")
+    _delete_workos_flow_cookie(response, "workos_return_to")
+    _delete_workos_flow_cookie(response, "workos_tenant_id")
     if clear_recovery:
-        response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos", domain=_cookie_domain())
+        _delete_workos_flow_cookie(response, "workos_recovery_attempted")
 
 
 async def _workos_state_failure_response(
@@ -176,10 +210,10 @@ async def _workos_state_failure_response(
     session_id = request.cookies.get("workos_session")
     if session_id and await workos_session.get_session(session_id):
         response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
-        response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos", domain=_cookie_domain())
-        response.delete_cookie("workos_return_to", path="/api/v1/auth/workos", domain=_cookie_domain())
-        response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos", domain=_cookie_domain())
-        response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos", domain=_cookie_domain())
+        _delete_workos_flow_cookie(response, "workos_oauth_state")
+        _delete_workos_flow_cookie(response, "workos_return_to")
+        _delete_workos_flow_cookie(response, "workos_tenant_id")
+        _delete_workos_flow_cookie(response, "workos_recovery_attempted")
         return response
 
     login_path = "/driver/login" if return_to.startswith("/driver") else "/login"
@@ -188,11 +222,7 @@ async def _workos_state_failure_response(
         if tenant_id:
             retry_params["tenant_id"] = tenant_id
         response = RedirectResponse(f"/api/v1/auth/workos/login?{urlencode(retry_params)}")
-        response.set_cookie(
-            "workos_recovery_attempted", "1", httponly=True,
-            secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600,
-            path="/api/v1/auth/workos", domain=_cookie_domain(),
-        )
+        _set_workos_flow_cookie(response, "workos_recovery_attempted", "1")
         _clear_failed_workos_login(response, clear_recovery=False)
         return response
 
@@ -238,12 +268,12 @@ async def workos_login(
         authorize_params["organization_id"] = tenant.workos_organization_id
     query = urlencode(authorize_params)
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-    response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos", domain=_cookie_domain())
-    response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos", domain=_cookie_domain())
+    _set_workos_flow_cookie(response, "workos_oauth_state", state)
+    _set_workos_flow_cookie(response, "workos_return_to", _safe_return_path(return_to))
     if tenant:
-        response.set_cookie("workos_tenant_id", str(tenant.id), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos", domain=_cookie_domain())
+        _set_workos_flow_cookie(response, "workos_tenant_id", str(tenant.id))
     if not recovery:
-        response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos", domain=_cookie_domain())
+        _delete_workos_flow_cookie(response, "workos_recovery_attempted")
     await (await get_redis()).setex(
         f"workos:oauth-state:{state}",
         600,
@@ -258,8 +288,8 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     existing local cookie/JWT session, then return to the configured SPA.
     """
     _workos_enabled()
-    expected_state = request.cookies.get("workos_oauth_state")
-    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+    expected_states = _workos_cookie_values(request, "workos_oauth_state")
+    if not state or not any(secrets.compare_digest(state, candidate) for candidate in expected_states):
         state_context = await _consume_workos_state(state) if state else None
         return await _workos_state_failure_response(request, state_context)
     # Consume only after confirming this browser owns the presented state.
@@ -328,10 +358,10 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     # Do not let an existing legacy refresh cookie convert this short-lived
     # WorkOS session into a multi-day legacy session.
     response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
-    response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos", domain=_cookie_domain())
-    response.delete_cookie("workos_return_to", path="/api/v1/auth/workos", domain=_cookie_domain())
-    response.delete_cookie("workos_tenant_id", path="/api/v1/auth/workos", domain=_cookie_domain())
-    response.delete_cookie("workos_recovery_attempted", path="/api/v1/auth/workos", domain=_cookie_domain())
+    _delete_workos_flow_cookie(response, "workos_oauth_state")
+    _delete_workos_flow_cookie(response, "workos_return_to")
+    _delete_workos_flow_cookie(response, "workos_tenant_id")
+    _delete_workos_flow_cookie(response, "workos_recovery_attempted")
     return response
 
 
