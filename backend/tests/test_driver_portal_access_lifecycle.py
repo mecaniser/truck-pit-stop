@@ -554,7 +554,16 @@ async def test_production_rebind_preserves_history_and_reuses_membership(db_sess
             "email": owner.email,
         }
 
+    async def production_membership(**kwargs):
+        assert kwargs == {"user_id": "user_production", "organization_id": "org_production"}
+        return {
+            "id": "membership_production",
+            "status": "active",
+            "role": {"slug": "garage_owner"},
+        }
+
     monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", production_membership)
     linked_user, linked_tenant, linked_membership = await resolve_authenticated_identity(
         db_session,
         claims={
@@ -570,6 +579,9 @@ async def test_production_rebind_preserves_history_and_reuses_membership(db_sess
     assert linked_tenant.id == tenant.id
     assert linked_membership.id == membership.id
     assert linked_membership.status == "active"
+    assert linked_membership.provider_membership_id == "membership_production"
+    assert replacement.provider_user_id == "user_production"
+    assert replacement.provider_membership_id == "membership_production"
     assert owner.workos_user_id == "user_production"
     assert (await db_session.execute(select(ExternalIdentity).where(
         ExternalIdentity.provider_subject == "user_production"

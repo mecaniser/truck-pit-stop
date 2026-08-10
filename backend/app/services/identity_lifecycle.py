@@ -84,6 +84,45 @@ async def resolve_authenticated_identity(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is inactive")
         if role_slug not in INVITABLE_ROLES:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS role is not supported")
+        try:
+            provider_membership = await workos_provider.find_organization_membership(
+                user_id=workos_user_id,
+                organization_id=workos_org_id,
+            )
+        except WorkOSProviderError:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
+        if (
+            not provider_membership
+            or provider_membership.get("status") != "active"
+            or _provider_role_slug(provider_membership) != role_slug
+            or not isinstance(provider_membership.get("id"), str)
+        ):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
+        if (
+            membership.provider_membership_id
+            and membership.provider_membership_id != provider_membership["id"]
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="WorkOS membership identity mismatch")
+        membership.provider_membership_id = provider_membership["id"]
+        accepted_invitation = (await db.execute(select(TenantInvitation).where(
+            TenantInvitation.tenant_id == tenant.id,
+            TenantInvitation.principal_id == principal.id,
+            TenantInvitation.target_user_id == user.id,
+            TenantInvitation.intended_role_slug == role_slug,
+            TenantInvitation.status == "accepted",
+            TenantInvitation.deleted_at.is_(None),
+        ).order_by(TenantInvitation.accepted_at.desc()).limit(1).with_for_update())).scalar_one_or_none()
+        if accepted_invitation:
+            if (
+                accepted_invitation.provider_user_id
+                and accepted_invitation.provider_user_id != workos_user_id
+            ) or (
+                accepted_invitation.provider_membership_id
+                and accepted_invitation.provider_membership_id != provider_membership["id"]
+            ):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="WorkOS invitation identity mismatch")
+            accepted_invitation.provider_user_id = workos_user_id
+            accepted_invitation.provider_membership_id = provider_membership["id"]
         membership.role_slug = role_slug
         membership.permissions = permissions
         membership.provider_updated_at = datetime.now(timezone.utc)
@@ -139,6 +178,23 @@ async def resolve_authenticated_identity(
     if not matched:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A matching accepted invitation is required")
 
+    try:
+        provider_membership = await workos_provider.find_organization_membership(
+            user_id=workos_user_id,
+            organization_id=workos_org_id,
+        )
+    except WorkOSProviderError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
+    if (
+        not provider_membership
+        or provider_membership.get("status") != "active"
+        or _provider_role_slug(provider_membership) != matched.intended_role_slug
+        or not isinstance(provider_membership.get("id"), str)
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
+    matched.provider_user_id = workos_user_id
+    matched.provider_membership_id = provider_membership["id"]
+
     email = workos_user.get("email")
     first_name = workos_user.get("first_name") or "Invited"
     last_name = workos_user.get("last_name") or "User"
@@ -180,27 +236,11 @@ async def resolve_authenticated_identity(
         if (await db.execute(
             select(User.id).where(func.lower(User.email) == email.casefold())
         )).scalar_one_or_none():
-            provider_membership = None
-            try:
-                provider_membership = await workos_provider.find_organization_membership(
-                    user_id=workos_user_id,
-                    organization_id=workos_org_id,
-                )
-            except WorkOSProviderError:
-                # The signed token and exact accepted invitation already prove
-                # the collision. Cleanup will re-fetch the precise membership
-                # and fail closed if WorkOS remains unavailable.
-                provider_membership = None
-            if provider_membership and (
-                provider_membership.get("status") != "active"
-                or _provider_role_slug(provider_membership) != matched.intended_role_slug
-            ):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is unavailable")
             previous_status = matched.status
             matched.status = "needs_review"
             matched.review_reason = IDENTITY_REVIEW_EMAIL_COLLISION
             matched.provider_user_id = workos_user_id
-            matched.provider_membership_id = provider_membership.get("id") if provider_membership else None
+            matched.provider_membership_id = provider_membership["id"]
             matched.accepted_at = matched.accepted_at or datetime.now(timezone.utc)
             db.add(TenantInvitationAuditEvent(
                 tenant_id=matched.tenant_id,
@@ -243,7 +283,7 @@ async def resolve_authenticated_identity(
         # Production cutover reuses the durable local membership FK while the
         # superseded Staging provider anchors remain in invitation audit history.
         membership.provider = "workos"
-        membership.provider_membership_id = None
+        membership.provider_membership_id = provider_membership["id"]
         membership.role_slug = matched.intended_role_slug
         membership.status = "active"
         membership.permissions = permissions
@@ -254,6 +294,7 @@ async def resolve_authenticated_identity(
             principal_id=principal.id,
             tenant_id=tenant.id,
             provider="workos",
+            provider_membership_id=provider_membership["id"],
             role_slug=matched.intended_role_slug,
             status="active",
             permissions=permissions,

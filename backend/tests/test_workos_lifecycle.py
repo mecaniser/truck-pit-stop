@@ -134,7 +134,11 @@ async def test_exact_invitation_creates_passwordless_projection_and_links_driver
 
     async def accepted(_invitation_id):
         return {"id": "inv_1", "state": "accepted", "accepted_user_id": "wu_driver", "organization_id": "org_1", "role_slug": "driver", "email": "driver@example.test"}
+    async def membership(**kwargs):
+        assert kwargs == {"user_id": "wu_driver", "organization_id": "org_1"}
+        return {"id": "om_driver", "status": "active", "role": {"slug": "driver"}}
     monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", membership)
     claims = {"sub": "wu_driver", "org_id": "org_1", "role": "driver", "permissions": ["driver_portal:use", "inspections:perform", "incidents:report"]}
     user, resolved_tenant, membership = await identity_lifecycle.resolve_authenticated_identity(
         db_session,
@@ -147,6 +151,9 @@ async def test_exact_invitation_creates_passwordless_projection_and_links_driver
     assert driver.user_id == user.id
     assert resolved_tenant.id == tenant.id
     assert membership.permissions == claims["permissions"]
+    assert membership.provider_membership_id == "om_driver"
+    assert invitation.provider_user_id == "wu_driver"
+    assert invitation.provider_membership_id == "om_driver"
 
 
 @pytest.mark.asyncio
@@ -334,7 +341,16 @@ async def test_exact_invitation_links_explicit_existing_owner_without_email_merg
             "email": owner.email,
         }
 
+    async def provider_membership(**kwargs):
+        assert kwargs == {"user_id": "wu_existing_owner", "organization_id": "org_owner"}
+        return {
+            "id": "om_existing_owner",
+            "status": "active",
+            "role": {"slug": "garage_owner"},
+        }
+
     monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", provider_membership)
     user, resolved_tenant, membership = await identity_lifecycle.resolve_authenticated_identity(
         db_session,
         claims={
@@ -358,7 +374,90 @@ async def test_exact_invitation_links_explicit_existing_owner_without_email_merg
     assert user.workos_user_id == "wu_existing_owner"
     assert resolved_tenant.id == tenant.id
     assert membership.role_slug == "garage_owner"
+    assert membership.provider_membership_id == "om_existing_owner"
     assert invitation.status == "accepted"
+    assert invitation.provider_user_id == "wu_existing_owner"
+    assert invitation.provider_membership_id == "om_existing_owner"
+
+
+@pytest.mark.asyncio
+async def test_existing_identity_backfills_exact_membership_and_accepted_invitation(db_session, monkeypatch):
+    tenant = Tenant(name="Anchored", slug="anchored", workos_organization_id="org_anchored")
+    db_session.add(tenant)
+    await db_session.flush()
+    owner = User(
+        email="anchored-owner@example.test",
+        hashed_password=None,
+        first_name="Anchored",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        workos_user_id="wu_anchored",
+        workos_identity_status="active",
+        is_active=True,
+    )
+    db_session.add(owner)
+    await db_session.flush()
+    principal = IdentityPrincipal(user_id=owner.id, status="active")
+    db_session.add(principal)
+    await db_session.flush()
+    external = ExternalIdentity(
+        principal_id=principal.id,
+        provider="workos",
+        provider_subject="wu_anchored",
+        status="active",
+        email_snapshot=owner.email,
+    )
+    membership = TenantMembership(
+        principal_id=principal.id,
+        tenant_id=tenant.id,
+        provider="workos",
+        provider_membership_id=None,
+        role_slug="garage_owner",
+        status="active",
+        permissions=["members:manage"],
+        resource_scope={},
+    )
+    invitation = TenantInvitation(
+        tenant_id=tenant.id,
+        principal_id=principal.id,
+        provider_invitation_id="inv_anchored",
+        provider_user_id=None,
+        provider_membership_id=None,
+        email_snapshot=owner.email,
+        intended_role_slug="garage_owner",
+        target_user_id=owner.id,
+        status="accepted",
+        accepted_at=datetime.now(timezone.utc),
+        invited_by_user_id=owner.id,
+        resource_scope={},
+    )
+    db_session.add_all([external, membership, invitation])
+    await db_session.commit()
+
+    async def provider_membership(**kwargs):
+        assert kwargs == {"user_id": "wu_anchored", "organization_id": "org_anchored"}
+        return {"id": "om_anchored", "status": "active", "role": {"slug": "garage_owner"}}
+
+    monkeypatch.setattr(workos_provider, "find_organization_membership", provider_membership)
+    resolved_user, resolved_tenant, resolved_membership = await identity_lifecycle.resolve_authenticated_identity(
+        db_session,
+        claims={
+            "sub": "wu_anchored",
+            "org_id": "org_anchored",
+            "role": "garage_owner",
+            "permissions": ["members:manage", "organization:manage"],
+        },
+        workos_user={"id": "wu_anchored", "email": owner.email},
+    )
+    await db_session.commit()
+
+    assert resolved_user.id == owner.id
+    assert resolved_tenant.id == tenant.id
+    assert resolved_membership.provider_membership_id == "om_anchored"
+    assert resolved_membership.permissions == ["members:manage", "organization:manage"]
+    assert invitation.provider_user_id == "wu_anchored"
+    assert invitation.provider_membership_id == "om_anchored"
 
 
 @pytest.mark.asyncio
@@ -419,8 +518,12 @@ async def test_server_session_refresh_revalidates_membership_and_never_uses_lega
         return {"user": {"id": "wu_session", "email": user.email}, "access_token": "new-provider-access", "refresh_token": "new-provider-refresh"}
     async def verify(_token):
         return {"sub": "wu_session", "org_id": "org_session", "role": "driver", "permissions": ["driver_portal:use"]}
+    async def provider_membership(**kwargs):
+        assert kwargs == {"user_id": "wu_session", "organization_id": "org_session"}
+        return {"id": "om_session", "status": "active", "role": {"slug": "driver"}}
     monkeypatch.setattr(workos_provider, "authenticate", authenticate)
     monkeypatch.setattr(workos_provider, "verify_access_token", verify)
+    monkeypatch.setattr(workos_provider, "find_organization_membership", provider_membership)
     request = Request({"type": "http", "method": "POST", "path": "/", "headers": [], "client": ("127.0.0.1", 1)})
     response = Response()
     result = await workos_lifecycle.refresh_session(request, response, session_id, db_session)
