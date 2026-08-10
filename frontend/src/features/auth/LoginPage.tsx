@@ -96,6 +96,8 @@ export default function LoginPage() {
     } else if (userResponse.data.role === 'fleet_manager') {
       // Fleet managers are a standalone role: their board is their whole app.
       navigate('/fleet')
+    } else if (userResponse.data.role === 'driver') {
+      navigate('/driver')
     } else {
       navigate('/dashboard')
     }

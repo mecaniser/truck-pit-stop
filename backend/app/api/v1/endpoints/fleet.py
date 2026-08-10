@@ -39,6 +39,7 @@ from app.db.models.fleet import (
     DEFAULT_INSPECTION_CHECKLIST,
     INSPECTION_INTERVAL_DAYS,
 )
+from app.db.models.driver_accountability import FleetIncidentEvent
 from app.schemas.fleet import (
     InspectionCreate,
     InspectionComplete,
@@ -49,6 +50,7 @@ from app.schemas.fleet import (
     IncidentCreate,
     IncidentUpdate,
     IncidentResponse,
+    IncidentEventResponse,
     FleetVehicleResponse,
     FleetSummaryResponse,
     BoardTruck,
@@ -202,7 +204,7 @@ def _inspection_response(insp: FleetInspection) -> InspectionResponse:
 
 
 def _incident_response(inc: FleetIncident) -> IncidentResponse:
-    photos = inc.__dict__.get("photos") or []
+    photos = [p for p in (inc.__dict__.get("photos") or []) if p.deleted_at is None]
     return IncidentResponse(
         **{k: getattr(inc, k) for k in (
             "id", "vehicle_id", "reported_by_id", "occurred_at", "location",
@@ -227,6 +229,30 @@ def _incident_photo_response(photo: FleetIncidentPhoto) -> FleetPhotoResponse:
         caption=photo.caption,
         uploaded_at=photo.uploaded_at,
         uploader_name=_uploader_name(getattr(photo, "uploaded_by", None)),
+    )
+
+
+def _record_incident_event(
+    db: AsyncSession,
+    *,
+    incident: FleetIncident,
+    event_type: str,
+    actor_user_id: Optional[UUID],
+    reason: Optional[str] = None,
+    data: Optional[dict] = None,
+) -> None:
+    """Append an incident audit event without rewriting prior history."""
+    db.add(
+        FleetIncidentEvent(
+            id=uuid4(),
+            tenant_id=incident.tenant_id,
+            incident_id=incident.id,
+            actor_user_id=actor_user_id,
+            event_type=event_type,
+            reason=reason,
+            data_json=data or {},
+            occurred_at=datetime.now(timezone.utc),
+        )
     )
 
 
@@ -822,6 +848,8 @@ async def list_incidents(
         query = query.where(FleetIncident.vehicle_id == vehicle_id)
     if status_filter:
         query = query.where(FleetIncident.status == status_filter)
+    else:
+        query = query.where(FleetIncident.status != IncidentStatus.VOIDED)
     result = await db.execute(query)
     return [_incident_response(i) for i in result.scalars().all()]
 
@@ -845,6 +873,13 @@ async def create_incident(
         description=body.description,
     )
     db.add(incident)
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="reported",
+        actor_user_id=current_user.id,
+        data={"severity": body.severity.value, "location": body.location},
+    )
     await db.commit()
     await db.refresh(incident, attribute_names=["vehicle"])
     return _incident_response(incident)
@@ -887,6 +922,13 @@ async def upload_incident_photo(
         uploaded_at=datetime.now(timezone.utc),
     )
     db.add(photo)
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="evidence_added",
+        actor_user_id=current_user.id,
+        data={"evidence_type": "photo", "photo_id": str(photo.id)},
+    )
     await db.commit()
     await db.refresh(photo, attribute_names=["uploaded_by"])
     return _incident_photo_response(photo)
@@ -928,6 +970,13 @@ async def create_incident_photo_from_direct_upload(
         uploaded_at=datetime.now(timezone.utc),
     )
     db.add(photo)
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="evidence_added",
+        actor_user_id=current_user.id,
+        data={"evidence_type": "photo", "photo_id": str(photo.id)},
+    )
     await db.commit()
     await db.refresh(photo, attribute_names=["uploaded_by"])
     return _incident_photo_response(photo)
@@ -947,6 +996,7 @@ async def delete_incident_photo(
             and_(
                 FleetIncidentPhoto.id == photo_id,
                 FleetIncidentPhoto.incident_id == incident_id,
+                FleetIncidentPhoto.deleted_at.is_(None),
                 FleetIncident.tenant_id == current_user.tenant_id,
             )
         )
@@ -956,7 +1006,15 @@ async def delete_incident_photo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
 
     photo, incident = row
-    await db.delete(photo)
+    photo.deleted_at = datetime.now(timezone.utc)
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="evidence_voided",
+        actor_user_id=current_user.id,
+        reason="Photo removed from active incident evidence",
+        data={"evidence_type": "photo", "photo_id": str(photo.id)},
+    )
     await db.commit()
     logger.info(
         "fleet_incident_photo_deleted",
@@ -992,6 +1050,42 @@ async def get_incident(
     return _incident_response(await _load_incident(db, current_user.tenant_id, incident_id))
 
 
+@router.get("/incidents/{incident_id}/events", response_model=List[IncidentEventResponse])
+async def list_incident_events(
+    incident_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    # Authorize through the incident before reading its append-only timeline.
+    await _load_incident(db, current_user.tenant_id, incident_id)
+    events = list(
+        (
+            await db.execute(
+                select(FleetIncidentEvent)
+                .where(
+                    FleetIncidentEvent.incident_id == incident_id,
+                    FleetIncidentEvent.tenant_id == current_user.tenant_id,
+                    FleetIncidentEvent.deleted_at.is_(None),
+                )
+                .options(joinedload(FleetIncidentEvent.actor))
+                .order_by(FleetIncidentEvent.occurred_at.desc())
+            )
+        ).scalars()
+    )
+    return [
+        IncidentEventResponse(
+            id=event.id,
+            event_type=event.event_type,
+            actor_user_id=event.actor_user_id,
+            actor_name=_uploader_name(event.actor) if event.actor else "System",
+            reason=event.reason,
+            data=event.data_json or {},
+            occurred_at=event.occurred_at,
+        )
+        for event in events
+    ]
+
+
 @router.patch("/incidents/{incident_id}", response_model=IncidentResponse)
 async def update_incident(
     incident_id: UUID,
@@ -1000,20 +1094,39 @@ async def update_incident(
     current_user: User = Depends(require_fleet_access),
 ):
     incident = await _load_incident(db, current_user.tenant_id, incident_id)
+    previous_status = incident.status
+    changed_fields: list[str] = []
     if body.severity is not None:
         incident.severity = body.severity
+        changed_fields.append("severity")
     if body.location is not None:
         incident.location = body.location
+        changed_fields.append("location")
     if body.description is not None:
         incident.description = body.description
+        changed_fields.append("description")
     if body.resolution_notes is not None:
         incident.resolution_notes = body.resolution_notes
+        changed_fields.append("resolution_notes")
     if body.status is not None:
         incident.status = body.status
+        changed_fields.append("status")
         if body.status == IncidentStatus.RESOLVED and incident.resolved_at is None:
             incident.resolved_at = datetime.now(timezone.utc)
         if body.status != IncidentStatus.RESOLVED:
             incident.resolved_at = None
+    event_type = "updated"
+    if body.status == IncidentStatus.RESOLVED:
+        event_type = "operationally_resolved"
+    elif previous_status == IncidentStatus.RESOLVED and body.status is not None:
+        event_type = "operationally_reopened"
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type=event_type,
+        actor_user_id=current_user.id,
+        data={"changed_fields": changed_fields, "status": incident.status.value},
+    )
     await db.commit()
     return _incident_response(incident)
 
@@ -1041,6 +1154,13 @@ async def create_repair_for_incident(
     incident.repair_order_id = ro.id
     if incident.status == IncidentStatus.OPEN:
         incident.status = IncidentStatus.IN_PROGRESS
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="repair_order_created",
+        actor_user_id=current_user.id,
+        data={"repair_order_id": str(ro.id)},
+    )
     await db.commit()
     await db.refresh(incident, attribute_names=["vehicle"])
     return _incident_response(incident)
@@ -1052,16 +1172,26 @@ async def delete_incident(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_fleet_access),
 ):
-    """Delete a road-incident log entry. Blocked when a repair order was spawned
-    from it — handle/delete that repair order first, so the incident→repair trail
-    isn't silently orphaned."""
+    """Void an accidental road-incident entry without erasing its audit trail.
+
+    The DELETE route remains for client compatibility, but the record and its
+    evidence are retained for accountable history.
+    """
     incident = await _load_incident(db, current_user.tenant_id, incident_id)
     if incident.repair_order_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This incident has a linked repair order. Delete or unlink the repair order first.",
         )
-    await db.delete(incident)
+    incident.status = IncidentStatus.VOIDED
+    incident.resolved_at = datetime.now(timezone.utc)
+    _record_incident_event(
+        db,
+        incident=incident,
+        event_type="voided",
+        actor_user_id=current_user.id,
+        reason="Incident voided from Fleet incident action",
+    )
     await db.commit()
 
 

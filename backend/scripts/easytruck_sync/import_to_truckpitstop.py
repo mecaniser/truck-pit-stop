@@ -51,6 +51,7 @@ psycopg2.extras.register_uuid()
 DATA_FILE = Path(__file__).parent / "data" / "customer_details.json"
 PARTS_FILE = Path(__file__).parent / "data" / "parts_inventory.json"
 IMAGE_CACHE_FILE = Path(__file__).parent / "data" / "part_image_cache.json"
+INVOICES_FILE = Path(__file__).parent / "data" / "invoices.json"
 ORDER_NUMBER_PREFIX = "ETS"
 IMPORT_SOURCE = "easy_truck_shop_import"
 # Commit the DB in batches so a dropped connection loses at most one batch and
@@ -289,6 +290,7 @@ def build_records(customers, tenant_id):
                 hours = parsed["hours"] if parsed["hours"] and parsed["hours"] > 0 else Decimal("1.00")
                 out["repair_orders"].append({
                     "order_number": order_no,
+                    "service_no": parsed["service_no"],
                     "ets_customer_id": str(cust["id"]),
                     "ets_vehicle_id": str(v["vehicleId"]),
                     "tenant_id": tenant_id,
@@ -401,9 +403,90 @@ def backfill_external_ids(conn, tenant_id, commit):
         print("Backfill COMMITTED.")
 
 
+def _load_invoices():
+    """Keyed by ETS service number, e.g. "0337". Missing file (pre-existing
+    scrapes that predate stage 05, or a partial run) degrades gracefully:
+    repair orders are still imported, just without an invoice/payments."""
+    if not INVOICES_FILE.exists():
+        return {}
+    return json.loads(INVOICES_FILE.read_text())
+
+
+def _parse_ets_date(s):
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s.strip(), "%m/%d/%Y").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _create_invoice_and_payments(w, tenant_id, ro_id, order_number, service_no,
+                                  invoices_by_service_no, existing_invoice_numbers, stats, now):
+    """Analytics/reports (see backend/app/api/v1/endpoints/reports.py) key off
+    Invoice.paid_at, not any repair_orders column — without an invoice row, an
+    imported RO is invisible to every revenue report regardless of date range.
+    Create one from the scraped invoice (stage 05) when we have it.
+
+    invoice_number follows "ETSINV-{ets invoice number}", matching an older,
+    unrelated invoice import already present in the DB (invoices created
+    2026-01-31..2026-07-22) so numbering stays consistent across both.
+    ETS's own "Subtotal" already nets in its fee line, so shop_supplies_amount
+    here is informational only (same convention that older import used) —
+    total = subtotal + tax, not subtotal + tax + shop_supplies."""
+    inv_data = invoices_by_service_no.get(service_no)
+    if not inv_data or inv_data.get("total") is None:
+        stats["inv_no_data"] += 1
+        return
+    ets_invoice_no = inv_data.get("invoiceNumber") or service_no
+    invoice_number = f"ETSINV-{ets_invoice_no}"
+    if invoice_number in existing_invoice_numbers:
+        # Two service numbers resolved to the same ETS invoice number (seen
+        # for split/credit invoices) — keep it unique rather than skip data.
+        invoice_number = f"ETSINV-{ets_invoice_no}-{order_number}"
+    existing_invoice_numbers.add(invoice_number)
+
+    subtotal = Decimal(str(inv_data.get("subtotal") or 0))
+    tax_amount = Decimal(str(inv_data.get("tax") or 0))
+    fees = Decimal(str(inv_data.get("fees") or 0))
+    total_amount = Decimal(str(inv_data["total"]))
+    payments = inv_data.get("payments") or []
+    paid_total = sum((Decimal(str(p["amount"])) for p in payments), Decimal("0.00"))
+    is_paid = bool(payments) and paid_total >= (total_amount - Decimal("0.01"))
+    paid_at = None
+    if is_paid:
+        payment_dates = [d for d in (_parse_ets_date(p.get("date")) for p in payments) if d]
+        paid_at = max(payment_dates) if payment_dates else None
+    invoice_id = uuid.uuid4()
+    w.execute(
+        """INSERT INTO invoices (id, tenant_id, repair_order_id, invoice_number,
+             is_internal, status, subtotal, shop_supplies_amount, service_fee_amount,
+             tax_amount, discount_amount, total_amount, paid_at, source,
+             zelle_pending_reminder_count, reminder_count, quickbooks_sync_status,
+             created_at, updated_at)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+        (invoice_id, tenant_id, ro_id, invoice_number, False,
+         "paid" if is_paid else "sent", subtotal, fees, Decimal("0.00"),
+         tax_amount, Decimal("0.00"), total_amount, paid_at, IMPORT_SOURCE,
+         0, 0, "pending", now, now))
+    stats["inv_ins"] += 1
+
+    for idx, p in enumerate(payments, start=1):
+        amount = Decimal(str(p["amount"]))
+        paid_date = _parse_ets_date(p.get("date")) or now
+        w.execute(
+            """INSERT INTO payments (id, tenant_id, invoice_id, payment_number,
+                 amount, method, status, source, created_at, updated_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (uuid.uuid4(), tenant_id, invoice_id, f"{invoice_number}-PAY-{idx}",
+             amount, "other", "completed", IMPORT_SOURCE, paid_date, paid_date))
+        stats["pay_ins"] += 1
+
+
 def resync(conn, tenant_id, commit):
     customers = json.loads(DATA_FILE.read_text())
     recs = build_records(customers, tenant_id)
+    invoices_by_service_no = _load_invoices()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     now = datetime.utcnow()
 
@@ -432,10 +515,13 @@ def resync(conn, tenant_id, commit):
     cur.execute("SELECT id, order_number FROM repair_orders WHERE tenant_id=%s AND source=%s",
                 (tenant_id, IMPORT_SOURCE))
     existing_ro = {r["order_number"]: r for r in cur.fetchall()}
+    cur.execute("SELECT invoice_number FROM invoices WHERE tenant_id=%s", (tenant_id,))
+    existing_invoice_numbers = {r["invoice_number"] for r in cur.fetchall()}
 
     stats = {"cust_ins": 0, "cust_upd": 0, "cust_skip_edited": 0,
              "veh_ins": 0, "veh_upd": 0, "veh_skip_edited": 0,
-             "ro_ins": 0, "ro_exists": 0}
+             "ro_ins": 0, "ro_exists": 0,
+             "inv_ins": 0, "inv_no_data": 0, "pay_ins": 0}
 
     w = conn.cursor()
     cust_uuid_by_ets = {}
@@ -526,6 +612,29 @@ def resync(conn, tenant_id, commit):
             (uuid.uuid4(), r["tenant_id"], ro_id, r["description"], r["labor_hours"],
              r["labor_rate"], r["total_cost"], "manual", now, now))
         stats["ro_ins"] += 1
+
+        _create_invoice_and_payments(w, r["tenant_id"], ro_id, r["order_number"],
+                                      r["service_no"], invoices_by_service_no,
+                                      existing_invoice_numbers, stats, now)
+
+    # Backfill: repair orders that still have no invoice at all — either from
+    # earlier runs of this script (before invoice creation existed here), or
+    # predating it entirely (an older, unrelated invoice import covered some
+    # ROs up through 2026-07-22 under a different invoice_number scheme, e.g.
+    # "ETSINV-1007"; anything after that has nothing). Match on repair_order_id
+    # membership, not invoice_number, since that older scheme differs from ours.
+    cur.execute("SELECT DISTINCT repair_order_id FROM invoices WHERE tenant_id=%s", (tenant_id,))
+    already_invoiced_ro_ids = {r["repair_order_id"] for r in cur.fetchall()}
+    service_no_by_order_number = {r["order_number"]: r["service_no"] for r in recs["repair_orders"]}
+    for order_number, ro_row in existing_ro.items():
+        if ro_row["id"] in already_invoiced_ro_ids:
+            continue
+        service_no = service_no_by_order_number.get(order_number)
+        if service_no is None:
+            continue
+        _create_invoice_and_payments(w, tenant_id, ro_row["id"], order_number,
+                                      service_no, invoices_by_service_no,
+                                      existing_invoice_numbers, stats, now)
 
     w.close()
     cur.close()

@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from decimal import Decimal
-from typing import Optional, List
+from typing import Any, Optional, List
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -127,6 +127,16 @@ class IncidentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class IncidentEventResponse(BaseModel):
+    id: UUID
+    event_type: str
+    actor_user_id: Optional[UUID] = None
+    actor_name: str = "System"
+    reason: Optional[str] = None
+    data: dict[str, Any] = Field(default_factory=dict)
+    occurred_at: datetime
 
 
 # ---- Roster & summary ----

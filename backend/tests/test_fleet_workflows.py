@@ -305,7 +305,7 @@ async def test_incident_photo_upload_is_stored(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_incident_photo_delete_removes_photo(db_session):
+async def test_incident_photo_delete_voids_photo_and_preserves_audit_history(db_session):
     _, vehicle, user = await _seed_fleet(db_session)
     incident = await fleet.create_incident(
         body=IncidentCreate(
@@ -338,7 +338,20 @@ async def test_incident_photo_delete_removes_photo(db_session):
 
     assert response == {"message": "Photo deleted"}
     stored = (await db_session.execute(select(FleetIncidentPhoto).where(FleetIncidentPhoto.id == photo.id))).scalar_one_or_none()
-    assert stored is None
+    assert stored is not None
+    assert stored.deleted_at is not None
+
+    from app.db.models.driver_accountability import FleetIncidentEvent
+
+    event = (
+        await db_session.execute(
+            select(FleetIncidentEvent).where(
+                FleetIncidentEvent.incident_id == incident.id,
+                FleetIncidentEvent.event_type == "evidence_voided",
+            )
+        )
+    ).scalar_one()
+    assert event.data_json["photo_id"] == str(photo.id)
 
 
 @pytest.mark.asyncio
@@ -450,7 +463,7 @@ async def test_incident_resolve_sets_resolved_at(db_session):
 
 
 @pytest.mark.asyncio
-async def test_delete_incident_without_repair(db_session):
+async def test_delete_incident_without_repair_voids_and_preserves_incident(db_session):
     from sqlalchemy import select
     from app.db.models.fleet import FleetIncident
 
@@ -464,7 +477,11 @@ async def test_delete_incident_without_repair(db_session):
     )
     inc_id = incident.id
     await fleet.delete_incident(incident_id=inc_id, db=db_session, current_user=user)
-    assert (await db_session.execute(select(FleetIncident).where(FleetIncident.id == inc_id))).scalar_one_or_none() is None
+    stored = (
+        await db_session.execute(select(FleetIncident).where(FleetIncident.id == inc_id))
+    ).scalar_one()
+    assert stored.status == IncidentStatus.VOIDED
+    assert stored.resolved_at is not None
 
 
 @pytest.mark.asyncio

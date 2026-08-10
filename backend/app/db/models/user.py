@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum, Integer
+from sqlalchemy import Column, String, Boolean, ForeignKey, Enum as SQLEnum, Integer, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     MECHANIC = "mechanic"            # Technician working on repairs
     RECEPTIONIST = "receptionist"    # Front desk staff
     FLEET_MANAGER = "fleet_manager"  # Manages the garage's own fleet (internal-cost repairs)
+    DRIVER = "driver"                # Restricted WorkOS-backed driver portal user
     CUSTOMER = "customer"            # Truck owner/operator
 
 
@@ -19,7 +20,14 @@ class User(BaseModel):
     __tablename__ = "users"
     
     email = Column(String(255), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(255), nullable=False)
+    # Optional WorkOS projection. Existing password users remain valid during
+    # cutover, so these fields are deliberately nullable and additive.
+    workos_user_id = Column(String(255), unique=True, nullable=True, index=True)
+    workos_identity_status = Column(String(32), nullable=False, default="legacy", server_default="legacy")
+    workos_identity_linked_at = Column(DateTime(timezone=True), nullable=True)
+    # Null only for explicitly provisioned WorkOS identities. Legacy login
+    # rejects null credentials before password verification.
+    hashed_password = Column(String(255), nullable=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     phone = Column(String(20), nullable=True)

@@ -1,0 +1,69 @@
+"""Provider-neutral identity, tenant membership, and invitation projections."""
+from sqlalchemy import Column, String, ForeignKey, DateTime, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+
+from app.db.base import BaseModel
+
+
+class IdentityPrincipal(BaseModel):
+    __tablename__ = "identity_principals"
+
+    # A principal is a durable person/account anchor. A local User projection is
+    # optional until an invitation is accepted and is never linked by email.
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, unique=True, index=True)
+    status = Column(String(24), nullable=False, default="pending", server_default="pending", index=True)
+
+
+class ExternalIdentity(BaseModel):
+    __tablename__ = "external_identities"
+    __table_args__ = (UniqueConstraint("provider", "provider_subject", name="uq_external_identity_subject"),)
+
+    principal_id = Column(UUID(as_uuid=True), ForeignKey("identity_principals.id"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False)
+    provider_subject = Column(String(255), nullable=False)
+    status = Column(String(24), nullable=False, default="active", server_default="active", index=True)
+    email_snapshot = Column(String(255), nullable=True)
+
+
+class TenantMembership(BaseModel):
+    __tablename__ = "tenant_memberships"
+    __table_args__ = (UniqueConstraint("principal_id", "tenant_id", name="uq_tenant_membership_principal_tenant"),)
+
+    principal_id = Column(UUID(as_uuid=True), ForeignKey("identity_principals.id"), nullable=False, index=True)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, default="workos", server_default="workos")
+    provider_membership_id = Column(String(255), nullable=True, unique=True, index=True)
+    role_slug = Column(String(64), nullable=False, index=True)
+    status = Column(String(24), nullable=False, default="pending", server_default="pending", index=True)
+    permissions = Column(JSONB, nullable=False, default=list, server_default="[]")
+    resource_scope = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    provider_updated_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class TenantInvitation(BaseModel):
+    __tablename__ = "tenant_invitations"
+
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    principal_id = Column(UUID(as_uuid=True), ForeignKey("identity_principals.id"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, default="workos", server_default="workos")
+    provider_invitation_id = Column(String(255), nullable=True, unique=True, index=True)
+    email_snapshot = Column(String(255), nullable=False, index=True)
+    intended_role_slug = Column(String(64), nullable=False)
+    resource_scope = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    driver_profile_id = Column(UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True)
+    status = Column(String(24), nullable=False, default="creating", server_default="creating", index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+    invited_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+
+
+class WorkOSEventReceipt(BaseModel):
+    __tablename__ = "workos_event_receipts"
+
+    event_id = Column(String(255), nullable=False, unique=True, index=True)
+    event_type = Column(String(120), nullable=False, index=True)
+    payload_sha256 = Column(String(64), nullable=False)
+    status = Column(String(24), nullable=False, default="received", server_default="received", index=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(Text, nullable=True)

@@ -26,3 +26,11 @@ export async function requestTokenRefresh(refreshToken: string | null): Promise<
 
   return response.data
 }
+
+export async function requestWorkOSSessionRefresh(): Promise<void> {
+  await axios.post(
+    `${getApiBaseUrl()}/auth/workos/session/refresh`,
+    {},
+    { withCredentials: true }
+  )
+}

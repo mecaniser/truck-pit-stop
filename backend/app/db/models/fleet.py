@@ -83,6 +83,7 @@ class IncidentStatus(str, enum.Enum):
     OPEN = "open"
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
+    VOIDED = "voided"
 
 
 def _enum_col(enum_cls, **kwargs):
@@ -97,19 +98,34 @@ class FleetInspection(BaseModel):
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=False, index=True)
+    trailer_id = Column(UUID(as_uuid=True), ForeignKey("fleet_trailers.id"), nullable=True, index=True)
+    custody_session_id = Column(
+        UUID(as_uuid=True), ForeignKey("equipment_custody_sessions.id"), nullable=True, index=True
+    )
+    # Subject driver and authenticated actor remain separate. inspector_id is
+    # the User who performed/submitted the action; driver_id is the driver
+    # whose custody and history the inspection belongs to.
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True)
     inspector_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     status = _enum_col(InspectionStatus, nullable=False, default=InspectionStatus.SCHEDULED, index=True)
     result = _enum_col(InspectionResult, nullable=True)
 
     scheduled_for = Column(Date, nullable=False, index=True)
+    inspection_type = Column(String(24), nullable=False, default="weekly", server_default="weekly")
     performed_at = Column(DateTime(timezone=True), nullable=True)
+    attested_at = Column(DateTime(timezone=True), nullable=True)
+    attestation_version = Column(String(32), nullable=True)
+    attested_name = Column(String(200), nullable=True)
     odometer = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     # Work order created to fix this inspection's failed items (traceability).
     repair_order_id = Column(UUID(as_uuid=True), ForeignKey("repair_orders.id"), nullable=True)
 
     vehicle = relationship("Vehicle")
+    trailer = relationship("FleetTrailer")
+    custody_session = relationship("EquipmentCustodySession")
+    driver = relationship("DriverProfile")
     inspector = relationship("User", foreign_keys=[inspector_id])
     items = relationship(
         "FleetInspectionItem",
@@ -140,6 +156,13 @@ class FleetIncident(BaseModel):
 
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=False, index=True)
+    trailer_id = Column(UUID(as_uuid=True), ForeignKey("fleet_trailers.id"), nullable=True, index=True)
+    custody_session_id = Column(
+        UUID(as_uuid=True), ForeignKey("equipment_custody_sessions.id"), nullable=True, index=True
+    )
+    driver_id_at_occurrence = Column(
+        UUID(as_uuid=True), ForeignKey("driver_profiles.id"), nullable=True, index=True
+    )
     reported_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     occurred_at = Column(DateTime(timezone=True), nullable=False)
@@ -147,6 +170,7 @@ class FleetIncident(BaseModel):
     severity = _enum_col(IncidentSeverity, nullable=False, default=IncidentSeverity.MEDIUM, index=True)
     status = _enum_col(IncidentStatus, nullable=False, default=IncidentStatus.OPEN, index=True)
     description = Column(Text, nullable=False)
+    incident_type = Column(String(32), nullable=False, default="other", server_default="other")
     resolution_notes = Column(Text, nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -156,6 +180,9 @@ class FleetIncident(BaseModel):
     )
 
     vehicle = relationship("Vehicle")
+    trailer = relationship("FleetTrailer")
+    custody_session = relationship("EquipmentCustodySession")
+    driver_at_occurrence = relationship("DriverProfile")
     reported_by = relationship("User", foreign_keys=[reported_by_id])
     repair_order = relationship("RepairOrder")
     photos = relationship("FleetIncidentPhoto", back_populates="incident", cascade="all, delete-orphan")
