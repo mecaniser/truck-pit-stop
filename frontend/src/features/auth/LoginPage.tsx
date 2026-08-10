@@ -419,26 +419,24 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {organizationTenantId && (
-            <>
-              <div className="flex items-center gap-3" aria-hidden="true">
-                <span className="h-px flex-1 bg-zinc-800" />
-                <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">or</span>
-                <span className="h-px flex-1 bg-zinc-800" />
-              </div>
+          <div className="flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-zinc-800" />
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">or</span>
+            <span className="h-px flex-1 bg-zinc-800" />
+          </div>
 
-              <button
-                type="button"
-                onClick={() => startWorkOSLogin(organizationReturnTo, null, organizationTenantId)}
-                className="flex w-full justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 transition-colors hover:border-zinc-500 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
-              >
-                Continue with organization sign-in
-              </button>
-              <p className="text-center text-xs leading-5 text-zinc-500">
-                Sign in to the garage selected for this workspace.
-              </p>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => startWorkOSLogin(organizationReturnTo, null, organizationTenantId)}
+            className="flex w-full justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 transition-colors hover:border-zinc-500 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
+          >
+            Continue with organization sign-in
+          </button>
+          <p className="text-center text-xs leading-5 text-zinc-500">
+            {organizationTenantId
+              ? 'Sign in to the garage selected for this workspace.'
+              : 'Owners enter their garage directly. Multi-garage users can choose an authorized workspace.'}
+          </p>
 
           <div className="text-sm text-center">
             <Link

@@ -60,7 +60,7 @@ describe('LoginPage', () => {
     renderLogin()
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /driver portal/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /organization sign-in/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /organization sign-in/i })).toBeInTheDocument()
   })
 
   it('shows organization sign-in only for an explicitly selected garage', () => {

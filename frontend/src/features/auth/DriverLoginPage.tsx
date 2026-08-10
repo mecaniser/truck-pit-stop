@@ -12,7 +12,7 @@ export default function DriverLoginPage() {
   const accessNeedsReview = searchParams.get('reason') === 'identity_review_required'
   const stateExpired = searchParams.get('reason') === 'workos_state_expired'
   const tenantId = searchParams.get('tenant_id')
-  const workOSLoginUrl = tenantId ? buildWorkOSLoginUrl('/driver', tenantId) : null
+  const workOSLoginUrl = buildWorkOSLoginUrl('/driver', tenantId)
 
   useEffect(() => {
     const siteOrigin = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '')
@@ -94,7 +94,7 @@ export default function DriverLoginPage() {
             </li>
           </ul>
 
-          {!accessNeedsReview && workOSLoginUrl && (
+          {!accessNeedsReview && (
             <>
               <a
                 href={workOSLoginUrl}
@@ -106,11 +106,6 @@ export default function DriverLoginPage() {
                 Access is provided by your fleet manager. Sign in with the email address that received your invitation.
               </p>
             </>
-          )}
-          {!accessNeedsReview && !workOSLoginUrl && (
-            <div className="mt-8 border-y border-slate-700/70 py-4 text-sm leading-6 text-slate-300" role="status">
-              Open the Driver Portal link provided by your fleet manager. It identifies the correct garage before sign-in.
-            </div>
           )}
         </section>
 
