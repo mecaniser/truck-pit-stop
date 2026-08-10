@@ -248,7 +248,11 @@ async def get_workos_capabilities(
     def response(reason: str, *, available: bool = False, reauth: bool = False):
         reauth_path = None
         if reauth:
-            reauth_path = f"/auth/workos/login?{urlencode({'return_to': _safe_return_path(return_to)})}"
+            reauth_query = urlencode({
+                'return_to': _safe_return_path(return_to),
+                'tenant_id': str(tenant.id),
+            })
+            reauth_path = f"/auth/workos/login?{reauth_query}"
         return WorkOSCapabilitiesResponse(
             session_provider=session_provider,
             workos_auth_enabled=settings.WORKOS_AUTH_ENABLED,
