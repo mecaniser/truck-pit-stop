@@ -52,6 +52,48 @@ async def test_login_issues_bound_state_and_safe_return(client, fake_redis):
 
 
 @pytest.mark.asyncio
+async def test_login_selects_exact_active_mapped_tenant(client, db_session):
+    tenant = Tenant(
+        name="Selected tenant",
+        slug="selected-tenant",
+        workos_organization_id="org_selected",
+    )
+    db_session.add(tenant)
+    await db_session.commit()
+
+    response = await client.get(
+        f"/api/v1/auth/workos/login?tenant_id={tenant.id}&return_to=%2Fdashboard",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 307
+    assert "organization_id=org_selected" in response.headers["location"]
+    assert "prompt=login" in response.headers["location"]
+    assert response.cookies.get("workos_return_to").strip('"') == "/dashboard"
+
+
+@pytest.mark.asyncio
+async def test_login_rejects_inactive_or_unmapped_tenant(client, db_session):
+    inactive = Tenant(
+        name="Inactive tenant",
+        slug="inactive-tenant",
+        workos_organization_id="org_inactive",
+        is_active=False,
+    )
+    unmapped = Tenant(name="Unmapped tenant", slug="unmapped-tenant")
+    db_session.add_all([inactive, unmapped])
+    await db_session.commit()
+
+    for tenant in (inactive, unmapped):
+        response = await client.get(
+            f"/api/v1/auth/workos/login?tenant_id={tenant.id}",
+            follow_redirects=False,
+        )
+        assert response.status_code == 404
+        assert response.json()["detail"] == "WorkOS organization is not available"
+
+
+@pytest.mark.asyncio
 async def test_callback_rejects_missing_or_mismatched_state(client):
     assert (await client.get("/api/v1/auth/workos/callback?code=x")).status_code == 401
     await client.get("/api/v1/auth/workos/login")
