@@ -53,6 +53,27 @@ class DriverPortalAccessResponse(BaseModel):
     can_revoke: bool
 
 
+class DriverInvitationCapability(BaseModel):
+    available: bool
+    reason: Literal[
+        "available",
+        "workos_auth_disabled",
+        "organization_not_provisioned",
+        "manager_not_provisioned",
+        "workos_reauthentication_required",
+        "missing_permission",
+    ]
+    required_permission: Literal["members:manage"] = "members:manage"
+    reauth_path: Optional[str] = None
+
+
+class WorkOSCapabilitiesResponse(BaseModel):
+    session_provider: Literal["legacy", "workos"]
+    workos_auth_enabled: bool
+    organization_provisioned: bool
+    driver_invitation_management: DriverInvitationCapability
+
+
 class WorkOSSessionResponse(BaseModel):
     message: str
     expires_in: int

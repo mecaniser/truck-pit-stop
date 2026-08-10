@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
+import axios from 'axios'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster, ToastBar, toast, useToasterStore } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
-import api from './lib/api'
 import { ThemeProvider, useTheme, type NotificationPosition } from './contexts/ThemeContext'
 import LandingPage from './features/landing/LandingPage'
 import PrivacyPolicyPage from './features/landing/PrivacyPolicyPage'
@@ -228,8 +228,45 @@ function AppToaster() {
   )
 }
 
+function useCookieSessionBootstrap(): boolean {
+  const { isAuthenticated, establishCookieSession } = useAuthStore()
+  const [checkingSession, setCheckingSession] = useState(!isAuthenticated)
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setCheckingSession(false)
+      return
+    }
+    let active = true
+    const apiBase = String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')
+    const workOSClient = axios.create({ withCredentials: true })
+    // Use a bare client so this path can only refresh the server-held WorkOS
+    // credential and can never fall into the legacy refresh-token flow.
+    const bootstrap = () => workOSClient.get(`${apiBase}/auth/workos/me`)
+      .catch(async (error) => {
+        if (!axios.isAxiosError(error) || error.response?.status !== 401) throw error
+        await workOSClient.post(`${apiBase}/auth/workos/session/refresh`, {})
+        return workOSClient.get(`${apiBase}/auth/workos/me`)
+      })
+    bootstrap()
+      .then(({ data }) => {
+        if (active) establishCookieSession(data)
+      })
+      .catch(() => undefined)
+      .finally(() => { if (active) setCheckingSession(false) })
+    return () => { active = false }
+  }, [establishCookieSession, isAuthenticated])
+
+  return checkingSession
+}
+
 function StaffRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
+  const checkingSession = useCookieSessionBootstrap()
+
+  if (checkingSession) {
+    return <div className="min-h-screen bg-zinc-950 text-white grid place-items-center">Opening workspace…</div>
+  }
   
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />
@@ -254,23 +291,8 @@ function StaffRoute({ children }: { children: React.ReactNode }) {
 }
 
 function DriverRoute({ children }: { children: React.ReactNode }) {
-  const { user, isAuthenticated, establishCookieSession } = useAuthStore()
-  const [checkingSession, setCheckingSession] = useState(!isAuthenticated)
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      setCheckingSession(false)
-      return
-    }
-    let active = true
-    api.get('/auth/me')
-      .then(({ data }) => {
-        if (active) establishCookieSession(data)
-      })
-      .catch(() => undefined)
-      .finally(() => { if (active) setCheckingSession(false) })
-    return () => { active = false }
-  }, [establishCookieSession, isAuthenticated])
+  const { user } = useAuthStore()
+  const checkingSession = useCookieSessionBootstrap()
 
   if (checkingSession) return <div className="min-h-screen bg-[#081018] text-white grid place-items-center">Opening driver workspace…</div>
   if (!useAuthStore.getState().isAuthenticated) return <Navigate to="/driver/login" replace />
@@ -280,6 +302,11 @@ function DriverRoute({ children }: { children: React.ReactNode }) {
 
 function FleetRoute({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated } = useAuthStore()
+  const checkingSession = useCookieSessionBootstrap()
+
+  if (checkingSession) {
+    return <div className="min-h-screen bg-[#081018] text-white grid place-items-center">Opening fleet workspace…</div>
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />

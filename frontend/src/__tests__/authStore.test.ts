@@ -8,6 +8,7 @@ vi.mock('../lib/api', () => ({
 }))
 
 import { useAuthStore } from '../stores/authStore'
+import api from '../lib/api'
 
 const fakeUser = {
   id: 'u-1',
@@ -28,7 +29,9 @@ describe('authStore', () => {
       token: null,
       refreshToken: null,
       isAuthenticated: false,
+      authProvider: null,
     })
+    vi.mocked(api.post).mockClear()
   })
 
   it('starts unauthenticated', () => {
@@ -53,6 +56,14 @@ describe('authStore', () => {
     expect(state.isAuthenticated).toBe(false)
     expect(state.user).toBeNull()
     expect(state.token).toBeNull()
+    expect(api.post).toHaveBeenCalledWith('/auth/logout')
+  })
+
+  it('uses tenant-only WorkOS logout for cookie sessions', async () => {
+    useAuthStore.getState().establishCookieSession(fakeUser)
+    await useAuthStore.getState().logout()
+    expect(api.post).toHaveBeenCalledWith('/auth/workos/logout')
+    expect(useAuthStore.getState().authProvider).toBeNull()
   })
 
   it('setUser updates user only', () => {

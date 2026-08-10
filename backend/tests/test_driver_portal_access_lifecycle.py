@@ -7,6 +7,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.api.v1.endpoints import workos_lifecycle
+from app.core.config import settings
+from app.core.security import create_access_token
 from app.core.workos_auth import CurrentPrincipal
 from app.db.models.driver_accountability import DriverProfile
 from app.db.models.identity import (
@@ -105,6 +107,90 @@ async def test_portal_projection_separates_profile_and_access_states(db_session)
     assert expired.profile_status == "inactive"
     assert expired.portal_access_status == "expired"
     assert expired.can_invite is True
+
+
+@pytest.mark.asyncio
+async def test_legacy_manager_capability_fails_closed_until_explicit_workos_link(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "WORKOS_AUTH_ENABLED", True)
+    tenant, manager, _ = await _manager_context(db_session)
+    legacy_token = create_access_token(data={"sub": str(manager.id)}, tenant_id=str(tenant.id))
+
+    manager.workos_user_id = None
+    await db_session.flush()
+    not_ready = await workos_lifecycle.get_workos_capabilities(
+        "/fleet/trucks/one", manager, legacy_token, db_session
+    )
+    assert not_ready.session_provider == "legacy"
+    assert not_ready.organization_provisioned is True
+    assert not_ready.driver_invitation_management.reason == "manager_not_provisioned"
+    assert not_ready.driver_invitation_management.reauth_path is None
+
+    manager.workos_user_id = "wu_manager_linked"
+    await db_session.flush()
+    reauth = await workos_lifecycle.get_workos_capabilities(
+        "/fleet/trucks/one", manager, legacy_token, db_session
+    )
+    assert reauth.driver_invitation_management.reason == "workos_reauthentication_required"
+    assert reauth.driver_invitation_management.reauth_path == "/auth/workos/login?return_to=%2Ffleet%2Ftrucks%2Fone"
+
+
+@pytest.mark.asyncio
+async def test_workos_manager_capability_requires_authoritative_permission(db_session, fake_redis, monkeypatch):
+    monkeypatch.setattr(settings, "WORKOS_AUTH_ENABLED", True)
+    tenant, manager, _ = await _manager_context(db_session)
+    identity = IdentityPrincipal(user_id=manager.id, status="active")
+    db_session.add(identity)
+    await db_session.flush()
+    db_session.add_all([
+        ExternalIdentity(
+            principal_id=identity.id,
+            provider="workos",
+            provider_subject=manager.workos_user_id,
+            status="active",
+        ),
+        TenantMembership(
+            principal_id=identity.id,
+            tenant_id=tenant.id,
+            provider="workos",
+            role_slug="fleet_manager",
+            status="active",
+            permissions=[],
+            resource_scope={},
+        ),
+    ])
+    await db_session.flush()
+
+    def token(permissions):
+        return create_access_token(
+            data={
+                "sub": str(manager.id),
+                "auth_provider": "workos",
+                "workos_user_id": manager.workos_user_id,
+                "workos_org_id": tenant.workos_organization_id,
+                "permissions": permissions,
+            },
+            tenant_id=str(tenant.id),
+        )
+
+    missing = await workos_lifecycle.get_workos_capabilities(
+        "/fleet", manager, token(["fleet:view"]), db_session
+    )
+    assert missing.driver_invitation_management.reason == "missing_permission"
+    assert missing.driver_invitation_management.available is False
+
+    available = await workos_lifecycle.get_workos_capabilities(
+        "/fleet", manager, token(["fleet:view", "members:manage"]), db_session
+    )
+    assert available.session_provider == "workos"
+    assert available.driver_invitation_management.reason == "available"
+    assert available.driver_invitation_management.available is True
+
+    bootstrapped = await workos_lifecycle.get_workos_session_user(
+        await workos_lifecycle.get_current_principal(token=token(["members:manage"]), db=db_session),
+        db_session,
+    )
+    assert bootstrapped.id == manager.id
+    assert bootstrapped.role == UserRole.FLEET_MANAGER
 
 
 @pytest.mark.asyncio

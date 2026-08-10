@@ -96,11 +96,16 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null)
         if (authProvider === 'workos') {
+          const role = useAuthStore.getState().user?.role
           useAuthStore.getState().clearSession()
+          const returnTo = `${window.location.pathname}${window.location.search}`
+          window.location.href = role === 'driver'
+            ? '/driver/login'
+            : `/login?reason=workos_session_expired&return_to=${encodeURIComponent(returnTo)}`
         } else {
           void useAuthStore.getState().logout()
+          window.location.href = '/login'
         }
-        window.location.href = '/login'
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false

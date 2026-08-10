@@ -90,7 +90,8 @@ export const useAuthStore = create<AuthState>()(
         // Call backend to blacklist token and clear cookies
         try {
           if (get().isAuthenticated) {
-            await api.post('/auth/logout')
+            const endpoint = get().authProvider === 'workos' ? '/auth/workos/logout' : '/auth/logout'
+            await api.post(endpoint)
           }
         } catch {
           // Ignore errors - we're logging out anyway

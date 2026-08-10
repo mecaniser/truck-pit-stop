@@ -9,6 +9,7 @@ import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import BrandLogo from '../../components/brand/BrandLogo'
 import { applySeo } from '../../lib/seo'
+import { startWorkOSLogin } from '../../lib/workosAuth'
 
 const loginSchema = z.object({
   email: z
@@ -48,6 +49,8 @@ export default function LoginPage() {
   const [shopSelectToken, setShopSelectToken] = useState<string | null>(null)
   const [shops, setShops] = useState<ShopOption[]>([])
   const resetSuccess = searchParams.get('reset') === 'success'
+  const workOSReauthenticationRequired = ['workos_session_expired', 'workos_required'].includes(searchParams.get('reason') || '')
+  const organizationReturnTo = searchParams.get('return_to') || '/dashboard'
   const defaultEmail = import.meta.env.DEV ? 'truxpitstop@gmail.com' : ''
   const defaultPassword = import.meta.env.DEV ? 'BUse@1534' : ''
 
@@ -268,6 +271,11 @@ export default function LoginPage() {
             </div>
           ) : (
           <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+          {workOSReauthenticationRequired && (
+            <div className="rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm leading-6 text-amber-200">
+              Continue with organization sign-in to manage Driver Portal access. Your existing shop password session cannot authorize this action.
+            </div>
+          )}
           {resetSuccess && (
             <div className="flex items-center gap-3 rounded-xl border border-emerald-700/50 bg-emerald-900/20 px-4 py-3 text-emerald-300">
               <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -403,6 +411,23 @@ export default function LoginPage() {
               )}
             </button>
           </div>
+
+          <div className="flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-zinc-800" />
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">or</span>
+            <span className="h-px flex-1 bg-zinc-800" />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => startWorkOSLogin(organizationReturnTo)}
+            className="flex w-full justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 transition-colors hover:border-zinc-500 hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)] focus:ring-offset-2 focus:ring-offset-zinc-950"
+          >
+            Continue with organization sign-in
+          </button>
+          <p className="text-center text-xs leading-5 text-zinc-500">
+            For staff accounts activated through your organization.
+          </p>
 
           <div className="text-sm text-center">
             <Link

@@ -1,17 +1,18 @@
 """WorkOS organization lifecycle, invitation, session, and webhook endpoints."""
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.dependencies import get_db
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, get_token_from_request
 from app.core.redis import get_token_version
-from app.core.security import create_access_token
-from app.core.workos_auth import CurrentPrincipal, require_permission
+from app.core.security import create_access_token, decode_token
+from app.core.workos_auth import CurrentPrincipal, get_current_principal, require_permission
 from app.db.models.driver_accountability import DriverProfile
 from app.db.models.identity import (
     ExternalIdentity,
@@ -26,11 +27,14 @@ from app.schemas.workos_lifecycle import (
     WorkOSInvitationCreate,
     WorkOSInvitationResponse,
     DriverPortalAccessResponse,
+    DriverInvitationCapability,
+    WorkOSCapabilitiesResponse,
     WorkOSSessionResponse,
     WorkOSWebhookResponse,
     WorkOSOrganizationProvision,
     WorkOSOrganizationResponse,
 )
+from app.schemas.auth import UserResponse
 from app.services.identity_lifecycle import INVITABLE_ROLES, resolve_authenticated_identity
 from app.services import workos_provider, workos_session, workos_webhooks
 from app.services.workos_provider import WorkOSProviderError
@@ -48,6 +52,10 @@ async def _platform_admin(current_user: User = Depends(get_current_active_user))
 def _cookie_domain() -> Optional[str]:
     value = settings.COOKIE_DOMAIN.strip()
     return value or None
+
+
+def _safe_return_path(value: Optional[str]) -> str:
+    return value if value and value.startswith("/") and not value.startswith("//") else "/"
 
 
 def _set_access_cookie(response: Response, token: str) -> None:
@@ -216,6 +224,91 @@ async def _driver_portal_projection(db: AsyncSession, driver: DriverProfile) -> 
         can_resend=not driver.user_id and access_status in {"pending", "expired", "revoked"},
         can_revoke=not driver.user_id and access_status == "pending",
     )
+
+
+@router.get("/capabilities", response_model=WorkOSCapabilitiesResponse)
+async def get_workos_capabilities(
+    return_to: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_active_user),
+    token: str = Depends(get_token_from_request),
+    db: AsyncSession = Depends(get_db),
+):
+    """Describe whether this session may manage driver invitations.
+
+    This endpoint is intentionally descriptive. Only ``require_permission``
+    authorizes invitation actions; legacy roles never become WorkOS grants.
+    """
+    claims = decode_token(token) or {}
+    session_provider = "workos" if claims.get("auth_provider") == "workos" else "legacy"
+    tenant_id = claims.get("tid") or current_user.tenant_id
+    tenant = await db.get(Tenant, tenant_id) if tenant_id else None
+    organization_provisioned = bool(tenant and tenant.is_active and tenant.workos_organization_id)
+
+    def response(reason: str, *, available: bool = False, reauth: bool = False):
+        reauth_path = None
+        if reauth:
+            reauth_path = f"/auth/workos/login?{urlencode({'return_to': _safe_return_path(return_to)})}"
+        return WorkOSCapabilitiesResponse(
+            session_provider=session_provider,
+            workos_auth_enabled=settings.WORKOS_AUTH_ENABLED,
+            organization_provisioned=organization_provisioned,
+            driver_invitation_management=DriverInvitationCapability(
+                available=available,
+                reason=reason,
+                reauth_path=reauth_path,
+            ),
+        )
+
+    if not settings.WORKOS_AUTH_ENABLED:
+        return response("workos_auth_disabled")
+    if not organization_provisioned:
+        return response("organization_not_provisioned")
+
+    if session_provider == "workos":
+        try:
+            principal = await get_current_principal(token=token, db=db)
+        except HTTPException:
+            return response("manager_not_provisioned")
+        if "members:manage" not in principal.permissions:
+            return response("missing_permission")
+        return response("available", available=True)
+
+    manager_roles = {UserRole.GARAGE_OWNER, UserRole.GARAGE_ADMIN, UserRole.FLEET_MANAGER}
+    if current_user.role not in manager_roles:
+        return response("manager_not_provisioned")
+    projected_membership = (await db.execute(
+        select(TenantMembership.id)
+        .join(IdentityPrincipal, IdentityPrincipal.id == TenantMembership.principal_id)
+        .where(
+            IdentityPrincipal.user_id == current_user.id,
+            IdentityPrincipal.status == "active",
+            IdentityPrincipal.deleted_at.is_(None),
+            TenantMembership.tenant_id == tenant.id,
+            TenantMembership.status == "active",
+            TenantMembership.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not current_user.workos_user_id and not projected_membership:
+        return response("manager_not_provisioned")
+    return response("workos_reauthentication_required", reauth=True)
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_workos_session_user(
+    principal: CurrentPrincipal = Depends(get_current_principal),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bootstrap SPA state only from a validated WorkOS cookie session."""
+    user = await db.get(User, principal.local_user_id)
+    tenant = await db.get(Tenant, principal.tenant_id)
+    if not user or not tenant:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session is unavailable")
+    result = UserResponse.model_validate(user)
+    result.tenant_name = tenant.name
+    result.tenant_slug = tenant.slug
+    result.tenant_logo_url = tenant.logo_url
+    result.messaging_enabled = tenant.messaging_enabled
+    return result
 
 
 @router.post("/organizations/provision", response_model=WorkOSOrganizationResponse)
