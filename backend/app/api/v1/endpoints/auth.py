@@ -101,10 +101,12 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     existing local cookie/JWT session, then return to the configured SPA.
     """
     _workos_enabled()
-    expected_state = request.cookies.get("workos_oauth_state") if request else None
-    state_key = f"workos:oauth-state:{state}" if state else ""
-    state_is_live = bool(state and await (await get_redis()).delete(state_key))
-    if not state or not expected_state or not state_is_live or not secrets.compare_digest(state, expected_state):
+    expected_state = request.cookies.get("workos_oauth_state")
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
+    # Consume only after confirming this browser owns the presented state.
+    state_is_live = bool(await (await get_redis()).delete(f"workos:oauth-state:{state}"))
+    if not state_is_live:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
     async with httpx.AsyncClient(timeout=10.0) as client:
         result = await client.post(
@@ -136,8 +138,10 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     return_to = _safe_return_path(request.cookies.get("workos_return_to") if request else None)
     response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
     access_token = create_access_token(data={"sub": str(user.id), "auth_provider": "workos", "workos_user_id": workos_user_id, "workos_org_id": workos_org_id, "permissions": permissions}, expires_delta=timedelta(minutes=5), tenant_id=str(tenant.id))
-    refresh_token = create_refresh_token(data={"sub": str(user.id)}, tenant_id=str(tenant.id))
-    set_auth_cookies(response, access_token, refresh_token)
+    set_access_cookie(response, access_token, max_age_seconds=5 * 60)
+    # Do not let an existing legacy refresh cookie convert this short-lived
+    # WorkOS session into a multi-day legacy session.
+    response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
     response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
     response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
     return response
@@ -187,6 +191,14 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str, 
         max_age=refresh_days * 24 * 60 * 60,
         domain=_cookie_domain(),
         path="/api/v1/auth",  # Only sent to auth endpoints
+    )
+
+
+def set_access_cookie(response: Response, access_token: str, max_age_seconds: int):
+    response.set_cookie(
+        key="access_token", value=access_token, httponly=True,
+        secure=settings.COOKIE_SECURE_EFFECTIVE, samesite=settings.COOKIE_SAMESITE,
+        max_age=max_age_seconds, domain=_cookie_domain(), path="/",
     )
 
 
