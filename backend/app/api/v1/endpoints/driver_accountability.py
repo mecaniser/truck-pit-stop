@@ -1,7 +1,7 @@
 """WorkOS-authorized driver identity and equipment custody endpoints."""
 
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,6 +19,7 @@ from app.db.models.driver_accountability import (
     FleetIncidentEvent,
     FleetTrailer,
 )
+from app.db.models.customer import Customer
 from app.db.models.fleet import (
     DEFAULT_INSPECTION_CHECKLIST,
     FleetIncident,
@@ -47,15 +48,20 @@ from app.schemas.driver_accountability import (
     DriverInspectionCreate,
     DriverScorecardResponse,
     DriverProfileCreate,
+    DriverProfileUpdate,
     DriverProfileResponse,
+    LegacyDriverContactResponse,
     TrailerCreate,
     TrailerResponse,
+    VehicleDriverAssignmentResponse,
 )
 from app.services.driver_accountability_service import (
     acknowledge_own_custody,
     create_driver_profile,
     create_fleet_trailer,
     get_driver_for_principal,
+    release_vehicle_custody,
+    replace_vehicle_custody,
     start_custody_session,
 )
 
@@ -222,6 +228,48 @@ async def list_drivers(
     )
 
 
+@router.get("/drivers/legacy-contacts", response_model=List[LegacyDriverContactResponse])
+async def list_legacy_driver_contacts(
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("fleet:view")),
+):
+    """Expose unconverted truck contacts so managers can promote them to profiles."""
+    profiles = list((await db.execute(select(DriverProfile).where(
+        DriverProfile.tenant_id == principal.tenant_id,
+        DriverProfile.deleted_at.is_(None),
+    ))).scalars())
+
+    def contact_key(name: str, phone: Optional[str]) -> tuple[str, str]:
+        normalized_name = " ".join(name.lower().split())
+        normalized_phone = "".join(character for character in (phone or "") if character.isdigit())
+        return normalized_name, normalized_phone
+
+    profile_keys = {
+        contact_key(f"{profile.first_name} {profile.last_name}", profile.phone)
+        for profile in profiles
+    }
+    contacts: dict[tuple[str, str], LegacyDriverContactResponse] = {}
+    rows = (await db.execute(select(Vehicle.driver_name, Vehicle.driver_phone).where(
+        Vehicle.tenant_id == principal.tenant_id,
+        Vehicle.deleted_at.is_(None),
+        Vehicle.driver_name.is_not(None),
+        Vehicle.driver_name != "",
+    ))).all()
+    for raw_name, raw_phone in rows:
+        name = " ".join((raw_name or "").split())
+        if not name:
+            continue
+        phone = (raw_phone or "").strip() or None
+        key = contact_key(name, phone)
+        if key in profile_keys:
+            continue
+        if key in contacts:
+            contacts[key].vehicle_count += 1
+        else:
+            contacts[key] = LegacyDriverContactResponse(name=name, phone=phone, vehicle_count=1)
+    return sorted(contacts.values(), key=lambda contact: contact.name.lower())
+
+
 @router.get("/drivers/{driver_id}/scorecard", response_model=DriverScorecardResponse)
 async def driver_scorecard(
     driver_id: UUID,
@@ -263,6 +311,141 @@ async def create_driver(
     await db.commit()
     await db.refresh(driver)
     return driver
+
+
+@router.patch("/drivers/{driver_id}", response_model=DriverProfileResponse)
+async def update_driver(
+    driver_id: UUID,
+    body: DriverProfileUpdate,
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("fleet:assign")),
+):
+    driver = (await db.execute(select(DriverProfile).where(
+        DriverProfile.id == driver_id,
+        DriverProfile.tenant_id == principal.tenant_id,
+        DriverProfile.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    values = body.model_dump(exclude_unset=True)
+    for key in ("first_name", "last_name"):
+        if key in values and (not isinstance(values[key], str) or not values[key].strip()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{key.replace('_', ' ').title()} is required",
+            )
+        if key in values:
+            values[key] = values[key].strip()
+    if "employer_customer_id" in values and values["employer_customer_id"] is not None:
+        employer = (await db.execute(select(Customer.id).where(
+            Customer.id == values["employer_customer_id"],
+            Customer.tenant_id == principal.tenant_id,
+            Customer.deleted_at.is_(None),
+        ))).scalar_one_or_none()
+        if not employer:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employer customer not found",
+            )
+    for key in ("employee_number",):
+        if key in values and isinstance(values[key], str):
+            values[key] = values[key].strip() or None
+    if "email" in values and values["email"] is not None:
+        values["email"] = values["email"].strip().lower() or None
+    for key, value in values.items():
+        setattr(driver, key, value)
+    await db.commit()
+    await db.refresh(driver)
+    return driver
+
+
+async def _vehicle_driver_assignment(
+    db: AsyncSession, *, tenant_id: UUID, vehicle_id: UUID
+) -> Optional[VehicleDriverAssignmentResponse]:
+    row = (await db.execute(
+        select(EquipmentCustodySession, EquipmentCustodyAsset, DriverProfile)
+        .join(EquipmentCustodyAsset, EquipmentCustodyAsset.custody_session_id == EquipmentCustodySession.id)
+        .join(DriverProfile, DriverProfile.id == EquipmentCustodySession.driver_id)
+        .where(
+            EquipmentCustodySession.tenant_id == tenant_id,
+            EquipmentCustodySession.status.in_(("assigned", "active")),
+            EquipmentCustodySession.deleted_at.is_(None),
+            EquipmentCustodyAsset.vehicle_id == vehicle_id,
+            EquipmentCustodyAsset.released_at.is_(None),
+            EquipmentCustodyAsset.deleted_at.is_(None),
+            DriverProfile.deleted_at.is_(None),
+        )
+        .order_by(EquipmentCustodySession.starts_at.desc())
+    )).first()
+    if not row:
+        return None
+    session, _asset, driver = row
+    return VehicleDriverAssignmentResponse(
+        vehicle_id=vehicle_id,
+        custody_session_id=session.id,
+        custody_status=session.status,
+        custody_starts_at=session.starts_at,
+        custody_acknowledged_at=session.acknowledged_at,
+        driver=DriverProfileResponse.model_validate(driver),
+    )
+
+
+@router.get("/vehicles/{vehicle_id}/driver", response_model=Optional[VehicleDriverAssignmentResponse])
+async def current_vehicle_driver(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("fleet:view")),
+):
+    vehicle = (await db.execute(select(Vehicle.id).where(
+        Vehicle.id == vehicle_id,
+        Vehicle.tenant_id == principal.tenant_id,
+        Vehicle.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Truck not found")
+    return await _vehicle_driver_assignment(db, tenant_id=principal.tenant_id, vehicle_id=vehicle_id)
+
+
+@router.put("/vehicles/{vehicle_id}/driver", response_model=VehicleDriverAssignmentResponse)
+async def replace_vehicle_driver(
+    vehicle_id: UUID,
+    body: CustodyAssignmentCreate,
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("fleet:assign")),
+):
+    if body.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=422, detail="Truck assignment does not match route")
+    await replace_vehicle_custody(
+        db,
+        tenant_id=principal.tenant_id,
+        driver_id=body.driver_id,
+        assigned_by_user_id=principal.local_user_id,
+        vehicle_id=vehicle_id,
+        starts_at=body.starts_at,
+        start_odometer=body.start_odometer,
+        dispatch_reference=body.dispatch_reference,
+        handoff_notes=body.handoff_notes,
+    )
+    await db.commit()
+    result = await _vehicle_driver_assignment(db, tenant_id=principal.tenant_id, vehicle_id=vehicle_id)
+    if not result:  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="Driver assignment was not created")
+    return result
+
+
+@router.delete("/vehicles/{vehicle_id}/driver", status_code=204)
+async def remove_vehicle_driver(
+    vehicle_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("fleet:assign")),
+):
+    await release_vehicle_custody(
+        db,
+        tenant_id=principal.tenant_id,
+        vehicle_id=vehicle_id,
+        released_by_user_id=principal.local_user_id,
+    )
+    await db.commit()
 
 
 @router.get("/trailers", response_model=List[TrailerResponse])

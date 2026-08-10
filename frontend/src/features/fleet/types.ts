@@ -149,6 +149,33 @@ export interface BoardTruck {
   owner_company_name?: string | null
 }
 
+export interface DriverProfile {
+  id: string
+  user_id?: string | null
+  employer_customer_id?: string | null
+  first_name: string
+  last_name: string
+  phone?: string | null
+  email?: string | null
+  employee_number?: string | null
+  employment_status: 'active' | 'inactive'
+}
+
+export interface LegacyDriverContact {
+  name: string
+  phone?: string | null
+  vehicle_count: number
+}
+
+export interface VehicleDriverAssignment {
+  vehicle_id: string
+  custody_session_id: string
+  custody_status: 'assigned' | 'active'
+  custody_starts_at: string
+  custody_acknowledged_at?: string | null
+  driver: DriverProfile
+}
+
 export interface FleetStats {
   total: number
   active: number

@@ -425,6 +425,58 @@
 .fleet-root .fleet-reference-section .dmap-side-h{margin:0;}
 .fleet-root .fleet-reference-subhead{margin:8px 0 0;color:var(--muted-2);font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;}
 .fleet-root .fleet-reference-driver-action{margin-left:auto;}
+.fleet-root .fleet-driver-profile-row{min-height:56px;}
+.fleet-root .fleet-driver-profile-copy{min-width:0;flex:1;}
+.fleet-root .driver-portal-access{display:grid;gap:12px;padding:16px 0 2px;border-top:1px solid var(--line);}
+.fleet-root .driver-portal-access-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+.fleet-root .driver-portal-access-head>div{display:grid;gap:3px;min-width:0;}
+.fleet-root .driver-portal-access-head strong{font-size:14px;color:var(--text);}
+.fleet-root .driver-portal-access-head span,.fleet-root .driver-portal-gate>span,.fleet-root .driver-portal-loading{font-size:12px;line-height:1.45;color:var(--muted-2);}
+.fleet-root .driver-portal-badge{flex:none;min-height:28px;display:inline-flex;align-items:center;padding:0 10px;border-radius:999px;border:1px solid var(--line);font-size:11px!important;font-weight:800;color:var(--muted)!important;}
+.fleet-root .driver-portal-badge.is-active{border-color:color-mix(in srgb,var(--green) 45%,var(--line));color:var(--green)!important;background:color-mix(in srgb,var(--green) 10%,transparent);}
+.fleet-root .driver-portal-badge.is-pending{border-color:color-mix(in srgb,var(--yellow) 45%,var(--line));color:var(--yellow)!important;background:color-mix(in srgb,var(--yellow) 10%,transparent);}
+.fleet-root .driver-portal-badge.is-suspended,.fleet-root .driver-portal-badge.is-needs_review{border-color:color-mix(in srgb,var(--red) 45%,var(--line));color:var(--red)!important;}
+.fleet-root .driver-portal-gate,.fleet-root .driver-portal-active{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.fleet-root .driver-portal-active{justify-content:flex-start;color:var(--green);font-size:12px;}
+.fleet-root .driver-portal-invite{display:grid;gap:10px;}
+.fleet-root .driver-portal-invite label{display:grid;gap:6px;color:var(--muted-2);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
+.fleet-root .driver-portal-invite input{width:100%;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#0f161e;color:var(--text);font:inherit;}
+.fleet-root .driver-portal-invite>div{display:flex;justify-content:flex-end;gap:8px;}
+
+.fleet-root .driver-assignment-flow{display:grid;gap:18px;}
+.fleet-root .driver-workos-gate{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);}
+.fleet-root .driver-workos-gate>div{display:grid;gap:4px;}
+.fleet-root .driver-workos-gate strong{font-size:14px;}
+.fleet-root .driver-workos-gate span{font-size:12px;line-height:1.45;color:var(--muted-2);}
+.fleet-root .driver-workos-gate button{grid-column:1 / -1;justify-content:center;}
+.fleet-root .driver-current-assignment{display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line);}
+.fleet-root .driver-current-assignment>div{display:grid;gap:2px;}
+.fleet-root .driver-current-assignment small{color:var(--muted-2);font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:800;}
+.fleet-root .driver-current-assignment strong{font-size:15px;}
+.fleet-root .driver-current-assignment span:last-child{font-size:12px;color:var(--muted);}
+.fleet-root .driver-assignment-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.fleet-root .driver-assignment-heading h3{margin:0 0 4px;font-size:16px;}
+.fleet-root .driver-assignment-heading p{margin:0;max-width:34ch;color:var(--muted-2);font-size:12px;line-height:1.45;}
+.fleet-root .driver-profile-search{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:#0f161e;color:var(--muted-2);}
+.fleet-root .driver-profile-search:focus-within{border-color:var(--st-shop);box-shadow:0 0 0 3px rgba(66,200,255,.12);background:var(--ink);}
+.fleet-root .dsec .driver-profile-search input:not([type="radio"]):not([type="checkbox"]),
+.fleet-root .dsec .driver-profile-search input:not([type="radio"]):not([type="checkbox"]):focus{min-width:0;flex:1;width:auto;height:auto;padding:0;border:0;border-radius:0;outline:0;box-shadow:none;background:transparent;color:var(--text);font:inherit;appearance:none;}
+.fleet-root .driver-profile-list{display:grid;border-top:1px solid var(--line);}
+.fleet-root .driver-profile-option{width:100%;min-height:64px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:11px;padding:10px 2px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;cursor:pointer;}
+.fleet-root .driver-profile-option>span:nth-child(2){display:grid;gap:3px;min-width:0;}
+.fleet-root .driver-profile-option strong,.fleet-root .driver-profile-option small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fleet-root .driver-profile-option small{color:var(--muted-2);font-size:11.5px;}
+.fleet-root .driver-profile-state{color:var(--yellow);font-size:11px;font-weight:800;}
+.fleet-root .driver-profile-state.is-current{color:var(--green);}
+.fleet-root .driver-profile-empty{min-height:72px;display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;text-align:center;color:var(--muted-2);font-size:12px;line-height:1.45;}
+.fleet-root .driver-profile-form{display:grid;gap:12px;}
+.fleet-root .driver-profile-name-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.fleet-root .driver-profile-note{margin:0;color:var(--muted-2);font-size:11.5px;line-height:1.5;}
+.fleet-root .driver-profile-form>.dbtn{justify-content:center;min-height:46px;}
+
+@media (hover:hover) and (pointer:fine){
+  .fleet-root .driver-profile-option:not(:disabled):hover{background:color-mix(in srgb,var(--surface-2) 78%,transparent);}
+}
 .fleet-root .add-truck-modal{position:relative;}
 .fleet-root .person-call.add-truck-close{position:absolute;top:14px;right:14px;z-index:1;border:0;background:transparent;color:var(--muted-2);}
 .fleet-root .person-call.add-truck-close:hover{border:0;background:var(--surface-3);color:var(--text);}
@@ -1277,6 +1329,8 @@
   .fleet-root .fleet-reference-heading{align-items:flex-start;}
   .fleet-root .person-driver{flex-wrap:wrap;}
   .fleet-root .fleet-reference-driver-action{margin-left:0;}
+  .fleet-root .driver-portal-access-head,.fleet-root .driver-portal-gate,.fleet-root .driver-assignment-heading{align-items:stretch;flex-direction:column;}
+  .fleet-root .driver-profile-name-row{grid-template-columns:minmax(0,1fr);}
 }
 
 /* ---------- Craft pass: phone-width defects ----------

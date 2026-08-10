@@ -14,6 +14,16 @@ class DriverProfileCreate(BaseModel):
     employee_number: Optional[str] = Field(default=None, max_length=80)
 
 
+class DriverProfileUpdate(BaseModel):
+    first_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    last_name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    employer_customer_id: Optional[UUID] = None
+    phone: Optional[str] = Field(default=None, max_length=20)
+    email: Optional[str] = Field(default=None, max_length=255)
+    employee_number: Optional[str] = Field(default=None, max_length=80)
+    employment_status: Optional[str] = Field(default=None, pattern="^(active|inactive)$")
+
+
 class DriverProfileResponse(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -31,6 +41,12 @@ class DriverProfileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LegacyDriverContactResponse(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    vehicle_count: int = Field(ge=1)
 
 
 class TrailerCreate(BaseModel):
@@ -92,6 +108,15 @@ class CustodySessionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VehicleDriverAssignmentResponse(BaseModel):
+    vehicle_id: UUID
+    custody_session_id: UUID
+    custody_status: str
+    custody_starts_at: datetime
+    custody_acknowledged_at: Optional[datetime] = None
+    driver: DriverProfileResponse
 
 
 class AssignedEquipmentResponse(BaseModel):
