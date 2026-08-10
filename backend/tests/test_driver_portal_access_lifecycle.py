@@ -131,7 +131,9 @@ async def test_legacy_manager_capability_fails_closed_until_explicit_workos_link
         "/fleet/trucks/one", manager, legacy_token, db_session
     )
     assert reauth.driver_invitation_management.reason == "workos_reauthentication_required"
-    assert reauth.driver_invitation_management.reauth_path == "/auth/workos/login?return_to=%2Ffleet%2Ftrucks%2Fone"
+    assert reauth.driver_invitation_management.reauth_path == (
+        f"/auth/workos/login?return_to=%2Ffleet%2Ftrucks%2Fone&tenant_id={tenant.id}"
+    )
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,7 @@ from app.schemas.auth import (
 )
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
+from uuid import UUID
 import secrets
 import re
 from urllib.parse import urlencode
@@ -78,16 +79,33 @@ def _safe_return_path(value: Optional[str]) -> str:
 
 
 @router.get("/workos/login", include_in_schema=False)
-async def workos_login(return_to: Optional[str] = None):
+async def workos_login(
+    return_to: Optional[str] = None,
+    tenant_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+):
     """Start AuthKit without changing any legacy login behavior."""
     _workos_enabled()
     state = secrets.token_urlsafe(32)
     # State is browser-bound and one-time: callback deletes it regardless of outcome.
-    query = urlencode({
+    authorize_params = {
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
         "response_type": "code", "provider": "authkit", "state": state,
-    })
+    }
+    if tenant_id is not None:
+        tenant = await db.scalar(select(Tenant).where(Tenant.id == tenant_id))
+        if not tenant or not tenant.is_active or not tenant.workos_organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WorkOS organization is not available",
+            )
+        # Organization selection is a routing hint only. The callback still
+        # verifies the signed org_id and maps it independently to this tenant.
+        authorize_params["organization_id"] = tenant.workos_organization_id
+        # Do not silently reuse an AuthKit browser session for another account.
+        authorize_params["prompt"] = "login"
+    query = urlencode(authorize_params)
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
