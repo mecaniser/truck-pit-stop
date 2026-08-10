@@ -499,6 +499,19 @@ def resync(conn, tenant_id, commit):
                 "WHERE tenant_id=%s AND source=%s AND ets_external_id IS NOT NULL",
                 (tenant_id, IMPORT_SOURCE))
     existing_veh = {r["ets_external_id"]: r for r in cur.fetchall()}
+    # A duplicate ETS row may have been merged into a platform-created truck.
+    # Resolve that original ETS identity to the surviving vehicle so later
+    # syncs cannot recreate the archived duplicate.
+    cur.execute(
+        """SELECT a.external_id AS ets_external_id, v.id, v.created_at, v.updated_at
+             FROM vehicle_source_aliases a
+             JOIN vehicles v ON v.id = a.vehicle_id
+            WHERE a.tenant_id=%s AND a.source=%s AND a.deleted_at IS NULL
+              AND v.deleted_at IS NULL""",
+        (tenant_id, IMPORT_SOURCE),
+    )
+    for alias_row in cur.fetchall():
+        existing_veh.setdefault(alias_row["ets_external_id"], alias_row)
     cur.execute("SELECT id, order_number FROM repair_orders WHERE tenant_id=%s AND source=%s",
                 (tenant_id, IMPORT_SOURCE))
     existing_ro = {r["order_number"]: r for r in cur.fetchall()}

@@ -1,6 +1,7 @@
-import { useEffect, useState, useRef } from 'react'
+import { forwardRef, useEffect, useId, useImperativeHandle, useState, useRef } from 'react'
 import { Spinner } from '@/components/ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 import {
   X, Pencil, AlertTriangle, ClipboardCheck, CheckCircle2, XCircle, Plus, ClipboardList, Trash2, UserRound, Play, Flag, Calendar,
@@ -42,29 +43,144 @@ export function invalidateFleetAndCockpit(qc: QueryClient) {
 }
 
 /* shared modal shell (fleet design system) */
-export function Modal({ title, icon, onClose, children, width = 480, scrollable = true }: {
-  title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: number; scrollable?: boolean
+let openFleetModalCount = 0
+let bodyOverflowBeforeFleetModal = ''
+let rootOverflowBeforeFleetModal = ''
+
+export function Modal({ title, icon, onClose, children, width = 480, scrollable = true, dismissDisabled = false }: {
+  title: string
+  icon: React.ReactNode
+  onClose: () => void
+  children: React.ReactNode
+  width?: number
+  scrollable?: boolean
+  dismissDisabled?: boolean
 }) {
+  const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  const dismissDisabledRef = useRef(dismissDisabled)
+  onCloseRef.current = onClose
+  dismissDisabledRef.current = dismissDisabled
+
+  const requestClose = () => {
+    if (!dismissDisabledRef.current) onCloseRef.current()
+  }
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (openFleetModalCount === 0) {
+      bodyOverflowBeforeFleetModal = document.body.style.overflow
+      rootOverflowBeforeFleetModal = document.documentElement.style.overflow
+      document.body.style.overflow = 'hidden'
+      document.documentElement.style.overflow = 'hidden'
+    }
+    openFleetModalCount += 1
+
+    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus())
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const dialog = dialogRef.current
+      if (!dialog) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!dismissDisabledRef.current) onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )).filter((element) => element.getAttribute('aria-hidden') !== 'true')
+
+      if (!focusable.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (!dialog.contains(active)) {
+        event.preventDefault()
+        ;(event.shiftKey ? last : first).focus()
+      } else if (event.shiftKey && (active === first || active === dialog)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (active === last || active === dialog)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', handleKeyDown)
+      openFleetModalCount = Math.max(0, openFleetModalCount - 1)
+      if (openFleetModalCount === 0) {
+        document.body.style.overflow = bodyOverflowBeforeFleetModal
+        document.documentElement.style.overflow = rootOverflowBeforeFleetModal
+      }
+      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+    }
+  }, [])
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 60, display: 'grid', placeItems: 'center' }}
+      onClick={(event) => { if (event.target === event.currentTarget) requestClose() }}
+    >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-busy={dismissDisabled || undefined}
+        tabIndex={-1}
         className="dsec"
         style={{
           width,
           maxWidth: '92vw',
-          maxHeight: scrollable ? '88vh' : undefined,
-          overflowY: scrollable ? 'auto' : 'visible',
+          maxHeight: '88vh',
+          overflowY: scrollable ? 'auto' : 'hidden',
           overflowX: 'hidden',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="dsec-head">
-          <div className="dsec-title">{icon}<h3>{title}</h3></div>
-          <button className="person-call" onClick={onClose}><X size={18} /></button>
+          <div className="dsec-title">{icon}<h3 id={titleId}>{title}</h3></div>
+          <button type="button" className="person-call" aria-label={`Close ${title}`} onClick={requestClose} disabled={dismissDisabled}><X size={18} /></button>
         </div>
         {children}
       </div>
     </div>
+  )
+}
+
+/** Persistent task shell for fleet workflows. Centered Modal is reserved for
+ * destructive confirmation and other protected-focus decisions. */
+export function SidekickPanel({ title, subtitle, icon, onClose, children, footer, width = 'max-w-xl' }: {
+  title: string
+  subtitle?: string
+  icon: React.ReactNode
+  onClose: () => void
+  children: React.ReactNode
+  footer?: React.ReactNode
+  width?: string
+}) {
+  return (
+    <SlidePanel
+      isOpen
+      dark
+      title={title}
+      subtitle={subtitle}
+      headerIcon={icon}
+      onClose={onClose}
+      footer={footer}
+      width={width}
+    >
+      <div className="dsec fleet-sidekick-body">{children}</div>
+    </SlidePanel>
   )
 }
 
@@ -306,7 +422,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
   })
 
   return (
-    <Modal title={`Edit ${fleetUnitLabel(truck)}`} icon={<Pencil size={17} />} onClose={onClose} width={520}>
+    <SidekickPanel title={`Edit ${fleetUnitLabel(truck)}`} subtitle="Truck details" icon={<Pencil size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[560px]">
       <div className="dmap-side-h" style={{ marginBottom: 8 }}>Identity</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         <Field label="Unit #"><input value={f.unit_number} onChange={set('unit_number')} placeholder="TPS-109" /></Field>
@@ -435,7 +551,7 @@ export function TruckEditModal({ truck, detail, onClose }: { truck: BoardTruck; 
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }} disabled={save.isPending} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : <Pencil size={15} />} Save changes
       </button>
-    </Modal>
+    </SidekickPanel>
   )
 }
 
@@ -635,7 +751,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
         onClick={() => create.mutate()}
       >
         {create.isPending ? <Spinner size="sm" /> : <ClipboardList size={15} />}
-        {create.isPending ? 'Creating draft…' : `Create draft${lineCount ? ` · ${lineCount} item${lineCount === 1 ? '' : 's'}` : ''}`}
+        {create.isPending ? 'Creating repair order…' : `Create repair order${lineCount ? ` · ${lineCount} item${lineCount === 1 ? '' : 's'}` : ''}`}
       </button>
     </div>
   )
@@ -700,7 +816,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
               <div className="wo-builder-section-head">
                 <div>
                   <h3 id="wo-builder-add-heading">Add work</h3>
-                  <p>Build the complete Draft before you leave this truck.</p>
+                  <p>Add the work you found before leaving this truck.</p>
                 </div>
                 <div className="wo-builder-tabs" role="tablist" aria-label="Add work type">
                   {(['service', 'labor', 'part'] as FleetBuilderAddType[]).map((type) => (
@@ -724,7 +840,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                   ) : normalizedQuery.length < 2 ? (
                     <div className="wo-service-search-empty">
                       Type at least two letters. Only matching services appear here.
-                      {selectedServices.length ? ` ${selectedServices.length} already added to the Draft.` : ''}
+                      {selectedServices.length ? ` ${selectedServices.length} already added to this repair order.` : ''}
                     </div>
                   ) : (
                     <div className="pm-svc-list wo-svc-list">
@@ -776,7 +892,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
               <div className="wo-builder-running" role="status" aria-live="polite">
                 <span>
                   <small>Running estimate</small>
-                  <strong>{lineCount ? `${lineCount} item${lineCount === 1 ? '' : 's'} added` : 'No work added yet'}</strong>
+                  <strong>{lineCount ? `${lineCount} item${lineCount === 1 ? '' : 's'} added` : 'Repair order is empty'}</strong>
                 </span>
                 {showPrices && <b>{money(estimatedTotal)}</b>}
               </div>
@@ -862,7 +978,7 @@ export function NewWorkOrderModal({ truck, onClose, onCreated }: {
                     <div><dt>Inventory parts</dt><dd>{stagedParts.reduce((sum, part) => sum + part.quantity, 0)}</dd></div>
                   </dl>
                   {showPrices && <div className="wo-builder-estimate"><span>Estimated total</span><strong>{money(estimatedTotal)}</strong></div>}
-                  <p>Final labor and parts remain editable while the repair order is a Draft.</p>
+                  <p>Labor and parts remain editable while the repair order is a draft.</p>
                 </div>
               </div>
             </section>
@@ -958,7 +1074,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
     ? `Create PM repair order · ${fleetUnitLabel(truck)}`
     : `${rescheduling ? 'Reschedule' : 'Schedule'} PM · ${fleetUnitLabel(truck)}`
   return (
-    <Modal title={modalTitle} icon={createMode ? <ClipboardCheck size={17} /> : <Calendar size={17} />} onClose={onClose} width={460}>
+    <SidekickPanel title={modalTitle} subtitle="Preventive maintenance" icon={createMode ? <ClipboardCheck size={18} className="text-[var(--yellow)]" /> : <Calendar size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[520px]">
       <div style={{ display: 'grid', gap: 12 }}>
         {/* Schedule fields belong to planning (reschedule), not to servicing the
             truck now. In create mode they're hidden: the next PM rolls forward
@@ -1052,7 +1168,7 @@ export function SchedulePMModal({ truck, onClose, onDone, createMode = false }: 
         disabled={save.isPending || (createWO && (billToLoading || !billToCustomerId))} onClick={() => save.mutate()}>
         {save.isPending ? <Spinner size="sm" /> : (createMode ? <ClipboardCheck size={15} /> : <Calendar size={15} />)} {createMode ? 'Create repair order' : (createWO ? `${rescheduling ? 'Reschedule' : 'Schedule'} + create repair order` : 'Save schedule')}
       </button>
-    </Modal>
+    </SidekickPanel>
   )
 }
 
@@ -1806,7 +1922,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
   })
 
   return (
-    <Modal title={hadDriver ? 'Change driver' : 'Assign driver'} icon={<UserRound size={17} />} onClose={onClose} width={420}>
+    <SidekickPanel title={hadDriver ? 'Change driver' : 'Assign driver'} subtitle={fleetUnitLabel(truck)} icon={<UserRound size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[460px]">
       <div style={{ display: 'grid', gap: 12 }}>
         <Field label="Driver name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" /></Field>
         <Field label="Driver phone"><input value={phone} onChange={(e) => setPhone(formatUSPhone(e.target.value))} placeholder="(704) 555-0123" /></Field>
@@ -1826,7 +1942,7 @@ export function AssignDriverModal({ truck, driverPhone, onClose }: { truck: Boar
           {save.isPending ? <Spinner size="sm" /> : <UserRound size={15} />} {hadDriver ? 'Save driver' : 'Assign driver'}
         </button>
       </div>
-    </Modal>
+    </SidekickPanel>
   )
 }
 
@@ -1903,13 +2019,13 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       return incident
     },
     onSuccess: () => {
-      toast.success('Incident logged')
+      toast.success('Road incident reported')
       clearPhotoUploads()
       qc.invalidateQueries({ queryKey: ['fleet-truck', truckId] })
       invalidateFleetAndCockpit(qc)
       onClose()
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed'),
+    onError: (error: AxiosError<{ detail?: string }>) => toast.error(error.response?.data?.detail || 'The road incident could not be reported. Try again.'),
   })
 
   const submit = () => {
@@ -1919,7 +2035,7 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
   }
 
   return (
-    <Modal title="Log incident" icon={<AlertTriangle size={17} />} onClose={onClose}>
+    <SidekickPanel title="Report road incident" subtitle="Record the event while it is fresh" icon={<AlertTriangle size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[540px]">
       <div style={{ marginBottom: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -2023,9 +2139,9 @@ export function LogIncidentModal({ vehicleId, truckId, onClose }: { vehicleId: s
       </div>
       <button className={yellowBtn} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}
         disabled={create.isPending} onClick={submit}>
-        {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Log incident
+        {create.isPending ? <Spinner size="sm" /> : <Plus size={15} />} Report incident
       </button>
-    </Modal>
+    </SidekickPanel>
   )
 }
 
@@ -2060,7 +2176,7 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
   }
 
   return (
-    <Modal title="Edit incident" icon={<Pencil size={17} />} onClose={onClose}>
+    <SidekickPanel title="Edit road incident" subtitle="Update incident details" icon={<Pencil size={18} className="text-[var(--yellow)]" />} onClose={onClose} width="max-w-[540px]">
       <div style={{ marginBottom: 12 }}>
         <span className="id-k" style={{ display: 'block', marginBottom: 6 }}>Severity</span>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -2100,22 +2216,34 @@ export function EditIncidentModal({ incident, truckId, onClose }: { incident: In
         disabled={save.isPending} onClick={submit}>
         {save.isPending ? <Spinner size="sm" /> : <CheckCircle2 size={15} />} Save changes
       </button>
-    </Modal>
+    </SidekickPanel>
   )
 }
 
 /* ---------- Inspections: section + checklist ---------- */
 
-export function InspectionsSection({ vehicleId, truckId, currentOdometer, className }: { vehicleId: string; truckId: string; currentOdometer?: number | null; className?: string }) {
+export interface InspectionsSectionHandle {
+  start: () => void
+  open: (inspectionId: string) => void
+}
+
+export const InspectionsSection = forwardRef<InspectionsSectionHandle, {
+  vehicleId: string
+  truckId: string
+  currentOdometer?: number | null
+  className?: string
+  hideWhenIdle?: boolean
+}>(({ vehicleId, truckId, currentOdometer, className, hideWhenIdle = false }, ref) => {
   const qc = useQueryClient()
   const { user } = useAuthStore()
   const isOwner = user?.role === 'garage_owner'  // only the owner may delete inspections
   const [openId, setOpenId] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Inspection | null>(null)
-  const { data: inspections } = useQuery<Inspection[]>({
+  const inspectionsQuery = useQuery<Inspection[]>({
     queryKey: ['fleet-inspections', vehicleId],
     queryFn: async () => (await api.get('/fleet/inspections', { params: { vehicle_id: vehicleId } })).data,
   })
+  const { data: inspections } = inspectionsQuery
   const start = useMutation({
     mutationFn: async () => (await api.post('/fleet/inspections', { vehicle_id: vehicleId })).data as InspectionDetail,
     onSuccess: (insp) => {
@@ -2135,25 +2263,56 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer, classN
     },
     onError: (e: any) => toast.error(e.response?.data?.detail || 'Failed to delete'),
   })
+  useImperativeHandle(ref, () => ({
+    start: () => start.mutate(),
+    open: (inspectionId: string) => setOpenId(inspectionId),
+  }), [start])
   // Most recent completed reading, for the "previous odometer" reference in the checklist.
   const lastReading = (inspections || [])
     .filter((i) => i.status === 'completed' && i.odometer != null && i.performed_at)
     .sort((a, b) => (a.performed_at! < b.performed_at! ? 1 : -1))[0]
+  const actionableInspections = (inspections || []).filter((inspection) => (
+    inspection.status === 'scheduled'
+    || (inspection.status === 'completed' && inspection.result === 'fail' && !inspection.repair_order_id)
+  ))
+  const visibleInspections = hideWhenIdle ? actionableInspections : (inspections || [])
+
+  if (hideWhenIdle && inspections != null && visibleInspections.length === 0) {
+    return (
+      <>
+        {openId && <InspectionChecklistModal inspectionId={openId} truckId={truckId} vehicleId={vehicleId} currentOdometer={currentOdometer} lastReadingDate={lastReading?.performed_at || null} onClose={() => setOpenId(null)} />}
+      </>
+    )
+  }
 
   return (
     <section className={'dsec' + (className ? ` ${className}` : '')}>
       <div className="dsec-head">
         <div className="dsec-title"><ClipboardCheck size={17} /><h3>Weekly inspections</h3>
-          {inspections != null && <span className="dsec-count">{inspections.length}</span>}</div>
+          {inspections != null && <span className="dsec-count">{visibleInspections.length}</span>}</div>
         <button className={ghostBtn + ' dsec-action'} style={{ height: 34 }} onClick={() => start.mutate()} disabled={start.isPending} title="Start inspection">
           {start.isPending ? <Spinner size="xs" /> : <Plus size={14} />} <span className="dbtn-label">Start inspection</span>
         </button>
       </div>
-      {!inspections?.length ? (
-        <div className="empty-note"><ClipboardCheck size={16} /> No inspections yet.</div>
+      {inspectionsQuery.isLoading ? (
+        <div className="empty-note" role="status"><Spinner size="xs" /> Loading inspection schedule…</div>
+      ) : inspectionsQuery.isError ? (
+        <div className="query-failure query-failure--compact" role="alert">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <div className="query-failure-copy">
+            <strong>Inspections could not be loaded</strong>
+            <span>No inspection records were changed. Try loading this section again.</span>
+          </div>
+          <button type="button" className="query-retry" onClick={() => { void inspectionsQuery.refetch() }} disabled={inspectionsQuery.isFetching}>
+            {inspectionsQuery.isFetching ? <Spinner size="xs" /> : <RotateCcw size={14} />}
+            {inspectionsQuery.isFetching ? 'Retrying…' : 'Try again'}
+          </button>
+        </div>
+      ) : !visibleInspections.length ? (
+        <div className="empty-note"><ClipboardCheck size={16} /> No inspections recorded. Start one when you are ready to check this truck.</div>
       ) : (
         <div className="inc-list">
-          {inspections.map((i) => {
+          {visibleInspections.map((i) => {
             const dot = i.status === 'completed'
               ? (i.result === 'fail' ? 'var(--red)' : 'var(--st-active)')
               : i.status === 'missed' ? 'var(--red)' : 'var(--yellow)'
@@ -2207,7 +2366,9 @@ export function InspectionsSection({ vehicleId, truckId, currentOdometer, classN
       )}
     </section>
   )
-}
+})
+
+InspectionsSection.displayName = 'InspectionsSection'
 
 const CATEGORY_ORDER = ['Brakes', 'Fluids', 'Lights', 'Safety', 'Steering', 'Tires']
 
@@ -2340,8 +2501,15 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
     : failCount > 0 ? `${failCount} item${failCount === 1 ? '' : 's'} flagged — ready to review` : 'All clear — ready to submit'
 
   return (
-    <div className="ip-overlay" onClick={onClose}>
-      <div className="ip-frame" onClick={(e) => e.stopPropagation()}>
+    <SlidePanel
+      isOpen
+      dark
+      hideHeader
+      title={insp ? `Weekly inspection · ${unitLabel}` : 'Weekly inspection'}
+      onClose={onClose}
+      width="max-w-full sm:max-w-[94vw] lg:max-w-[760px] xl:max-w-[880px]"
+    >
+      <div className="ip-frame ip-frame-sidekick">
         {!insp ? (
           <div className="loader" style={{ margin: 'auto' }}><Spinner size="md" /></div>
         ) : (
@@ -2521,6 +2689,6 @@ function InspectionChecklistModal({ inspectionId, truckId, vehicleId, currentOdo
           </>
         )}
       </div>
-    </div>
+    </SlidePanel>
   )
 }

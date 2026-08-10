@@ -127,6 +127,27 @@ async def ensure_vehicle_relationship(
 ) -> VehicleCustomerRelationship:
     if relationship_type not in VEHICLE_RELATIONSHIP_TYPES:
         raise ValueError(f"Unsupported vehicle relationship: {relationship_type}")
+
+    # Production sessions intentionally disable autoflush. A single workflow
+    # can therefore ask for the same relationship twice before either pending
+    # row reaches the database (for example, selecting an enrolled company as
+    # operating authority also ensures its Fleet Board membership). Reuse the
+    # pending row so the partial unique index is never hit at commit time.
+    pending = next((
+        row for row in db.new
+        if isinstance(row, VehicleCustomerRelationship)
+        and row.tenant_id == tenant_id
+        and row.vehicle_id == vehicle_id
+        and row.customer_id == customer_id
+        and row.relationship_type == relationship_type
+        and row.effective_to is None
+        and row.deleted_at is None
+    ), None)
+    if pending:
+        if is_primary and not pending.is_primary:
+            pending.is_primary = True
+        return pending
+
     existing = (await db.execute(
         select(VehicleCustomerRelationship).where(
             VehicleCustomerRelationship.tenant_id == tenant_id,

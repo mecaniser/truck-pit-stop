@@ -7,7 +7,7 @@ import api from '../../lib/api'
 import { Customer, Vehicle, Contact, RepairOrder, VINDecodeResult, CustomerWithVehicles } from '../../types'
 import { customerDisplayName, customerPersonalName } from '../../lib/customerName'
 import { vehicleDisplayLabel } from '../../lib/vehicleName'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, DollarSign, Mail, Pencil, Phone, Plus, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, Building2, Combine, DollarSign, Mail, Pencil, Phone, Plus, Route, Search, Star, Trash2, Truck, User, Wrench, X } from 'lucide-react'
 import SlidePanel from '@/components/SlidePanel'
 import MapboxAddressInput from '@/components/MapboxAddressInput'
 import { formatUSPhone } from '@/utils/phone'
@@ -15,6 +15,7 @@ import ViewToggle from '@/components/ViewToggle'
 import { useViewPreference } from '@/hooks/useViewPreference'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTheme } from '../../contexts/ThemeContext'
+import { useAuthStore } from '../../stores/authStore'
 
 interface CustomerFormData {
   first_name: string
@@ -90,6 +91,44 @@ interface DuplicateVinConflict {
   vehicle?: DuplicateVinVehicleSummary | null
 }
 
+interface VehicleMergeSummary {
+  id: string
+  customer_id: string
+  customer_name: string
+  vin: string
+  unit_number: string | null
+  make: string
+  model: string
+  year: number | null
+  license_plate: string | null
+  mileage: number | null
+  source: string | null
+  ets_external_id: string | null
+  repair_order_count: number
+  appointment_count: number
+  inspection_count: number
+  incident_count: number
+  active_relationship_count: number
+  active_fleet_membership_count: number
+  repair_orders_by_source: Record<string, number>
+}
+
+interface VehicleMergePreview {
+  canonical: VehicleMergeSummary
+  duplicate: VehicleMergeSummary
+  match_basis: 'vin' | 'unit_number'
+  match_value: string
+  recommended_canonical_id: string
+  warnings: string[]
+}
+
+interface VehicleMergeResult {
+  canonical_vehicle: Vehicle
+  archived_vehicle_id: string
+  merge_record_id: string
+  moved: Record<string, number>
+}
+
 type VehicleRelationshipType = 'owner' | 'operator' | 'default_payer'
 
 interface VehicleLinkCandidate {
@@ -159,6 +198,32 @@ const emptyContactForm: ContactFormData = {
   is_primary: false,
 }
 
+const numericBalance = (value?: string | null) => {
+  const parsed = Number.parseFloat(value || '0')
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const absoluteCurrency = (value: number) => Math.abs(value).toLocaleString(undefined, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+const balanceLabel = (value?: string | null) => {
+  const balance = numericBalance(value)
+  if (balance > 0) return `Due $${absoluteCurrency(balance)}`
+  if (balance < 0) return `Credit $${absoluteCurrency(balance)}`
+  return '$0.00'
+}
+
+const balanceAmountLabel = (value?: string | null) => `$${absoluteCurrency(numericBalance(value))}`
+
+const balanceLabelClass = (value?: string | null, dark = false) => {
+  const balance = numericBalance(value)
+  if (balance > 0) return dark ? 'text-amber-400' : 'text-amber-700'
+  if (balance < 0) return dark ? 'text-emerald-300' : 'text-emerald-700'
+  return dark ? 'text-white/70' : 'text-slate-700'
+}
+
 const emptyForm: CustomerFormData = {
   first_name: '',
   last_name: '',
@@ -223,6 +288,21 @@ function MatchBadges({ matchedFields, variant = 'dark' }: { matchedFields?: stri
         </span>
       ))}
     </div>
+  )
+}
+
+function FleetMemberBadge({ variant = 'light' }: { variant?: 'dark' | 'light' | 'header' }) {
+  const classes = {
+    dark: 'bg-amber-300/15 text-amber-200 ring-amber-300/25',
+    light: 'bg-amber-100 text-amber-900 ring-amber-300/70',
+    header: 'bg-slate-950/20 text-white ring-white/25',
+  }[variant]
+
+  return (
+    <span className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ring-1 ring-inset ${classes}`}>
+      <Star className="h-3.5 w-3.5 flex-none fill-current" aria-hidden="true" />
+      Fleet member
+    </span>
   )
 }
 
@@ -331,6 +411,7 @@ const MEXICO_STATES = [
 
 export default function CustomersPage() {
   const { accentColors } = useTheme()
+  const currentUser = useAuthStore((state) => state.user)
   const navigate = useNavigate()
   const [searchQuery, setSearchQuery] = useState('')
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300)
@@ -361,6 +442,8 @@ export default function CustomersPage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false)
   const [isEditingInPanel, setIsEditingInPanel] = useState(false)
   const [vehiclesViewMode, setVehiclesViewMode] = useViewPreference('customer-vehicles')
+  const [vehicleRelationshipSearch, setVehicleRelationshipSearch] = useState('')
+  const [vehicleRelationshipFilter, setVehicleRelationshipFilter] = useState<'all' | 'owned' | 'authority'>('all')
   const [selectedVehicleInPanel, setSelectedVehicleInPanel] = useState<Vehicle | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'history'>('overview')
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
@@ -386,6 +469,9 @@ export default function CustomersPage() {
   const [operatingAuthorityCustomerId, setOperatingAuthorityCustomerId] = useState('')
   const [pendingFleetRemovalId, setPendingFleetRemovalId] = useState<string | null>(null)
   const [deleteConfirmVehicle, setDeleteConfirmVehicle] = useState<Vehicle | null>(null)
+  const [isVehicleMergeOpen, setIsVehicleMergeOpen] = useState(false)
+  const [mergeDuplicateVehicleId, setMergeDuplicateVehicleId] = useState<string | null>(null)
+  const [mergeVinConfirmed, setMergeVinConfirmed] = useState(false)
 
   // Contact form state
   const [isContactModalOpen, setIsContactModalOpen] = useState(false)
@@ -546,12 +632,11 @@ export default function CustomersPage() {
   })
 
   const { data: customerRepairOrders, isLoading: isLoadingOrders } = useQuery<RepairOrder[]>({
-    queryKey: ['customerVehicleRepairOrders', selectedCustomer?.id, selectedVehicleInPanel?.id],
+    queryKey: ['customerVehicleRepairOrders', selectedVehicleInPanel?.id],
     queryFn: async () => {
-      if (!selectedCustomer?.id || !selectedVehicleInPanel?.id) return []
+      if (!selectedVehicleInPanel?.id) return []
       const response = await api.get('/repair-orders', {
         params: {
-          customer_id: selectedCustomer.id,
           vehicle_id: selectedVehicleInPanel.id,
         },
       })
@@ -560,7 +645,7 @@ export default function CustomersPage() {
     // The overview already has a dedicated History tab. Fetch orders only
     // after a vehicle is opened, and only for that vehicle rather than every
     // order the customer has ever created.
-    enabled: !!selectedCustomer?.id && !!selectedVehicleInPanel?.id && isDetailOpen,
+    enabled: !!selectedVehicleInPanel?.id && isDetailOpen,
     staleTime: 30_000,
   })
 
@@ -709,6 +794,38 @@ export default function CustomersPage() {
       return response.data
     },
     enabled: !!selectedVehicleInPanel,
+  })
+
+  const {
+    data: vehicleMergeCandidates = [],
+    isLoading: isLoadingVehicleMergeCandidates,
+    isError: isVehicleMergeCandidatesError,
+    refetch: refetchVehicleMergeCandidates,
+  } = useQuery<VehicleMergeSummary[]>({
+    queryKey: ['vehicle-merge-candidates', selectedVehicleInPanel?.id],
+    queryFn: async () => (
+      await api.get(`/vehicles/${selectedVehicleInPanel!.id}/duplicate-candidates`)
+    ).data,
+    enabled: isVehicleMergeOpen && !!selectedVehicleInPanel,
+  })
+
+  useEffect(() => {
+    if (!isVehicleMergeOpen) return
+    if (vehicleMergeCandidates.length === 1 && !mergeDuplicateVehicleId) {
+      setMergeDuplicateVehicleId(vehicleMergeCandidates[0].id)
+    }
+  }, [isVehicleMergeOpen, mergeDuplicateVehicleId, vehicleMergeCandidates])
+
+  const {
+    data: vehicleMergePreview,
+    isLoading: isLoadingVehicleMergePreview,
+    isError: isVehicleMergePreviewError,
+  } = useQuery<VehicleMergePreview>({
+    queryKey: ['vehicle-merge-preview', selectedVehicleInPanel?.id, mergeDuplicateVehicleId],
+    queryFn: async () => (
+      await api.get(`/vehicles/${selectedVehicleInPanel!.id}/merge-preview/${mergeDuplicateVehicleId}`)
+    ).data,
+    enabled: isVehicleMergeOpen && !!selectedVehicleInPanel && !!mergeDuplicateVehicleId,
   })
 
   // Filter repair orders for the selected vehicle
@@ -1016,6 +1133,39 @@ export default function CustomersPage() {
     },
   })
 
+  const mergeVehicleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedVehicleInPanel || !mergeDuplicateVehicleId || !vehicleMergePreview) {
+        throw new Error('Select a duplicate truck before merging')
+      }
+      const canonicalId = vehicleMergePreview.recommended_canonical_id
+      const archivedId = canonicalId === selectedVehicleInPanel.id
+        ? mergeDuplicateVehicleId
+        : selectedVehicleInPanel.id
+      const response = await api.post<VehicleMergeResult>(`/vehicles/${canonicalId}/merge`, {
+        duplicate_vehicle_id: archivedId,
+        confirm_vin: vehicleMergePreview.match_value,
+      })
+      return response.data
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['customerVehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['customerVehicleRepairOrders'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-link-candidates'] })
+      queryClient.invalidateQueries({ queryKey: ['vehicle-merge-candidates'] })
+      queryClient.invalidateQueries({ queryKey: ['fleet-board'] })
+      setSelectedVehicleInPanel(result.canonical_vehicle)
+      setIsVehicleMergeOpen(false)
+      setMergeDuplicateVehicleId(null)
+      setMergeVinConfirmed(false)
+      const movedHistory = (result.moved.repair_orders || 0) + (result.moved.inspections || 0) + (result.moved.incidents || 0)
+      toast.success(`Trucks merged. ${movedHistory} history record${movedHistory === 1 ? '' : 's'} moved to the kept truck.`)
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || error.message || 'Failed to merge trucks')
+    },
+  })
+
   const createContactMutation = useMutation({
     mutationFn: async ({ customerId, data }: { customerId: string; data: ContactFormData }) => {
       const payload = {
@@ -1123,6 +1273,8 @@ export default function CustomersPage() {
     setIsDetailOpen(true)
     setIsEditingInPanel(false)
     setDetailTab('overview')
+    setVehicleRelationshipSearch('')
+    setVehicleRelationshipFilter('all')
   }
 
   const closeDetailPanel = () => {
@@ -1132,6 +1284,8 @@ export default function CustomersPage() {
     setSelectedVehicleInPanel(null)
     setDetailTab('overview')
     setExpandedHistoryId(null)
+    setVehicleRelationshipSearch('')
+    setVehicleRelationshipFilter('all')
     resetForm()
   }
 
@@ -1213,6 +1367,16 @@ export default function CustomersPage() {
     setVehicleLinkUnitNumber(vehicleFormData.unit_number.trim() || vehicle.unit_number || '')
     setVehicleRelationshipTypes([])
     setOperatingAuthorityCustomerId('')
+  }
+
+  const reviewDuplicateTruckConflict = (duplicate: DuplicateVinVehicleSummary) => {
+    if (!editingVehicle) return
+    const truckToKeep = editingVehicle
+    closeVehicleModal()
+    setSelectedVehicleInPanel(truckToKeep)
+    setMergeDuplicateVehicleId(duplicate.id)
+    setMergeVinConfirmed(false)
+    setIsVehicleMergeOpen(true)
   }
 
   const openManageVehicleLinks = (vehicle: Vehicle) => {
@@ -1327,6 +1491,19 @@ export default function CustomersPage() {
 
   const handleDeleteVehicleClick = (vehicle: Vehicle) => {
     setDeleteConfirmVehicle(vehicle)
+  }
+
+  const openVehicleMerge = () => {
+    setMergeDuplicateVehicleId(null)
+    setMergeVinConfirmed(false)
+    setIsVehicleMergeOpen(true)
+  }
+
+  const closeVehicleMerge = () => {
+    if (mergeVehicleMutation.isPending) return
+    setIsVehicleMergeOpen(false)
+    setMergeDuplicateVehicleId(null)
+    setMergeVinConfirmed(false)
   }
 
   const confirmDeleteVehicle = () => {
@@ -1565,9 +1742,62 @@ export default function CustomersPage() {
   }
 
   const vehicleCount = customerVehicles?.length || 0
+  const ownedVehicles = customerVehicles?.filter((vehicle) =>
+    vehicle.customer_relationship_types?.includes('owner') || vehicle.customer_id === selectedCustomer?.id
+  ) || []
+  const authorityVehicles = customerVehicles?.filter((vehicle) =>
+    vehicle.customer_relationship_types?.includes('operator')
+    && !vehicle.customer_relationship_types?.includes('owner')
+    && vehicle.customer_id !== selectedCustomer?.id
+  ) || []
+  const shouldShowVehicleSearch = vehicleCount > 3
+  const normalizedVehicleSearch = shouldShowVehicleSearch ? vehicleRelationshipSearch.trim().toLowerCase() : ''
+  const matchesVehicleSearch = (vehicle: Vehicle) => {
+    if (!normalizedVehicleSearch) return true
+    const searchable = [
+      vehicleDisplayLabel(vehicle), vehicle.unit_number, vehicle.vin, vehicle.license_plate,
+      vehicle.make, vehicle.model, vehicle.owner_company_name, vehicle.operating_authority_company_name,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return normalizedVehicleSearch.split(/\s+/).every((term) => searchable.includes(term))
+  }
+  const customerVehicleGroups = [
+    {
+      key: 'owned',
+      title: `Owned by ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'}`,
+      description: 'Trucks this company owns or leases to another operating authority.',
+      vehicles: ownedVehicles,
+      visibleVehicles: ownedVehicles.filter(matchesVehicleSearch),
+      icon: Building2,
+    },
+    {
+      key: 'authority',
+      title: `Runs under ${selectedCustomer ? customerDisplayName(selectedCustomer) : 'this company'} authority`,
+      description: 'Trucks owned by another company that run under this company’s authority.',
+      vehicles: authorityVehicles,
+      visibleVehicles: authorityVehicles.filter(matchesVehicleSearch),
+      icon: Route,
+    },
+  ].filter((group) => group.vehicles.length > 0 && (vehicleRelationshipFilter === 'all' || vehicleRelationshipFilter === group.key))
+  const visibleCustomerVehicleGroups = customerVehicleGroups.filter((group) => group.visibleVehicles.length > 0)
+  const visibleVehicleCount = visibleCustomerVehicleGroups.reduce((count, group) => count + group.visibleVehicles.length, 0)
   const showVehicleUnitColumn = customerVehicles?.some((vehicle) => !!vehicle.unit_number?.trim()) ?? false
   const showVehicleVinColumn = customerVehicles?.some((vehicle) => !!vehicle.vin?.trim()) ?? false
   const showVehiclePlateColumn = customerVehicles?.some((vehicle) => !!vehicle.license_plate?.trim()) ?? false
+  const vehicleTableColumnCount = 2 + Number(showVehicleUnitColumn) + Number(showVehicleVinColumn) + Number(showVehiclePlateColumn)
+
+  const vehicleRelationshipNote = (vehicle: Vehicle, groupKey: string) => {
+    if (groupKey === 'authority') {
+      return vehicle.owner_company_name ? `Owned by ${vehicle.owner_company_name}` : 'Owner / lessor not assigned'
+    }
+    if (
+      vehicle.operating_authority_company_name
+      && vehicle.operating_authority_customer_id !== selectedCustomer?.id
+    ) {
+      return `Runs under ${vehicle.operating_authority_company_name}`
+    }
+    if (vehicle.customer_relationship_types?.includes('operator')) return 'Owner + operating authority'
+    return 'Operating authority not assigned'
+  }
 
   const renderCustomerForm = (onCancel: () => void) => (
     <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -2474,13 +2704,21 @@ export default function CustomersPage() {
                   </span>
                 </span>
               )}
-              {vehicleVinError.vehicle ? (
+              {vehicleVinError.vehicle && editingVehicle ? (
+                <button
+                  type="button"
+                  onClick={() => reviewDuplicateTruckConflict(vehicleVinError.vehicle!)}
+                  className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Review and merge duplicate trucks
+                </button>
+              ) : vehicleVinError.vehicle ? (
                 <button
                   type="button"
                   onClick={() => selectExistingTruckFromConflict(vehicleVinError.vehicle!)}
                   className="mt-2 inline-flex rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700"
                 >
-                  Manage this existing truck’s roles
+                  Use this existing truck and manage its roles
                 </button>
               ) : (
                 <span className="mt-2 block text-xs">Switch to “Link existing truck” and search this VIN.</span>
@@ -2883,7 +3121,10 @@ export default function CustomersPage() {
                             </span>
                           </div>
                           <div className="flex flex-col gap-0.5 min-w-0">
-                            <span className="text-white font-medium truncate">{customerDisplayName(customer)}</span>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="min-w-0 truncate text-white font-medium">{customerDisplayName(customer)}</span>
+                              {customer.fleet_enabled && <FleetMemberBadge variant="dark" />}
+                            </div>
                             <MatchBadges matchedFields={customer.matched_fields} />
                           </div>
                         </div>
@@ -2902,8 +3143,8 @@ export default function CustomersPage() {
                       </td>
                       <td className="px-4 py-3 text-right hidden md:table-cell">
                         {customer.balance !== undefined ? (
-                          <span className={parseFloat(customer.balance) > 0 ? 'text-amber-400' : 'text-white/70'}>
-                            ${parseFloat(customer.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          <span className={balanceLabelClass(customer.balance, true)}>
+                            {balanceLabel(customer.balance)}
                           </span>
                         ) : '—'}
                       </td>
@@ -2934,10 +3175,13 @@ export default function CustomersPage() {
                   className="bg-gradient-to-br from-yellow-50 via-amber-100 to-yellow-200 p-4 sm:p-5 rounded-xl shadow-lg flex flex-col gap-3 hover:shadow-xl transition-shadow cursor-pointer"
                 >
                   <div>
-                    <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{ backgroundColor: accentColors[500] }}>
-                      <span className="text-white font-bold text-lg">
-                        {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
-                      </span>
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: accentColors[500] }}>
+                        <span className="text-white font-bold text-lg">
+                          {customer.first_name.charAt(0)}{customer.last_name.charAt(0)}
+                        </span>
+                      </div>
+                      {customer.fleet_enabled && <FleetMemberBadge />}
                     </div>
                     <h3 className="text-lg font-bold text-slate-800 leading-tight">
                       {customerDisplayName(customer)}
@@ -2970,10 +3214,12 @@ export default function CustomersPage() {
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div className="bg-white/50 rounded-lg px-3 py-2">
-                      <p className="text-[11px] text-slate-500">Balance</p>
-                      <p className={`text-sm font-semibold ${customer.balance && parseFloat(customer.balance) > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+                      <p className="text-[11px] text-slate-500">
+                        {numericBalance(customer.balance) > 0 ? 'Balance due' : numericBalance(customer.balance) < 0 ? 'Account credit' : 'Balance'}
+                      </p>
+                      <p className={`text-sm font-semibold ${balanceLabelClass(customer.balance)}`}>
                         {customer.balance !== undefined
-                          ? `$${parseFloat(customer.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                          ? balanceAmountLabel(customer.balance)
                           : '—'}
                       </p>
                     </div>
@@ -3089,7 +3335,7 @@ export default function CustomersPage() {
       <SlidePanel
         isOpen={isDetailOpen && !!selectedCustomer}
         onClose={closeDetailPanel}
-        width="max-w-[max(50vw,_400px)]"
+        width="max-w-full xl:max-w-[80vw] 2xl:max-w-[max(50vw,_960px)]"
         title={
           selectedVehicleInPanel
             ? vehicleDisplayLabel(selectedVehicleInPanel)
@@ -3118,10 +3364,57 @@ export default function CustomersPage() {
             </div>
           ) : null
         }
+        headerExtra={selectedVehicleInPanel ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => openEditVehicleModal(selectedVehicleInPanel)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-4 py-2.5 font-semibold text-slate-800 shadow-sm transition-colors hover:bg-slate-100"
+            >
+              <Pencil className="h-4 w-4" />
+              Edit Vehicle
+            </button>
+          </div>
+        ) : selectedCustomer?.fleet_enabled ? (
+          <FleetMemberBadge variant="header" />
+        ) : undefined}
         onBack={selectedVehicleInPanel ? () => setSelectedVehicleInPanel(null) : undefined}
         backLabel={selectedVehicleInPanel && selectedCustomer ? `Back to ${selectedCustomer.first_name}` : undefined}
         footer={
-          !isEditingInPanel && !selectedVehicleInPanel && selectedCustomer ? (
+          selectedVehicleInPanel ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => handleDeleteVehicleClick(selectedVehicleInPanel)}
+                className="flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Vehicle
+              </button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {(currentUser?.role === 'garage_owner' || currentUser?.role === 'garage_admin') && (
+                  <button
+                    type="button"
+                    onClick={openVehicleMerge}
+                    disabled={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17}
+                    title={!selectedVehicleInPanel.vin || selectedVehicleInPanel.vin.replace(/[\s-]/g, '').length !== 17 ? 'A complete VIN is required to find safe duplicates' : undefined}
+                    className="flex min-h-11 items-center gap-2 rounded-lg bg-gray-100 px-4 py-2.5 font-medium text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Combine className="h-4 w-4" />
+                    Merge duplicate
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openManageVehicleLinks(selectedVehicleInPanel)}
+                  className="flex min-h-11 items-center gap-2 rounded-lg bg-amber-50 px-4 py-2.5 font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                >
+                  <Truck className="h-4 w-4" />
+                  Manage Connections
+                </button>
+              </div>
+            </div>
+          ) : !isEditingInPanel && selectedCustomer ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <button
@@ -3286,32 +3579,6 @@ export default function CustomersPage() {
               )}
             </div>
 
-            {/* Vehicle Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-4 border-t border-gray-200">
-              <button
-                onClick={() => handleDeleteVehicleClick(selectedVehicleInPanel)}
-                className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium flex items-center gap-2"
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete Vehicle
-              </button>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => openManageVehicleLinks(selectedVehicleInPanel)}
-                  className="px-4 py-2.5 text-amber-700 bg-amber-50 hover:bg-amber-100 font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Truck className="w-4 h-4" />
-                  Manage Connections
-                </button>
-                <button
-                  onClick={() => openEditVehicleModal(selectedVehicleInPanel)}
-                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Pencil className="w-4 h-4" />
-                  Edit Vehicle
-                </button>
-              </div>
-            </div>
           </div>
         ) : isEditingInPanel ? (
                 <div className="p-6 space-y-4">
@@ -3541,10 +3808,12 @@ export default function CustomersPage() {
                       </div>
 
                       <div>
-                        <p className="text-xs text-gray-500">Balance</p>
-                        <p className={`font-semibold ${selectedCustomer.balance && parseFloat(selectedCustomer.balance) > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                        <p className="text-xs text-gray-500">
+                          {numericBalance(selectedCustomer.balance) > 0 ? 'Balance due' : numericBalance(selectedCustomer.balance) < 0 ? 'Account credit' : 'Balance'}
+                        </p>
+                        <p className={`font-semibold ${balanceLabelClass(selectedCustomer.balance)}`}>
                           {selectedCustomer.balance !== undefined
-                            ? `$${parseFloat(selectedCustomer.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                            ? balanceAmountLabel(selectedCustomer.balance)
                             : '—'}
                         </p>
                       </div>
@@ -3684,28 +3953,117 @@ export default function CustomersPage() {
                   )}
 
                   <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Vehicles</h3>
-                      <div className="flex items-center gap-2">
-                        {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
-                        {customerVehicles && customerVehicles.length > 1 && (
-                          <ViewToggle
-                            value={vehiclesViewMode} 
-                            onChange={setVehiclesViewMode}
-                            variant="light"
-                          />
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-500">Truck relationships</h3>
+                        {!isLoadingVehicles && (
+                          <p className="mt-1 text-sm text-gray-600">
+                            {vehicleCount} truck{vehicleCount === 1 ? '' : 's'} connected to this company
+                          </p>
                         )}
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        {isLoadingVehicles && <span className="text-xs text-gray-400">Loading...</span>}
                         <button
                           onClick={openAddVehicleModal}
-                          className="px-3 py-1.5 text-xs font-medium text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors flex items-center gap-1"
+                          className="flex min-h-11 items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-amber-600 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
                         >
-                          <Plus className="w-3.5 h-3.5" />
+                          <Plus className="h-4 w-4" />
                           Add / Link
                         </button>
                       </div>
                     </div>
+                    {customerVehicles && customerVehicles.length > 0 && (
+                      <div className="mb-5">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                          {shouldShowVehicleSearch && (
+                            <div className="relative min-w-0 flex-1">
+                              <label className="sr-only" htmlFor="customer-truck-search">Search connected trucks</label>
+                              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                              <input
+                                id="customer-truck-search"
+                                type="search"
+                                autoComplete="off"
+                                enterKeyHint="search"
+                                value={vehicleRelationshipSearch}
+                                onChange={(event) => setVehicleRelationshipSearch(event.target.value)}
+                                placeholder="Search unit, VIN, plate, make, model, owner..."
+                                className="min-h-11 w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-11 text-sm text-gray-900 outline-none transition placeholder:text-gray-500 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 [&::-webkit-search-cancel-button]:hidden"
+                              />
+                              {vehicleRelationshipSearch && (
+                                <button
+                                  type="button"
+                                  onClick={() => setVehicleRelationshipSearch('')}
+                                  aria-label="Clear truck search"
+                                  className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {ownedVehicles.length > 0 && authorityVehicles.length > 0 && (
+                            <div className="flex shrink-0 flex-wrap gap-2" role="group" aria-label="Quick filters for truck relationships">
+                              {([
+                                ['all', 'All', vehicleCount],
+                                ['owned', 'Owned', ownedVehicles.length],
+                                ['authority', 'Under authority', authorityVehicles.length],
+                              ] as const).map(([value, label, count]) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  onClick={() => setVehicleRelationshipFilter(value)}
+                                  aria-pressed={vehicleRelationshipFilter === value}
+                                  className={`min-h-11 rounded-full border px-3.5 py-2 text-sm font-semibold transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${
+                                    vehicleRelationshipFilter === value
+                                      ? 'border-slate-700 bg-slate-800 text-white'
+                                      : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {label} <span className={vehicleRelationshipFilter === value ? 'text-white/75' : 'text-gray-500'}>{count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {(shouldShowVehicleSearch || (customerVehicles?.length ?? 0) > 1) && (
+                          <div className="mt-2 flex min-h-11 items-center justify-between gap-3">
+                            {shouldShowVehicleSearch && vehicleRelationshipSearch.trim() ? (
+                              <p className="text-xs text-gray-600" role="status">
+                                Showing {visibleVehicleCount} of {vehicleCount} trucks
+                              </p>
+                            ) : (
+                              <span />
+                            )}
+                            {(customerVehicles?.length ?? 0) > 1 && (
+                              <ViewToggle
+                                value={vehiclesViewMode}
+                                onChange={setVehiclesViewMode}
+                                variant="light"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {customerVehicles && customerVehicles.length > 0 ? (
-                      vehiclesViewMode === 'list' ? (
+                      visibleCustomerVehicleGroups.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-5 py-8 text-center">
+                          <Search className="mx-auto h-7 w-7 text-gray-400" />
+                          <p className="mt-2 text-sm font-semibold text-gray-800">No connected trucks match</p>
+                          <p className="mt-1 text-sm text-gray-500">Clear the search or relationship filter to see every truck.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setVehicleRelationshipSearch('')
+                              setVehicleRelationshipFilter('all')
+                            }}
+                            className="mt-4 min-h-11 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                          >
+                            Clear filters
+                          </button>
+                        </div>
+                      ) : vehiclesViewMode === 'list' ? (
                         <div className="bg-gray-50 rounded-xl border border-gray-100 overflow-x-auto">
                           <table className="w-full min-w-[720px] text-sm">
                             <thead className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
@@ -3714,10 +4072,28 @@ export default function CustomersPage() {
                                 {showVehicleUnitColumn && <th className="px-3 py-2 text-left font-medium">Unit</th>}
                                 {showVehicleVinColumn && <th className="px-3 py-2 text-left font-medium">VIN</th>}
                                 {showVehiclePlateColumn && <th className="px-3 py-2 text-left font-medium">Plate</th>}
+                                <th className="px-3 py-2 text-right font-medium">Financial status</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                              {customerVehicles.map((vehicle) => (
+                              {visibleCustomerVehicleGroups.map((group) => {
+                                const GroupIcon = group.icon
+                                const isAuthorityGroup = group.key === 'authority'
+                                return (
+                                <React.Fragment key={group.key}>
+                                  <tr className={isAuthorityGroup ? 'bg-sky-50' : 'bg-amber-50'}>
+                                    <td colSpan={vehicleTableColumnCount} className="px-3 py-3">
+                                      <div className="flex items-start gap-2.5">
+                                        <GroupIcon className={`mt-0.5 h-4 w-4 shrink-0 ${isAuthorityGroup ? 'text-sky-700' : 'text-amber-700'}`} />
+                                        <div>
+                                          <p className={`text-xs font-semibold ${isAuthorityGroup ? 'text-sky-950' : 'text-amber-950'}`}>{group.title}</p>
+                                          <p className={`mt-0.5 text-xs font-normal ${isAuthorityGroup ? 'text-sky-800' : 'text-amber-800'}`}>{group.description}</p>
+                                        </div>
+                                        <span className={`ml-auto text-xs font-semibold ${isAuthorityGroup ? 'text-sky-800' : 'text-amber-800'}`}>{group.visibleVehicles.length}</span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {group.visibleVehicles.map((vehicle) => (
                                 <tr 
                                   key={vehicle.id} 
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
@@ -3726,6 +4102,9 @@ export default function CustomersPage() {
                                   <td className="px-3 py-2.5 text-gray-900 font-medium">
                                     {vehicleDisplayLabel(vehicle)}
                                     {vehicle.color && <span className="text-gray-500 font-normal"> · {vehicle.color}</span>}
+                                    <span className="mt-1 block text-xs font-normal text-gray-500">
+                                      {vehicleRelationshipNote(vehicle, group.key)}
+                                    </span>
                                   </td>
                                   {showVehicleUnitColumn && (
                                     <td className="px-3 py-2.5">
@@ -3758,23 +4137,60 @@ export default function CustomersPage() {
                                       )}
                                     </td>
                                   )}
+                                  <td className="px-3 py-2.5 text-right">
+                                    {numericBalance(vehicle.balance) !== 0 ? (
+                                      <span className={`text-xs font-semibold ${balanceLabelClass(vehicle.balance)}`}>
+                                        {balanceLabel(vehicle.balance)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
                                 </tr>
-                              ))}
+                                  ))}
+                                </React.Fragment>
+                                )
+                              })}
                             </tbody>
                           </table>
                         </div>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {customerVehicles.map((vehicle) => {
+                          {visibleCustomerVehicleGroups.map((group) => {
+                            const GroupIcon = group.icon
+                            const isAuthorityGroup = group.key === 'authority'
+                            return (
+                            <React.Fragment key={group.key}>
+                              <div className={`mt-2 rounded-xl border p-4 sm:col-span-2 first:mt-0 ${
+                                isAuthorityGroup ? 'border-sky-200 bg-sky-50' : 'border-amber-200 bg-amber-50'
+                              }`}>
+                                <div className="flex items-start gap-3">
+                                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isAuthorityGroup ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    <GroupIcon className="h-4 w-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className={`text-[11px] font-bold uppercase tracking-wider ${isAuthorityGroup ? 'text-sky-700' : 'text-amber-700'}`}>
+                                      {isAuthorityGroup ? 'Authority fleet' : 'Owned fleet'}
+                                    </p>
+                                    <h4 className={`mt-0.5 text-sm font-semibold ${isAuthorityGroup ? 'text-sky-950' : 'text-amber-950'}`}>{group.title}</h4>
+                                    <p className={`mt-0.5 text-xs ${isAuthorityGroup ? 'text-sky-800' : 'text-amber-800'}`}>{group.description}</p>
+                                  </div>
+                                  <span className={`ml-auto shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${isAuthorityGroup ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'}`}>
+                                    {group.visibleVehicles.length}
+                                  </span>
+                                </div>
+                              </div>
+                              {group.visibleVehicles.map((vehicle) => {
                             const displayLabel = vehicleDisplayLabel(vehicle)
                             const unitSuffix = vehicle.unit_number ? ` · Unit ${vehicle.unit_number}` : ''
                             const cardTitle = unitSuffix && displayLabel.endsWith(unitSuffix)
                               ? displayLabel.slice(0, -unitSuffix.length)
                               : displayLabel
+                            const vehicleBalance = numericBalance(vehicle.balance)
                             return (
                               <div
                                 key={vehicle.id}
-                                className="bg-gray-50 rounded-xl p-4 pr-14 border border-gray-100 hover:bg-gray-100 hover:border-gray-200 transition-colors group relative"
+                                className="group relative rounded-xl border border-gray-200 bg-white p-4 pr-24 transition-colors hover:border-gray-300 hover:bg-gray-50"
                               >
                                 <div
                                   onClick={() => setSelectedVehicleInPanel(vehicle)}
@@ -3789,6 +4205,14 @@ export default function CustomersPage() {
                                         {vehicle.color && <span>{vehicle.color}</span>}
                                         <span>{typeof vehicle.mileage === 'number' ? `${vehicle.mileage.toLocaleString()} mi` : 'No mileage'}</span>
                                       </div>
+                                      <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${
+                                        isAuthorityGroup ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800'
+                                      }`}>
+                                        {isAuthorityGroup ? 'Under authority' : 'Owned'}
+                                      </span>
+                                      <p className="mt-2 text-xs font-medium text-slate-700">
+                                        {vehicleRelationshipNote(vehicle, group.key)}
+                                      </p>
                                     </div>
                                     <div className="flex shrink-0 flex-col items-end gap-1 text-right">
                                       {vehicle.unit_number && (
@@ -3808,30 +4232,46 @@ export default function CustomersPage() {
                                       )}
                                     </div>
                                   </div>
+                                  {vehicleBalance !== 0 && (
+                                    <div className="mt-3 border-t border-gray-200 pt-2">
+                                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                        vehicleBalance > 0
+                                          ? 'bg-amber-100 text-amber-800'
+                                          : 'bg-emerald-100 text-emerald-800'
+                                      }`}>
+                                        {balanceLabel(vehicle.balance)}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="absolute right-2 top-2 flex items-center gap-1 opacity-100 xl:opacity-0 xl:transition-opacity xl:group-hover:opacity-100 xl:group-focus-within:opacity-100">
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       openEditVehicleModal(vehicle)
                                     }}
-                                    className="p-1.5 text-gray-500 hover:text-amber-600 bg-white hover:bg-amber-50 rounded shadow-sm transition-colors"
+                                    aria-label={`Edit ${cardTitle}`}
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-amber-50 hover:text-amber-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                                     title="Edit"
                                   >
-                                    <Pencil className="w-3.5 h-3.5" />
+                                    <Pencil className="h-4 w-4" />
                                   </button>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       handleDeleteVehicleClick(vehicle)
                                     }}
-                                    className="p-1.5 text-gray-500 hover:text-red-600 bg-white hover:bg-red-50 rounded shadow-sm transition-colors"
+                                    aria-label={`Delete ${cardTitle}`}
+                                    className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm ring-1 ring-gray-200 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                                     title="Delete"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <Trash2 className="h-4 w-4" />
                                   </button>
                                 </div>
                               </div>
+                            )
+                              })}
+                            </React.Fragment>
                             )
                           })}
                         </div>
@@ -4091,6 +4531,173 @@ export default function CustomersPage() {
         </div>
       )}
 
+      {/* Safe duplicate vehicle merge */}
+      {isVehicleMergeOpen && selectedVehicleInPanel && (
+        <div className="fixed inset-0 z-[80] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="vehicle-merge-title">
+          <div className="flex min-h-full items-center justify-center p-4 sm:p-6">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={closeVehicleMerge} />
+            <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <h3 id="vehicle-merge-title" className="text-xl font-bold text-gray-900">Merge duplicate truck records</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Compare both records and keep the one with the strongest identity and service history.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeVehicleMerge}
+                  disabled={mergeVehicleMutation.isPending}
+                  className="flex h-11 w-11 flex-none items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-50"
+                  aria-label="Close merge dialog"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="max-h-[70vh] overflow-y-auto px-5 py-5 sm:px-6">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-200 pb-5">
+                  <span className="font-semibold text-gray-900">Opened for cleanup:</span>
+                  <span className="text-gray-800">{vehicleDisplayLabel(selectedVehicleInPanel)}</span>
+                  <span className="font-mono text-sm text-gray-500">VIN {selectedVehicleInPanel.vin}</span>
+                </div>
+
+                <div className="py-5">
+                  <h4 className="font-semibold text-gray-900">Choose the duplicate to archive</h4>
+                  <p className="mt-1 text-sm text-gray-600">Only active records with this exact 17-character VIN are eligible.</p>
+
+                  {isLoadingVehicleMergeCandidates ? (
+                    <LoadingLine className="mt-4 text-gray-500">Checking for exact VIN matches…</LoadingLine>
+                  ) : isVehicleMergeCandidatesError ? (
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-red-50 p-4 text-sm text-red-800">
+                      <span>Duplicate records could not be loaded.</span>
+                      <button type="button" onClick={() => refetchVehicleMergeCandidates()} className="font-semibold underline underline-offset-2">Try again</button>
+                    </div>
+                  ) : vehicleMergeCandidates.length === 0 ? (
+                    <div className="mt-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-700">
+                      No other active truck uses VIN <span className="font-mono font-semibold">{selectedVehicleInPanel.vin}</span>. Nothing can be safely merged from this record.
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-2">
+                      {vehicleMergeCandidates.map((candidate) => (
+                        <label
+                          key={candidate.id}
+                          className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
+                            mergeDuplicateVehicleId === candidate.id
+                              ? 'border-amber-500 bg-amber-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="duplicate-vehicle"
+                            value={candidate.id}
+                            checked={mergeDuplicateVehicleId === candidate.id}
+                            onChange={() => {
+                              setMergeDuplicateVehicleId(candidate.id)
+                              setMergeVinConfirmed(false)
+                            }}
+                            className="mt-1 h-5 w-5 accent-amber-500"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-semibold text-gray-900">{candidate.customer_name} · Unit {candidate.unit_number || 'not set'}</span>
+                            <span className="mt-1 block text-sm text-gray-600">
+                              {[candidate.year, candidate.make, candidate.model].filter(Boolean).join(' ')} · {candidate.mileage?.toLocaleString() || '—'} mi
+                            </span>
+                            <span className="mt-1 block text-sm text-gray-500">
+                              {candidate.repair_order_count} repair order{candidate.repair_order_count === 1 ? '' : 's'} · Source {candidate.source === 'easy_truck_shop_import' ? 'Easy Truck Shop' : 'DieselBridge'}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {mergeDuplicateVehicleId && (
+                  <div className="border-t border-gray-200 pt-5">
+                    {isLoadingVehicleMergePreview ? (
+                      <LoadingLine className="text-gray-500">Building a safe merge preview…</LoadingLine>
+                    ) : isVehicleMergePreviewError || !vehicleMergePreview ? (
+                      <div className="rounded-xl bg-red-50 p-4 text-sm text-red-800">
+                        This pair cannot be safely merged. Refresh the duplicate list and try again.
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        {(() => {
+                          const recommended = vehicleMergePreview.recommended_canonical_id === vehicleMergePreview.canonical.id
+                            ? vehicleMergePreview.canonical
+                            : vehicleMergePreview.duplicate
+                          return (
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Recommended permanent truck</p>
+                              <p className="mt-1 font-semibold">{recommended.customer_name} · Unit {recommended.unit_number || 'not set'}</p>
+                              <p className="mt-1 text-sm text-emerald-800">
+                                VIN {recommended.vin || 'not recorded'} · {recommended.mileage?.toLocaleString() || '—'} mi · {recommended.repair_order_count} repair order{recommended.repair_order_count === 1 ? '' : 's'}
+                              </p>
+                            </div>
+                          )
+                        })()}
+                        <div>
+                          <h4 className="font-semibold text-gray-900">What will move</h4>
+                          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                            {[
+                              ['Repair orders', vehicleMergePreview.duplicate.repair_order_count],
+                              ['Appointments', vehicleMergePreview.duplicate.appointment_count],
+                              ['Inspections', vehicleMergePreview.duplicate.inspection_count],
+                              ['Incidents', vehicleMergePreview.duplicate.incident_count],
+                            ].map(([label, count]) => (
+                              <div key={String(label)}>
+                                <p className="text-2xl font-bold text-gray-900">{count}</p>
+                                <p className="text-sm text-gray-600">{label}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-950">
+                          <p className="font-semibold">History moves; billing history does not change.</p>
+                          <p className="mt-1 leading-6">
+                            Past repair orders keep the customer and invoice recipient originally recorded on that visit. Current owner, authority, payer, and Fleet Board settings stay with the truck you keep; non-conflicting history from the duplicate is retained.
+                          </p>
+                        </div>
+
+                        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 p-4">
+                          <input
+                            type="checkbox"
+                            checked={mergeVinConfirmed}
+                            onChange={(event) => setMergeVinConfirmed(event.target.checked)}
+                            className="mt-0.5 h-5 w-5 flex-none accent-amber-500"
+                          />
+                          <span className="text-sm leading-6 text-gray-800">
+                            I verified both records are the same physical truck with VIN <span className="font-mono font-semibold">{vehicleMergePreview.match_value}</span>. Keep the recommended record and archive the weaker duplicate after moving its history.
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+                <button type="button" onClick={closeVehicleMerge} disabled={mergeVehicleMutation.isPending} className="min-h-11 px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => mergeVehicleMutation.mutate()}
+                  disabled={!vehicleMergePreview || !mergeVinConfirmed || mergeVehicleMutation.isPending}
+                  className="min-h-11 px-5 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  {mergeVehicleMutation.isPending ? <Spinner size="xs" className="border-white/40 border-t-white" /> : <Combine className="h-4 w-4" />}
+                  Merge and archive duplicate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Vehicle Confirmation Modal */}
       {deleteConfirmVehicle && selectedCustomer && (
         <div className="fixed inset-0 z-[70] overflow-y-auto">
@@ -4119,7 +4726,7 @@ export default function CustomersPage() {
                   {deleteConfirmVehicle.year ? `${deleteConfirmVehicle.year} ` : ''}
                   {deleteConfirmVehicle.make} {deleteConfirmVehicle.model}
                 </span>
-                ? This will also remove any associated repair order history.
+                ? Use <span className="font-semibold">Merge duplicate</span> instead when another record contains history for the same physical truck.
               </p>
 
               <div className="flex items-center justify-end gap-3">

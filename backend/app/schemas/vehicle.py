@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 
@@ -45,6 +46,16 @@ class VehicleResponse(VehicleBase):
     id: UUID
     tenant_id: UUID
     customer_id: UUID
+    # Net accounts receivable for this truck in the customer context used by
+    # the listing endpoint. Positive means due; negative means customer credit.
+    balance: Decimal = Decimal("0.00")
+    # Active roles for the customer whose profile requested this vehicle.
+    # Billing-only relationships are intentionally not returned as vehicles.
+    customer_relationship_types: List[Literal["owner", "operator"]] = Field(default_factory=list)
+    owner_customer_id: Optional[UUID] = None
+    owner_company_name: Optional[str] = None
+    operating_authority_customer_id: Optional[UUID] = None
+    operating_authority_company_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -89,3 +100,50 @@ class VehicleRelationshipResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class VehicleMergeRequest(BaseModel):
+    duplicate_vehicle_id: UUID
+    # The UI repeats the matched identity so a stale or accidental selection
+    # cannot merge a different physical truck. Exactly one is expected based on
+    # the server-generated preview.
+    confirm_vin: Optional[str] = Field(default=None, min_length=17, max_length=17)
+    confirm_unit_number: Optional[str] = Field(default=None, min_length=1, max_length=50)
+
+
+class VehicleMergeVehicleSummary(BaseModel):
+    id: UUID
+    customer_id: UUID
+    customer_name: str
+    vin: str
+    unit_number: Optional[str] = None
+    make: str
+    model: str
+    year: Optional[int] = None
+    license_plate: Optional[str] = None
+    mileage: Optional[int] = None
+    source: Optional[str] = None
+    ets_external_id: Optional[str] = None
+    repair_order_count: int = 0
+    appointment_count: int = 0
+    inspection_count: int = 0
+    incident_count: int = 0
+    active_relationship_count: int = 0
+    active_fleet_membership_count: int = 0
+    repair_orders_by_source: Dict[str, int] = Field(default_factory=dict)
+
+
+class VehicleMergePreview(BaseModel):
+    canonical: VehicleMergeVehicleSummary
+    duplicate: VehicleMergeVehicleSummary
+    match_basis: str
+    match_value: str
+    recommended_canonical_id: UUID
+    warnings: List[str] = Field(default_factory=list)
+
+
+class VehicleMergeResult(BaseModel):
+    canonical_vehicle: VehicleResponse
+    archived_vehicle_id: UUID
+    merge_record_id: UUID
+    moved: Dict[str, int]

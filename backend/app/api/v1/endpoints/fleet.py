@@ -20,6 +20,7 @@ from app.db.models.vehicle_relationship import FleetMembership, VehicleCustomerR
 from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.inventory import PartsUsage, Inventory
 from app.db.models.repair_order import RepairOrder, RepairOrderStatus
+from app.db.models.repair_order_history import RepairOrderHistoryEvent
 from app.db.models.labor import Labor, LaborLineType
 from app.db.models.service import Service, ServicePart
 from app.db.models.tenant import Tenant
@@ -57,6 +58,8 @@ from app.schemas.fleet import (
     FleetStats,
     FleetBoardResponse,
     HistoryEntry,
+    RecognizePMRequest,
+    RecognizePMResponse,
     PartEntry,
     IncidentEntry,
     TruckDetailResponse,
@@ -1927,6 +1930,96 @@ async def truck_history(
     )
     history.sort(key=lambda entry: (entry.date or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
     return history[:limit]
+
+
+@router.post("/trucks/{vehicle_id}/recognize-pm", response_model=RecognizePMResponse)
+async def recognize_existing_repair_as_pm(
+    vehicle_id: UUID,
+    body: RecognizePMRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_fleet_access),
+):
+    """Recognize a real, already-closed repair order as a completed PM.
+
+    This corrects imported or legacy work without creating a duplicate repair
+    order, service line, or invoice. The existing VIN-linked service record is
+    retained and becomes the source for the truck's next PM schedule.
+    """
+    vehicle = await _load_fleet_vehicle_or_404(db, current_user.tenant_id, vehicle_id)
+    if body.performed_on > date.today():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="PM performed date cannot be in the future",
+        )
+
+    repair_order = (await db.execute(
+        select(RepairOrder)
+        .where(
+            RepairOrder.id == body.repair_order_id,
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.deleted_at.is_(None),
+        )
+        .with_for_update()
+    )).scalar_one_or_none()
+    if not repair_order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair order not found for this truck")
+    if repair_order.status not in FLEET_HISTORY_RO_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only completed, invoiced, or paid repair orders can be recognized as PM",
+        )
+    if repair_order.is_pm:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This repair order is already recorded as PM")
+
+    repair_order.is_pm = True
+    repair_order.mileage_out = body.odometer
+    existing_completed_at = repair_order.work_completed_at
+    if not existing_completed_at or existing_completed_at.date() != body.performed_on:
+        repair_order.work_completed_at = datetime.combine(
+            body.performed_on,
+            datetime.min.time(),
+            tzinfo=timezone.utc,
+        )
+    if vehicle.mileage is None or body.odometer > vehicle.mileage:
+        vehicle.mileage = body.odometer
+
+    later_pm_dates = list((await db.execute(
+        select(RepairOrder.work_completed_at).where(
+            RepairOrder.vehicle_id == vehicle_id,
+            RepairOrder.tenant_id == current_user.tenant_id,
+            RepairOrder.id != repair_order.id,
+            RepairOrder.is_pm.is_(True),
+            RepairOrder.status.in_(FLEET_HISTORY_RO_STATUSES),
+            RepairOrder.work_completed_at.is_not(None),
+            RepairOrder.deleted_at.is_(None),
+        )
+    )).scalars().all())
+    schedule_advanced = not any(completed.date() > body.performed_on for completed in later_pm_dates)
+    if schedule_advanced:
+        from app.services.internal_fleet import advance_vehicle_pm
+        advance_vehicle_pm(vehicle, body.odometer, body.performed_on)
+
+    actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+    db.add(RepairOrderHistoryEvent(
+        tenant_id=current_user.tenant_id,
+        repair_order_id=repair_order.id,
+        event_type="recognized_as_pm",
+        label="Existing repair order recognized as PM",
+        detail=(
+            f"PM performed {body.performed_on.isoformat()} at {body.odometer:,} mi. "
+            + ("Next PM schedule advanced." if schedule_advanced else "A newer PM already controls the current schedule.")
+        ),
+        actor_name=actor_name,
+    ))
+    await db.commit()
+    await db.refresh(vehicle)
+    return RecognizePMResponse(
+        repair_order_id=repair_order.id,
+        next_pm_miles=vehicle.next_pm_miles,
+        pm_due_date=vehicle.pm_due_date,
+        schedule_advanced=schedule_advanced,
+    )
 
 
 @router.get("/trucks/{vehicle_id}/parts", response_model=List[PartEntry])

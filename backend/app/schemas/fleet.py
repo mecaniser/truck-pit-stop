@@ -260,6 +260,20 @@ class HistoryEntry(BaseModel):
     cost: Optional[float] = None
 
 
+class RecognizePMRequest(BaseModel):
+    """Reclassify an existing closed repair order as preventive maintenance."""
+    repair_order_id: UUID
+    performed_on: date
+    odometer: int = Field(ge=0)
+
+
+class RecognizePMResponse(BaseModel):
+    repair_order_id: UUID
+    next_pm_miles: Optional[int] = None
+    pm_due_date: Optional[date] = None
+    schedule_advanced: bool
+
+
 class PartEntry(BaseModel):
     id: UUID
     name: str
