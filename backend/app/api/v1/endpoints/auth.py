@@ -49,8 +49,10 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Optional, List
 import secrets
 import re
-import httpx
 from urllib.parse import urlencode
+from app.services import workos_provider, workos_session
+from app.services.identity_lifecycle import resolve_authenticated_identity
+from app.services.workos_provider import WorkOSProviderError
 from app.services.email_service import (
     send_password_reset_email,
     send_enrollment_received_email,
@@ -84,7 +86,7 @@ async def workos_login(return_to: Optional[str] = None):
     query = urlencode({
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
-        "response_type": "code", "state": state,
+        "response_type": "code", "provider": "authkit", "state": state,
     })
     response = RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
@@ -106,37 +108,45 @@ async def workos_callback(request: Request, code: str, state: Optional[str] = No
     state_is_live = bool(await (await get_redis()).delete(f"workos:oauth-state:{state}"))
     if not state_is_live:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        result = await client.post(
-            "https://api.workos.com/user_management/authenticate",
-            json={"client_id": settings.WORKOS_CLIENT_ID, "client_secret": settings.WORKOS_API_KEY, "grant_type": "authorization_code", "code": code, "ip_address": request.client.host if request and request.client else None, "user_agent": request.headers.get("user-agent") if request else None},
-        )
-    if result.status_code >= 400:
-        logger.warning("workos_code_exchange_failed", status_code=result.status_code)
+    try:
+        payload = await workos_provider.authenticate({
+            "grant_type": "authorization_code",
+            "code": code,
+            "ip_address": request.client.host if request and request.client else None,
+            "user_agent": request.headers.get("user-agent") if request else None,
+        })
+        claims = await workos_provider.verify_access_token(payload.get("access_token"))
+    except WorkOSProviderError as exc:
+        logger.warning("workos_code_exchange_failed", reason=str(exc))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS authentication failed")
-    payload = result.json()
-    workos_user_id = (payload.get("user") or {}).get("id")
-    workos_org_id = payload.get("organization_id") or (payload.get("organization") or {}).get("id")
-    if not workos_user_id or not workos_org_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS organization membership is required")
-    user = (await db.execute(select(User).where(User.workos_user_id == workos_user_id))).scalar_one_or_none()
-    tenant = (await db.execute(select(Tenant).where(Tenant.workos_organization_id == workos_org_id))).scalar_one_or_none()
-    if not user or not tenant or not user.is_active or not tenant.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS access is not provisioned")
+    workos_user = payload.get("user") or {}
+    if workos_user.get("id") != claims["sub"]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS authentication identity mismatch")
+    user, tenant, _ = await resolve_authenticated_identity(db, claims=claims, workos_user=workos_user)
     user.workos_identity_status = "active"
     user.workos_identity_linked_at = user.workos_identity_linked_at or datetime.now(timezone.utc)
+    refresh_token = payload.get("refresh_token")
+    if not isinstance(refresh_token, str) or not refresh_token:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session credential is unavailable")
     await db.commit()
-    # WorkOS returns authorization claims with the code exchange.  The local
-    # projection is intentionally short lived so membership removal is bounded.
-    # WorkOS AuthKit's authorization-code response supplies the resolved
-    # membership permissions. Do not accept a missing/optional local value.
-    permissions = payload.get("permissions")
-    if not isinstance(permissions, list) or not all(isinstance(item, str) for item in permissions):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS permissions are unavailable")
     return_to = _safe_return_path(request.cookies.get("workos_return_to") if request else None)
     response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
-    access_token = create_access_token(data={"sub": str(user.id), "auth_provider": "workos", "workos_user_id": workos_user_id, "workos_org_id": workos_org_id, "permissions": permissions}, expires_delta=timedelta(minutes=5), tenant_id=str(tenant.id))
-    set_access_cookie(response, access_token, max_age_seconds=5 * 60)
+    token_version = await get_token_version(str(user.id))
+    access_token = create_access_token(data={"sub": str(user.id), "auth_provider": "workos", "workos_user_id": claims["sub"], "workos_org_id": claims["org_id"], "permissions": claims["permissions"]}, expires_delta=timedelta(minutes=settings.WORKOS_ACCESS_TOKEN_MINUTES), tenant_id=str(tenant.id), token_version=token_version)
+    set_access_cookie(response, access_token, max_age_seconds=settings.WORKOS_ACCESS_TOKEN_MINUTES * 60)
+    session_id = await workos_session.create_session(
+        refresh_token=refresh_token,
+        local_user_id=str(user.id),
+        workos_user_id=claims["sub"],
+        workos_org_id=claims["org_id"],
+    )
+    response.set_cookie(
+        "workos_session", session_id, httponly=True,
+        secure=settings.COOKIE_SECURE_EFFECTIVE, samesite=settings.COOKIE_SAMESITE,
+        max_age=workos_session.session_ttl_seconds(), domain=_cookie_domain(),
+        path="/api/v1/auth/workos",
+    )
     # Do not let an existing legacy refresh cookie convert this short-lived
     # WorkOS session into a multi-day legacy session.
     response.delete_cookie("refresh_token", path="/api/v1/auth", domain=_cookie_domain())
@@ -256,7 +266,7 @@ async def register(
     if existing_user:
         # --- Cross-tenant registration: link existing identity to a new shop ---
         # Security: require password verification before linking to prevent account takeover
-        if not verify_password(user_data.password, existing_user.hashed_password):
+        if not existing_user.hashed_password or not verify_password(user_data.password, existing_user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -422,7 +432,7 @@ async def login(
     user = result.scalar_one_or_none()
     tenant_id_str = str(user.tenant_id) if user and user.tenant_id else "unknown"
 
-    if not user or not verify_password(credentials.password, user.hashed_password):
+    if not user or not user.hashed_password or not verify_password(credentials.password, user.hashed_password):
         record_login(success=False, tenant_id=tenant_id_str)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -681,6 +691,29 @@ async def logout(
     return LogoutResponse(message="Successfully logged out")
 
 
+@router.post("/workos/logout", response_model=LogoutResponse)
+async def workos_logout(request: Request, response: Response):
+    """End only the short-lived repair-shop WorkOS session.
+
+    This intentionally does not clear the legacy refresh cookie or any future
+    platform-admin session; callers must present a WorkOS-marked access token.
+    """
+    token = request.cookies.get("access_token")
+    payload = decode_token(token) if token else None
+    session_id = request.cookies.get("workos_session")
+    if (not payload or payload.get("auth_provider") != "workos") and not session_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session required")
+    if payload and payload.get("auth_provider") == "workos" and payload.get("jti"):
+        expiry = get_token_expiry_seconds(token)
+        if expiry > 0:
+            await blacklist_token(payload["jti"], expiry)
+    if session_id:
+        await workos_session.delete_session(session_id)
+    response.delete_cookie("access_token", path="/", domain=_cookie_domain())
+    response.delete_cookie("workos_session", path="/api/v1/auth/workos", domain=_cookie_domain())
+    return LogoutResponse(message="Successfully logged out of repair-shop session")
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
     current_user: User = Depends(get_current_active_user),
@@ -896,7 +929,7 @@ async def update_current_user(
             )
         
         # Verify password
-        if not verify_password(update_data.password, current_user.hashed_password):
+        if not current_user.hashed_password or not verify_password(update_data.password, current_user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect password",
@@ -1049,7 +1082,7 @@ async def verify_user_password(
     current_user: User = Depends(get_current_active_user),
 ):
     """Verify current user's password without changing anything."""
-    is_valid = verify_password(request.password, current_user.hashed_password)
+    is_valid = bool(current_user.hashed_password) and verify_password(request.password, current_user.hashed_password)
     return VerifyPasswordResponse(valid=is_valid)
 
 
@@ -1064,7 +1097,7 @@ async def change_password(
     validate_password(password_data.new_password)
     
     # Verify current password
-    if not verify_password(password_data.current_password, current_user.hashed_password):
+    if not current_user.hashed_password or not verify_password(password_data.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Current password is incorrect",
@@ -1097,7 +1130,7 @@ async def forgot_password(
     result = await db.execute(select(User).where(User.email == forgot_request.email))
     user = result.scalar_one_or_none()
     
-    if user and user.is_active:
+    if user and user.is_active and user.hashed_password:
         # Generate secure random token
         reset_token = secrets.token_urlsafe(32)
 
@@ -1149,7 +1182,8 @@ async def reset_password(
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     
-    if not user:
+    if not user or not user.hashed_password:
+        await delete_password_reset_token(reset_request.token)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token",

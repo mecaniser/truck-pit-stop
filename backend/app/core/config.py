@@ -55,9 +55,12 @@ class Settings(BaseSettings):
     WORKOS_AUTH_ENABLED: bool = False
     WORKOS_API_KEY: str = ""
     WORKOS_CLIENT_ID: str = ""
+    WORKOS_ISSUER: str = "https://api.workos.com"
     WORKOS_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/workos/callback"
     WORKOS_WEBHOOK_SECRET: str = ""
     WORKOS_POST_LOGIN_URL: str = "http://localhost:5173"
+    WORKOS_ACCESS_TOKEN_MINUTES: int = Field(default=5, ge=1, le=15)
+    WORKOS_SESSION_TTL_DAYS: int = Field(default=7, ge=1, le=30)
     
     @field_validator('SECRET_KEY')
     @classmethod

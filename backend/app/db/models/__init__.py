@@ -7,6 +7,13 @@ from app.db.models.invoice_read_model import InvoiceReadModel
 from app.db.models.fleet_board_read_model import FleetBoardReadModel
 from app.db.models.contact import Contact
 from app.db.models.user_customer_link import UserCustomerLink
+from app.db.models.identity import (
+    IdentityPrincipal,
+    ExternalIdentity,
+    TenantMembership,
+    TenantInvitation,
+    WorkOSEventReceipt,
+)
 from app.db.models.vehicle import Vehicle
 from app.db.models.vehicle_relationship import VehicleCustomerRelationship, FleetMembership
 from app.db.models.driver_accountability import (
@@ -84,6 +91,11 @@ __all__ = [
     "FleetBoardReadModel",
     "Contact",
     "UserCustomerLink",
+    "IdentityPrincipal",
+    "ExternalIdentity",
+    "TenantMembership",
+    "TenantInvitation",
+    "WorkOSEventReceipt",
     "Vehicle",
     "VehicleCustomerRelationship",
     "FleetMembership",

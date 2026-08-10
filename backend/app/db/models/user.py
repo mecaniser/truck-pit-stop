@@ -25,7 +25,9 @@ class User(BaseModel):
     workos_user_id = Column(String(255), unique=True, nullable=True, index=True)
     workos_identity_status = Column(String(32), nullable=False, default="legacy", server_default="legacy")
     workos_identity_linked_at = Column(DateTime(timezone=True), nullable=True)
-    hashed_password = Column(String(255), nullable=False)
+    # Null only for explicitly provisioned WorkOS identities. Legacy login
+    # rejects null credentials before password verification.
+    hashed_password = Column(String(255), nullable=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     phone = Column(String(20), nullable=True)

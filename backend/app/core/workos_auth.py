@@ -7,9 +7,11 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, get_token_from_request
+from app.core.redis import get_auth_token_state
 from app.core.security import decode_token
 from app.db.models.tenant import Tenant
 from app.db.models.user import User
+from app.db.models.identity import ExternalIdentity, IdentityPrincipal, TenantMembership
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,12 @@ async def get_current_principal(
     user_id, workos_user_id, workos_org_id = claims.get("sub"), claims.get("workos_user_id"), claims.get("workos_org_id")
     if not user_id or not workos_user_id or not workos_org_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid WorkOS session")
+    permissions = claims.get("permissions")
+    if not isinstance(permissions, list) or not all(isinstance(value, str) for value in permissions):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid WorkOS permission claims")
+    is_blacklisted, current_version = await get_auth_token_state(claims.get("jti"), user_id)
+    if is_blacklisted or claims.get("ver", 0) < current_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="WorkOS session has been revoked")
     row = (await db.execute(
         select(User, Tenant).join(Tenant, Tenant.workos_organization_id == workos_org_id)
         .where(User.id == user_id, User.workos_user_id == workos_user_id, User.is_active.is_(True), Tenant.is_active.is_(True))
@@ -58,4 +66,24 @@ async def get_current_principal(
     if not row:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS organization access is not provisioned")
     user, tenant = row
-    return CurrentPrincipal(user.id, workos_user_id, workos_org_id, tenant.id, frozenset(claims.get("permissions") or ()))
+    external = (await db.execute(select(ExternalIdentity).where(
+        ExternalIdentity.provider == "workos",
+        ExternalIdentity.provider_subject == workos_user_id,
+        ExternalIdentity.deleted_at.is_(None),
+    ))).scalar_one_or_none()
+    if external:
+        membership = (await db.execute(
+            select(TenantMembership)
+            .join(IdentityPrincipal, IdentityPrincipal.id == TenantMembership.principal_id)
+            .where(
+                TenantMembership.principal_id == external.principal_id,
+                TenantMembership.tenant_id == tenant.id,
+                TenantMembership.status == "active",
+                TenantMembership.deleted_at.is_(None),
+                IdentityPrincipal.user_id == user.id,
+                IdentityPrincipal.status == "active",
+            )
+        )).scalar_one_or_none()
+        if not membership:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS membership is inactive")
+    return CurrentPrincipal(user.id, workos_user_id, workos_org_id, tenant.id, frozenset(permissions))
