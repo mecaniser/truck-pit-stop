@@ -39,6 +39,8 @@ interface SlidePanelProps {
   footer?: ReactNode
   /** Width class, defaults to max-w-lg */
   width?: string
+  /** Product-specific shell classes without forking the panel mechanics. */
+  panelClassName?: string
   /** Use dark theme for entire panel */
   dark?: boolean
   /** Prev/next navigation for browsing between items */
@@ -64,6 +66,7 @@ export default function SlidePanel({
   children,
   footer,
   width = 'max-w-lg',
+  panelClassName = '',
   dark = false,
   onPrev,
   onNext,
@@ -352,7 +355,7 @@ export default function SlidePanel({
   // Dark theme panel
   if (isDark) {
     return (
-      <div className="fixed inset-0 z-[60] overflow-hidden overscroll-none">
+      <div className="fixed inset-0 z-[70] overflow-hidden overscroll-none">
         {/* Backdrop */}
         <div
           className="absolute inset-0 touch-none overscroll-none bg-black/60 backdrop-blur-sm transition-opacity"
@@ -366,7 +369,7 @@ export default function SlidePanel({
           aria-modal="true"
           aria-label={title}
           tabIndex={-1}
-          className={`absolute inset-y-0 right-0 w-full ${width} bg-zinc-900 shadow-2xl flex flex-col border-l border-zinc-700/50 touch-pan-y`}
+          className={`absolute inset-y-0 right-0 w-full ${width} ${panelClassName} bg-zinc-900 shadow-2xl flex flex-col border-l border-zinc-700/50 touch-pan-y`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -374,7 +377,7 @@ export default function SlidePanel({
           onClickCapture={handleClickCapture}
         >
           {/* Header */}
-          {!hideHeader && <div className="px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
+          {!hideHeader && <div className="slide-panel-header px-6 py-5 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/95">
             <div className="flex items-center gap-3 min-w-0">
               {onBack && (
                 <button
@@ -431,17 +434,17 @@ export default function SlidePanel({
           </div>}
 
           {!hideHeader && headerExtra && (
-            <div className="px-6 py-3 border-b border-zinc-800/50 bg-zinc-900/80">
+            <div className="slide-panel-header-extra px-6 py-3 border-b border-zinc-800/50 bg-zinc-900/80">
               {headerExtra}
             </div>
           )}
 
           {/* Content */}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-dark">{children}</div>
+          <div className="slide-panel-content min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-dark">{children}</div>
 
           {/* Footer */}
           {footer && (
-            <div className="border-t border-zinc-800/50 px-6 py-4 bg-zinc-900/95">
+            <div className="slide-panel-footer border-t border-zinc-800/50 px-6 py-4 bg-zinc-900/95">
               {footer}
             </div>
           )}
@@ -452,7 +455,7 @@ export default function SlidePanel({
 
   // Light theme panel (original)
   return (
-    <div className="fixed inset-0 z-[60] overflow-hidden overscroll-none">
+    <div className="fixed inset-0 z-[70] overflow-hidden overscroll-none">
       {/* Backdrop */}
       <div
         className="absolute inset-0 touch-none overscroll-none bg-black/40 backdrop-blur-sm transition-opacity"
@@ -466,7 +469,7 @@ export default function SlidePanel({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`absolute inset-y-0 right-0 w-full ${width} bg-white shadow-2xl flex flex-col touch-pan-y`}
+        className={`absolute inset-y-0 right-0 w-full ${width} ${panelClassName} bg-white shadow-2xl flex flex-col touch-pan-y`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -475,7 +478,7 @@ export default function SlidePanel({
       >
         {/* Header */}
         {!hideHeader && (isMinimal ? (
-          <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div className="slide-panel-header px-5 py-4 border-b border-gray-200 flex items-center justify-between">
             <div>
               {subtitle && <p className="text-xs uppercase text-gray-500 font-semibold">{subtitle}</p>}
               <p className="text-lg font-semibold text-slate-800">{title}</p>
@@ -516,7 +519,7 @@ export default function SlidePanel({
             </div>
           </div>
         ) : (
-          <div className={`bg-gradient-to-r ${headerGradients[headerVariant as keyof typeof headerGradients]} px-6 py-8 text-white`}>
+          <div className={`slide-panel-header bg-gradient-to-r ${headerGradients[headerVariant as keyof typeof headerGradients]} px-6 py-8 text-white`}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 {onBack && (
@@ -581,11 +584,11 @@ export default function SlidePanel({
         ))}
 
         {/* Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        <div className="slide-panel-content min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
+          <div className="slide-panel-footer border-t border-gray-200 px-6 py-4 bg-gray-50">
             {footer}
           </div>
         )}
