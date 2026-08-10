@@ -788,6 +788,9 @@ async def test_revoke_is_provider_confirmed_audited_and_idempotent(db_session, m
     first = await workos_lifecycle.revoke_driver_invitation(str(invitation.id), principal, db_session)
     second = await workos_lifecycle.revoke_driver_invitation(str(invitation.id), principal, db_session)
     assert first.portal_access_status == second.portal_access_status == "revoked"
+    assert first.can_invite is True
+    assert first.can_resend is False
+    assert first.can_revoke is False
     assert calls == [invitation.provider_invitation_id]
     events = (await db_session.execute(select(TenantInvitationAuditEvent))).scalars().all()
     assert len(events) == 1

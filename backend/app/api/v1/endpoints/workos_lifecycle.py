@@ -232,7 +232,7 @@ async def _driver_portal_projection(db: AsyncSession, driver: DriverProfile) -> 
         can_invite=not driver.user_id and (not invitation or bool(terminal_invitation)),
         can_resend=(
             not driver.user_id
-            and access_status in {"pending", "expired", "revoked"}
+            and access_status in {"pending", "expired"}
             and not collision_review
         ),
         can_revoke=not driver.user_id and access_status == "pending",
