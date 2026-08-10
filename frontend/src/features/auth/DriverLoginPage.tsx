@@ -73,8 +73,8 @@ export default function DriverLoginPage() {
             <div role="alert" className="mt-7 flex gap-3 border-y border-amber-400/35 bg-amber-400/[0.07] py-4 text-amber-50">
               <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
               <div>
-                <h2 className="text-sm font-bold">That sign-in link has expired</h2>
-                <p className="mt-1 text-sm leading-6 text-amber-100/75">Start a new sign-in. Completed or previously opened callback links cannot be reused.</p>
+                <h2 className="text-sm font-bold">We couldn't complete sign-in</h2>
+                <p className="mt-1 text-sm leading-6 text-amber-100/75">We already retried once. Start a clean sign-in below; your invitation remains valid unless your manager revoked it.</p>
               </div>
             </div>
           )}

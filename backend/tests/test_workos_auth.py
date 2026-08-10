@@ -110,7 +110,9 @@ async def test_login_rejects_inactive_or_unmapped_tenant(client, db_session):
 async def test_callback_rejects_missing_or_mismatched_state(client):
     missing = await client.get("/api/v1/auth/workos/callback?code=x", follow_redirects=False)
     assert missing.status_code == 307
-    assert missing.headers["location"].endswith("/login?reason=workos_state_expired")
+    assert missing.headers["location"].endswith(
+        "/api/v1/auth/workos/login?return_to=%2F&recovery=1"
+    )
 
 
 @pytest.mark.asyncio
@@ -128,9 +130,42 @@ async def test_callback_redirects_stale_driver_state_to_tenant_bound_recovery(cl
     )
     assert stale.status_code == 307
     assert stale.headers["location"].endswith(
-        f"/driver/login?reason=workos_state_expired&tenant_id={tenant.id}"
+        f"/api/v1/auth/workos/login?return_to=%2Fdriver&recovery=1&tenant_id={tenant.id}"
     )
     assert "code=" not in stale.headers["location"]
+
+    # The automatic recovery is bounded to one attempt. If that new browser-
+    # bound flow also loses state, stop at a safe UI instead of looping.
+    await client.get(stale.headers["location"], follow_redirects=False)
+    stopped = await client.get(
+        "/api/v1/auth/workos/callback?code=x&state=another-stale-state",
+        follow_redirects=False,
+    )
+    assert stopped.status_code == 307
+    assert stopped.headers["location"].endswith(
+        f"/driver/login?reason=workos_state_expired&tenant_id={tenant.id}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_callback_replay_resumes_existing_opaque_workos_session(client, fake_redis):
+    session_id = await workos_session.create_session(
+        refresh_token="provider-refresh",
+        local_user_id="local",
+        workos_user_id="workos",
+        workos_org_id="org",
+    )
+    client.cookies.set("workos_session", session_id, path="/api/v1/auth/workos")
+    client.cookies.set("workos_return_to", "/dashboard", path="/api/v1/auth/workos")
+
+    response = await client.get(
+        "/api/v1/auth/workos/callback?code=already-used&state=already-used",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith("/dashboard")
+    assert client.cookies.get("workos_session") == session_id
 
 
 @pytest.mark.asyncio
@@ -308,7 +343,7 @@ async def test_workos_state_replay_and_refresh_are_rejected(client, db_session, 
     )
     assert stale.status_code == 307
     assert stale.headers["location"].endswith(
-        f"/login?reason=workos_state_expired&tenant_id={tenant.id}"
+        f"/api/v1/auth/workos/login?return_to=%2F&recovery=1&tenant_id={tenant.id}"
     )
     from app.core.security import create_access_token
     token = _workos_token(uuid4())

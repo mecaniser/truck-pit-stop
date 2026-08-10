@@ -45,7 +45,7 @@ describe('DriverLoginPage', () => {
   it('explains stale one-time callbacks and offers a fresh tenant-bound sign-in', () => {
     renderDriverLogin('/driver/login?reason=workos_state_expired&tenant_id=tenant-1')
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/sign-in link has expired/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't complete sign-in/i)
     expect(screen.getByRole('link', { name: 'Continue to Driver Portal' })).toHaveAttribute('href', expect.stringContaining('tenant_id=tenant-1'))
   })
 })
