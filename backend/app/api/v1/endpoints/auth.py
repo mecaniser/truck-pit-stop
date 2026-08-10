@@ -70,29 +70,42 @@ def _workos_enabled() -> None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="WorkOS authentication is not configured")
 
 
+def _safe_return_path(value: Optional[str]) -> str:
+    return value if value and value.startswith("/") and not value.startswith("//") else "/"
+
+
 @router.get("/workos/login", include_in_schema=False)
-async def workos_login():
+async def workos_login(return_to: Optional[str] = None):
     """Start AuthKit without changing any legacy login behavior."""
     _workos_enabled()
+    state = secrets.token_urlsafe(32)
+    # State is browser-bound and one-time: callback deletes it regardless of outcome.
+    response = RedirectResponse()
+    response.set_cookie("workos_oauth_state", state, httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
+    response.set_cookie("workos_return_to", _safe_return_path(return_to), httponly=True, secure=settings.COOKIE_SECURE_EFFECTIVE, samesite="lax", max_age=600, path="/api/v1/auth/workos")
     query = urlencode({
         "client_id": settings.WORKOS_CLIENT_ID,
         "redirect_uri": settings.WORKOS_REDIRECT_URI,
-        "provider": "authkit",
+        "response_type": "code", "state": state,
     })
-    return RedirectResponse(f"https://api.workos.com/user_management/authorize?{query}")
+    response.headers["location"] = f"https://api.workos.com/user_management/authorize?{query}"
+    response.status_code = status.HTTP_307_TEMPORARY_REDIRECT
+    return response
 
 
 @router.get("/workos/callback", include_in_schema=False)
-async def workos_callback(code: str, db: AsyncSession = Depends(get_db)):
+async def workos_callback(request: Request, code: str, state: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """Exchange a WorkOS code, map its organization to a tenant, issue the
     existing local cookie/JWT session, then return to the configured SPA.
     """
     _workos_enabled()
+    expected_state = request.cookies.get("workos_oauth_state") if request else None
+    if not state or not expected_state or not secrets.compare_digest(state, expected_state):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired WorkOS login state")
     async with httpx.AsyncClient(timeout=10.0) as client:
         result = await client.post(
             "https://api.workos.com/user_management/authenticate",
-            headers={"Authorization": f"Bearer {settings.WORKOS_API_KEY}"},
-            json={"client_id": settings.WORKOS_CLIENT_ID, "code": code},
+            json={"client_id": settings.WORKOS_CLIENT_ID, "client_secret": settings.WORKOS_API_KEY, "grant_type": "authorization_code", "code": code, "ip_address": request.client.host if request and request.client else None, "user_agent": request.headers.get("user-agent") if request else None},
         )
     if result.status_code >= 400:
         logger.warning("workos_code_exchange_failed", status_code=result.status_code)
@@ -106,14 +119,19 @@ async def workos_callback(code: str, db: AsyncSession = Depends(get_db)):
     tenant = (await db.execute(select(Tenant).where(Tenant.workos_organization_id == workos_org_id))).scalar_one_or_none()
     if not user or not tenant or not user.is_active or not tenant.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="WorkOS access is not provisioned")
-    user.tenant_id = tenant.id
     user.workos_identity_status = "active"
     user.workos_identity_linked_at = user.workos_identity_linked_at or datetime.now(timezone.utc)
     await db.commit()
-    response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL)
-    access_token = create_access_token(data={"sub": str(user.id)}, tenant_id=str(tenant.id))
+    # WorkOS returns authorization claims with the code exchange.  The local
+    # projection is intentionally short lived so membership removal is bounded.
+    permissions = payload.get("permissions") or ((payload.get("organization_membership") or {}).get("permissions")) or []
+    return_to = _safe_return_path(request.cookies.get("workos_return_to") if request else None)
+    response = RedirectResponse(settings.WORKOS_POST_LOGIN_URL.rstrip("/") + return_to)
+    access_token = create_access_token(data={"sub": str(user.id), "auth_provider": "workos", "workos_user_id": workos_user_id, "workos_org_id": workos_org_id, "permissions": permissions}, expires_delta=timedelta(minutes=5), tenant_id=str(tenant.id))
     refresh_token = create_refresh_token(data={"sub": str(user.id)}, tenant_id=str(tenant.id))
     set_auth_cookies(response, access_token, refresh_token)
+    response.delete_cookie("workos_oauth_state", path="/api/v1/auth/workos")
+    response.delete_cookie("workos_return_to", path="/api/v1/auth/workos")
     return response
 
 
