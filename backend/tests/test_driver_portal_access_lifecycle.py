@@ -20,7 +20,12 @@ from app.db.models.identity import (
 )
 from app.db.models.tenant import Tenant
 from app.db.models.user import User, UserRole
-from app.schemas.workos_lifecycle import WorkOSInvitationCreate, WorkOSOrganizationProvision
+from app.schemas.workos_lifecycle import (
+    WorkOSInvitationCreate,
+    WorkOSOrganizationProvision,
+    WorkOSProductionRebind,
+)
+from app.services.identity_lifecycle import resolve_authenticated_identity
 from app.services import workos_provider, workos_webhooks
 from app.services.workos_provider import WorkOSProviderError
 
@@ -414,6 +419,251 @@ async def test_organization_provision_rejects_identity_conflict_before_provider_
         )
     assert exc.value.status_code == 409
     assert tenant.workos_organization_id is None
+
+
+@pytest.mark.asyncio
+async def test_production_rebind_preserves_history_and_reuses_membership(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "WORKOS_ENVIRONMENT", "production")
+    tenant = Tenant(
+        name="Production Pilot Garage",
+        slug=f"production-pilot-{uuid4().hex[:8]}",
+        enrollment_status="approved",
+        is_active=True,
+        workos_organization_id="org_staging",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    owner = User(
+        email="production-owner@example.com",
+        hashed_password="existing-password-hash",
+        first_name="Production",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        workos_user_id="user_staging",
+        workos_identity_status="active",
+        is_active=True,
+        is_verified=True,
+    )
+    platform = User(
+        email="platform-rebind@example.com",
+        hashed_password="platform-password-hash",
+        first_name="Platform",
+        last_name="Admin",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add_all([owner, platform])
+    await db_session.flush()
+    principal = IdentityPrincipal(user_id=owner.id, status="active")
+    db_session.add(principal)
+    await db_session.flush()
+    external = ExternalIdentity(
+        principal_id=principal.id,
+        provider="workos",
+        provider_subject="user_staging",
+        status="active",
+        email_snapshot=owner.email,
+    )
+    membership = TenantMembership(
+        principal_id=principal.id,
+        tenant_id=tenant.id,
+        provider="workos",
+        provider_membership_id="membership_staging",
+        role_slug="garage_owner",
+        status="active",
+        permissions=["members:manage"],
+        resource_scope={},
+    )
+    old_invitation = TenantInvitation(
+        tenant_id=tenant.id,
+        principal_id=principal.id,
+        provider_invitation_id="invitation_staging",
+        email_snapshot=owner.email,
+        intended_role_slug="garage_owner",
+        resource_scope={},
+        target_user_id=owner.id,
+        status="accepted",
+        invited_by_user_id=platform.id,
+    )
+    db_session.add_all([external, membership, old_invitation])
+    await db_session.commit()
+
+    provider_calls = []
+
+    async def organization(**kwargs):
+        provider_calls.append(("organization", kwargs))
+        return {"id": "org_production", "external_id": str(tenant.id)}
+
+    async def invitation(**kwargs):
+        provider_calls.append(("invitation", kwargs))
+        assert kwargs["organization_id"] == "org_production"
+        assert kwargs["inviter_user_id"] is None
+        return {
+            "id": "invitation_production",
+            "state": "pending",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        }
+
+    monkeypatch.setattr(workos_provider, "get_or_create_organization", organization)
+    monkeypatch.setattr(workos_provider, "send_invitation", invitation)
+    body = WorkOSProductionRebind(
+        tenant_id=tenant.id,
+        owner_user_id=owner.id,
+        owner_email=owner.email,
+        expected_staging_organization_id="org_staging",
+        expected_staging_user_id="user_staging",
+        expected_staging_invitation_id="invitation_staging",
+    )
+    result = await workos_lifecycle.rebind_production_organization(body, platform, db_session)
+    assert result.workos_organization_id == "org_production"
+    assert result.owner_invitation.target_user_id == owner.id
+    assert result.owner_invitation.status == "pending"
+    assert tenant.workos_organization_id == "org_production"
+    assert owner.workos_user_id is None
+    assert owner.workos_identity_status == "pending"
+    assert principal.status == "pending"
+    assert external.status == "superseded"
+    assert membership.status == "pending"
+    assert membership.provider_membership_id is None
+    assert membership.permissions == []
+    assert old_invitation.status == "superseded"
+    replacement = (await db_session.execute(select(TenantInvitation).where(
+        TenantInvitation.provider_invitation_id == "invitation_production"
+    ))).scalar_one()
+    events = (await db_session.execute(select(TenantInvitationAuditEvent).where(
+        TenantInvitationAuditEvent.tenant_id == tenant.id
+    ).order_by(TenantInvitationAuditEvent.created_at))).scalars().all()
+    assert [event.action for event in events] == ["environment_rebind_started", "created"]
+    assert events[0].metadata_json["old_organization_id"] == "org_staging"
+
+    retry = await workos_lifecycle.rebind_production_organization(body, platform, db_session)
+    assert retry.owner_invitation.id == replacement.id
+    assert [call[0] for call in provider_calls] == ["organization", "invitation"]
+
+    async def accepted(provider_invitation_id):
+        assert provider_invitation_id == "invitation_production"
+        return {
+            "id": provider_invitation_id,
+            "state": "accepted",
+            "accepted_user_id": "user_production",
+            "organization_id": "org_production",
+            "role_slug": "garage_owner",
+            "email": owner.email,
+        }
+
+    monkeypatch.setattr(workos_provider, "get_invitation", accepted)
+    linked_user, linked_tenant, linked_membership = await resolve_authenticated_identity(
+        db_session,
+        claims={
+            "sub": "user_production",
+            "org_id": "org_production",
+            "role": "garage_owner",
+            "permissions": ["members:manage"],
+        },
+        workos_user={"email": owner.email, "email_verified": True},
+    )
+    await db_session.commit()
+    assert linked_user.id == owner.id
+    assert linked_tenant.id == tenant.id
+    assert linked_membership.id == membership.id
+    assert linked_membership.status == "active"
+    assert owner.workos_user_id == "user_production"
+    assert (await db_session.execute(select(ExternalIdentity).where(
+        ExternalIdentity.provider_subject == "user_production"
+    ))).scalar_one().principal_id == principal.id
+
+
+@pytest.mark.asyncio
+async def test_production_rebind_rejects_staging_anchor_mismatch_before_provider_write(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "WORKOS_ENVIRONMENT", "production")
+    tenant = Tenant(
+        name="Mismatch Pilot Garage",
+        slug=f"mismatch-pilot-{uuid4().hex[:8]}",
+        enrollment_status="approved",
+        is_active=True,
+        workos_organization_id="org_actual_staging",
+    )
+    db_session.add(tenant)
+    await db_session.flush()
+    owner = User(
+        email="mismatch-owner@example.com",
+        hashed_password="existing-password-hash",
+        first_name="Mismatch",
+        last_name="Owner",
+        role=UserRole.GARAGE_OWNER,
+        tenant_id=tenant.id,
+        workos_user_id="user_actual_staging",
+        workos_identity_status="active",
+        is_active=True,
+        is_verified=True,
+    )
+    platform = User(
+        email="platform-mismatch@example.com",
+        hashed_password="platform-password-hash",
+        first_name="Platform",
+        last_name="Admin",
+        role=UserRole.SUPER_ADMIN,
+        is_active=True,
+        is_verified=True,
+    )
+    db_session.add_all([owner, platform])
+    await db_session.flush()
+    principal = IdentityPrincipal(user_id=owner.id, status="active")
+    db_session.add(principal)
+    await db_session.flush()
+    db_session.add_all([
+        ExternalIdentity(
+            principal_id=principal.id,
+            provider="workos",
+            provider_subject="user_actual_staging",
+            status="active",
+        ),
+        TenantMembership(
+            principal_id=principal.id,
+            tenant_id=tenant.id,
+            role_slug="garage_owner",
+            status="active",
+            permissions=[],
+            resource_scope={},
+        ),
+        TenantInvitation(
+            tenant_id=tenant.id,
+            principal_id=principal.id,
+            provider_invitation_id="invitation_actual_staging",
+            email_snapshot=owner.email,
+            intended_role_slug="garage_owner",
+            resource_scope={},
+            target_user_id=owner.id,
+            status="accepted",
+            invited_by_user_id=platform.id,
+        ),
+    ])
+    await db_session.commit()
+
+    async def unexpected_provider_write(**_kwargs):
+        pytest.fail("provider must not be called after an exact-anchor mismatch")
+
+    monkeypatch.setattr(workos_provider, "get_or_create_organization", unexpected_provider_write)
+    with pytest.raises(HTTPException) as exc:
+        await workos_lifecycle.rebind_production_organization(
+            WorkOSProductionRebind(
+                tenant_id=tenant.id,
+                owner_user_id=owner.id,
+                owner_email=owner.email,
+                expected_staging_organization_id="org_wrong",
+                expected_staging_user_id="user_actual_staging",
+                expected_staging_invitation_id="invitation_actual_staging",
+            ),
+            platform,
+            db_session,
+        )
+    assert exc.value.status_code == 409
+    assert tenant.workos_organization_id == "org_actual_staging"
+    assert owner.workos_user_id == "user_actual_staging"
 
 
 @pytest.mark.asyncio

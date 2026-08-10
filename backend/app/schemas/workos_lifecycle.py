@@ -93,6 +93,21 @@ class WorkOSOrganizationProvision(BaseModel):
     owner_email: EmailStr
 
 
+class WorkOSProductionRebind(BaseModel):
+    """Exact preconditions for replacing a Staging identity projection.
+
+    Provider identifiers are explicit integrity checks. They are never inferred
+    from email and make a retry safe after an interrupted response.
+    """
+
+    tenant_id: UUID
+    owner_user_id: UUID
+    owner_email: EmailStr
+    expected_staging_organization_id: str
+    expected_staging_user_id: str
+    expected_staging_invitation_id: str
+
+
 class WorkOSOrganizationResponse(BaseModel):
     tenant_id: UUID
     workos_organization_id: str

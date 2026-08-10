@@ -234,17 +234,33 @@ async def resolve_authenticated_identity(
         principal.user_id = user.id
     principal.status = "active"
     db.add(ExternalIdentity(principal_id=principal.id, provider="workos", provider_subject=workos_user_id, status="active", email_snapshot=email))
-    membership = TenantMembership(
-        principal_id=principal.id,
-        tenant_id=tenant.id,
-        provider="workos",
-        role_slug=matched.intended_role_slug,
-        status="active",
-        permissions=permissions,
-        resource_scope=matched.resource_scope,
-        provider_updated_at=datetime.now(timezone.utc),
-    )
-    db.add(membership)
+    membership = (await db.execute(select(TenantMembership).where(
+        TenantMembership.principal_id == principal.id,
+        TenantMembership.tenant_id == tenant.id,
+        TenantMembership.deleted_at.is_(None),
+    ).with_for_update())).scalar_one_or_none()
+    if membership:
+        # Production cutover reuses the durable local membership FK while the
+        # superseded Staging provider anchors remain in invitation audit history.
+        membership.provider = "workos"
+        membership.provider_membership_id = None
+        membership.role_slug = matched.intended_role_slug
+        membership.status = "active"
+        membership.permissions = permissions
+        membership.resource_scope = matched.resource_scope
+        membership.provider_updated_at = datetime.now(timezone.utc)
+    else:
+        membership = TenantMembership(
+            principal_id=principal.id,
+            tenant_id=tenant.id,
+            provider="workos",
+            role_slug=matched.intended_role_slug,
+            status="active",
+            permissions=permissions,
+            resource_scope=matched.resource_scope,
+            provider_updated_at=datetime.now(timezone.utc),
+        )
+        db.add(membership)
     if matched.driver_profile_id:
         driver = await db.get(DriverProfile, matched.driver_profile_id)
         if not driver or driver.tenant_id != tenant.id or driver.user_id is not None:
