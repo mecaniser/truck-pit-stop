@@ -85,20 +85,20 @@ class Settings(BaseSettings):
         if application_is_production and workos_environment != "production":
             raise ValueError("Application production cannot use WorkOS Staging")
 
-        api_key_is_live = self.WORKOS_API_KEY.startswith("sk_live_")
-        api_key_is_test = self.WORKOS_API_KEY.startswith("sk_test_")
-        if not (api_key_is_live or api_key_is_test):
-            raise ValueError("WorkOS API key must use the expected environment prefix")
-        if workos_environment == "production" and not api_key_is_live:
-            raise ValueError("WorkOS Production requires a production API key")
-        if workos_environment == "staging" and not api_key_is_test:
-            raise ValueError("WorkOS Staging requires a staging API key")
+        if not self.WORKOS_API_KEY.startswith("sk_"):
+            raise ValueError("WorkOS API key must use the expected key format")
 
         if not application_is_production:
             return
 
         expected_redirect = "https://api.dieselbridge.com/api/v1/auth/workos/callback"
         expected_app_origin = "https://www.dieselbridge.com"
+        expected_client_id = "client_01KZKT5BFBKQ00AJT7ECAWDN5Y"
+        expected_issuer = f"https://api.workos.com/user_management/{expected_client_id}"
+        if self.WORKOS_CLIENT_ID != expected_client_id:
+            raise ValueError("Production must use the Diesel Bridge WorkOS Production Client ID")
+        if self.WORKOS_ISSUER.rstrip("/") != expected_issuer:
+            raise ValueError("Production WorkOS issuer must match the Production Client ID")
         if self.WORKOS_REDIRECT_URI.rstrip("/") != expected_redirect:
             raise ValueError("Production WorkOS redirect URI must use the Diesel Bridge API callback")
         if self.WORKOS_POST_LOGIN_URL.rstrip("/") != expected_app_origin:
@@ -112,7 +112,7 @@ class Settings(BaseSettings):
             if parsed.scheme != "https" or parsed.hostname in {None, "localhost", "127.0.0.1", "::1"}:
                 raise ValueError(f"{setting_name} must be a public HTTPS URL in production")
 
-        if not self.WORKOS_WEBHOOK_SECRET.startswith("whsec_"):
+        if len(self.WORKOS_WEBHOOK_SECRET) < 20:
             raise ValueError("Production WorkOS authentication requires a production webhook secret")
     
     @field_validator('SECRET_KEY')

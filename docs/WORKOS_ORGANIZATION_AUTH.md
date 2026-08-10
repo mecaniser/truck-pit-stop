@@ -55,10 +55,11 @@ WORKOS_ACCESS_TOKEN_MINUTES=5
 WORKOS_SESSION_TTL_DAYS=7
 ```
 
-Railway Production instead requires `WORKOS_ENVIRONMENT=production`, a
-`sk_live_` API key, the Production Client ID, the HTTPS production URLs above,
-and the Production webhook signing secret. Application startup fails closed if
-production is paired with Staging credentials or localhost URLs.
+Railway Production instead requires `WORKOS_ENVIRONMENT=production`, the
+Production API key, Client ID and matching issuer, the HTTPS production URLs
+above, and the Production webhook signing secret. Application startup fails
+closed if production is paired with the Staging Client ID, a mismatched issuer,
+or localhost URLs.
 
 Legacy login remains available while `WORKOS_AUTH_ENABLED=false` and during the
 tenant-by-tenant dual-run. A WorkOS-only user has `hashed_password = NULL` and is
