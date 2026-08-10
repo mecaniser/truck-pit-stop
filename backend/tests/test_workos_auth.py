@@ -1,9 +1,13 @@
 """Focused boundary tests for the additive WorkOS flow."""
 import pytest
+from datetime import datetime, timezone
+from starlette.requests import Request
 
 from app.api.v1.endpoints import auth
 from app.core.config import settings
 from app.core.security import decode_token
+from app.db.models.user import User, UserRole
+from app.db.models.tenant import Tenant
 
 
 @pytest.fixture(autouse=True)
@@ -48,3 +52,36 @@ def test_workos_principal_token_is_not_refreshable_shape():
     token = create_access_token({"sub": "u", "auth_provider": "workos", "workos_user_id": "wu", "workos_org_id": "wo", "permissions": ["fleet:view"]})
     assert decode_token(token).get("type") is None
     assert decode_token(token)["auth_provider"] == "workos"
+
+
+def _request(state: str, return_to: str = "/"):
+    headers = [(b"cookie", f"workos_oauth_state={state}; workos_return_to={return_to}".encode())]
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": headers, "client": ("127.0.0.1", 1)})
+
+
+class _WorkOSResponse:
+    status_code = 200
+    def json(self):
+        return {"user": {"id": "wu_1"}, "organization_id": "org_1", "permissions": ["fleet:view"]}
+
+
+class _WorkOSClient:
+    async def __aenter__(self): return self
+    async def __aexit__(self, *args): return False
+    async def post(self, *args, **kwargs): return _WorkOSResponse()
+
+
+@pytest.mark.asyncio
+async def test_callback_issues_only_short_workos_access_token(db_session, fake_redis, monkeypatch):
+    tenant = Tenant(name="T", slug="t", workos_organization_id="org_1")
+    user = User(email="u@example.test", hashed_password="x", first_name="U", last_name="T", role=UserRole.GARAGE_ADMIN, tenant_id=None, workos_user_id="wu_1")
+    db_session.add_all([tenant, user]); await db_session.commit()
+    await fake_redis.setex("workos:oauth-state:s", 600, "1")
+    monkeypatch.setattr(auth, "get_redis", lambda: _resolved(fake_redis))
+    monkeypatch.setattr(auth.httpx, "AsyncClient", lambda **kwargs: _WorkOSClient())
+    before_tenant = user.tenant_id
+    response = await auth.workos_callback(_request("s"), "code", "s", db_session)
+    token = decode_token(response.headers.getlist("set-cookie")[0].split("access_token=")[1].split(";")[0])
+    assert token["auth_provider"] == "workos" and token["permissions"] == ["fleet:view"]
+    assert user.tenant_id == before_tenant
+    assert all("refresh_token=" not in value or "Max-Age=0" in value for value in response.headers.getlist("set-cookie"))
