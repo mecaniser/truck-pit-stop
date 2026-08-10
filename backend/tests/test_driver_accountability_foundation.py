@@ -400,6 +400,13 @@ async def test_driver_portal_pti_and_incident_are_bound_to_active_custody(client
     ).scalar_one()
     assert event.data_json["source"] == "driver_portal"
 
+    scorecard = await client.get("/api/v1/fleet-identity/me/scorecard", headers=headers)
+    assert scorecard.status_code == 200
+    assert scorecard.json()["incidents_during_custody"] == 1
+    assert scorecard.json()["confirmed_driver_duty_issues"] == 0
+    assert scorecard.json()["disputed_or_pending_reviews"] == 1
+    assert scorecard.json()["scoring_ready"] is False
+
 
 @pytest.mark.asyncio
 async def test_incident_actions_append_history_and_void_instead_of_erasing(db_session):

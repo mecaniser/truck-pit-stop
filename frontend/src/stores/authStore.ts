@@ -9,7 +9,7 @@ interface User {
   first_name: string
   last_name: string
   phone: string | null
-  role: 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'customer'
+  role: 'super_admin' | 'garage_owner' | 'garage_admin' | 'mechanic' | 'receptionist' | 'fleet_manager' | 'driver' | 'customer'
   is_active: boolean
   can_access_messaging?: boolean
   // Shop-wide switch for the Messages feature; defaults on when absent.
@@ -26,13 +26,21 @@ interface AuthState {
   token: string | null
   refreshToken: string | null
   isAuthenticated: boolean
+  authProvider: 'legacy' | 'workos' | null
   login: (token: string, refreshToken: string, user: User) => void
+  establishCookieSession: (user: User) => void
   logout: () => void
+  clearSession: () => void
   setUser: (user: User) => void
   setTokens: (token: string, refreshToken: string) => void
 }
 
 function sanitizePersistedAuthState(state: Partial<AuthState>): Partial<AuthState> {
+  if (state.authProvider === 'workos') {
+    // The HttpOnly WorkOS session is revalidated by /auth/me on page load.
+    // Never trust a persisted browser flag after the short provider session expires.
+    return { ...state, user: null, token: null, refreshToken: null, isAuthenticated: false }
+  }
   if (!state.token) {
     return state
   }
@@ -67,13 +75,17 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       refreshToken: null,
       isAuthenticated: false,
+      authProvider: null,
       login: (token, refreshToken, user) =>
         set({
           token,
           refreshToken,
           user,
           isAuthenticated: true,
+          authProvider: 'legacy',
         }),
+      establishCookieSession: (user) =>
+        set({ user, token: null, refreshToken: null, isAuthenticated: true, authProvider: 'workos' }),
       logout: async () => {
         // Call backend to blacklist token and clear cookies
         try {
@@ -88,8 +100,10 @@ export const useAuthStore = create<AuthState>()(
           token: null,
           refreshToken: null,
           isAuthenticated: false,
+          authProvider: null,
         })
       },
+      clearSession: () => set({ user: null, token: null, refreshToken: null, isAuthenticated: false, authProvider: null }),
       setUser: (user) => set({ user }),
       setTokens: (token, refreshToken) => set({ token, refreshToken }),
     }),

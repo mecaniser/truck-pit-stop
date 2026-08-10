@@ -96,6 +96,8 @@ export default function LoginPage() {
     } else if (userResponse.data.role === 'fleet_manager') {
       // Fleet managers are a standalone role: their board is their whole app.
       navigate('/fleet')
+    } else if (userResponse.data.role === 'driver') {
+      navigate('/driver')
     } else {
       navigate('/dashboard')
     }
@@ -401,6 +403,18 @@ export default function LoginPage() {
               )}
             </button>
           </div>
+
+          <div className="flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-zinc-800" />
+            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">Driver access</span>
+            <span className="h-px flex-1 bg-zinc-800" />
+          </div>
+          <a
+            href={`${String(import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '')}/auth/workos/login?return_to=%2Fdriver`}
+            className="flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-700 bg-zinc-900 px-4 text-sm font-semibold text-zinc-100 transition-colors hover:border-[var(--accent-500)] hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-[var(--accent-500)]"
+          >
+            Sign in to the Driver Portal
+          </a>
 
           <div className="text-sm text-center">
             <Link

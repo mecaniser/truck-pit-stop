@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Toaster, ToastBar, toast, useToasterStore } from 'react-hot-toast'
 import { useAuthStore } from './stores/authStore'
+import api from './lib/api'
 import { ThemeProvider, useTheme, type NotificationPosition } from './contexts/ThemeContext'
 import LandingPage from './features/landing/LandingPage'
 import PrivacyPolicyPage from './features/landing/PrivacyPolicyPage'
@@ -17,6 +18,7 @@ import CustomerPortalPage from './features/customer-portal/CustomerPortalPage'
 import QuoteApprovalPage from './features/quote-approval/QuoteApprovalPage'
 import MechanicPortalPage from './features/mechanic-portal/MechanicPortalPage'
 import FleetApp from './features/fleet/FleetApp'
+import DriverPortalPage from './features/driver-portal/DriverPortalPage'
 import InvoiceAccessPage from './features/invoice-access/InvoiceAccessPage'
 
 type FaviconAssetSet = {
@@ -37,6 +39,7 @@ const ADMIN_FAVICON: FaviconAssetSet = {
 const ADMIN_FAVICON_PATHS = [
   /^\/dashboard(\/|$)/,
   /^\/mechanic(\/|$)/,
+  /^\/driver(\/|$)/,
   /^\/login$/,
   /^\/register$/,
   /^\/forgot-password$/,
@@ -66,7 +69,7 @@ function isProductAnalyticsRoute(pathname: string, role?: string): boolean {
 
   // Protected product surfaces are tracked only after the authenticated user's
   // role is known. This keeps platform-super-admin navigation out of GA.
-  return Boolean(role) && /^(\/dashboard|\/portal|\/mechanic|\/fleet)(\/|$)/.test(pathname)
+  return Boolean(role) && /^(\/dashboard|\/portal|\/mechanic|\/fleet|\/driver)(\/|$)/.test(pathname)
 }
 
 function analyticsPagePath(pathname: string, search: string): string {
@@ -241,7 +244,35 @@ function StaffRoute({ children }: { children: React.ReactNode }) {
   if (user?.role === 'fleet_manager') {
     return <Navigate to="/fleet" replace />
   }
+  if (user?.role === 'driver') {
+    return <Navigate to="/driver" replace />
+  }
 
+  return <>{children}</>
+}
+
+function DriverRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated, establishCookieSession } = useAuthStore()
+  const [checkingSession, setCheckingSession] = useState(!isAuthenticated)
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setCheckingSession(false)
+      return
+    }
+    let active = true
+    api.get('/auth/me')
+      .then(({ data }) => {
+        if (active && data.role === 'driver') establishCookieSession(data)
+      })
+      .catch(() => undefined)
+      .finally(() => { if (active) setCheckingSession(false) })
+    return () => { active = false }
+  }, [establishCookieSession, isAuthenticated])
+
+  if (checkingSession) return <div className="min-h-screen bg-[#081018] text-white grid place-items-center">Opening driver workspace…</div>
+  if (!useAuthStore.getState().isAuthenticated) return <Navigate to="/login" replace />
+  if ((user || useAuthStore.getState().user)?.role !== 'driver') return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
 
@@ -338,6 +369,15 @@ function App() {
             <FleetRoute>
               <FleetApp />
             </FleetRoute>
+          }
+        />
+
+        <Route
+          path="/driver/*"
+          element={
+            <DriverRoute>
+              <DriverPortalPage />
+            </DriverRoute>
           }
         />
         

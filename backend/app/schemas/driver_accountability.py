@@ -124,3 +124,19 @@ class DriverIncidentCreate(BaseModel):
     location: Optional[str] = Field(default=None, max_length=255)
     severity: str = Field(default="medium", pattern="^(low|medium|high|critical)$")
     description: str = Field(min_length=1, max_length=5000)
+
+
+class DriverScorecardResponse(BaseModel):
+    driver_id: UUID
+    custody_sessions: int
+    custody_miles: int
+    incidents_during_custody: int
+    open_incidents: int
+    finalized_reviews: int
+    confirmed_driver_duty_issues: int
+    shared_responsibility_findings: int
+    not_attributable_findings: int
+    insufficient_evidence_findings: int
+    disputed_or_pending_reviews: int
+    reviewed_duty_issue_rate_per_10k_miles: Optional[float] = None
+    scoring_ready: bool = False

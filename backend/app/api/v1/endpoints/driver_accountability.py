@@ -15,6 +15,7 @@ from app.db.models.driver_accountability import (
     DriverProfile,
     EquipmentCustodyAsset,
     EquipmentCustodySession,
+    FleetAccountabilityReview,
     FleetIncidentEvent,
     FleetTrailer,
 )
@@ -44,6 +45,7 @@ from app.schemas.driver_accountability import (
     CustodySessionResponse,
     DriverIncidentCreate,
     DriverInspectionCreate,
+    DriverScorecardResponse,
     DriverProfileCreate,
     DriverProfileResponse,
     TrailerCreate,
@@ -59,6 +61,73 @@ from app.services.driver_accountability_service import (
 
 
 router = APIRouter()
+
+
+async def _driver_scorecard(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    driver_id: UUID,
+) -> DriverScorecardResponse:
+    sessions = list((await db.execute(select(EquipmentCustodySession).where(
+        EquipmentCustodySession.tenant_id == tenant_id,
+        EquipmentCustodySession.driver_id == driver_id,
+        EquipmentCustodySession.deleted_at.is_(None),
+    ))).scalars())
+    session_ids = [session.id for session in sessions]
+    assets = [] if not session_ids else list((await db.execute(select(EquipmentCustodyAsset).where(
+        EquipmentCustodyAsset.tenant_id == tenant_id,
+        EquipmentCustodyAsset.custody_session_id.in_(session_ids),
+        EquipmentCustodyAsset.vehicle_id.is_not(None),
+        EquipmentCustodyAsset.deleted_at.is_(None),
+    ))).scalars())
+    custody_miles = sum(
+        max(0, asset.end_odometer - asset.start_odometer)
+        for asset in assets
+        if asset.start_odometer is not None and asset.end_odometer is not None
+    )
+    incidents = list((await db.execute(select(FleetIncident).where(
+        FleetIncident.tenant_id == tenant_id,
+        FleetIncident.driver_id_at_occurrence == driver_id,
+        FleetIncident.status != IncidentStatus.VOIDED,
+        FleetIncident.deleted_at.is_(None),
+    ))).scalars())
+    incident_ids = [incident.id for incident in incidents]
+    reviews = [] if not incident_ids else list((await db.execute(
+        select(FleetAccountabilityReview)
+        .where(
+            FleetAccountabilityReview.tenant_id == tenant_id,
+            FleetAccountabilityReview.incident_id.in_(incident_ids),
+            FleetAccountabilityReview.deleted_at.is_(None),
+        )
+        .order_by(FleetAccountabilityReview.incident_id, FleetAccountabilityReview.revision.desc())
+    )).scalars())
+    latest_by_incident: dict[UUID, FleetAccountabilityReview] = {}
+    for review in reviews:
+        latest_by_incident.setdefault(review.incident_id, review)
+    latest = list(latest_by_incident.values())
+    finalized = [review for review in latest if review.status == "finalized"]
+    duty_issues = sum(review.finding == "driver_duty_issue" for review in finalized)
+    shared = sum(review.finding == "shared_responsibility" for review in finalized)
+    not_attributable = sum(review.finding in ("not_attributable", "non_driver_issue") for review in finalized)
+    insufficient = sum(review.finding == "insufficient_evidence" for review in finalized)
+    pending = len(incidents) - len(finalized)
+    rate = round(duty_issues * 10000 / custody_miles, 2) if custody_miles else None
+    return DriverScorecardResponse(
+        driver_id=driver_id,
+        custody_sessions=len(sessions),
+        custody_miles=custody_miles,
+        incidents_during_custody=len(incidents),
+        open_incidents=sum(incident.status in (IncidentStatus.OPEN, IncidentStatus.IN_PROGRESS) for incident in incidents),
+        finalized_reviews=len(finalized),
+        confirmed_driver_duty_issues=duty_issues,
+        shared_responsibility_findings=shared,
+        not_attributable_findings=not_attributable,
+        insufficient_evidence_findings=insufficient,
+        disputed_or_pending_reviews=pending,
+        reviewed_duty_issue_rate_per_10k_miles=rate,
+        scoring_ready=custody_miles >= 1000 and bool(finalized),
+    )
 
 
 async def _active_vehicle_custody(
@@ -151,6 +220,24 @@ async def list_drivers(
             )
         ).scalars()
     )
+
+
+@router.get("/drivers/{driver_id}/scorecard", response_model=DriverScorecardResponse)
+async def driver_scorecard(
+    driver_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("fleet:view", "accountability:review")),
+):
+    driver = (
+        await db.execute(select(DriverProfile).where(
+            DriverProfile.id == driver_id,
+            DriverProfile.tenant_id == principal.tenant_id,
+            DriverProfile.deleted_at.is_(None),
+        ))
+    ).scalar_one_or_none()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    return await _driver_scorecard(db, tenant_id=principal.tenant_id, driver_id=driver.id)
 
 
 @router.post(
@@ -249,6 +336,15 @@ async def driver_me(
     principal: CurrentPrincipal = Depends(require_permission("driver_portal:use")),
 ):
     return await get_driver_for_principal(db, principal)
+
+
+@router.get("/me/scorecard", response_model=DriverScorecardResponse)
+async def my_scorecard(
+    db: AsyncSession = Depends(get_db),
+    principal: CurrentPrincipal = Depends(require_permission("driver_portal:use")),
+):
+    driver = await get_driver_for_principal(db, principal)
+    return await _driver_scorecard(db, tenant_id=principal.tenant_id, driver_id=driver.id)
 
 
 @router.get("/me/custody", response_model=List[CustodySessionResponse])
